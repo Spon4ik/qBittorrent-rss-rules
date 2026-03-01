@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel-head">
+  <div>
+    <p class="eyebrow">Rules</p>
+    <h2>Library</h2>
+  </div>
+  <form class="inline-action" method="post" action="/api/sync/all">
+    <button type="submit">Sync All</button>
+  </form>
+</section>
+
+<form class="filter-grid" method="get" action="/">
+  <label>
+    Search
+    <input type="text" name="search" value="{{ filters.search }}" placeholder="Rule name or IMDb ID" />
+  </label>
+  <label>
+    Media
+    <select name="media">
+      <option value="">All</option>
+      {% for choice in media_choices %}
+      <option value="{{ choice.value }}" {% if filters.media == choice.value %}selected{% endif %}>{{ choice.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Sync
+    <select name="sync">
+      <option value="">All</option>
+      {% for choice in sync_choices %}
+      <option value="{{ choice }}" {% if filters.sync == choice %}selected{% endif %}>{{ choice }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Enabled
+    <select name="enabled">
+      <option value="">All</option>
+      <option value="true" {% if filters.enabled == 'true' %}selected{% endif %}>Enabled</option>
+      <option value="false" {% if filters.enabled == 'false' %}selected{% endif %}>Disabled</option>
+    </select>
+  </label>
+  <button type="submit">Apply Filters</button>
+</form>
+
+{% if not rules %}
+<section class="empty-state">
+  <h3>No rules yet</h3>
+  <p>Create a rule or import an existing qBittorrent export to get started.</p>
+  <a class="button-link" href="/rules/new">Create Your First Rule</a>
+</section>
+{% else %}
+<section class="rule-grid">
+  {% for rule in rules %}
+  <article class="rule-card">
+    <div class="rule-card-top">
+      <div>
+        <p class="eyebrow">{{ media_type_labels.get(rule.media_type.value, rule.media_type.value) }}</p>
+        <h3>{{ rule.rule_name }}</h3>
+      </div>
+      <span class="status-chip status-{{ rule.last_sync_status.value }}">{{ rule.last_sync_status.value }}</span>
+    </div>
+    <dl class="detail-list">
+      <div>
+        <dt>IMDb</dt>
+        <dd>{{ rule.imdb_id or 'None' }}</dd>
+      </div>
+      <div>
+        <dt>Category</dt>
+        <dd>{{ rule.assigned_category or 'Auto' }}</dd>
+      </div>
+      <div>
+        <dt>Feeds</dt>
+        <dd>{{ rule.feed_urls|length }}</dd>
+      </div>
+      <div>
+        <dt>Enabled</dt>
+        <dd>{{ 'Yes' if rule.enabled else 'No' }}</dd>
+      </div>
+    </dl>
+    <div class="card-actions">
+      <a class="button-link" href="/rules/{{ rule.id }}">Edit</a>
+      <form method="post" action="/api/rules/{{ rule.id }}/sync">
+        <button type="submit">Sync</button>
+      </form>
+      <form method="post" action="/api/rules/{{ rule.id }}/delete" onsubmit="return confirm('Delete this rule locally and remotely?');">
+        <button type="submit" class="danger">Delete</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

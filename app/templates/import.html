@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel-head">
+  <div>
+    <p class="eyebrow">Bootstrap</p>
+    <h2>Import exported qBittorrent rules</h2>
+  </div>
+</section>
+
+<form class="stack" method="post" action="/api/import/qb-json" enctype="multipart/form-data">
+  <section class="form-grid">
+    <label>
+      Rules JSON file
+      <input type="file" name="rules_file" accept=".json,application/json" required />
+    </label>
+    <label>
+      Conflict mode
+      <select name="mode">
+        <option value="skip">skip existing</option>
+        <option value="overwrite">overwrite existing</option>
+        <option value="rename">import as renamed copy</option>
+      </select>
+    </label>
+  </section>
+
+  <div class="card-actions">
+    <button type="submit" name="preview_only" value="1">Preview Import</button>
+    <button type="submit" name="preview_only" value="0">Apply Import</button>
+  </div>
+</form>
+
+{% if result_summary %}
+<section class="summary-strip">
+  <div><strong>Imported:</strong> {{ result_summary.imported_count }}</div>
+  <div><strong>Skipped:</strong> {{ result_summary.skipped_count }}</div>
+  <div><strong>Batch:</strong> {{ result_summary.batch_id }}</div>
+</section>
+{% endif %}
+
+{% if preview_entries %}
+<section class="stack">
+  <h3>Preview</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Rule</th>
+          <th>Resolved name</th>
+          <th>Action</th>
+          <th>Media</th>
+          <th>Assigned category</th>
+          <th>IMDb</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in preview_entries %}
+        <tr>
+          <td>{{ item.rule_name }}</td>
+          <td>{{ item.resolved_name }}</td>
+          <td>{{ item.action }}</td>
+          <td>{{ media_type_labels.get(item.media_type, item.media_type) }}</td>
+          <td>{{ item.assigned_category or 'None' }}</td>
+          <td>{{ item.imdb_id or 'None' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

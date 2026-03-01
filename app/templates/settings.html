@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel-head">
+  <div>
+    <p class="eyebrow">Settings</p>
+    <h2>Connections and defaults</h2>
+  </div>
+</section>
+
+<form
+  class="stack"
+  method="post"
+  action="/api/settings"
+  data-settings-form
+>
+  <section class="form-grid">
+    <label>
+      qBittorrent base URL
+      <input type="text" name="qb_base_url" value="{{ form_data.qb_base_url }}" placeholder="http://127.0.0.1:8080" />
+    </label>
+    <label>
+      qBittorrent username
+      <input type="text" name="qb_username" value="{{ form_data.qb_username }}" />
+    </label>
+    <label>
+      qBittorrent password
+      <input type="password" name="qb_password" value="" placeholder="{% if form_data.has_env_qb_password %}Using environment value{% elif form_data.has_saved_qb_password %}Saved locally{% else %}Not set{% endif %}" />
+    </label>
+    <label>
+      Metadata provider
+      <select name="metadata_provider">
+        {% for choice in metadata_choices %}
+        <option value="{{ choice }}" {% if form_data.metadata_provider == choice %}selected{% endif %}>{{ choice }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      OMDb API key (not full URL)
+      <input type="password" name="omdb_api_key" value="" placeholder="{% if form_data.has_env_omdb_key %}Using environment value{% elif form_data.has_saved_omdb_key %}Saved locally{% else %}Example: 191938ea{% endif %}" />
+    </label>
+  </section>
+
+  <section class="stack">
+    <label>
+      Series category template
+      <input type="text" name="series_category_template" value="{{ form_data.series_category_template }}" />
+    </label>
+    <label>
+      Movie category template
+      <input type="text" name="movie_category_template" value="{{ form_data.movie_category_template }}" />
+    </label>
+    <label>
+      Save path template
+      <input type="text" name="save_path_template" value="{{ form_data.save_path_template }}" placeholder="{media_type}/{title}" />
+    </label>
+  </section>
+
+  <section class="form-grid">
+    <label class="toggle">
+      <input type="checkbox" name="default_enabled" {% if form_data.default_enabled %}checked{% endif %} />
+      <span>Default enabled</span>
+    </label>
+    <label class="toggle">
+      <input type="checkbox" name="default_add_paused" {% if form_data.default_add_paused %}checked{% endif %} />
+      <span>Default add paused</span>
+    </label>
+    <label>
+      Default quality profile
+      <select name="default_quality_profile">
+        {% for choice in quality_choices %}
+        <option value="{{ choice.value }}" {% if form_data.default_quality_profile == choice.value %}selected{% endif %}>{{ choice.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </section>
+
+  <section class="stack">
+    <div class="panel-head panel-head-tight">
+      <div>
+        <p class="eyebrow">Profiles</p>
+        <h3>Manage preset quality filters</h3>
+        <p class="eyebrow">Saved custom profiles: {{ form_data.saved_quality_profile_count }}</p>
+      </div>
+    </div>
+    <section class="form-grid">
+      <fieldset class="stack" data-quality-selector="profile-1080-include">
+        <legend>At Least HD include</legend>
+        {% for choice in quality_options %}
+        <label class="toggle">
+          <input type="checkbox" name="profile_1080p_include_tokens" value="{{ choice.value }}" {% if choice.value in form_data.profile_1080p_include_tokens %}checked{% endif %} />
+          <span>{{ choice.label }}</span>
+        </label>
+        {% endfor %}
+      </fieldset>
+      <fieldset class="stack" data-quality-selector="profile-1080-exclude">
+        <legend>At Least HD exclude</legend>
+        {% for choice in quality_options %}
+        <label class="toggle">
+          <input type="checkbox" name="profile_1080p_exclude_tokens" value="{{ choice.value }}" {% if choice.value in form_data.profile_1080p_exclude_tokens %}checked{% endif %} />
+          <span>{{ choice.label }}</span>
+        </label>
+        {% endfor %}
+      </fieldset>
+      <fieldset class="stack" data-quality-selector="profile-2160-include">
+        <legend>Ultra HD HDR include</legend>
+        {% for choice in quality_options %}
+        <label class="toggle">
+          <input type="checkbox" name="profile_2160p_hdr_include_tokens" value="{{ choice.value }}" {% if choice.value in form_data.profile_2160p_hdr_include_tokens %}checked{% endif %} />
+          <span>{{ choice.label }}</span>
+        </label>
+        {% endfor %}
+      </fieldset>
+      <fieldset class="stack" data-quality-selector="profile-2160-exclude">
+        <legend>Ultra HD HDR exclude</legend>
+        {% for choice in quality_options %}
+        <label class="toggle">
+          <input type="checkbox" name="profile_2160p_hdr_exclude_tokens" value="{{ choice.value }}" {% if choice.value in form_data.profile_2160p_hdr_exclude_tokens %}checked{% endif %} />
+          <span>{{ choice.label }}</span>
+        </label>
+        {% endfor %}
+      </fieldset>
+    </section>
+  </section>
+
+  <div class="card-actions">
+    <button type="submit">Save Settings</button>
+    <button type="submit" formaction="/api/settings/test-qb">Test qBittorrent</button>
+    <button type="submit" formaction="/api/settings/test-metadata">Test Metadata</button>
+  </div>
+</form>
+{% endblock %}

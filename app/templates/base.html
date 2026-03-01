@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ page_title }} | qBittorrent RSS Rule Manager</title>
+    <link rel="stylesheet" href="{{ request.url_for('static', path='app.css') }}" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <div>
+          <p class="eyebrow">Local control plane</p>
+          <h1>qBittorrent RSS Rule Manager</h1>
+          <p class="lede">
+            Build and sync RSS rules from structured fields instead of editing raw exports.
+          </p>
+        </div>
+        <nav class="site-nav">
+          <a href="/">Rules</a>
+          <a href="/rules/new">New Rule</a>
+          <a href="/import">Import</a>
+          <a href="/settings">Settings</a>
+        </nav>
+      </header>
+
+      {% if message %}
+      <section class="flash flash-{{ message_level }}">
+        {{ message }}
+      </section>
+      {% endif %}
+
+      {% if errors %}
+      <section class="stack">
+        {% for error in errors %}
+        <div class="flash flash-error">{{ error }}</div>
+        {% endfor %}
+      </section>
+      {% endif %}
+
+      <main class="content-card">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+
+    <script src="{{ request.url_for('static', path='app.js') }}" defer></script>
+  </body>
+</html>
+

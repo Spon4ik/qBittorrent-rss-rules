@@ -1,0 +1,48 @@
+{
+  "3 Body Problem": {
+    "addPaused": true,
+    "affectedFeeds": [
+      "http://127.0.0.1:9117/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc&t=search&cat=5045&q=",
+      "http://127.0.0.1:9117/api/v2.0/indexers/rutor/results/torznab/api?apikey=abc&t=search&cat=&q="
+    ],
+    "assignedCategory": "Series/3 Body Problem [imdbid-tt13016388]",
+    "enabled": true,
+    "episodeFilter": "",
+    "ignoreDays": 0,
+    "lastMatch": "",
+    "mustContain": "(?i)(?=.*3 body problem)(?=.*(?:2160p|4k|uhd|ultra[\\s._-]*hd|hdr10\\+?|hdr))(?!.*(?:1080p|720p|480p|sd))",
+    "mustNotContain": "",
+    "previouslyMatchedEpisodes": [],
+    "priority": 0,
+    "savePath": "",
+    "smartFilter": false,
+    "torrentContentLayout": null,
+    "torrentParams": {
+      "category": "Series/3 Body Problem [imdbid-tt13016388]"
+    },
+    "useRegex": true
+  },
+  "Dune Part Two": {
+    "addPaused": false,
+    "affectedFeeds": [
+      "http://127.0.0.1:9117/api/v2.0/indexers/example/results/torznab/api?apikey=abc&t=search&cat=&q="
+    ],
+    "assignedCategory": "Movies/Dune Part Two [imdbid-tt15239678]",
+    "enabled": true,
+    "episodeFilter": "",
+    "ignoreDays": 2,
+    "lastMatch": "01 Mar 2026 10:00:00 +0000",
+    "mustContain": "Dune Part Two",
+    "mustNotContain": "",
+    "previouslyMatchedEpisodes": [],
+    "priority": 0,
+    "savePath": "Movies/Dune Part Two",
+    "smartFilter": false,
+    "torrentContentLayout": null,
+    "torrentParams": {
+      "category": "Movies/Dune Part Two [imdbid-tt15239678]"
+    },
+    "useRegex": false
+  }
+}
+

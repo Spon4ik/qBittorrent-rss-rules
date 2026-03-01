@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel-head">
+  <div>
+    <p class="eyebrow">{{ 'Create' if mode == 'create' else 'Edit' }}</p>
+    <h2>{{ 'New Rule' if mode == 'create' else form_data.rule_name }}</h2>
+  </div>
+  {% if mode == 'edit' %}
+  <div class="card-actions">
+    <form method="post" action="/api/rules/{{ rule_id }}/sync">
+      <button type="submit">Sync This Rule</button>
+    </form>
+    <form method="post" action="/api/rules/{{ rule_id }}/delete" onsubmit="return confirm('Delete this rule locally and remotely?');">
+      <button type="submit" class="danger">Delete</button>
+    </form>
+  </div>
+  {% endif %}
+</section>
+
+<form
+  class="stack rule-form"
+  method="post"
+  action="{% if mode == 'create' %}/api/rules{% else %}/api/rules/{{ rule_id }}{% endif %}"
+  data-rule-form
+  data-series-template="{{ settings_form.series_category_template }}"
+  data-movie-template="{{ settings_form.movie_category_template }}"
+  data-save-path-template="{{ settings_form.save_path_template }}"
+  data-quality-options='{{ quality_options | tojson }}'
+  data-available-filter-profiles='{{ available_filter_profiles | tojson }}'
+>
+  <input type="hidden" name="quality_profile" value="{{ form_data.quality_profile }}" />
+  <section class="form-grid">
+    <label>
+      Rule name
+      <input type="text" name="rule_name" value="{{ form_data.rule_name }}" required />
+    </label>
+    <label>
+      Content name
+      <input type="text" name="content_name" value="{{ form_data.content_name }}" required />
+    </label>
+    <label>
+      IMDb ID
+      <div class="control-row">
+        <input type="text" name="imdb_id" value="{{ form_data.imdb_id }}" placeholder="tt1234567" />
+        <button type="button" id="metadata-lookup">Lookup</button>
+      </div>
+    </label>
+    <label>
+      Resolved title
+      <input type="text" name="normalized_title" value="{{ form_data.normalized_title }}" />
+    </label>
+    <label>
+      Media type
+      <select name="media_type">
+        {% for choice in media_choices %}
+        <option value="{{ choice.value }}" {% if form_data.media_type == choice.value %}selected{% endif %}>{{ choice.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Filter profile
+      <select name="filter_profile_key" id="filter-profile-select">
+        <option value="">Current manual selection</option>
+        {% for profile in available_filter_profiles %}
+        <option value="{{ profile.key }}" {% if form_data.filter_profile_key == profile.key %}selected{% endif %}>{{ profile.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Release year
+      <input type="text" name="release_year" value="{{ form_data.release_year }}" placeholder="2024" />
+    </label>
+    <label class="toggle">
+      <input type="checkbox" name="enabled" {% if form_data.enabled %}checked{% endif %} />
+      <span>Enabled</span>
+    </label>
+    <label class="toggle">
+      <input type="checkbox" name="add_paused" {% if form_data.add_paused %}checked{% endif %} />
+      <span>Add paused</span>
+    </label>
+    <label class="toggle">
+      <input type="checkbox" name="use_regex" {% if form_data.use_regex %}checked{% endif %} />
+      <span>Use regex</span>
+    </label>
+    <label class="toggle">
+      <input type="checkbox" name="include_release_year" {% if form_data.include_release_year %}checked{% endif %} />
+      <span>Include year in regex</span>
+    </label>
+    <label class="toggle">
+      <input type="checkbox" name="smart_filter" {% if form_data.smart_filter %}checked{% endif %} />
+      <span>Smart filter</span>
+    </label>
+  </section>
+
+  <section class="stack">
+    <label>
+      Generated pattern preview
+      <textarea id="pattern-preview" rows="3" readonly></textarea>
+    </label>
+    <div class="card-actions">
+      <button type="button" id="filter-profile-save-new">Save As New Profile</button>
+      <button type="button" id="filter-profile-overwrite">Overwrite Selected Profile</button>
+    </div>
+    <section class="form-grid">
+      <div class="stack">
+        {% for group in quality_option_groups %}
+        <fieldset class="stack" data-quality-selector="include-{{ group.key }}">
+          <legend>Include {{ group.label }}</legend>
+          {% for choice in group.options %}
+          <label class="toggle">
+            <input type="checkbox" name="quality_include_tokens" value="{{ choice.value }}" {% if choice.value in form_data.quality_include_tokens %}checked{% endif %} />
+            <span>{{ choice.label }}</span>
+          </label>
+          {% endfor %}
+        </fieldset>
+        {% endfor %}
+      </div>
+      <div class="stack">
+        {% for group in quality_option_groups %}
+        <fieldset class="stack" data-quality-selector="exclude-{{ group.key }}">
+          <legend>Exclude {{ group.label }}</legend>
+          {% for choice in group.options %}
+          <label class="toggle">
+            <input type="checkbox" name="quality_exclude_tokens" value="{{ choice.value }}" {% if choice.value in form_data.quality_exclude_tokens %}checked{% endif %} />
+            <span>{{ choice.label }}</span>
+          </label>
+          {% endfor %}
+        </fieldset>
+        {% endfor %}
+      </div>
+    </section>
+    <label>
+      Extra include keywords
+      <textarea name="additional_includes" rows="3" placeholder="One per line, or comma separated.">{{ form_data.additional_includes }}</textarea>
+    </label>
+    <label>
+      Extra `mustContain` fragments
+      <textarea name="must_contain_override" rows="3" placeholder="One regex fragment per line. Appended to the generated pattern.">{{ form_data.must_contain_override }}</textarea>
+    </label>
+    <label>
+      `mustNotContain`
+      <textarea name="must_not_contain" rows="2">{{ form_data.must_not_contain }}</textarea>
+    </label>
+  </section>
+
+  <section class="form-grid">
+    <label>
+      Category
+      <input type="text" name="assigned_category" value="{{ form_data.assigned_category }}" />
+    </label>
+    <label>
+      Save path
+      <input type="text" name="save_path" value="{{ form_data.save_path }}" />
+    </label>
+  </section>
+
+  <section class="stack">
+    <div class="panel-head panel-head-tight">
+      <div>
+        <p class="eyebrow">Feeds</p>
+        <h3>Affected feeds</h3>
+      </div>
+      <button type="button" id="feed-refresh">Refresh Feeds</button>
+    </div>
+    <label>
+      Hold Ctrl/Cmd to select multiple feeds
+      <select name="feed_urls" id="feed-select" multiple size="10">
+        {% for feed in feed_options %}
+        <option value="{{ feed.url }}" {% if feed.url in form_data.feed_urls %}selected{% endif %}>{{ feed.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </section>
+
+  <details>
+    <summary>Advanced</summary>
+    <section class="form-grid">
+      <label>
+        Episode filter
+        <input type="text" name="episode_filter" value="{{ form_data.episode_filter }}" />
+      </label>
+      <label>
+        Ignore days
+        <input type="number" min="0" name="ignore_days" value="{{ form_data.ignore_days }}" />
+      </label>
+      <label class="full-span">
+        Notes
+        <textarea name="notes" rows="4">{{ form_data.notes }}</textarea>
+      </label>
+    </section>
+  </details>
+
+  <div class="card-actions">
+    <button type="submit">{{ 'Create Rule' if mode == 'create' else 'Save Changes' }}</button>
+    <a class="button-link muted" href="/">Back to Rules</a>
+  </div>
+</form>
+{% endblock %}

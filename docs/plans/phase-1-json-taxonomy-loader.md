@@ -4,6 +4,7 @@
 
 - Implementation is in place in the repo.
 - Remaining validation is limited to pytest/manual verification in a fully provisioned development environment.
+- Follow-on phase plans are now documented in `docs/plans/phase-2-rich-taxonomy-schema.md`, `docs/plans/phase-3-taxonomy-management-ui.md`, and `docs/plans/phase-4-feed-selection-ux.md`.
 
 ## Goal
 

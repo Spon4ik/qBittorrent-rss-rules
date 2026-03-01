@@ -12,6 +12,7 @@
 - `app/data/quality_taxonomy.json` now stores the current quality taxonomy as an editable JSON source of truth.
 - `app/services/quality_filters.py` now loads, validates, and caches taxonomy data from JSON while preserving current token behavior.
 - `tests/test_quality_filters.py` now covers compatibility behavior, validation failures, and cache reset behavior for the taxonomy loader.
+- Initial implementation plans for phases 2-4 now exist under `docs/plans/` to align roadmap intent with implementation-ready scope.
 
 ## In progress
 
@@ -21,7 +22,8 @@
 
 - Install project dependencies and run the relevant pytest targets in the normal development environment.
 - Perform manual UI verification for `/rules/new` and `/settings` to confirm the quality selector renders unchanged.
-- Start phase 2 planning for richer taxonomy schema only after phase 1 verification is complete.
+- Mark phase 1 complete after validation and activate phase 2 implementation.
+- Begin phase 2 work using `docs/plans/phase-2-rich-taxonomy-schema.md` as the implementation source of truth.
 
 ## Deferred / future phases
 

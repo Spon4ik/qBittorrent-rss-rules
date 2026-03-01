@@ -14,9 +14,12 @@ from app.services.quality_filters import (
     LEGACY_DEFAULT_QUALITY_PROFILE_RULES,
     _clear_quality_taxonomy_cache,
     detect_matching_filter_profile_key,
+    expand_quality_tokens,
     normalize_quality_tokens,
+    quality_bundle_choices,
     quality_option_choices,
     quality_option_groups,
+    resolve_quality_token,
     tokens_to_regex,
 )
 from app.services.settings_service import SettingsService
@@ -80,11 +83,32 @@ def test_quality_option_choices_preserve_current_order_and_groups() -> None:
     ]
 
 
+def test_quality_bundle_choices_preserve_schema_order() -> None:
+    assert [item["key"] for item in quality_bundle_choices()] == [
+        "at_least_hd",
+        "at_least_uhd",
+        "ultra_hd_hdr",
+    ]
+
+
 def test_normalize_quality_tokens_filters_invalid_and_duplicate_values() -> None:
     assert normalize_quality_tokens(["2160p", "unknown", "hdr", "2160p", "", "hdr"]) == [
         "2160p",
         "hdr",
     ]
+
+
+def test_expand_quality_tokens_resolves_bundles_and_aliases_to_leaf_tokens() -> None:
+    assert expand_quality_tokens(["at_least_uhd", "x265", "dv", "hdr10_plus", "4k"]) == [
+        "ultra_hd",
+        "uhd",
+        "2160p",
+        "4k",
+        "hevc",
+        "dolby_vision",
+        "hdr",
+    ]
+    assert resolve_quality_token("webrip") == ["web_rip"]
 
 
 def test_tokens_to_regex_preserves_current_patterns() -> None:
@@ -96,14 +120,75 @@ def test_tokens_to_regex_preserves_current_patterns() -> None:
 
 def test_quality_taxonomy_rejects_unsupported_version(tmp_path, monkeypatch) -> None:
     payload = _read_default_quality_taxonomy()
-    payload["version"] = 2
+    payload["version"] = 99
     monkeypatch.setattr(
         quality_filters,
         "QUALITY_TAXONOMY_PATH",
         _write_quality_taxonomy(tmp_path, payload),
     )
 
-    with pytest.raises(RuntimeError, match="version must be 1"):
+    with pytest.raises(RuntimeError, match="version must be 1 or 2"):
+        quality_option_choices()
+
+
+def test_quality_taxonomy_supports_version_1_payloads(tmp_path, monkeypatch) -> None:
+    payload = _read_default_quality_taxonomy()
+    payload["version"] = 1
+    payload.pop("bundles", None)
+    payload.pop("aliases", None)
+    payload.pop("ranks", None)
+    monkeypatch.setattr(
+        quality_filters,
+        "QUALITY_TAXONOMY_PATH",
+        _write_quality_taxonomy(tmp_path, payload),
+    )
+
+    assert quality_option_choices()[0]["value"] == "sd"
+    assert quality_bundle_choices() == []
+
+
+def test_quality_taxonomy_rejects_bundle_with_unknown_option(tmp_path, monkeypatch) -> None:
+    payload = _read_default_quality_taxonomy()
+    bundles = payload["bundles"]
+    assert isinstance(bundles, list)
+    bundles[0]["tokens"].append("missing-option")
+    monkeypatch.setattr(
+        quality_filters,
+        "QUALITY_TAXONOMY_PATH",
+        _write_quality_taxonomy(tmp_path, payload),
+    )
+
+    with pytest.raises(RuntimeError, match="unknown option 'missing-option'"):
+        quality_bundle_choices()
+
+
+def test_quality_taxonomy_rejects_alias_with_unknown_canonical_option(tmp_path, monkeypatch) -> None:
+    payload = _read_default_quality_taxonomy()
+    aliases = payload["aliases"]
+    assert isinstance(aliases, list)
+    aliases[0]["canonical"] = "missing-option"
+    monkeypatch.setattr(
+        quality_filters,
+        "QUALITY_TAXONOMY_PATH",
+        _write_quality_taxonomy(tmp_path, payload),
+    )
+
+    with pytest.raises(RuntimeError, match="unknown option 'missing-option'"):
+        normalize_quality_tokens(["hdr10_plus"])
+
+
+def test_quality_taxonomy_rejects_rank_with_unknown_option(tmp_path, monkeypatch) -> None:
+    payload = _read_default_quality_taxonomy()
+    ranks = payload["ranks"]
+    assert isinstance(ranks, list)
+    ranks[0]["tokens"].append("missing-option")
+    monkeypatch.setattr(
+        quality_filters,
+        "QUALITY_TAXONOMY_PATH",
+        _write_quality_taxonomy(tmp_path, payload),
+    )
+
+    with pytest.raises(RuntimeError, match="unknown option 'missing-option'"):
         quality_option_choices()
 
 

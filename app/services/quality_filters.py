@@ -17,7 +17,7 @@ def _quality_taxonomy_error(problem: str) -> RuntimeError:
 
 
 @lru_cache(maxsize=1)
-def _load_quality_taxonomy() -> dict[str, tuple[dict[str, str], ...]]:
+def _load_quality_taxonomy() -> dict[str, Any]:
     try:
         raw_payload = QUALITY_TAXONOMY_PATH.read_text(encoding="utf-8")
     except OSError as exc:
@@ -35,8 +35,9 @@ def _load_quality_taxonomy() -> dict[str, tuple[dict[str, str], ...]]:
 
     if not isinstance(payload, dict):
         raise _quality_taxonomy_error("top-level JSON value must be an object")
-    if payload.get("version") != 1:
-        raise _quality_taxonomy_error("version must be 1")
+    version = payload.get("version")
+    if version not in (1, 2):
+        raise _quality_taxonomy_error("version must be 1 or 2")
 
     raw_groups = payload.get("groups")
     if not isinstance(raw_groups, list):
@@ -95,9 +96,141 @@ def _load_quality_taxonomy() -> dict[str, tuple[dict[str, str], ...]]:
             }
         )
 
+    bundles: list[dict[str, object]] = []
+    seen_bundle_keys: set[str] = set()
+    raw_bundles = payload.get("bundles", [])
+    if version == 2:
+        if not isinstance(raw_bundles, list):
+            raise _quality_taxonomy_error("bundles must be a list")
+        for index, raw_bundle in enumerate(raw_bundles):
+            if not isinstance(raw_bundle, dict):
+                raise _quality_taxonomy_error(f"bundles[{index}] must be an object")
+            key = str(raw_bundle.get("key", "")).strip()
+            label = str(raw_bundle.get("label", "")).strip()
+            raw_bundle_tokens = raw_bundle.get("tokens")
+            if not key:
+                raise _quality_taxonomy_error(f"bundles[{index}].key must be a non-empty string")
+            if not label:
+                raise _quality_taxonomy_error(
+                    f"bundles[{index}].label must be a non-empty string"
+                )
+            if key in seen_bundle_keys:
+                raise _quality_taxonomy_error(f"duplicate bundle key '{key}'")
+            if key in seen_option_values:
+                raise _quality_taxonomy_error(
+                    f"bundles[{index}].key collides with option value '{key}'"
+                )
+            if not isinstance(raw_bundle_tokens, list):
+                raise _quality_taxonomy_error(f"bundles[{index}].tokens must be a list")
+
+            bundle_tokens: list[str] = []
+            seen_bundle_tokens: set[str] = set()
+            for token_index, raw_token in enumerate(raw_bundle_tokens):
+                token = str(raw_token).strip()
+                if not token:
+                    raise _quality_taxonomy_error(
+                        f"bundles[{index}].tokens[{token_index}] must be a non-empty string"
+                    )
+                if token not in seen_option_values:
+                    raise _quality_taxonomy_error(
+                        f"bundles[{index}].tokens[{token_index}] references unknown option '{token}'"
+                    )
+                if token in seen_bundle_tokens:
+                    raise _quality_taxonomy_error(
+                        f"bundles[{index}] contains duplicate token '{token}'"
+                    )
+                seen_bundle_tokens.add(token)
+                bundle_tokens.append(token)
+
+            seen_bundle_keys.add(key)
+            bundles.append({"key": key, "label": label, "tokens": tuple(bundle_tokens)})
+
+    aliases: list[dict[str, str]] = []
+    raw_aliases = payload.get("aliases", [])
+    if version == 2:
+        if not isinstance(raw_aliases, list):
+            raise _quality_taxonomy_error("aliases must be a list")
+        seen_alias_keys: set[str] = set()
+        for index, raw_alias in enumerate(raw_aliases):
+            if not isinstance(raw_alias, dict):
+                raise _quality_taxonomy_error(f"aliases[{index}] must be an object")
+            alias = str(raw_alias.get("alias", "")).strip()
+            canonical = str(raw_alias.get("canonical", "")).strip()
+            if not alias:
+                raise _quality_taxonomy_error(f"aliases[{index}].alias must be a non-empty string")
+            if not canonical:
+                raise _quality_taxonomy_error(
+                    f"aliases[{index}].canonical must be a non-empty string"
+                )
+            if alias in seen_alias_keys:
+                raise _quality_taxonomy_error(f"duplicate alias '{alias}'")
+            if alias in seen_option_values:
+                raise _quality_taxonomy_error(
+                    f"aliases[{index}].alias collides with option value '{alias}'"
+                )
+            if alias in seen_bundle_keys:
+                raise _quality_taxonomy_error(
+                    f"aliases[{index}].alias collides with bundle key '{alias}'"
+                )
+            if canonical not in seen_option_values:
+                raise _quality_taxonomy_error(
+                    f"aliases[{index}].canonical references unknown option '{canonical}'"
+                )
+
+            seen_alias_keys.add(alias)
+            aliases.append({"alias": alias, "canonical": canonical})
+
+    ranks: list[dict[str, object]] = []
+    raw_ranks = payload.get("ranks", [])
+    if version == 2:
+        if not isinstance(raw_ranks, list):
+            raise _quality_taxonomy_error("ranks must be a list")
+        seen_rank_keys: set[str] = set()
+        for index, raw_rank in enumerate(raw_ranks):
+            if not isinstance(raw_rank, dict):
+                raise _quality_taxonomy_error(f"ranks[{index}] must be an object")
+            key = str(raw_rank.get("key", "")).strip()
+            label = str(raw_rank.get("label", "")).strip()
+            raw_rank_tokens = raw_rank.get("tokens")
+            if not key:
+                raise _quality_taxonomy_error(f"ranks[{index}].key must be a non-empty string")
+            if key in seen_rank_keys:
+                raise _quality_taxonomy_error(f"duplicate rank key '{key}'")
+            if not isinstance(raw_rank_tokens, list):
+                raise _quality_taxonomy_error(f"ranks[{index}].tokens must be a list")
+
+            rank_tokens: list[str] = []
+            seen_rank_tokens: set[str] = set()
+            for token_index, raw_token in enumerate(raw_rank_tokens):
+                token = str(raw_token).strip()
+                if not token:
+                    raise _quality_taxonomy_error(
+                        f"ranks[{index}].tokens[{token_index}] must be a non-empty string"
+                    )
+                if token not in seen_option_values:
+                    raise _quality_taxonomy_error(
+                        f"ranks[{index}].tokens[{token_index}] references unknown option '{token}'"
+                    )
+                if token in seen_rank_tokens:
+                    raise _quality_taxonomy_error(
+                        f"ranks[{index}] contains duplicate token '{token}'"
+                    )
+                seen_rank_tokens.add(token)
+                rank_tokens.append(token)
+
+            seen_rank_keys.add(key)
+            rank: dict[str, object] = {"key": key, "tokens": tuple(rank_tokens)}
+            if label:
+                rank["label"] = label
+            ranks.append(rank)
+
     return {
+        "version": version,
         "groups": tuple(groups),
         "options": tuple(options),
+        "bundles": tuple(bundles),
+        "aliases": tuple(aliases),
+        "ranks": tuple(ranks),
     }
 
 
@@ -113,6 +246,27 @@ def _quality_options() -> tuple[dict[str, str], ...]:
 
 
 @lru_cache(maxsize=1)
+def _quality_bundle_definitions() -> tuple[dict[str, object], ...]:
+    return _load_quality_taxonomy()["bundles"]
+
+
+@lru_cache(maxsize=1)
+def _quality_bundle_tokens() -> dict[str, tuple[str, ...]]:
+    return {
+        str(item["key"]): tuple(str(token) for token in item["tokens"])
+        for item in _quality_bundle_definitions()
+    }
+
+
+@lru_cache(maxsize=1)
+def _quality_alias_map() -> dict[str, str]:
+    return {
+        str(item["alias"]): str(item["canonical"])
+        for item in _load_quality_taxonomy()["aliases"]
+    }
+
+
+@lru_cache(maxsize=1)
 def _quality_option_patterns() -> dict[str, str]:
     return {item["value"]: item["pattern"] for item in _quality_options()}
 
@@ -125,6 +279,9 @@ def _quality_option_order() -> dict[str, int]:
 def _clear_quality_taxonomy_cache() -> None:
     _quality_option_order.cache_clear()
     _quality_option_patterns.cache_clear()
+    _quality_alias_map.cache_clear()
+    _quality_bundle_tokens.cache_clear()
+    _quality_bundle_definitions.cache_clear()
     _quality_options.cache_clear()
     _quality_group_labels.cache_clear()
     _load_quality_taxonomy.cache_clear()
@@ -200,22 +357,51 @@ def quality_option_groups() -> list[dict[str, object]]:
     ]
 
 
+def quality_bundle_choices() -> list[dict[str, object]]:
+    return [
+        {
+            "key": item["key"],
+            "label": item["label"],
+            "tokens": list(item["tokens"]),
+        }
+        for item in _quality_bundle_definitions()
+    ]
+
+
+def resolve_quality_token(raw_token: str) -> list[str]:
+    token = str(raw_token).strip()
+    if not token:
+        return []
+
+    bundle_tokens = _quality_bundle_tokens().get(token)
+    if bundle_tokens is not None:
+        return list(bundle_tokens)
+
+    canonical = _quality_alias_map().get(token, token)
+    if canonical not in _quality_option_patterns():
+        return []
+    return [canonical]
+
+
+def expand_quality_tokens(raw_tokens: list[str] | tuple[str, ...] | None) -> list[str]:
+    tokens = raw_tokens or []
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw_token in tokens:
+        for token in resolve_quality_token(str(raw_token)):
+            if token in seen:
+                continue
+            seen.add(token)
+            cleaned.append(token)
+    return cleaned
+
+
 def quality_profile_choices() -> list[dict[str, str]]:
     return [{"value": item.value, "label": QUALITY_PROFILE_LABELS[item.value]} for item in QualityProfile]
 
 
 def normalize_quality_tokens(raw_tokens: list[str] | tuple[str, ...] | None) -> list[str]:
-    tokens = raw_tokens or []
-    valid_patterns = _quality_option_patterns()
-    cleaned: list[str] = []
-    seen: set[str] = set()
-    for raw_token in tokens:
-        token = str(raw_token).strip()
-        if not token or token not in valid_patterns or token in seen:
-            continue
-        seen.add(token)
-        cleaned.append(token)
-    return cleaned
+    return expand_quality_tokens(raw_tokens)
 
 
 def canonicalize_quality_tokens(raw_tokens: list[str] | tuple[str, ...] | None) -> list[str]:

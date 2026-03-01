@@ -16,6 +16,7 @@ The app is designed around one rule authority:
 - `app/routes/api.py`: form actions and JSON endpoints
 - `app/models.py`: SQLAlchemy models and core enums
 - `app/services/settings_service.py`: saved settings and env override resolution
+- `app/services/quality_filters.py`: quality taxonomy loading, validation, and token normalization
 - `app/services/rule_builder.py`: category, path, and pattern generation
 - `app/services/qbittorrent.py`: qBittorrent WebUI API client
 - `app/services/metadata.py`: OMDb lookup by IMDb ID
@@ -51,6 +52,13 @@ The app is designed around one rule authority:
 4. The metadata client calls OMDb and returns normalized title and media type.
 5. The browser updates title/media/category preview fields in place.
 
+### Quality token normalization
+
+1. The server loads `app/data/quality_taxonomy.json` and validates schema version `1` or `2` at startup-time use.
+2. Leaf option IDs remain the canonical storage format for rules and saved filter profiles.
+3. If a future caller submits a bundle key or alias key, `app/services/quality_filters.py` expands it into leaf option IDs before persistence or regex generation.
+4. Rank metadata is loaded for future authoring UX, but it does not change current rule storage or rendering behavior in this phase.
+
 ## Sync flow
 
 - Login: `POST /api/v2/auth/login`
@@ -76,4 +84,3 @@ The app saves locally first. If qBittorrent sync fails, the user does not lose t
 - Environment variables override saved secrets and are the preferred secret source.
 - Saved secrets are only lightly obfuscated for convenience, not strongly encrypted.
 - The app is intentionally scoped to a trusted local machine in v0.1.0.
-

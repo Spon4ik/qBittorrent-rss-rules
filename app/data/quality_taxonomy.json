@@ -1,0 +1,73 @@
+{
+  "version": 2,
+  "groups": [
+    { "key": "resolution", "label": "Resolution" },
+    { "key": "definition", "label": "Video Definition" },
+    { "key": "source", "label": "Source" }
+  ],
+  "options": [
+    { "value": "sd", "label": "SD", "pattern": "sd", "group": "resolution" },
+    { "value": "360p", "label": "360p", "pattern": "360p", "group": "resolution" },
+    { "value": "480p", "label": "480p", "pattern": "480p", "group": "resolution" },
+    { "value": "hd", "label": "HD", "pattern": "hd", "group": "resolution" },
+    { "value": "720p", "label": "720p", "pattern": "720p", "group": "resolution" },
+    { "value": "full_hd", "label": "Full HD", "pattern": "full[\\s._-]*hd", "group": "resolution" },
+    { "value": "1080p", "label": "1080p", "pattern": "1080p", "group": "resolution" },
+    { "value": "ultra_hd", "label": "Ultra HD", "pattern": "ultra[\\s._-]*hd", "group": "resolution" },
+    { "value": "uhd", "label": "UHD", "pattern": "uhd", "group": "resolution" },
+    { "value": "2160p", "label": "2160p", "pattern": "2160p", "group": "resolution" },
+    { "value": "4k", "label": "4K", "pattern": "4k", "group": "resolution" },
+
+    { "value": "hdr", "label": "HDR", "pattern": "hdr10\\+?|hdr", "group": "definition" },
+    { "value": "dolby_vision", "label": "Dolby Vision", "pattern": "dolby[\\s._-]*vision|dv", "group": "definition" },
+    { "value": "hevc", "label": "HEVC", "pattern": "hevc|x265|h265", "group": "definition" },
+    { "value": "av1", "label": "AV1", "pattern": "av1", "group": "definition" },
+
+    { "value": "bdremux", "label": "bdremux", "pattern": "bdremux", "group": "source" },
+    { "value": "bluray", "label": "BluRay", "pattern": "blu[\\s._-]*ray|bluray|b[dr]rip", "group": "source" },
+    { "value": "web_dl", "label": "WEB-DL", "pattern": "web[\\s._-]*dl", "group": "source" },
+    { "value": "web_rip", "label": "WEBRip", "pattern": "web[\\s._-]*rip", "group": "source" },
+    { "value": "tv_sync", "label": "TV Sync", "pattern": "tv[\\s._-]*sync|tele[\\s._-]*sync|telesync", "group": "source" },
+    { "value": "dvd", "label": "DVD", "pattern": "dvd(?:rip|scr)?|dvd[\\s._-]*rip", "group": "source" },
+    { "value": "ts", "label": "TS", "pattern": "(?:hd)?ts", "group": "source" },
+    { "value": "cam", "label": "CAM", "pattern": "cam", "group": "source" }
+  ],
+  "bundles": [
+    {
+      "key": "at_least_hd",
+      "label": "At Least HD",
+      "tokens": ["hd", "720p", "full_hd", "1080p", "ultra_hd", "uhd", "2160p", "4k"]
+    },
+    {
+      "key": "at_least_uhd",
+      "label": "At Least UHD",
+      "tokens": ["ultra_hd", "uhd", "2160p", "4k"]
+    },
+    {
+      "key": "ultra_hd_hdr",
+      "label": "Ultra HD HDR",
+      "tokens": ["ultra_hd", "uhd", "2160p", "4k", "hdr", "dolby_vision"]
+    }
+  ],
+  "ranks": [
+    {
+      "key": "resolution",
+      "label": "Resolution",
+      "tokens": ["sd", "360p", "480p", "hd", "720p", "full_hd", "1080p", "ultra_hd", "uhd", "2160p", "4k"]
+    },
+    {
+      "key": "source",
+      "label": "Source Quality",
+      "tokens": ["cam", "ts", "dvd", "tv_sync", "web_rip", "web_dl", "bluray", "bdremux"]
+    }
+  ],
+  "aliases": [
+    { "alias": "hdr10_plus", "label": "HDR10+", "canonical": "hdr" },
+    { "alias": "dv", "label": "DV", "canonical": "dolby_vision" },
+    { "alias": "x265", "label": "x265", "canonical": "hevc" },
+    { "alias": "h265", "label": "H.265", "canonical": "hevc" },
+    { "alias": "webdl", "label": "WEB-DL", "canonical": "web_dl" },
+    { "alias": "webrip", "label": "WEBRip", "canonical": "web_rip" },
+    { "alias": "brrip", "label": "BRRip", "canonical": "bluray" }
+  ]
+}

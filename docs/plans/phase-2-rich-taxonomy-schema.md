@@ -2,8 +2,9 @@
 
 ## Status
 
-- Planned.
-- Blocked on completing phase 1 verification in a fully provisioned environment.
+- Implementation is in progress in the repo.
+- The loader now preserves compatibility with schema versions 1 and 2 so phase 2 work can land safely before full phase 1 manual verification is complete.
+- Remaining work is regression validation in a fully provisioned development environment and any follow-up fixes.
 
 ## Goal
 
@@ -69,7 +70,7 @@ Phase 1 moved taxonomy definitions into JSON without changing behavior. Phase 2 
 
 ## Dependencies
 
-- Phase 1 verification completed and status marked done.
+- Schema version 1 compatibility remains intact while phase 1 manual verification is still pending.
 - Agreement on schema versioning strategy for future phases.
 
 ## Roll-forward notes for phase 3

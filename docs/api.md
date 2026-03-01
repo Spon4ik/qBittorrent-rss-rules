@@ -51,6 +51,15 @@ The settings routes extend the original v1 route list because the settings page 
 
 `build_generated_pattern` composes the resolved title with optional release year matching, extra include keywords, and the selected quality include/exclude tags unless a manual `mustContain` override is supplied.
 
+### `quality_filters`
+
+- `quality_option_choices() -> list[dict[str, str]]`
+- `quality_bundle_choices() -> list[dict[str, object]]`
+- `normalize_quality_tokens(tokens: list[str] | tuple[str, ...] | None) -> list[str]`
+- `tokens_to_regex(tokens: list[str] | tuple[str, ...] | None) -> str`
+
+The app may accept bundle keys or alias keys as authoring conveniences, but persisted `quality_include_tokens`, `quality_exclude_tokens`, `quality_profile_rules`, and `saved_quality_profiles` stay normalized as flat leaf token IDs in this phase.
+
 ### `Importer`
 
 - `preview_import_from_bytes(raw_bytes: bytes, mode: ImportMode) -> list[ImportPreviewEntry]`

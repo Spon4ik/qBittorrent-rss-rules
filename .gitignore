@@ -7,9 +7,10 @@ __pycache__/
 *.py[cod]
 *.sqlite3
 data/
+!app/data/
+!app/data/quality_taxonomy.json
 dist/
 htmlcov/
 main.ipynb
 
 .history/*
-

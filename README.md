@@ -134,6 +134,8 @@ Use the Import page to upload an exported qBittorrent RSS rules JSON file. The i
 ## Project docs
 
 - See [ROADMAP.md](ROADMAP.md) for current, next, and long-term direction.
+- See [AGENTS.md](AGENTS.md) for repo-local resumable work instructions used at the start of each session.
+- See [docs/plans/README.md](docs/plans/README.md) for active implementation plans and the current work-status ledger.
 - See [docs/architecture.md](docs/architecture.md) for system details.
 - See [docs/api.md](docs/api.md) for route and integration contracts.
 - See [docs/testing.md](docs/testing.md) for test expectations.

@@ -19,6 +19,7 @@
 
 ## Next release: v0.2.x
 
+- Phase 1: JSON-backed quality taxonomy loader (no behavior change)
 - Bulk rule creation from list or CSV
 - Rule clone/duplicate flows
 - Improved feed grouping UX
@@ -30,6 +31,9 @@
 
 ## Future / North Star
 
+- Phase 2: richer taxonomy schema (bundles, ranks, alias families)
+- Phase 3: taxonomy management UI
+- Phase 4: feed selection UX improvements (`Select all`, remembered default feeds)
 - Rule templates and preset libraries
 - Metadata providers beyond OMDb
 - Sample feed simulation before save

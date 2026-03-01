@@ -1,47 +1,134 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from functools import lru_cache
+import json
+from pathlib import Path
 import re
 from typing import Any
 
 from app.models import AppSettings, QualityProfile
 
-QUALITY_GROUP_LABELS: dict[str, str] = {
-    "resolution": "Resolution",
-    "definition": "Video Definition",
-    "source": "Source",
-}
+QUALITY_TAXONOMY_PATH = Path(__file__).resolve().parent.parent / "data" / "quality_taxonomy.json"
 
-QUALITY_OPTIONS: tuple[dict[str, str], ...] = (
-    {"value": "sd", "label": "SD", "pattern": r"sd", "group": "resolution"},
-    {"value": "360p", "label": "360p", "pattern": r"360p", "group": "resolution"},
-    {"value": "480p", "label": "480p", "pattern": r"480p", "group": "resolution"},
-    {"value": "hd", "label": "HD", "pattern": r"hd", "group": "resolution"},
-    {"value": "720p", "label": "720p", "pattern": r"720p", "group": "resolution"},
-    {"value": "full_hd", "label": "Full HD", "pattern": r"full[\s._-]*hd", "group": "resolution"},
-    {"value": "1080p", "label": "1080p", "pattern": r"1080p", "group": "resolution"},
-    {"value": "ultra_hd", "label": "Ultra HD", "pattern": r"ultra[\s._-]*hd", "group": "resolution"},
-    {"value": "uhd", "label": "UHD", "pattern": r"uhd", "group": "resolution"},
-    {"value": "2160p", "label": "2160p", "pattern": r"2160p", "group": "resolution"},
-    {"value": "4k", "label": "4K", "pattern": r"4k", "group": "resolution"},
-    {"value": "hdr", "label": "HDR", "pattern": r"hdr10\+?|hdr", "group": "definition"},
-    {"value": "dolby_vision", "label": "Dolby Vision", "pattern": r"dolby[\s._-]*vision|dv", "group": "definition"},
-    {"value": "hevc", "label": "HEVC", "pattern": r"hevc|x265|h265", "group": "definition"},
-    {"value": "av1", "label": "AV1", "pattern": r"av1", "group": "definition"},
-    {"value": "bdremux", "label": "bdremux", "pattern": r"bdremux", "group": "source"},
-    {"value": "bluray", "label": "BluRay", "pattern": r"blu[\s._-]*ray|bluray|b[dr]rip", "group": "source"},
-    {"value": "web_dl", "label": "WEB-DL", "pattern": r"web[\s._-]*dl", "group": "source"},
-    {"value": "web_rip", "label": "WEBRip", "pattern": r"web[\s._-]*rip", "group": "source"},
-    {"value": "tv_sync", "label": "TV Sync", "pattern": r"tv[\s._-]*sync|tele[\s._-]*sync|telesync", "group": "source"},
-    {"value": "dvd", "label": "DVD", "pattern": r"dvd(?:rip|scr)?|dvd[\s._-]*rip", "group": "source"},
-    {"value": "ts", "label": "TS", "pattern": r"(?:hd)?ts", "group": "source"},
-    {"value": "cam", "label": "CAM", "pattern": r"cam", "group": "source"},
-)
 
-QUALITY_OPTION_PATTERNS: dict[str, str] = {item["value"]: item["pattern"] for item in QUALITY_OPTIONS}
-QUALITY_OPTION_ORDER: dict[str, int] = {
-    item["value"]: index for index, item in enumerate(QUALITY_OPTIONS)
-}
+def _quality_taxonomy_error(problem: str) -> RuntimeError:
+    return RuntimeError(f"Invalid quality taxonomy at {QUALITY_TAXONOMY_PATH}: {problem}")
+
+
+@lru_cache(maxsize=1)
+def _load_quality_taxonomy() -> dict[str, tuple[dict[str, str], ...]]:
+    try:
+        raw_payload = QUALITY_TAXONOMY_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(
+            f"Unable to load quality taxonomy from {QUALITY_TAXONOMY_PATH}: {exc}"
+        ) from exc
+
+    try:
+        payload = json.loads(raw_payload)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"Invalid quality taxonomy at {QUALITY_TAXONOMY_PATH}: JSON decode error at line "
+            f"{exc.lineno}, column {exc.colno}: {exc.msg}"
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise _quality_taxonomy_error("top-level JSON value must be an object")
+    if payload.get("version") != 1:
+        raise _quality_taxonomy_error("version must be 1")
+
+    raw_groups = payload.get("groups")
+    if not isinstance(raw_groups, list):
+        raise _quality_taxonomy_error("groups must be a list")
+
+    groups: list[dict[str, str]] = []
+    seen_group_keys: set[str] = set()
+    for index, raw_group in enumerate(raw_groups):
+        if not isinstance(raw_group, dict):
+            raise _quality_taxonomy_error(f"groups[{index}] must be an object")
+        key = str(raw_group.get("key", "")).strip()
+        label = str(raw_group.get("label", "")).strip()
+        if not key:
+            raise _quality_taxonomy_error(f"groups[{index}].key must be a non-empty string")
+        if not label:
+            raise _quality_taxonomy_error(f"groups[{index}].label must be a non-empty string")
+        if key in seen_group_keys:
+            raise _quality_taxonomy_error(f"duplicate group key '{key}'")
+        seen_group_keys.add(key)
+        groups.append({"key": key, "label": label})
+
+    raw_options = payload.get("options")
+    if not isinstance(raw_options, list):
+        raise _quality_taxonomy_error("options must be a list")
+
+    options: list[dict[str, str]] = []
+    seen_option_values: set[str] = set()
+    for index, raw_option in enumerate(raw_options):
+        if not isinstance(raw_option, dict):
+            raise _quality_taxonomy_error(f"options[{index}] must be an object")
+        value = str(raw_option.get("value", "")).strip()
+        label = str(raw_option.get("label", "")).strip()
+        pattern = str(raw_option.get("pattern", "")).strip()
+        group = str(raw_option.get("group", "")).strip()
+        if not value:
+            raise _quality_taxonomy_error(f"options[{index}].value must be a non-empty string")
+        if not label:
+            raise _quality_taxonomy_error(f"options[{index}].label must be a non-empty string")
+        if not pattern:
+            raise _quality_taxonomy_error(f"options[{index}].pattern must be a non-empty string")
+        if not group:
+            raise _quality_taxonomy_error(f"options[{index}].group must be a non-empty string")
+        if value in seen_option_values:
+            raise _quality_taxonomy_error(f"duplicate option value '{value}'")
+        if group not in seen_group_keys:
+            raise _quality_taxonomy_error(
+                f"options[{index}].group references unknown group '{group}'"
+            )
+        seen_option_values.add(value)
+        options.append(
+            {
+                "value": value,
+                "label": label,
+                "pattern": pattern,
+                "group": group,
+            }
+        )
+
+    return {
+        "groups": tuple(groups),
+        "options": tuple(options),
+    }
+
+
+@lru_cache(maxsize=1)
+def _quality_group_labels() -> dict[str, str]:
+    groups = _load_quality_taxonomy()["groups"]
+    return {item["key"]: item["label"] for item in groups}
+
+
+@lru_cache(maxsize=1)
+def _quality_options() -> tuple[dict[str, str], ...]:
+    return _load_quality_taxonomy()["options"]
+
+
+@lru_cache(maxsize=1)
+def _quality_option_patterns() -> dict[str, str]:
+    return {item["value"]: item["pattern"] for item in _quality_options()}
+
+
+@lru_cache(maxsize=1)
+def _quality_option_order() -> dict[str, int]:
+    return {item["value"]: index for index, item in enumerate(_quality_options())}
+
+
+def _clear_quality_taxonomy_cache() -> None:
+    _quality_option_order.cache_clear()
+    _quality_option_patterns.cache_clear()
+    _quality_options.cache_clear()
+    _quality_group_labels.cache_clear()
+    _load_quality_taxonomy.cache_clear()
+
 
 QUALITY_PROFILE_LABELS: dict[str, str] = {
     QualityProfile.PLAIN.value: "No preset",
@@ -98,17 +185,18 @@ def quality_option_choices() -> list[dict[str, str]]:
             "pattern": item["pattern"],
             "group": item["group"],
         }
-        for item in QUALITY_OPTIONS
+        for item in _quality_options()
     ]
 
 
 def quality_option_groups() -> list[dict[str, object]]:
-    grouped: dict[str, list[dict[str, str]]] = {key: [] for key in QUALITY_GROUP_LABELS}
+    group_labels = _quality_group_labels()
+    grouped: dict[str, list[dict[str, str]]] = {key: [] for key in group_labels}
     for item in quality_option_choices():
         grouped[item["group"]].append(item)
     return [
-        {"key": key, "label": QUALITY_GROUP_LABELS[key], "options": grouped[key]}
-        for key in QUALITY_GROUP_LABELS
+        {"key": key, "label": group_labels[key], "options": grouped[key]}
+        for key in group_labels
     ]
 
 
@@ -118,11 +206,12 @@ def quality_profile_choices() -> list[dict[str, str]]:
 
 def normalize_quality_tokens(raw_tokens: list[str] | tuple[str, ...] | None) -> list[str]:
     tokens = raw_tokens or []
+    valid_patterns = _quality_option_patterns()
     cleaned: list[str] = []
     seen: set[str] = set()
     for raw_token in tokens:
         token = str(raw_token).strip()
-        if not token or token not in QUALITY_OPTION_PATTERNS or token in seen:
+        if not token or token not in valid_patterns or token in seen:
             continue
         seen.add(token)
         cleaned.append(token)
@@ -130,17 +219,19 @@ def normalize_quality_tokens(raw_tokens: list[str] | tuple[str, ...] | None) -> 
 
 
 def canonicalize_quality_tokens(raw_tokens: list[str] | tuple[str, ...] | None) -> list[str]:
+    option_order = _quality_option_order()
     return sorted(
         normalize_quality_tokens(raw_tokens),
-        key=lambda token: QUALITY_OPTION_ORDER.get(token, len(QUALITY_OPTION_ORDER)),
+        key=lambda token: option_order.get(token, len(option_order)),
     )
 
 
 def tokens_to_regex(tokens: list[str] | tuple[str, ...] | None) -> str:
+    option_patterns = _quality_option_patterns()
     ordered_patterns: list[str] = []
     seen_patterns: set[str] = set()
     for token in normalize_quality_tokens(tokens):
-        pattern = QUALITY_OPTION_PATTERNS[token]
+        pattern = option_patterns[token]
         if pattern in seen_patterns:
             continue
         seen_patterns.add(pattern)

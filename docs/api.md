@@ -18,7 +18,7 @@
 - `POST /api/import/qb-json`: preview or apply an import from an exported JSON file
 - `POST /api/taxonomy/validate`: validate a taxonomy draft and render impact analysis
 - `POST /api/taxonomy/apply`: apply a validated taxonomy draft if no persisted tokens would be orphaned
-- `POST /api/rules`: create a rule
+- `POST /api/rules`: create a rule (supports optional `remember_feed_defaults=on` to store selected feeds for future new-rule prefills)
 - `POST /api/rules/{rule_id}`: update a rule
 - `POST /api/rules/{rule_id}/sync`: sync one rule
 - `POST /api/rules/{rule_id}/delete`: delete one rule
@@ -28,6 +28,8 @@
 - `POST /api/settings/test-metadata`: test metadata lookup configuration
 
 The settings routes extend the original v1 route list because the settings page needs explicit save/test actions.
+
+New-rule feed defaults are persisted in `app_settings.default_feed_urls`, applied only when rendering `GET /rules/new`, and never mutate existing rules unless the user explicitly saves changes.
 
 ## Internal service contracts
 

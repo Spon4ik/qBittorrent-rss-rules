@@ -59,6 +59,15 @@ The app is designed around one rule authority:
 3. If a future caller submits a bundle key or alias key, `app/services/quality_filters.py` expands it into leaf option IDs before persistence or regex generation.
 4. Rank metadata is loaded for future authoring UX, but it does not change current rule storage or rendering behavior in this phase.
 
+
+
+### Feed selection defaults
+
+1. `AppSettings.default_feed_urls` stores remembered feed URLs for future new rules.
+2. `GET /rules/new` prefills the feed multi-select from `default_feed_urls`.
+3. On `POST /api/rules`, the `remember_feed_defaults` checkbox can atomically persist the submitted `feed_urls` as the next default set.
+4. Existing rules always keep their own stored `feed_urls`; defaults only prefill create mode.
+
 ### Taxonomy management
 
 1. The `/taxonomy` page reads the live JSON source of truth and renders a local editor.

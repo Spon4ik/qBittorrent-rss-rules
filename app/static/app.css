@@ -179,6 +179,13 @@ h3 {
   margin-bottom: 0.25rem;
 }
 
+
+.button-row {
+  display: inline-flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .filter-grid,
 .form-grid {
   display: grid;

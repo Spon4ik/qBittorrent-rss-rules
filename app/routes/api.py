@@ -83,6 +83,7 @@ def _raw_rule_form_data(form: Any) -> dict[str, Any]:
         "save_path": form.get("save_path", ""),
         "feed_urls": form.getlist("feed_urls"),
         "notes": form.get("notes", ""),
+        "remember_feed_defaults": _bool_from_form(form, "remember_feed_defaults"),
     }
 
 
@@ -325,6 +326,7 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
         default_enabled=settings.default_enabled,
         quality_profile_rules=settings.quality_profile_rules,
         saved_quality_profiles=settings.saved_quality_profiles,
+        default_feed_urls=settings.default_feed_urls,
         default_quality_profile=settings.default_quality_profile,
     )
 
@@ -514,9 +516,12 @@ async def create_rule(
         )
 
     settings = SettingsService.get_or_create(session)
+    remember_feed_defaults = _bool_from_form(form, "remember_feed_defaults")
     rule = Rule()
     _apply_rule_payload_to_model(rule, payload, settings=settings)
     session.add(rule)
+    if remember_feed_defaults:
+        settings.default_feed_urls = list(payload.feed_urls)
 
     try:
         session.commit()

@@ -86,6 +86,10 @@ class SettingsService:
         if normalized_saved_profiles != settings.saved_quality_profiles:
             settings.saved_quality_profiles = normalized_saved_profiles
             changed = True
+        normalized_default_feeds = [str(url).strip() for url in (settings.default_feed_urls or []) if str(url).strip()]
+        if normalized_default_feeds != (settings.default_feed_urls or []):
+            settings.default_feed_urls = normalized_default_feeds
+            changed = True
         if changed:
             session.add(settings)
             session.commit()
@@ -156,6 +160,7 @@ class SettingsService:
             "profile_1080p_exclude_tokens": profile_rules[QualityProfile.HD_1080P.value]["exclude_tokens"],
             "profile_2160p_hdr_include_tokens": profile_rules[QualityProfile.UHD_2160P_HDR.value]["include_tokens"],
             "profile_2160p_hdr_exclude_tokens": profile_rules[QualityProfile.UHD_2160P_HDR.value]["exclude_tokens"],
+            "default_feed_urls": list(settings.default_feed_urls or []),
             "default_quality_profile": settings.default_quality_profile.value,
             "saved_quality_profile_count": len(saved_profiles),
             "has_saved_qb_password": bool(settings.qb_password_encrypted),

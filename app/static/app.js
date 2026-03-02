@@ -299,6 +299,8 @@ function initRuleForm(form) {
   const patternPreview = form.querySelector("#pattern-preview");
   const metadataButton = form.querySelector("#metadata-lookup");
   const feedRefreshButton = form.querySelector("#feed-refresh");
+  const feedSelectAllButton = form.querySelector("#feed-select-all");
+  const feedClearAllButton = form.querySelector("#feed-clear-all");
   const feedSelect = form.querySelector("#feed-select");
   const qualityProfileInput = form.querySelector('input[name="quality_profile"]');
   const filterProfileSelect = form.querySelector("#filter-profile-select");
@@ -547,6 +549,25 @@ function initRuleForm(form) {
     categoryTouched = false;
     savePathTouched = false;
     refreshDerivedFields();
+  });
+
+
+  feedSelectAllButton?.addEventListener("click", () => {
+    if (!feedSelect) {
+      return;
+    }
+    Array.from(feedSelect.options).forEach((option) => {
+      option.selected = true;
+    });
+  });
+
+  feedClearAllButton?.addEventListener("click", () => {
+    if (!feedSelect) {
+      return;
+    }
+    Array.from(feedSelect.options).forEach((option) => {
+      option.selected = false;
+    });
   });
 
   feedRefreshButton?.addEventListener("click", async () => {

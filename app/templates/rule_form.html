@@ -90,6 +90,12 @@
       <input type="checkbox" name="smart_filter" {% if form_data.smart_filter %}checked{% endif %} />
       <span>Smart filter</span>
     </label>
+    {% if mode == 'create' %}
+    <label>
+      <input type="checkbox" name="remember_feed_defaults" value="on" {% if form_data.remember_feed_defaults %}checked{% endif %} />
+      Remember selected feeds as defaults for new rules
+    </label>
+    {% endif %}
   </section>
 
   <section class="stack">
@@ -160,7 +166,11 @@
         <p class="eyebrow">Feeds</p>
         <h3>Affected feeds</h3>
       </div>
-      <button type="button" id="feed-refresh">Refresh Feeds</button>
+      <div class="button-row">
+        <button type="button" id="feed-select-all">Select all</button>
+        <button type="button" id="feed-clear-all">Clear all</button>
+        <button type="button" id="feed-refresh">Refresh Feeds</button>
+      </div>
     </div>
     <label>
       Hold Ctrl/Cmd to select multiple feeds

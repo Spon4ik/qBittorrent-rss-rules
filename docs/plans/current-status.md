@@ -22,15 +22,17 @@
 - `app/templates/taxonomy.html` now provides a server-rendered editor with impact analysis and recent audit entries.
 - `tests/test_routes.py` now covers taxonomy page rendering plus safe apply and orphan-token rejection flows.
 - Rule form feed UX now includes `Select all` / `Clear all` controls and an opt-in remember-defaults toggle for new rules backed by `AppSettings.default_feed_urls`.
+- `tests/test_routes.py` now posts repeated form values using dictionary/list payloads compatible with the current Starlette/httpx TestClient stack.
+- `app/services/rule_builder.py` now safely falls back to built-in movie/series category templates when settings-backed templates are unset in memory.
 
 ## In progress
 
 - Phase 4 implementation is started with bulk feed-selection controls and optional remembered defaults on new-rule creation.
-- Full pytest and manual validation are still pending in a fully provisioned development environment.
+- Manual validation is still pending in a fully provisioned development environment.
 
 ## Next actions
 
-- Run route and form pytest coverage, then the full pytest suite, in the normal development environment.
+- Manually verify route and form behavior in a browser-backed development environment with real qBittorrent feed data.
 - Manually verify `/rules/new` feed `Select all` / `Clear all` controls and remembered default feed behavior.
 - Decide whether remembered defaults should also be editable from `/settings` in a follow-up phase-4 slice.
 - Continue phase-4 refinement and close out any remaining taxonomy UI polish from phase 3 as separate follow-up work.

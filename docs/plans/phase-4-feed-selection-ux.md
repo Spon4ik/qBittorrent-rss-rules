@@ -62,4 +62,6 @@ Improve feed selection usability with bulk selection controls and remembered def
 - Added persisted `AppSettings.default_feed_urls` used to prefill `/rules/new`.
 - Added create-form checkbox to remember current selected feeds as new-rule defaults.
 - Added route tests for prefill, persistence, and control visibility.
+- Updated route tests to submit repeated form values via dictionary/list payloads so they remain stable with current TestClient request encoding behavior.
+- Hardened `RuleBuilder.render_category` to tolerate unset in-memory category templates by using built-in movie/series defaults.
 - Remaining: decide whether defaults should be editable in `/settings` and add manual UX verification in a real browser with qBittorrent feed data.

@@ -136,9 +136,9 @@ class RuleBuilder:
         template = "Other/{title} [imdbid-{imdb_id}]"
         if self.settings is not None:
             if rule.media_type == MediaType.MOVIE:
-                template = self.settings.movie_category_template
+                template = self.settings.movie_category_template or "Movies/{title} [imdbid-{imdb_id}]"
             elif rule.media_type == MediaType.SERIES:
-                template = self.settings.series_category_template
+                template = self.settings.series_category_template or "Series/{title} [imdbid-{imdb_id}]"
             elif rule.media_type == MediaType.AUDIOBOOK:
                 template = "Audiobooks/{title}"
             elif rule.media_type == MediaType.MUSIC:

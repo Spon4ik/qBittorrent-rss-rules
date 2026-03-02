@@ -18,8 +18,8 @@
 - `POST /api/import/qb-json`: preview or apply an import from an exported JSON file
 - `POST /api/taxonomy/validate`: validate a taxonomy draft and render impact analysis
 - `POST /api/taxonomy/apply`: apply a validated taxonomy draft if no persisted tokens would be orphaned
-- `POST /api/rules`: create a rule (supports optional `remember_feed_defaults=on` to store selected feeds for future new-rule prefills)
-- `POST /api/rules/{rule_id}`: update a rule
+- `POST /api/rules`: create a rule (the default-checked `remember_feed_defaults` toggle stores selected feeds for future new-rule prefills unless the user unchecks it)
+- `POST /api/rules/{rule_id}`: update a rule (the same default-checked feed-default toggle is available on edit)
 - `POST /api/rules/{rule_id}/sync`: sync one rule
 - `POST /api/rules/{rule_id}/delete`: delete one rule
 - `POST /api/sync/all`: sync all local rules
@@ -29,7 +29,7 @@
 
 The settings routes extend the original v1 route list because the settings page needs explicit save/test actions.
 
-New-rule feed defaults are persisted in `app_settings.default_feed_urls`, applied only when rendering `GET /rules/new`, and never mutate existing rules unless the user explicitly saves changes.
+New-rule feed defaults are persisted in `app_settings.default_feed_urls`, applied only when rendering `GET /rules/new`, and update only when a rule form submission keeps the `remember_feed_defaults` toggle enabled.
 
 The rule form renders feeds as repeated checkbox inputs named `feed_urls`; checked values post in rendered order, which is the order persisted on the rule and reused for sync payloads.
 
@@ -68,7 +68,7 @@ The rule form renders feeds as repeated checkbox inputs named `feed_urls`; check
 - `normalize_quality_tokens(tokens: list[str] | tuple[str, ...] | None) -> list[str]`
 - `tokens_to_regex(tokens: list[str] | tuple[str, ...] | None) -> str`
 
-The app may accept bundle keys or alias keys as authoring conveniences, but persisted `quality_include_tokens`, `quality_exclude_tokens`, `quality_profile_rules`, and `saved_quality_profiles` stay normalized as flat leaf token IDs in this phase. Taxonomy applies also append a local audit event to `data/taxonomy_audit.jsonl` when that file is writable.
+The app may accept bundle keys or alias keys as authoring conveniences, but persisted `quality_include_tokens`, `quality_exclude_tokens`, `quality_profile_rules`, and `saved_quality_profiles` stay normalized as flat leaf token IDs in this phase. Draft apply checks only block option values newly removed by the submitted taxonomy; already-invalid legacy tokens are reported separately and do not block label-only edits. Taxonomy applies also append a local audit event to `data/taxonomy_audit.jsonl` when that file is writable.
 
 ### `Importer`
 

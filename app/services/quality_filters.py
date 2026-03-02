@@ -327,6 +327,14 @@ def _quality_bundle_definitions() -> tuple[dict[str, object], ...]:
 
 
 @lru_cache(maxsize=1)
+def _quality_bundle_labels() -> dict[str, str]:
+    return {
+        str(item["key"]): str(item["label"])
+        for item in _quality_bundle_definitions()
+    }
+
+
+@lru_cache(maxsize=1)
 def _quality_bundle_tokens() -> dict[str, tuple[str, ...]]:
     return {
         str(item["key"]): tuple(str(token) for token in item["tokens"])
@@ -357,6 +365,7 @@ def _clear_quality_taxonomy_cache() -> None:
     _quality_option_patterns.cache_clear()
     _quality_alias_map.cache_clear()
     _quality_bundle_tokens.cache_clear()
+    _quality_bundle_labels.cache_clear()
     _quality_bundle_definitions.cache_clear()
     _quality_options.cache_clear()
     _quality_group_labels.cache_clear()
@@ -466,19 +475,30 @@ def preview_quality_taxonomy_update(
 
     added_tokens = [token for token in candidate_tokens if token not in current_token_set]
     removed_tokens = [token for token in current_tokens if token not in candidate_token_set]
+    removed_token_set = set(removed_tokens)
 
+    existing_invalid_references: list[dict[str, object]] = []
     blocking_references: list[dict[str, object]] = []
     for reference in _quality_taxonomy_references(settings, rules):
-        missing_tokens = [token for token in reference["tokens"] if token not in candidate_token_set]
-        if not missing_tokens:
-            continue
-        blocking_references.append(
-            {
-                "kind": reference["kind"],
-                "label": reference["label"],
-                "missing_tokens": missing_tokens,
-            }
-        )
+        existing_invalid_tokens = [token for token in reference["tokens"] if token not in current_token_set]
+        if existing_invalid_tokens:
+            existing_invalid_references.append(
+                {
+                    "kind": reference["kind"],
+                    "label": reference["label"],
+                    "missing_tokens": existing_invalid_tokens,
+                }
+            )
+
+        newly_orphaned_tokens = [token for token in reference["tokens"] if token in removed_token_set]
+        if newly_orphaned_tokens:
+            blocking_references.append(
+                {
+                    "kind": reference["kind"],
+                    "label": reference["label"],
+                    "missing_tokens": newly_orphaned_tokens,
+                }
+            )
 
     return {
         "formatted_text": json.dumps(payload, indent=2) + "\n",
@@ -486,6 +506,7 @@ def preview_quality_taxonomy_update(
         "summary": _quality_taxonomy_summary(validated),
         "added_tokens": added_tokens,
         "removed_tokens": removed_tokens,
+        "existing_invalid_references": existing_invalid_references,
         "blocking_references": blocking_references,
         "safe_to_apply": not blocking_references,
     }
@@ -560,11 +581,16 @@ def apply_quality_taxonomy_update(
     return audit_error
 
 
-QUALITY_PROFILE_LABELS: dict[str, str] = {
+QUALITY_PROFILE_FALLBACK_LABELS: dict[str, str] = {
     QualityProfile.PLAIN.value: "No preset",
-    QualityProfile.HD_1080P.value: "At Least HD",
+    QualityProfile.HD_1080P.value: "At Least Full HD",
     QualityProfile.UHD_2160P_HDR.value: "Ultra HD HDR",
     QualityProfile.CUSTOM.value: "Custom (manual tags)",
+}
+
+QUALITY_PROFILE_BUNDLE_KEYS: dict[str, str] = {
+    QualityProfile.HD_1080P.value: "at_least_hd",
+    QualityProfile.UHD_2160P_HDR.value: "ultra_hd_hdr",
 }
 
 BUILTIN_AT_LEAST_UHD_PROFILE_KEY = "builtin-at-least-uhd"
@@ -605,6 +631,21 @@ AT_LEAST_UHD_PROFILE: dict[str, object] = {
 }
 
 PROFILE_KEY_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _bundle_label_or_default(bundle_key: str, fallback: str) -> str:
+    return _quality_bundle_labels().get(bundle_key, fallback)
+
+
+def quality_profile_label(value: QualityProfile | str) -> str:
+    raw_value = value.value if isinstance(value, QualityProfile) else str(value)
+    bundle_key = QUALITY_PROFILE_BUNDLE_KEYS.get(raw_value)
+    if bundle_key:
+        return _bundle_label_or_default(
+            bundle_key,
+            QUALITY_PROFILE_FALLBACK_LABELS.get(raw_value, raw_value),
+        )
+    return QUALITY_PROFILE_FALLBACK_LABELS.get(raw_value, raw_value)
 
 
 def quality_option_choices() -> list[dict[str, str]]:
@@ -670,7 +711,7 @@ def expand_quality_tokens(raw_tokens: list[str] | tuple[str, ...] | None) -> lis
 
 
 def quality_profile_choices() -> list[dict[str, str]]:
-    return [{"value": item.value, "label": QUALITY_PROFILE_LABELS[item.value]} for item in QualityProfile]
+    return [{"value": item.value, "label": quality_profile_label(item)} for item in QualityProfile]
 
 
 def normalize_quality_tokens(raw_tokens: list[str] | tuple[str, ...] | None) -> list[str]:
@@ -768,19 +809,23 @@ def build_available_filter_profiles(settings: AppSettings | None) -> dict[str, d
     saved_profiles = normalize_saved_quality_profiles(settings.saved_quality_profiles if settings else {})
     at_least_uhd_override = saved_profiles.pop(BUILTIN_AT_LEAST_UHD_PROFILE_KEY, None)
     at_least_uhd_profile = deepcopy(AT_LEAST_UHD_PROFILE)
+    at_least_uhd_profile["label"] = _bundle_label_or_default(
+        "at_least_uhd",
+        BUILTIN_AT_LEAST_UHD_PROFILE_LABEL,
+    )
     if at_least_uhd_override:
         at_least_uhd_profile["include_tokens"] = list(at_least_uhd_override.get("include_tokens", []))
         at_least_uhd_profile["exclude_tokens"] = list(at_least_uhd_override.get("exclude_tokens", []))
     available = {
         "builtin-ultra-hd-hdr": {
-            "label": "Ultra HD HDR",
+            "label": quality_profile_label(QualityProfile.UHD_2160P_HDR),
             "include_tokens": list(profile_rules[QualityProfile.UHD_2160P_HDR.value]["include_tokens"]),
             "exclude_tokens": list(profile_rules[QualityProfile.UHD_2160P_HDR.value]["exclude_tokens"]),
             "quality_profile_value": QualityProfile.UHD_2160P_HDR.value,
             "built_in": True,
         },
         "builtin-at-least-hd": {
-            "label": "At Least HD",
+            "label": quality_profile_label(QualityProfile.HD_1080P),
             "include_tokens": list(profile_rules[QualityProfile.HD_1080P.value]["include_tokens"]),
             "exclude_tokens": list(profile_rules[QualityProfile.HD_1080P.value]["exclude_tokens"]),
             "quality_profile_value": QualityProfile.HD_1080P.value,

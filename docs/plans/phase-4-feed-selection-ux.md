@@ -4,6 +4,7 @@
 
 - Code-complete in the current branch; manual validation remains pending.
 - Initial slice implemented: rule-form bulk selection controls and create-flow remembered default feeds.
+- Follow-up slice implemented: the remember-defaults toggle is now default-on and available on both create and edit forms.
 - Final slice implemented: the rule form now uses a checkbox-based feed selector while preserving deterministic submission order.
 - Independent from taxonomy management UI, but should follow phase 2 if taxonomy-driven defaults are introduced.
 
@@ -16,7 +17,7 @@ Improve feed selection usability with bulk selection controls and remembered def
 - Add `Select all` / `Clear all` controls for rule feed selection.
 - Replace the rule-form feed multi-select with explicit per-feed checkboxes.
 - Add user-level remembered default feed selections used to prefill new rule forms.
-- Ensure defaults can be overridden per rule without side effects.
+- Ensure users can keep or skip updating remembered defaults from each rule form submission.
 - Keep sync payloads explicit and deterministic.
 - Add tests for form behavior and persistence.
 
@@ -65,7 +66,7 @@ Improve feed selection usability with bulk selection controls and remembered def
 - Added rule-form `Select all` / `Clear all` controls for the feed selection UI.
 - Replaced the browser multi-select with explicit feed checkboxes on the rule form.
 - Added persisted `AppSettings.default_feed_urls` used to prefill `/rules/new`.
-- Added create-form checkbox to remember current selected feeds as new-rule defaults.
+- Added a default-on rule-form checkbox to remember current selected feeds as new-rule defaults on both create and edit.
 - Feed refresh now preserves currently selected saved-feed entries when the refreshed qBittorrent feed list does not include them.
 - Added route tests for prefill, persistence, control visibility, and edit-mode checkbox rendering.
 - Updated route tests to send repeated form values using `httpx`-compatible dict/list payloads instead of deprecated tuple-list bodies.

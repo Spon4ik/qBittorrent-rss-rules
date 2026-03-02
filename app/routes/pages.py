@@ -9,11 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db_session
-from app.models import MediaType, Rule, media_type_choices, media_type_label
+from app.models import MediaType, QualityProfile, Rule, media_type_choices, media_type_label
 from app.services.quality_filters import (
     available_filter_profile_choices,
     detect_matching_filter_profile_key,
     preview_quality_taxonomy_update,
+    quality_profile_label,
     quality_option_choices,
     quality_option_groups,
     quality_profile_choices,
@@ -86,6 +87,7 @@ def _rule_to_form_data(rule: Rule) -> dict[str, object]:
         "save_path": rule.save_path,
         "feed_urls": rule.feed_urls,
         "notes": rule.notes,
+        "remember_feed_defaults": True,
     }
 
 
@@ -170,6 +172,7 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
                 "save_path": "",
                 "feed_urls": list(settings.default_feed_urls or []),
                 "notes": "",
+                "remember_feed_defaults": True,
             },
             "errors": [],
             "feed_options": _safe_feed_options(session, list(settings.default_feed_urls or [])),
@@ -244,6 +247,8 @@ def settings_page(request: Request, session: Session = Depends(get_db_session)) 
         {
             "form_data": SettingsService.to_form_dict(settings),
             "errors": [],
+            "profile_1080p_label": quality_profile_label(QualityProfile.HD_1080P),
+            "profile_2160p_hdr_label": quality_profile_label(QualityProfile.UHD_2160P_HDR),
             "quality_choices": quality_profile_choices(),
             "quality_options": quality_option_choices(),
             "quality_option_groups": quality_option_groups(),

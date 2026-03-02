@@ -25,7 +25,9 @@
       {% endif %}
       {% if current_taxonomy_preview %}
       <p>
-        {% if current_taxonomy_preview.safe_to_apply %}
+        {% if current_taxonomy_preview.existing_invalid_references %}
+        Current stored data already references tokens that are missing from the live taxonomy.
+        {% elif current_taxonomy_preview.safe_to_apply %}
         Current stored rules and profiles are compatible with the live taxonomy.
         {% else %}
         Current stored data has blocking references that should be reviewed.
@@ -88,9 +90,9 @@
     <p>Ranks: {{ taxonomy_preview.summary.rank_count }}</p>
     <p>
       {% if taxonomy_preview.safe_to_apply %}
-      Safe to apply: no persisted tokens would be orphaned.
+      Safe to apply: this draft does not orphan any additional persisted tokens.
       {% else %}
-      Unsafe to apply: persisted rules or profiles still reference removed tokens.
+      Unsafe to apply: persisted rules or profiles still reference tokens this draft would remove.
       {% endif %}
     </p>
 
@@ -112,6 +114,15 @@
     <div class="stack">
       <strong>Blocking references</strong>
       {% for item in taxonomy_preview.blocking_references %}
+      <div>{{ item.kind }}: {{ item.label }} ({{ item.missing_tokens | join(", ") }})</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if taxonomy_preview.existing_invalid_references %}
+    <div class="stack">
+      <strong>Existing invalid references</strong>
+      {% for item in taxonomy_preview.existing_invalid_references %}
       <div>{{ item.kind }}: {{ item.label }} ({{ item.missing_tokens | join(", ") }})</div>
       {% endfor %}
     </div>

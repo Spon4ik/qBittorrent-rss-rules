@@ -30,6 +30,7 @@ from app.services.quality_filters import (
     build_available_filter_profiles,
     normalize_saved_quality_profiles,
     preview_quality_taxonomy_update,
+    quality_profile_label,
     quality_option_choices,
     quality_option_groups,
     quality_profile_choices,
@@ -192,6 +193,8 @@ def _render_settings_page(
             "page_title": "Settings",
             "form_data": form_data,
             "errors": errors,
+            "profile_1080p_label": quality_profile_label(QualityProfile.HD_1080P),
+            "profile_2160p_hdr_label": quality_profile_label(QualityProfile.UHD_2160P_HDR),
             "quality_choices": quality_profile_choices(),
             "quality_options": quality_option_choices(),
             "quality_option_groups": quality_option_groups(),
@@ -516,7 +519,7 @@ async def create_rule(
         )
 
     settings = SettingsService.get_or_create(session)
-    remember_feed_defaults = _bool_from_form(form, "remember_feed_defaults")
+    remember_feed_defaults = bool(raw_form.get("remember_feed_defaults"))
     rule = Rule()
     _apply_rule_payload_to_model(rule, payload, settings=settings)
     session.add(rule)
@@ -532,7 +535,10 @@ async def create_rule(
             request,
             mode="create",
             session=session,
-            form_data=payload.model_dump(mode="json"),
+            form_data={
+                **payload.model_dump(mode="json"),
+                "remember_feed_defaults": remember_feed_defaults,
+            },
             errors=["Rule name already exists."],
         )
 
@@ -570,7 +576,10 @@ async def update_rule(
         )
 
     settings = SettingsService.get_or_create(session)
+    remember_feed_defaults = bool(raw_form.get("remember_feed_defaults"))
     _apply_rule_payload_to_model(rule, payload, settings=settings)
+    if remember_feed_defaults:
+        settings.default_feed_urls = list(payload.feed_urls)
 
     try:
         session.commit()
@@ -580,7 +589,10 @@ async def update_rule(
             request,
             mode="edit",
             session=session,
-            form_data=payload.model_dump(mode="json"),
+            form_data={
+                **payload.model_dump(mode="json"),
+                "remember_feed_defaults": remember_feed_defaults,
+            },
             errors=["Rule name already exists."],
             rule_id=rule_id,
         )

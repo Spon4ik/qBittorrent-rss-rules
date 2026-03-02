@@ -4,6 +4,7 @@
 
 - Implementation is in progress in the repo.
 - A first server-rendered editor flow exists for inspect, validate, and apply.
+- Draft safety checks now distinguish between newly orphaned tokens (blocking) and already-invalid legacy tokens (reported but non-blocking for label-only edits).
 - Remaining work is validation in a full dev environment plus UX refinement if a richer client-side workflow is still desired.
 
 ## Goal

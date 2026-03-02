@@ -90,12 +90,10 @@
       <input type="checkbox" name="smart_filter" {% if form_data.smart_filter %}checked{% endif %} />
       <span>Smart filter</span>
     </label>
-    {% if mode == 'create' %}
-    <label>
+    <label class="toggle">
       <input type="checkbox" name="remember_feed_defaults" value="on" {% if form_data.remember_feed_defaults %}checked{% endif %} />
-      Remember selected feeds as defaults for new rules
+      <span>Use selected feeds as defaults for future new rules</span>
     </label>
-    {% endif %}
   </section>
 
   <section class="stack">

@@ -63,6 +63,43 @@ def test_apply_taxonomy_updates_source_and_records_audit(app_client, tmp_path, m
     assert "rename bundle label" in audit_path.read_text(encoding="utf-8")
 
 
+def test_apply_taxonomy_allows_label_rename_when_invalid_tokens_already_exist(
+    app_client,
+    db_session,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    payload, taxonomy_path, audit_path = _use_temp_taxonomy(tmp_path, monkeypatch)
+    rule = Rule(
+        rule_name="Rule Legacy Token",
+        content_name="Rule Legacy Token",
+        normalized_title="Rule Legacy Token",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        quality_include_tokens=["legacy_missing"],
+        quality_exclude_tokens=[],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    bundles = payload["bundles"]
+    assert isinstance(bundles, list)
+    bundles[0]["label"] = "At Least Full HD"
+
+    response = app_client.post(
+        "/api/taxonomy/apply",
+        data={
+            "taxonomy_json": json.dumps(payload),
+            "taxonomy_change_note": "rename bundle label with legacy token present",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert json.loads(taxonomy_path.read_text(encoding="utf-8"))["bundles"][0]["label"] == "At Least Full HD"
+    assert "rename bundle label with legacy token present" in audit_path.read_text(encoding="utf-8")
+
+
 def test_apply_taxonomy_rejects_orphaning_rule_tokens(app_client, db_session, tmp_path, monkeypatch) -> None:
     payload, taxonomy_path, audit_path = _use_temp_taxonomy(tmp_path, monkeypatch)
     rule = Rule(
@@ -96,6 +133,34 @@ def test_apply_taxonomy_rejects_orphaning_rule_tokens(app_client, db_session, tm
     assert "Cannot apply a taxonomy update that would orphan persisted tokens." in response.text
     assert any(item["value"] == "hevc" for item in json.loads(taxonomy_path.read_text(encoding="utf-8"))["options"])
     assert not audit_path.exists()
+
+
+def test_new_rule_uses_taxonomy_bundle_labels_for_builtin_profiles(app_client, tmp_path, monkeypatch) -> None:
+    payload, taxonomy_path, _ = _use_temp_taxonomy(tmp_path, monkeypatch)
+    bundles = payload["bundles"]
+    assert isinstance(bundles, list)
+    bundles[0]["label"] = "At Least Full HD"
+    taxonomy_path.write_text(json.dumps(payload), encoding="utf-8")
+    quality_filters._clear_quality_taxonomy_cache()
+
+    response = app_client.get("/rules/new")
+
+    assert response.status_code == 200
+    assert ">At Least Full HD</option>" in response.text
+
+
+def test_settings_uses_taxonomy_bundle_labels_for_builtin_profiles(app_client, tmp_path, monkeypatch) -> None:
+    payload, taxonomy_path, _ = _use_temp_taxonomy(tmp_path, monkeypatch)
+    bundles = payload["bundles"]
+    assert isinstance(bundles, list)
+    bundles[0]["label"] = "At Least Full HD"
+    taxonomy_path.write_text(json.dumps(payload), encoding="utf-8")
+    quality_filters._clear_quality_taxonomy_cache()
+
+    response = app_client.get("/settings")
+
+    assert response.status_code == 200
+    assert "<legend>At Least Full HD include</legend>" in response.text
 
 
 def test_new_rule_uses_ultra_hd_hdr_defaults(app_client) -> None:
@@ -284,6 +349,7 @@ def test_new_rule_prefills_remembered_default_feeds(app_client, db_session) -> N
 
     assert response.status_code == 200
     assert 'type="checkbox" name="feed_urls" value="http://feed.example/remembered" checked' in response.text
+    assert 'name="remember_feed_defaults" value="on" checked' in response.text
 
 
 def test_create_rule_can_remember_selected_feeds_as_defaults(app_client, db_session) -> None:
@@ -308,6 +374,63 @@ def test_create_rule_can_remember_selected_feeds_as_defaults(app_client, db_sess
     settings = db_session.get(AppSettings, "default")
     assert settings is not None
     assert settings.default_feed_urls == ["http://feed.example/alpha", "http://feed.example/bravo"]
+
+
+def test_edit_rule_defaults_to_remembering_selected_feeds(app_client, db_session) -> None:
+    rule = Rule(
+        rule_name="Rule Remember Toggle",
+        content_name="Rule Remember Toggle",
+        normalized_title="Rule Remember Toggle",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/original"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    response = app_client.get(f"/rules/{rule.id}")
+
+    assert response.status_code == 200
+    assert 'name="remember_feed_defaults" value="on" checked' in response.text
+
+
+def test_update_rule_can_remember_selected_feeds_as_defaults(app_client, db_session) -> None:
+    settings = AppSettings(id="default")
+    settings.default_feed_urls = ["http://feed.example/original-default"]
+    db_session.add(settings)
+
+    rule = Rule(
+        rule_name="Rule Update Feed Defaults",
+        content_name="Rule Update Feed Defaults",
+        normalized_title="Rule Update Feed Defaults",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/original"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    response = app_client.post(
+        f"/api/rules/{rule.id}",
+        data={
+            "rule_name": "Rule Update Feed Defaults",
+            "content_name": "Rule Update Feed Defaults",
+            "normalized_title": "Rule Update Feed Defaults",
+            "imdb_id": "tt8765432",
+            "media_type": "series",
+            "quality_profile": "plain",
+            "enabled": "on",
+            "add_paused": "on",
+            "feed_urls": ["http://feed.example/alpha", "http://feed.example/bravo"],
+            "remember_feed_defaults": "on",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    refreshed_settings = db_session.get(AppSettings, "default")
+    assert refreshed_settings is not None
+    assert refreshed_settings.default_feed_urls == ["http://feed.example/alpha", "http://feed.example/bravo"]
 
 
 def test_rule_form_includes_bulk_feed_selection_controls(app_client) -> None:

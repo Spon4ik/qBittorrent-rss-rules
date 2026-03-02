@@ -65,16 +65,17 @@ The app is designed around one rule authority:
 
 1. `AppSettings.default_feed_urls` stores remembered feed URLs for future new rules.
 2. `GET /rules/new` renders the feed selector as checkbox inputs and prefills matching entries from `default_feed_urls`.
-3. On `POST /api/rules`, the `remember_feed_defaults` checkbox can atomically persist the submitted `feed_urls` as the next default set.
-4. Existing rules always keep their own stored `feed_urls`; defaults only prefill create mode, and client-side feed refresh keeps currently selected saved feeds visible if qBittorrent does not return them.
+3. The rule form renders a default-checked `remember_feed_defaults` toggle on both create and edit.
+4. On `POST /api/rules` or `POST /api/rules/{rule_id}`, keeping that toggle enabled atomically persists the submitted `feed_urls` as the next default set.
+5. Existing rules always keep their own stored `feed_urls`; defaults only prefill create mode, and client-side feed refresh keeps currently selected saved feeds visible if qBittorrent does not return them.
 
 ### Taxonomy management
 
 1. The `/taxonomy` page reads the live JSON source of truth and renders a local editor.
 2. `POST /api/taxonomy/validate` parses a draft, runs the same schema validation as the live loader, and previews added or removed leaf tokens.
-3. The draft preview checks saved filter profiles plus all stored rules to detect any removed tokens that would orphan persisted selections.
+3. The draft preview checks saved filter profiles plus all stored rules to detect any removed live tokens that would newly orphan persisted selections.
 4. `POST /api/taxonomy/apply` writes the formatted JSON back to `app/data/quality_taxonomy.json`, clears the loader cache, and appends a local audit entry in `data/taxonomy_audit.jsonl`.
-5. Unsafe drafts are rejected before the live taxonomy file is changed.
+5. Unsafe drafts are rejected before the live taxonomy file is changed, while already-invalid legacy tokens are still surfaced for cleanup without blocking non-destructive label edits.
 
 ## Sync flow
 

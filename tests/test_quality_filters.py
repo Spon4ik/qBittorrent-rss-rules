@@ -14,6 +14,7 @@ from app.services.quality_filters import (
     LEGACY_DEFAULT_QUALITY_PROFILE_RULES,
     _clear_quality_taxonomy_cache,
     apply_quality_taxonomy_update,
+    available_filter_profile_choices,
     detect_matching_filter_profile_key,
     expand_quality_tokens,
     normalize_quality_tokens,
@@ -21,6 +22,7 @@ from app.services.quality_filters import (
     quality_bundle_choices,
     quality_option_choices,
     quality_option_groups,
+    quality_profile_choices,
     recent_quality_taxonomy_audit_entries,
     resolve_quality_token,
     tokens_to_regex,
@@ -227,6 +229,62 @@ def test_preview_quality_taxonomy_update_flags_orphaned_rule_tokens() -> None:
             "missing_tokens": ["hevc"],
         }
     ]
+    assert preview["existing_invalid_references"] == []
+
+
+def test_preview_quality_taxonomy_update_allows_label_changes_when_invalid_tokens_already_exist() -> None:
+    payload = _read_default_quality_taxonomy()
+    bundles = payload["bundles"]
+    assert isinstance(bundles, list)
+    bundles[0]["label"] = "At Least Full HD"
+
+    rule = Rule(
+        rule_name="Rule Beta",
+        content_name="Rule Beta",
+        normalized_title="Rule Beta",
+    )
+    rule.quality_include_tokens = ["legacy_missing"]
+    rule.quality_exclude_tokens = []
+
+    preview = preview_quality_taxonomy_update(
+        json.dumps(payload),
+        settings=None,
+        rules=[rule],
+    )
+
+    assert preview["safe_to_apply"] is True
+    assert preview["removed_tokens"] == []
+    assert preview["blocking_references"] == []
+    assert preview["existing_invalid_references"] == [
+        {
+            "kind": "rule",
+            "label": "Rule Beta",
+            "missing_tokens": ["legacy_missing"],
+        }
+    ]
+
+
+def test_quality_profile_labels_follow_matching_taxonomy_bundle_labels(tmp_path, monkeypatch) -> None:
+    payload = _read_default_quality_taxonomy()
+    bundles = payload["bundles"]
+    assert isinstance(bundles, list)
+    bundles[0]["label"] = "At Least Full HD"
+    bundles[1]["label"] = "At Least Ultra HD"
+    bundles[2]["label"] = "Ultra HD + HDR"
+    monkeypatch.setattr(
+        quality_filters,
+        "QUALITY_TAXONOMY_PATH",
+        _write_quality_taxonomy(tmp_path, payload),
+    )
+
+    quality_choices = {item["value"]: item["label"] for item in quality_profile_choices()}
+    filter_profiles = {item["key"]: item["label"] for item in available_filter_profile_choices(None)}
+
+    assert quality_choices["1080p"] == "At Least Full HD"
+    assert quality_choices["2160p_hdr"] == "Ultra HD + HDR"
+    assert filter_profiles["builtin-at-least-hd"] == "At Least Full HD"
+    assert filter_profiles["builtin-at-least-uhd"] == "At Least Ultra HD"
+    assert filter_profiles["builtin-ultra-hd-hdr"] == "Ultra HD + HDR"
 
 
 def test_apply_quality_taxonomy_update_writes_file_and_audit_entry(tmp_path, monkeypatch) -> None:

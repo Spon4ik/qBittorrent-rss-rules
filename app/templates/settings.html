@@ -84,7 +84,7 @@
     </div>
     <section class="form-grid">
       <fieldset class="stack" data-quality-selector="profile-1080-include">
-        <legend>At Least HD include</legend>
+        <legend>{{ profile_1080p_label }} include</legend>
         {% for choice in quality_options %}
         <label class="toggle">
           <input type="checkbox" name="profile_1080p_include_tokens" value="{{ choice.value }}" {% if choice.value in form_data.profile_1080p_include_tokens %}checked{% endif %} />
@@ -93,7 +93,7 @@
         {% endfor %}
       </fieldset>
       <fieldset class="stack" data-quality-selector="profile-1080-exclude">
-        <legend>At Least HD exclude</legend>
+        <legend>{{ profile_1080p_label }} exclude</legend>
         {% for choice in quality_options %}
         <label class="toggle">
           <input type="checkbox" name="profile_1080p_exclude_tokens" value="{{ choice.value }}" {% if choice.value in form_data.profile_1080p_exclude_tokens %}checked{% endif %} />
@@ -102,7 +102,7 @@
         {% endfor %}
       </fieldset>
       <fieldset class="stack" data-quality-selector="profile-2160-include">
-        <legend>Ultra HD HDR include</legend>
+        <legend>{{ profile_2160p_hdr_label }} include</legend>
         {% for choice in quality_options %}
         <label class="toggle">
           <input type="checkbox" name="profile_2160p_hdr_include_tokens" value="{{ choice.value }}" {% if choice.value in form_data.profile_2160p_hdr_include_tokens %}checked{% endif %} />
@@ -111,7 +111,7 @@
         {% endfor %}
       </fieldset>
       <fieldset class="stack" data-quality-selector="profile-2160-exclude">
-        <legend>Ultra HD HDR exclude</legend>
+        <legend>{{ profile_2160p_hdr_label }} exclude</legend>
         {% for choice in quality_options %}
         <label class="toggle">
           <input type="checkbox" name="profile_2160p_hdr_exclude_tokens" value="{{ choice.value }}" {% if choice.value in form_data.profile_2160p_hdr_exclude_tokens %}checked{% endif %} />

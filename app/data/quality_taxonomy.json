@@ -35,7 +35,7 @@
   "bundles": [
     {
       "key": "at_least_hd",
-      "label": "At Least HD",
+      "label": "At Least Full HD",
       "tokens": ["hd", "720p", "full_hd", "1080p", "ultra_hd", "uhd", "2160p", "4k"]
     },
     {

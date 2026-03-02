@@ -2,7 +2,8 @@
 
 ## Status
 
-- Planned.
+- In progress.
+- Initial slice implemented: rule-form bulk selection controls and create-flow remembered default feeds.
 - Independent from taxonomy management UI, but should follow phase 2 if taxonomy-driven defaults are introduced.
 
 ## Goal
@@ -53,3 +54,13 @@ Improve feed selection usability with bulk selection controls and remembered def
 
 - Clear UX decision on where remembered defaults are configured (`/settings` vs rule form).
 - Existing feed fetch pipeline remains stable.
+
+
+## Progress update
+
+- Added rule-form `Select all` / `Clear all` controls for a feed checkbox list (replacing the multi-select control).
+- Added persisted `AppSettings.default_feed_urls` used to prefill `/rules/new`.
+- Added create-form checkbox to remember current selected feeds as new-rule defaults.
+- Added route tests for prefill, persistence, and control visibility.
+- Hardened route tests to post repeated form values using dictionary/list payloads for compatibility with current TestClient/httpx encoding behavior.
+- Remaining: decide whether defaults should be editable in `/settings` and add manual UX verification in a real browser with qBittorrent feed data.

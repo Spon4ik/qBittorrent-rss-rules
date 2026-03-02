@@ -90,6 +90,12 @@
       <input type="checkbox" name="smart_filter" {% if form_data.smart_filter %}checked{% endif %} />
       <span>Smart filter</span>
     </label>
+    {% if mode == 'create' %}
+    <label>
+      <input type="checkbox" name="remember_feed_defaults" value="on" {% if form_data.remember_feed_defaults %}checked{% endif %} />
+      Remember selected feeds as defaults for new rules
+    </label>
+    {% endif %}
   </section>
 
   <section class="stack">
@@ -160,16 +166,23 @@
         <p class="eyebrow">Feeds</p>
         <h3>Affected feeds</h3>
       </div>
-      <button type="button" id="feed-refresh">Refresh Feeds</button>
+      <div class="button-row">
+        <button type="button" id="feed-select-all">Select all</button>
+        <button type="button" id="feed-clear-all">Clear all</button>
+        <button type="button" id="feed-refresh">Refresh Feeds</button>
+      </div>
     </div>
-    <label>
-      Hold Ctrl/Cmd to select multiple feeds
-      <select name="feed_urls" id="feed-select" multiple size="10">
+    <div class="stack">
+      <p class="muted-text">Select one or more feeds</p>
+      <div id="feed-checkbox-list" class="feed-checkbox-list">
         {% for feed in feed_options %}
-        <option value="{{ feed.url }}" {% if feed.url in form_data.feed_urls %}selected{% endif %}>{{ feed.label }}</option>
+        <label class="toggle">
+          <input type="checkbox" name="feed_urls" value="{{ feed.url }}" {% if feed.url in form_data.feed_urls %}checked{% endif %} />
+          <span>{{ feed.label }}</span>
+        </label>
         {% endfor %}
-      </select>
-    </label>
+      </div>
+    </div>
   </section>
 
   <details>

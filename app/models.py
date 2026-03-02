@@ -147,6 +147,7 @@ class AppSettings(Base):
         nullable=False,
         default=dict,
     )
+    default_feed_urls: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     default_quality_profile: Mapped[QualityProfile] = mapped_column(
         Enum(QualityProfile, name="default_quality_profile"),
         nullable=False,

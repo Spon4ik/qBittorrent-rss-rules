@@ -111,24 +111,22 @@ def test_new_rule_uses_ultra_hd_hdr_defaults(app_client) -> None:
 def test_create_rule_persists_locally_even_without_qb_config(app_client, db_session) -> None:
     response = app_client.post(
         "/api/rules",
-        data=[
-            ("rule_name", "Rule Alpha"),
-            ("content_name", "Rule Alpha"),
-            ("normalized_title", "Rule Alpha"),
-            ("imdb_id", "tt1234567"),
-            ("media_type", "series"),
-            ("quality_profile", "plain"),
-            ("release_year", "2024"),
-            ("include_release_year", "on"),
-            ("additional_includes", "remux"),
-            ("quality_include_tokens", "2160p"),
-            ("quality_include_tokens", "4k"),
-            ("quality_exclude_tokens", "1080p"),
-            ("quality_exclude_tokens", "720p"),
-            ("enabled", "on"),
-            ("add_paused", "on"),
-            ("feed_urls", "http://feed.example/alpha"),
-        ],
+        data={
+            "rule_name": "Rule Alpha",
+            "content_name": "Rule Alpha",
+            "normalized_title": "Rule Alpha",
+            "imdb_id": "tt1234567",
+            "media_type": "series",
+            "quality_profile": "plain",
+            "release_year": "2024",
+            "include_release_year": "on",
+            "additional_includes": "remux",
+            "quality_include_tokens": ["2160p", "4k"],
+            "quality_exclude_tokens": ["1080p", "720p"],
+            "enabled": "on",
+            "add_paused": "on",
+            "feed_urls": ["http://feed.example/alpha"],
+        },
         follow_redirects=False,
     )
 
@@ -161,22 +159,19 @@ def test_import_preview_renders_summary_table(app_client) -> None:
 def test_save_settings_persists_profile_management_tokens(app_client, db_session) -> None:
     response = app_client.post(
         "/api/settings",
-        data=[
-            ("metadata_provider", "disabled"),
-            ("series_category_template", "Series/{title} [imdbid-{imdb_id}]"),
-            ("movie_category_template", "Movies/{title} [imdbid-{imdb_id}]"),
-            ("save_path_template", ""),
-            ("default_enabled", "on"),
-            ("default_add_paused", "on"),
-            ("default_quality_profile", "2160p_hdr"),
-            ("profile_1080p_include_tokens", "full_hd"),
-            ("profile_1080p_include_tokens", "1080p"),
-            ("profile_1080p_exclude_tokens", "360p"),
-            ("profile_2160p_hdr_include_tokens", "ultra_hd"),
-            ("profile_2160p_hdr_include_tokens", "2160p"),
-            ("profile_2160p_hdr_exclude_tokens", "bdremux"),
-            ("profile_2160p_hdr_exclude_tokens", "ts"),
-        ],
+        data={
+            "metadata_provider": "disabled",
+            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
+            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
+            "save_path_template": "",
+            "default_enabled": "on",
+            "default_add_paused": "on",
+            "default_quality_profile": "2160p_hdr",
+            "profile_1080p_include_tokens": ["full_hd", "1080p"],
+            "profile_1080p_exclude_tokens": ["360p"],
+            "profile_2160p_hdr_include_tokens": ["ultra_hd", "2160p"],
+            "profile_2160p_hdr_exclude_tokens": ["bdremux", "ts"],
+        },
         follow_redirects=False,
     )
 
@@ -277,3 +272,48 @@ def test_overwrite_filter_profile_updates_builtin_at_least_uhd(app_client, db_se
         "sd",
         "bdremux",
     ]
+
+
+def test_new_rule_prefills_remembered_default_feeds(app_client, db_session) -> None:
+    settings = AppSettings(id="default")
+    settings.default_feed_urls = ["http://feed.example/remembered"]
+    db_session.add(settings)
+    db_session.commit()
+
+    response = app_client.get("/rules/new")
+
+    assert response.status_code == 200
+    assert 'input type="checkbox" name="feed_urls" value="http://feed.example/remembered" checked' in response.text
+
+
+def test_create_rule_can_remember_selected_feeds_as_defaults(app_client, db_session) -> None:
+    response = app_client.post(
+        "/api/rules",
+        data={
+            "rule_name": "Rule With Feed Defaults",
+            "content_name": "Rule With Feed Defaults",
+            "normalized_title": "Rule With Feed Defaults",
+            "imdb_id": "tt7654321",
+            "media_type": "series",
+            "quality_profile": "plain",
+            "enabled": "on",
+            "add_paused": "on",
+            "feed_urls": ["http://feed.example/alpha", "http://feed.example/bravo"],
+            "remember_feed_defaults": "on",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    settings = db_session.get(AppSettings, "default")
+    assert settings is not None
+    assert settings.default_feed_urls == ["http://feed.example/alpha", "http://feed.example/bravo"]
+
+
+def test_rule_form_includes_bulk_feed_selection_controls(app_client) -> None:
+    response = app_client.get("/rules/new")
+
+    assert response.status_code == 200
+    assert 'id="feed-select-all"' in response.text
+    assert 'id="feed-clear-all"' in response.text
+    assert 'id="feed-checkbox-list"' in response.text

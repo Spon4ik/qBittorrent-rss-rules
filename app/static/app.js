@@ -299,7 +299,11 @@ function initRuleForm(form) {
   const patternPreview = form.querySelector("#pattern-preview");
   const metadataButton = form.querySelector("#metadata-lookup");
   const feedRefreshButton = form.querySelector("#feed-refresh");
-  const feedSelect = form.querySelector("#feed-select");
+  const feedSelectAllButton = form.querySelector("#feed-select-all");
+  const feedClearAllButton = form.querySelector("#feed-clear-all");
+  const feedCheckboxList = form.querySelector("#feed-checkbox-list");
+
+  const getFeedCheckboxes = () => Array.from(form.querySelectorAll('input[name="feed_urls"]'));
   const qualityProfileInput = form.querySelector('input[name="quality_profile"]');
   const filterProfileSelect = form.querySelector("#filter-profile-select");
   const saveNewProfileButton = form.querySelector("#filter-profile-save-new");
@@ -549,6 +553,19 @@ function initRuleForm(form) {
     refreshDerivedFields();
   });
 
+
+  feedSelectAllButton?.addEventListener("click", () => {
+    getFeedCheckboxes().forEach((input) => {
+      input.checked = true;
+    });
+  });
+
+  feedClearAllButton?.addEventListener("click", () => {
+    getFeedCheckboxes().forEach((input) => {
+      input.checked = false;
+    });
+  });
+
   feedRefreshButton?.addEventListener("click", async () => {
     const response = await fetch("/api/feeds/refresh", { method: "POST" });
     const payload = await response.json();
@@ -556,17 +573,24 @@ function initRuleForm(form) {
       window.alert(payload.error || "Feed refresh failed.");
       return;
     }
-    if (!feedSelect) {
+    if (!feedCheckboxList) {
       return;
     }
-    const selected = new Set(Array.from(feedSelect.selectedOptions).map((option) => option.value));
-    feedSelect.innerHTML = "";
+    const selected = new Set(getFeedCheckboxes().filter((input) => input.checked).map((input) => input.value));
+    feedCheckboxList.innerHTML = "";
     for (const feed of payload.feeds || []) {
-      const option = document.createElement("option");
-      option.value = feed.url;
-      option.textContent = feed.label;
-      option.selected = selected.has(feed.url);
-      feedSelect.appendChild(option);
+      const label = document.createElement("label");
+      label.className = "toggle";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.name = "feed_urls";
+      input.value = feed.url;
+      input.checked = selected.has(feed.url);
+      const text = document.createElement("span");
+      text.textContent = feed.label;
+      label.appendChild(input);
+      label.appendChild(text);
+      feedCheckboxList.appendChild(label);
     }
   });
 

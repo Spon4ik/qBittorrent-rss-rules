@@ -2,7 +2,7 @@
 
 ## Current focus
 
-- Phase 3: taxonomy management UI
+- Phase 4: feed selection UX improvements
 
 ## Implemented
 
@@ -21,18 +21,20 @@
 - `app/routes/pages.py` and `app/routes/api.py` now expose `/taxonomy`, `/api/taxonomy/validate`, and `/api/taxonomy/apply`.
 - `app/templates/taxonomy.html` now provides a server-rendered editor with impact analysis and recent audit entries.
 - `tests/test_routes.py` now covers taxonomy page rendering plus safe apply and orphan-token rejection flows.
+- Rule form feed UX now uses feed checkboxes with working `Select all` / `Clear all` controls and an opt-in remember-defaults toggle for new rules backed by `AppSettings.default_feed_urls`.
+- Route test form payloads were updated to dictionary-plus-list encoding so repeated form fields continue to match Starlette/httpx behavior in current test dependencies.
 
 ## In progress
 
-- Phase 3 is started with a server-rendered edit/validate/apply flow; richer UX refinement is still open.
+- Phase 4 implementation is started with bulk feed-selection controls and optional remembered defaults on new-rule creation.
 - Full pytest and manual validation are still pending in a fully provisioned development environment.
 
 ## Next actions
 
-- Run the taxonomy service and route pytest coverage, then the full pytest suite, in the normal development environment.
-- Manually verify the `/taxonomy` edit, validate, and apply lifecycle, including audit-log behavior and blocking-reference messaging.
-- Revisit the `/taxonomy` UX for richer client-side editing feedback if the current server-rendered flow feels too coarse.
-- After validation, mark the implemented Phase 3 slice complete and continue with remaining Phase 3 refinement or Phase 4 planning.
+- Run route and form pytest coverage, then the full pytest suite, in the normal development environment.
+- Manually verify `/rules/new` feed `Select all` / `Clear all` controls and remembered default feed behavior.
+- Decide whether remembered defaults should also be editable from `/settings` in a follow-up phase-4 slice.
+- Continue phase-4 refinement and close out any remaining taxonomy UI polish from phase 3 as separate follow-up work.
 
 ## Deferred / future phases
 

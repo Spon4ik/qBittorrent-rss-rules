@@ -277,3 +277,48 @@ def test_overwrite_filter_profile_updates_builtin_at_least_uhd(app_client, db_se
         "sd",
         "bdremux",
     ]
+
+
+def test_new_rule_prefills_remembered_default_feeds(app_client, db_session) -> None:
+    settings = AppSettings(id="default")
+    settings.default_feed_urls = ["http://feed.example/remembered"]
+    db_session.add(settings)
+    db_session.commit()
+
+    response = app_client.get("/rules/new")
+
+    assert response.status_code == 200
+    assert 'input type="checkbox" name="feed_urls" value="http://feed.example/remembered" checked' in response.text
+
+
+def test_create_rule_can_remember_selected_feeds_as_defaults(app_client, db_session) -> None:
+    response = app_client.post(
+        "/api/rules",
+        data={
+            "rule_name": "Rule With Feed Defaults",
+            "content_name": "Rule With Feed Defaults",
+            "normalized_title": "Rule With Feed Defaults",
+            "imdb_id": "tt7654321",
+            "media_type": "series",
+            "quality_profile": "plain",
+            "enabled": "on",
+            "add_paused": "on",
+            "feed_urls": ["http://feed.example/alpha", "http://feed.example/bravo"],
+            "remember_feed_defaults": "on",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    settings = db_session.get(AppSettings, "default")
+    assert settings is not None
+    assert settings.default_feed_urls == ["http://feed.example/alpha", "http://feed.example/bravo"]
+
+
+def test_rule_form_includes_bulk_feed_selection_controls(app_client) -> None:
+    response = app_client.get("/rules/new")
+
+    assert response.status_code == 200
+    assert 'id="feed-select-all"' in response.text
+    assert 'id="feed-clear-all"' in response.text
+    assert 'id="feed-checkbox-list"' in response.text

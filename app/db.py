@@ -70,6 +70,7 @@ def _ensure_rule_columns() -> None:
     expected_settings_columns = {
         "quality_profile_rules": "JSON NOT NULL DEFAULT '{}'",
         "saved_quality_profiles": "JSON NOT NULL DEFAULT '{}'",
+        "default_feed_urls": "JSON NOT NULL DEFAULT '[]'",
     }
 
     with engine.begin() as connection:

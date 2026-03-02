@@ -2,8 +2,9 @@
 
 ## Status
 
-- In progress.
+- Code-complete in the current branch; manual validation remains pending.
 - Initial slice implemented: rule-form bulk selection controls and create-flow remembered default feeds.
+- Final slice implemented: the rule form now uses a checkbox-based feed selector while preserving deterministic submission order.
 - Independent from taxonomy management UI, but should follow phase 2 if taxonomy-driven defaults are introduced.
 
 ## Goal
@@ -13,6 +14,7 @@ Improve feed selection usability with bulk selection controls and remembered def
 ## In scope
 
 - Add `Select all` / `Clear all` controls for rule feed selection.
+- Replace the rule-form feed multi-select with explicit per-feed checkboxes.
 - Add user-level remembered default feed selections used to prefill new rule forms.
 - Ensure defaults can be overridden per rule without side effects.
 - Keep sync payloads explicit and deterministic.
@@ -27,7 +29,7 @@ Improve feed selection usability with bulk selection controls and remembered def
 ## Proposed implementation
 
 1. `app/templates/rule_form.html`, `app/static/app.js`
-   - Add selection controls and UX state handling.
+   - Render feed checkboxes plus selection controls, and keep refresh state deterministic.
 2. `app/services/settings_service.py`, `app/models.py`
    - Persist remembered default feeds.
 3. `app/routes/pages.py`, `app/routes/api.py`
@@ -40,6 +42,7 @@ Improve feed selection usability with bulk selection controls and remembered def
 ## Acceptance criteria
 
 - Users can select or clear all feeds with one action.
+- Feed choices render as checkbox inputs instead of a browser multi-select widget.
 - New rules prefill feed selections from remembered defaults when configured.
 - Existing rules load persisted feeds exactly as stored.
 - Tests verify deterministic form serialization and sync payload behavior.
@@ -48,7 +51,8 @@ Improve feed selection usability with bulk selection controls and remembered def
 
 - Run route/form tests.
 - Run full check script.
-- Manual verification on `/rules/new` for bulk controls and default prefill behavior.
+- Use the repo-local pytest wrapper so each validation run refreshes readable artifacts under `logs/tests/`.
+- Manual verification on `/rules/new` for checkbox rendering, bulk controls, and default prefill behavior.
 
 ## Dependencies
 
@@ -58,8 +62,12 @@ Improve feed selection usability with bulk selection controls and remembered def
 
 ## Progress update
 
-- Added rule-form `Select all` / `Clear all` controls for the feed multi-select.
+- Added rule-form `Select all` / `Clear all` controls for the feed selection UI.
+- Replaced the browser multi-select with explicit feed checkboxes on the rule form.
 - Added persisted `AppSettings.default_feed_urls` used to prefill `/rules/new`.
 - Added create-form checkbox to remember current selected feeds as new-rule defaults.
-- Added route tests for prefill, persistence, and control visibility.
-- Remaining: decide whether defaults should be editable in `/settings` and add manual UX verification in a real browser with qBittorrent feed data.
+- Feed refresh now preserves currently selected saved-feed entries when the refreshed qBittorrent feed list does not include them.
+- Added route tests for prefill, persistence, control visibility, and edit-mode checkbox rendering.
+- Updated route tests to send repeated form values using `httpx`-compatible dict/list payloads instead of deprecated tuple-list bodies.
+- Added repo-local pytest wrappers that always refresh `logs/tests/pytest-last.log` and `logs/tests/pytest-last.xml` for post-run debugging.
+- Remaining: decide whether defaults should be editable in `/settings`, and add manual UX verification plus full pytest coverage in a fully provisioned development environment.

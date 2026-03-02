@@ -186,6 +186,11 @@ h3 {
   flex-wrap: wrap;
 }
 
+.helper-text {
+  margin: 0;
+  color: var(--muted);
+}
+
 .filter-grid,
 .form-grid {
   display: grid;
@@ -225,10 +230,6 @@ textarea {
   color: var(--ink);
 }
 
-select[multiple] {
-  min-height: 14rem;
-}
-
 textarea {
   resize: vertical;
 }
@@ -245,6 +246,45 @@ textarea {
 .toggle input {
   width: auto;
   margin: 0;
+}
+
+.feed-option-list {
+  display: grid;
+  gap: 0.75rem;
+  max-height: 18rem;
+  padding: 0.9rem;
+  overflow-y: auto;
+  border: 1px solid rgba(19, 37, 40, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 252, 246, 0.64);
+}
+
+.feed-option {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.75rem 0.9rem;
+  border-radius: 14px;
+  background: rgba(255, 252, 246, 0.78);
+  font-weight: 600;
+}
+
+.feed-option input {
+  width: auto;
+  margin: 0.15rem 0 0;
+}
+
+.feed-option-label {
+  overflow-wrap: anywhere;
+}
+
+.feed-empty-state {
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed rgba(19, 37, 40, 0.22);
+  border-radius: 14px;
+  background: rgba(255, 252, 246, 0.52);
+  color: var(--muted);
 }
 
 .rule-grid {

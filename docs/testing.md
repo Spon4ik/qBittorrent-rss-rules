@@ -14,6 +14,14 @@ The project uses a service-heavy architecture, so the test suite is weighted tow
 - tests use a temporary SQLite database per test case
 - environment variables are isolated through pytest monkeypatching
 
+## Test logs
+
+- Prefer `scripts/test.sh` on bash or `scripts/test.bat` on Windows `cmd.exe` when you want a reproducible artifact after each run.
+- Each wrapper overwrites two repo-local files on every invocation:
+- `logs/tests/pytest-last.log` for the readable console transcript
+- `logs/tests/pytest-last.xml` for structured JUnit results
+- Pass normal `pytest` arguments through the wrapper, such as `scripts/test.bat tests\test_routes.py`.
+
 ## Critical coverage areas
 
 High-confidence coverage is required for:
@@ -46,4 +54,3 @@ Minimum behavior expectations:
 - Create a new movie rule and confirm the movie category template is used
 - Break qBittorrent connectivity and confirm local saves still persist while sync reports an error
 - Edit and delete an imported rule
-

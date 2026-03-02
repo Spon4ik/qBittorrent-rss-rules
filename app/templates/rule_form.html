@@ -172,14 +172,28 @@
         <button type="button" id="feed-refresh">Refresh Feeds</button>
       </div>
     </div>
-    <label>
-      Hold Ctrl/Cmd to select multiple feeds
-      <select name="feed_urls" id="feed-select" multiple size="10">
-        {% for feed in feed_options %}
-        <option value="{{ feed.url }}" {% if feed.url in form_data.feed_urls %}selected{% endif %}>{{ feed.label }}</option>
-        {% endfor %}
-      </select>
-    </label>
+    <p class="helper-text">Choose one or more feeds for this rule.</p>
+    <div
+      class="feed-option-list"
+      id="feed-options"
+      data-empty-message="No feeds available yet. Configure qBittorrent and refresh feeds to load them."
+    >
+      {% if feed_options %}
+      {% for feed in feed_options %}
+      <label
+        class="feed-option"
+        data-feed-option="true"
+        data-feed-url="{{ feed.url }}"
+        data-feed-label="{{ feed.label }}"
+      >
+        <input type="checkbox" name="feed_urls" value="{{ feed.url }}" {% if feed.url in form_data.feed_urls %}checked{% endif %} />
+        <span class="feed-option-label">{{ feed.label }}</span>
+      </label>
+      {% endfor %}
+      {% else %}
+      <p class="feed-empty-state">No feeds available yet. Configure qBittorrent and refresh feeds to load them.</p>
+      {% endif %}
+    </div>
   </section>
 
   <details>

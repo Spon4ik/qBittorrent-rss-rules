@@ -33,7 +33,7 @@
 
 - Phase 2: richer taxonomy schema (bundles, ranks, alias families)
 - Phase 3: taxonomy management UI
-- Phase 4: feed selection UX improvements (`Select all`, remembered default feeds)
+- Phase 4: feed selection UX improvements (`Select all`, remembered default feeds), use checkboxes instead of multi-select.
 - Rule templates and preset libraries
 - Metadata providers beyond OMDb
 - Sample feed simulation before save

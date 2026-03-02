@@ -31,6 +31,8 @@ The settings routes extend the original v1 route list because the settings page 
 
 New-rule feed defaults are persisted in `app_settings.default_feed_urls`, applied only when rendering `GET /rules/new`, and never mutate existing rules unless the user explicitly saves changes.
 
+The rule form renders feeds as repeated checkbox inputs named `feed_urls`; checked values post in rendered order, which is the order persisted on the rule and reused for sync payloads.
+
 ## Internal service contracts
 
 ### `QbittorrentClient`

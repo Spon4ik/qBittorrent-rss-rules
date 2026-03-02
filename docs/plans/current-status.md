@@ -2,7 +2,7 @@
 
 ## Current focus
 
-- Phase 4: feed selection UX improvements
+- Phase 4: feed selection UX validation and closeout
 
 ## Implemented
 
@@ -21,20 +21,23 @@
 - `app/routes/pages.py` and `app/routes/api.py` now expose `/taxonomy`, `/api/taxonomy/validate`, and `/api/taxonomy/apply`.
 - `app/templates/taxonomy.html` now provides a server-rendered editor with impact analysis and recent audit entries.
 - `tests/test_routes.py` now covers taxonomy page rendering plus safe apply and orphan-token rejection flows.
-- Rule form feed UX now includes `Select all` / `Clear all` controls and an opt-in remember-defaults toggle for new rules backed by `AppSettings.default_feed_urls`.
+- Rule form feed UX now uses checkbox-based selection with `Select all` / `Clear all` controls and an opt-in remember-defaults toggle for new rules backed by `AppSettings.default_feed_urls`.
+- Feed refresh now preserves currently selected saved-feed entries in the form even if qBittorrent no longer returns them during that edit session.
+- `tests/test_routes.py` now posts repeated form values using dict/list payloads so route coverage stays compatible with the current `httpx` test client behavior.
+- `scripts/test.sh` and `scripts/test.bat` now refresh `logs/tests/pytest-last.log` and `logs/tests/pytest-last.xml` on every pytest run so test failures leave repo-local artifacts for follow-up debugging.
 
 ## In progress
 
-- Phase 4 implementation is started with bulk feed-selection controls and optional remembered defaults on new-rule creation.
-- Full pytest and manual validation are still pending in a fully provisioned development environment.
+- Phase 4 code is implemented, but full pytest and manual browser validation are still pending in a fully provisioned development environment.
 
 ## Next actions
 
-- Run route and form pytest coverage, then the full pytest suite, in the normal development environment.
-- Manually verify `/rules/new` feed `Select all` / `Clear all` controls and remembered default feed behavior.
+- Install the project test dependencies, then run route and form pytest coverage followed by the full pytest suite in the normal development environment.
+- Use `scripts/test.sh` or `scripts/test.bat` for validation runs so the latest pytest transcript is always available under `logs/tests/`.
+- Manually verify `/rules/new` feed checkbox rendering, `Select all` / `Clear all`, refresh, and remembered default feed behavior.
 - Decide whether remembered defaults should also be editable from `/settings` in a follow-up phase-4 slice.
-- Continue phase-4 refinement and close out any remaining taxonomy UI polish from phase 3 as separate follow-up work.
+- Close out Phase 4 after environment-level validation, and keep any remaining taxonomy UI polish from phase 3 as separate follow-up work.
 
 ## Deferred / future phases
 
-- Phase 4: feed UX improvements, including `Select all` and remembered default feed selections
+- Follow-up: decide whether remembered feed defaults should also be editable from `/settings`

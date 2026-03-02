@@ -88,6 +88,25 @@ uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
 ## Tests and checks
 
 ```bash
+./scripts/test.sh
+```
+
+On Windows `cmd.exe`:
+
+```bat
+scripts\test.bat
+```
+
+Each test run writes fresh artifacts to:
+
+- `logs/tests/pytest-last.log`
+- `logs/tests/pytest-last.xml`
+
+The wrapper also accepts normal `pytest` arguments, for example `./scripts/test.sh tests/test_routes.py` or `scripts\test.bat tests\test_routes.py`.
+
+Full checks:
+
+```bash
 ./scripts/check.sh
 ```
 
@@ -101,7 +120,7 @@ The check script runs:
 
 - `ruff check .`
 - `mypy app`
-- `pytest`
+- `pytest` through the logging wrapper, which refreshes `logs/tests/pytest-last.log` and `logs/tests/pytest-last.xml`
 
 ## qBittorrent sync
 

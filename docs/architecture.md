@@ -64,9 +64,9 @@ The app is designed around one rule authority:
 ### Feed selection defaults
 
 1. `AppSettings.default_feed_urls` stores remembered feed URLs for future new rules.
-2. `GET /rules/new` prefills the feed multi-select from `default_feed_urls`.
+2. `GET /rules/new` renders the feed selector as checkbox inputs and prefills matching entries from `default_feed_urls`.
 3. On `POST /api/rules`, the `remember_feed_defaults` checkbox can atomically persist the submitted `feed_urls` as the next default set.
-4. Existing rules always keep their own stored `feed_urls`; defaults only prefill create mode.
+4. Existing rules always keep their own stored `feed_urls`; defaults only prefill create mode, and client-side feed refresh keeps currently selected saved feeds visible if qBittorrent does not return them.
 
 ### Taxonomy management
 

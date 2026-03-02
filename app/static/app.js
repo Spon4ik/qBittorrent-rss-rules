@@ -301,7 +301,7 @@ function initRuleForm(form) {
   const feedRefreshButton = form.querySelector("#feed-refresh");
   const feedSelectAllButton = form.querySelector("#feed-select-all");
   const feedClearAllButton = form.querySelector("#feed-clear-all");
-  const feedSelect = form.querySelector("#feed-select");
+  const feedOptionsContainer = form.querySelector("#feed-options");
   const qualityProfileInput = form.querySelector('input[name="quality_profile"]');
   const filterProfileSelect = form.querySelector("#filter-profile-select");
   const saveNewProfileButton = form.querySelector("#filter-profile-save-new");
@@ -311,6 +311,71 @@ function initRuleForm(form) {
   let categoryTouched = Boolean(categoryInput?.value.trim());
   let savePathTouched = Boolean(savePathInput?.value.trim());
   let releaseYearTouched = Boolean(releaseYearInput?.value.trim());
+
+  const feedEmptyMessage = feedOptionsContainer?.dataset.emptyMessage || "No feeds available yet.";
+
+  const getFeedCheckboxes = () => Array.from(feedOptionsContainer?.querySelectorAll('input[name="feed_urls"]') || []);
+
+  const buildFeedLabelMap = () => {
+    const labels = new Map();
+    if (!feedOptionsContainer) {
+      return labels;
+    }
+    feedOptionsContainer.querySelectorAll("[data-feed-option]").forEach((option) => {
+      const url = option.dataset.feedUrl || "";
+      if (!url || labels.has(url)) {
+        return;
+      }
+      labels.set(url, option.dataset.feedLabel || url);
+    });
+    return labels;
+  };
+
+  const renderFeedOptions = (feeds, selectedUrls = []) => {
+    if (!feedOptionsContainer) {
+      return;
+    }
+
+    const selected = new Set(selectedUrls || []);
+    const seenUrls = new Set();
+    feedOptionsContainer.innerHTML = "";
+
+    for (const feed of feeds || []) {
+      const url = feed?.url || "";
+      if (!url || seenUrls.has(url)) {
+        continue;
+      }
+      seenUrls.add(url);
+
+      const option = document.createElement("label");
+      option.className = "feed-option";
+      option.dataset.feedOption = "true";
+      option.dataset.feedUrl = url;
+      option.dataset.feedLabel = feed.label || url;
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.name = "feed_urls";
+      checkbox.value = url;
+      checkbox.checked = selected.has(url);
+
+      const label = document.createElement("span");
+      label.className = "feed-option-label";
+      label.textContent = feed.label || url;
+
+      option.append(checkbox, label);
+      feedOptionsContainer.appendChild(option);
+    }
+
+    if (feedOptionsContainer.childElementCount > 0) {
+      return;
+    }
+
+    const emptyState = document.createElement("p");
+    emptyState.className = "feed-empty-state";
+    emptyState.textContent = feedEmptyMessage;
+    feedOptionsContainer.appendChild(emptyState);
+  };
 
   const normalizeTokenSelection = (includeTokens, excludeTokens) => {
     const normalizedIncludeTokens = [];
@@ -553,20 +618,14 @@ function initRuleForm(form) {
 
 
   feedSelectAllButton?.addEventListener("click", () => {
-    if (!feedSelect) {
-      return;
-    }
-    Array.from(feedSelect.options).forEach((option) => {
-      option.selected = true;
+    getFeedCheckboxes().forEach((checkbox) => {
+      checkbox.checked = true;
     });
   });
 
   feedClearAllButton?.addEventListener("click", () => {
-    if (!feedSelect) {
-      return;
-    }
-    Array.from(feedSelect.options).forEach((option) => {
-      option.selected = false;
+    getFeedCheckboxes().forEach((checkbox) => {
+      checkbox.checked = false;
     });
   });
 
@@ -577,18 +636,35 @@ function initRuleForm(form) {
       window.alert(payload.error || "Feed refresh failed.");
       return;
     }
-    if (!feedSelect) {
+    if (!feedOptionsContainer) {
       return;
     }
-    const selected = new Set(Array.from(feedSelect.selectedOptions).map((option) => option.value));
-    feedSelect.innerHTML = "";
+
+    const selectedUrls = getFeedCheckboxes()
+      .filter((checkbox) => checkbox.checked)
+      .map((checkbox) => checkbox.value);
+    const existingLabels = buildFeedLabelMap();
+    const mergedFeeds = [];
+    const seenUrls = new Set();
+
     for (const feed of payload.feeds || []) {
-      const option = document.createElement("option");
-      option.value = feed.url;
-      option.textContent = feed.label;
-      option.selected = selected.has(feed.url);
-      feedSelect.appendChild(option);
+      const url = feed?.url || "";
+      if (!url || seenUrls.has(url)) {
+        continue;
+      }
+      seenUrls.add(url);
+      mergedFeeds.push({ url, label: feed.label || url });
     }
+
+    for (const url of selectedUrls) {
+      if (!url || seenUrls.has(url)) {
+        continue;
+      }
+      seenUrls.add(url);
+      mergedFeeds.push({ url, label: existingLabels.get(url) || `Saved feed: ${url}` });
+    }
+
+    renderFeedOptions(mergedFeeds, selectedUrls);
   });
 
   syncQualityProfileValue();

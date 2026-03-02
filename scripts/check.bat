@@ -18,10 +18,9 @@ if errorlevel 1 goto :done
 %PYTHON_EXE% -m mypy app
 if errorlevel 1 goto :done
 
-%PYTHON_EXE% -m pytest
+call "%SCRIPT_DIR%test.bat"
 
 :done
 set "EXIT_CODE=%ERRORLEVEL%"
 popd >nul
 exit /b %EXIT_CODE%
-

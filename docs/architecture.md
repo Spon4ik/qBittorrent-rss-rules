@@ -59,6 +59,14 @@ The app is designed around one rule authority:
 3. If a future caller submits a bundle key or alias key, `app/services/quality_filters.py` expands it into leaf option IDs before persistence or regex generation.
 4. Rank metadata is loaded for future authoring UX, but it does not change current rule storage or rendering behavior in this phase.
 
+### Taxonomy management
+
+1. The `/taxonomy` page reads the live JSON source of truth and renders a local editor.
+2. `POST /api/taxonomy/validate` parses a draft, runs the same schema validation as the live loader, and previews added or removed leaf tokens.
+3. The draft preview checks saved filter profiles plus all stored rules to detect any removed tokens that would orphan persisted selections.
+4. `POST /api/taxonomy/apply` writes the formatted JSON back to `app/data/quality_taxonomy.json`, clears the loader cache, and appends a local audit entry in `data/taxonomy_audit.jsonl`.
+5. Unsafe drafts are rejected before the live taxonomy file is changed.
+
 ## Sync flow
 
 - Login: `POST /api/v2/auth/login`

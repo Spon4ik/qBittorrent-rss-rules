@@ -1,90 +1,126 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime, timezone
 from functools import lru_cache
 import json
 from pathlib import Path
 import re
 from typing import Any
 
-from app.models import AppSettings, QualityProfile
+from app.models import AppSettings, QualityProfile, Rule
 
 QUALITY_TAXONOMY_PATH = Path(__file__).resolve().parent.parent / "data" / "quality_taxonomy.json"
+QUALITY_TAXONOMY_AUDIT_PATH = (
+    Path(__file__).resolve().parent.parent.parent / "data" / "taxonomy_audit.jsonl"
+)
 
 
-def _quality_taxonomy_error(problem: str) -> RuntimeError:
-    return RuntimeError(f"Invalid quality taxonomy at {QUALITY_TAXONOMY_PATH}: {problem}")
+def _quality_taxonomy_source(source: Path | str | None = None) -> str:
+    if source is None:
+        return str(QUALITY_TAXONOMY_PATH)
+    return str(source)
 
 
-@lru_cache(maxsize=1)
-def _load_quality_taxonomy() -> dict[str, Any]:
-    try:
-        raw_payload = QUALITY_TAXONOMY_PATH.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise RuntimeError(
-            f"Unable to load quality taxonomy from {QUALITY_TAXONOMY_PATH}: {exc}"
-        ) from exc
+def _quality_taxonomy_error(problem: str, *, source: Path | str | None = None) -> RuntimeError:
+    return RuntimeError(f"Invalid quality taxonomy at {_quality_taxonomy_source(source)}: {problem}")
 
+
+def _parse_quality_taxonomy_json(
+    raw_payload: str,
+    *,
+    source: Path | str | None = None,
+) -> dict[str, Any]:
+    source_label = _quality_taxonomy_source(source)
     try:
         payload = json.loads(raw_payload)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
-            f"Invalid quality taxonomy at {QUALITY_TAXONOMY_PATH}: JSON decode error at line "
+            f"Invalid quality taxonomy at {source_label}: JSON decode error at line "
             f"{exc.lineno}, column {exc.colno}: {exc.msg}"
         ) from exc
-
     if not isinstance(payload, dict):
-        raise _quality_taxonomy_error("top-level JSON value must be an object")
+        raise _quality_taxonomy_error("top-level JSON value must be an object", source=source)
+    return payload
+
+
+def _validate_quality_taxonomy_payload(
+    payload: dict[str, Any],
+    *,
+    source: Path | str | None = None,
+) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise _quality_taxonomy_error("top-level JSON value must be an object", source=source)
+
     version = payload.get("version")
     if version not in (1, 2):
-        raise _quality_taxonomy_error("version must be 1 or 2")
+        raise _quality_taxonomy_error("version must be 1 or 2", source=source)
 
     raw_groups = payload.get("groups")
     if not isinstance(raw_groups, list):
-        raise _quality_taxonomy_error("groups must be a list")
+        raise _quality_taxonomy_error("groups must be a list", source=source)
 
     groups: list[dict[str, str]] = []
     seen_group_keys: set[str] = set()
     for index, raw_group in enumerate(raw_groups):
         if not isinstance(raw_group, dict):
-            raise _quality_taxonomy_error(f"groups[{index}] must be an object")
+            raise _quality_taxonomy_error(f"groups[{index}] must be an object", source=source)
         key = str(raw_group.get("key", "")).strip()
         label = str(raw_group.get("label", "")).strip()
         if not key:
-            raise _quality_taxonomy_error(f"groups[{index}].key must be a non-empty string")
+            raise _quality_taxonomy_error(
+                f"groups[{index}].key must be a non-empty string",
+                source=source,
+            )
         if not label:
-            raise _quality_taxonomy_error(f"groups[{index}].label must be a non-empty string")
+            raise _quality_taxonomy_error(
+                f"groups[{index}].label must be a non-empty string",
+                source=source,
+            )
         if key in seen_group_keys:
-            raise _quality_taxonomy_error(f"duplicate group key '{key}'")
+            raise _quality_taxonomy_error(f"duplicate group key '{key}'", source=source)
         seen_group_keys.add(key)
         groups.append({"key": key, "label": label})
 
     raw_options = payload.get("options")
     if not isinstance(raw_options, list):
-        raise _quality_taxonomy_error("options must be a list")
+        raise _quality_taxonomy_error("options must be a list", source=source)
 
     options: list[dict[str, str]] = []
     seen_option_values: set[str] = set()
     for index, raw_option in enumerate(raw_options):
         if not isinstance(raw_option, dict):
-            raise _quality_taxonomy_error(f"options[{index}] must be an object")
+            raise _quality_taxonomy_error(f"options[{index}] must be an object", source=source)
         value = str(raw_option.get("value", "")).strip()
         label = str(raw_option.get("label", "")).strip()
         pattern = str(raw_option.get("pattern", "")).strip()
         group = str(raw_option.get("group", "")).strip()
         if not value:
-            raise _quality_taxonomy_error(f"options[{index}].value must be a non-empty string")
+            raise _quality_taxonomy_error(
+                f"options[{index}].value must be a non-empty string",
+                source=source,
+            )
         if not label:
-            raise _quality_taxonomy_error(f"options[{index}].label must be a non-empty string")
+            raise _quality_taxonomy_error(
+                f"options[{index}].label must be a non-empty string",
+                source=source,
+            )
         if not pattern:
-            raise _quality_taxonomy_error(f"options[{index}].pattern must be a non-empty string")
+            raise _quality_taxonomy_error(
+                f"options[{index}].pattern must be a non-empty string",
+                source=source,
+            )
         if not group:
-            raise _quality_taxonomy_error(f"options[{index}].group must be a non-empty string")
+            raise _quality_taxonomy_error(
+                f"options[{index}].group must be a non-empty string",
+                source=source,
+            )
         if value in seen_option_values:
-            raise _quality_taxonomy_error(f"duplicate option value '{value}'")
+            raise _quality_taxonomy_error(f"duplicate option value '{value}'", source=source)
         if group not in seen_group_keys:
             raise _quality_taxonomy_error(
-                f"options[{index}].group references unknown group '{group}'"
+                f"options[{index}].group references unknown group '{group}'",
+                source=source,
             )
         seen_option_values.add(value)
         options.append(
@@ -101,27 +137,35 @@ def _load_quality_taxonomy() -> dict[str, Any]:
     raw_bundles = payload.get("bundles", [])
     if version == 2:
         if not isinstance(raw_bundles, list):
-            raise _quality_taxonomy_error("bundles must be a list")
+            raise _quality_taxonomy_error("bundles must be a list", source=source)
         for index, raw_bundle in enumerate(raw_bundles):
             if not isinstance(raw_bundle, dict):
-                raise _quality_taxonomy_error(f"bundles[{index}] must be an object")
+                raise _quality_taxonomy_error(f"bundles[{index}] must be an object", source=source)
             key = str(raw_bundle.get("key", "")).strip()
             label = str(raw_bundle.get("label", "")).strip()
             raw_bundle_tokens = raw_bundle.get("tokens")
             if not key:
-                raise _quality_taxonomy_error(f"bundles[{index}].key must be a non-empty string")
+                raise _quality_taxonomy_error(
+                    f"bundles[{index}].key must be a non-empty string",
+                    source=source,
+                )
             if not label:
                 raise _quality_taxonomy_error(
-                    f"bundles[{index}].label must be a non-empty string"
+                    f"bundles[{index}].label must be a non-empty string",
+                    source=source,
                 )
             if key in seen_bundle_keys:
-                raise _quality_taxonomy_error(f"duplicate bundle key '{key}'")
+                raise _quality_taxonomy_error(f"duplicate bundle key '{key}'", source=source)
             if key in seen_option_values:
                 raise _quality_taxonomy_error(
-                    f"bundles[{index}].key collides with option value '{key}'"
+                    f"bundles[{index}].key collides with option value '{key}'",
+                    source=source,
                 )
             if not isinstance(raw_bundle_tokens, list):
-                raise _quality_taxonomy_error(f"bundles[{index}].tokens must be a list")
+                raise _quality_taxonomy_error(
+                    f"bundles[{index}].tokens must be a list",
+                    source=source,
+                )
 
             bundle_tokens: list[str] = []
             seen_bundle_tokens: set[str] = set()
@@ -129,15 +173,18 @@ def _load_quality_taxonomy() -> dict[str, Any]:
                 token = str(raw_token).strip()
                 if not token:
                     raise _quality_taxonomy_error(
-                        f"bundles[{index}].tokens[{token_index}] must be a non-empty string"
+                        f"bundles[{index}].tokens[{token_index}] must be a non-empty string",
+                        source=source,
                     )
                 if token not in seen_option_values:
                     raise _quality_taxonomy_error(
-                        f"bundles[{index}].tokens[{token_index}] references unknown option '{token}'"
+                        f"bundles[{index}].tokens[{token_index}] references unknown option '{token}'",
+                        source=source,
                     )
                 if token in seen_bundle_tokens:
                     raise _quality_taxonomy_error(
-                        f"bundles[{index}] contains duplicate token '{token}'"
+                        f"bundles[{index}] contains duplicate token '{token}'",
+                        source=source,
                     )
                 seen_bundle_tokens.add(token)
                 bundle_tokens.append(token)
@@ -149,32 +196,39 @@ def _load_quality_taxonomy() -> dict[str, Any]:
     raw_aliases = payload.get("aliases", [])
     if version == 2:
         if not isinstance(raw_aliases, list):
-            raise _quality_taxonomy_error("aliases must be a list")
+            raise _quality_taxonomy_error("aliases must be a list", source=source)
         seen_alias_keys: set[str] = set()
         for index, raw_alias in enumerate(raw_aliases):
             if not isinstance(raw_alias, dict):
-                raise _quality_taxonomy_error(f"aliases[{index}] must be an object")
+                raise _quality_taxonomy_error(f"aliases[{index}] must be an object", source=source)
             alias = str(raw_alias.get("alias", "")).strip()
             canonical = str(raw_alias.get("canonical", "")).strip()
             if not alias:
-                raise _quality_taxonomy_error(f"aliases[{index}].alias must be a non-empty string")
+                raise _quality_taxonomy_error(
+                    f"aliases[{index}].alias must be a non-empty string",
+                    source=source,
+                )
             if not canonical:
                 raise _quality_taxonomy_error(
-                    f"aliases[{index}].canonical must be a non-empty string"
+                    f"aliases[{index}].canonical must be a non-empty string",
+                    source=source,
                 )
             if alias in seen_alias_keys:
-                raise _quality_taxonomy_error(f"duplicate alias '{alias}'")
+                raise _quality_taxonomy_error(f"duplicate alias '{alias}'", source=source)
             if alias in seen_option_values:
                 raise _quality_taxonomy_error(
-                    f"aliases[{index}].alias collides with option value '{alias}'"
+                    f"aliases[{index}].alias collides with option value '{alias}'",
+                    source=source,
                 )
             if alias in seen_bundle_keys:
                 raise _quality_taxonomy_error(
-                    f"aliases[{index}].alias collides with bundle key '{alias}'"
+                    f"aliases[{index}].alias collides with bundle key '{alias}'",
+                    source=source,
                 )
             if canonical not in seen_option_values:
                 raise _quality_taxonomy_error(
-                    f"aliases[{index}].canonical references unknown option '{canonical}'"
+                    f"aliases[{index}].canonical references unknown option '{canonical}'",
+                    source=source,
                 )
 
             seen_alias_keys.add(alias)
@@ -184,20 +238,26 @@ def _load_quality_taxonomy() -> dict[str, Any]:
     raw_ranks = payload.get("ranks", [])
     if version == 2:
         if not isinstance(raw_ranks, list):
-            raise _quality_taxonomy_error("ranks must be a list")
+            raise _quality_taxonomy_error("ranks must be a list", source=source)
         seen_rank_keys: set[str] = set()
         for index, raw_rank in enumerate(raw_ranks):
             if not isinstance(raw_rank, dict):
-                raise _quality_taxonomy_error(f"ranks[{index}] must be an object")
+                raise _quality_taxonomy_error(f"ranks[{index}] must be an object", source=source)
             key = str(raw_rank.get("key", "")).strip()
             label = str(raw_rank.get("label", "")).strip()
             raw_rank_tokens = raw_rank.get("tokens")
             if not key:
-                raise _quality_taxonomy_error(f"ranks[{index}].key must be a non-empty string")
+                raise _quality_taxonomy_error(
+                    f"ranks[{index}].key must be a non-empty string",
+                    source=source,
+                )
             if key in seen_rank_keys:
-                raise _quality_taxonomy_error(f"duplicate rank key '{key}'")
+                raise _quality_taxonomy_error(f"duplicate rank key '{key}'", source=source)
             if not isinstance(raw_rank_tokens, list):
-                raise _quality_taxonomy_error(f"ranks[{index}].tokens must be a list")
+                raise _quality_taxonomy_error(
+                    f"ranks[{index}].tokens must be a list",
+                    source=source,
+                )
 
             rank_tokens: list[str] = []
             seen_rank_tokens: set[str] = set()
@@ -205,15 +265,18 @@ def _load_quality_taxonomy() -> dict[str, Any]:
                 token = str(raw_token).strip()
                 if not token:
                     raise _quality_taxonomy_error(
-                        f"ranks[{index}].tokens[{token_index}] must be a non-empty string"
+                        f"ranks[{index}].tokens[{token_index}] must be a non-empty string",
+                        source=source,
                     )
                 if token not in seen_option_values:
                     raise _quality_taxonomy_error(
-                        f"ranks[{index}].tokens[{token_index}] references unknown option '{token}'"
+                        f"ranks[{index}].tokens[{token_index}] references unknown option '{token}'",
+                        source=source,
                     )
                 if token in seen_rank_tokens:
                     raise _quality_taxonomy_error(
-                        f"ranks[{index}] contains duplicate token '{token}'"
+                        f"ranks[{index}] contains duplicate token '{token}'",
+                        source=source,
                     )
                 seen_rank_tokens.add(token)
                 rank_tokens.append(token)
@@ -232,6 +295,19 @@ def _load_quality_taxonomy() -> dict[str, Any]:
         "aliases": tuple(aliases),
         "ranks": tuple(ranks),
     }
+
+
+@lru_cache(maxsize=1)
+def _load_quality_taxonomy() -> dict[str, Any]:
+    try:
+        raw_payload = QUALITY_TAXONOMY_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(
+            f"Unable to load quality taxonomy from {QUALITY_TAXONOMY_PATH}: {exc}"
+        ) from exc
+
+    payload = _parse_quality_taxonomy_json(raw_payload, source=QUALITY_TAXONOMY_PATH)
+    return _validate_quality_taxonomy_payload(payload, source=QUALITY_TAXONOMY_PATH)
 
 
 @lru_cache(maxsize=1)
@@ -285,6 +361,203 @@ def _clear_quality_taxonomy_cache() -> None:
     _quality_options.cache_clear()
     _quality_group_labels.cache_clear()
     _load_quality_taxonomy.cache_clear()
+
+
+def read_quality_taxonomy_text() -> str:
+    try:
+        return QUALITY_TAXONOMY_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(
+            f"Unable to load quality taxonomy from {QUALITY_TAXONOMY_PATH}: {exc}"
+        ) from exc
+
+
+def quality_taxonomy_snapshot() -> dict[str, object]:
+    taxonomy = _load_quality_taxonomy()
+    return {
+        "version": taxonomy["version"],
+        "groups": [dict(item) for item in taxonomy["groups"]],
+        "options": quality_option_choices(),
+        "bundles": quality_bundle_choices(),
+        "aliases": [dict(item) for item in taxonomy["aliases"]],
+        "ranks": [
+            {
+                "key": item["key"],
+                "label": item.get("label", ""),
+                "tokens": list(item["tokens"]),
+            }
+            for item in taxonomy["ranks"]
+        ],
+    }
+
+
+def _quality_taxonomy_summary(taxonomy: dict[str, Any]) -> dict[str, int]:
+    return {
+        "group_count": len(taxonomy["groups"]),
+        "option_count": len(taxonomy["options"]),
+        "bundle_count": len(taxonomy["bundles"]),
+        "alias_count": len(taxonomy["aliases"]),
+        "rank_count": len(taxonomy["ranks"]),
+    }
+
+
+def _dedupe_stored_tokens(raw_tokens: list[str] | tuple[str, ...] | None) -> list[str]:
+    tokens = raw_tokens or []
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw_token in tokens:
+        token = str(raw_token).strip()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        cleaned.append(token)
+    return cleaned
+
+
+def _quality_taxonomy_references(
+    settings: AppSettings | None,
+    rules: list[Rule] | tuple[Rule, ...] | None,
+) -> list[dict[str, object]]:
+    references: list[dict[str, object]] = []
+    for profile in available_filter_profile_choices(settings):
+        tokens = _dedupe_stored_tokens(
+            list(profile.get("include_tokens", [])) + list(profile.get("exclude_tokens", []))
+        )
+        if not tokens:
+            continue
+        references.append(
+            {
+                "kind": "filter_profile",
+                "label": str(profile.get("label", profile.get("key", "Profile"))),
+                "tokens": tokens,
+            }
+        )
+
+    for rule in rules or []:
+        tokens = _dedupe_stored_tokens(
+            list(rule.quality_include_tokens or []) + list(rule.quality_exclude_tokens or [])
+        )
+        if not tokens:
+            continue
+        references.append(
+            {
+                "kind": "rule",
+                "label": rule.rule_name,
+                "tokens": tokens,
+            }
+        )
+
+    return references
+
+
+def preview_quality_taxonomy_update(
+    raw_payload: str,
+    *,
+    settings: AppSettings | None,
+    rules: list[Rule] | tuple[Rule, ...] | None,
+) -> dict[str, object]:
+    payload = _parse_quality_taxonomy_json(raw_payload, source="submitted taxonomy")
+    validated = _validate_quality_taxonomy_payload(payload, source="submitted taxonomy")
+
+    current_tokens = [item["value"] for item in _quality_options()]
+    candidate_tokens = [str(item["value"]) for item in validated["options"]]
+    current_token_set = set(current_tokens)
+    candidate_token_set = set(candidate_tokens)
+
+    added_tokens = [token for token in candidate_tokens if token not in current_token_set]
+    removed_tokens = [token for token in current_tokens if token not in candidate_token_set]
+
+    blocking_references: list[dict[str, object]] = []
+    for reference in _quality_taxonomy_references(settings, rules):
+        missing_tokens = [token for token in reference["tokens"] if token not in candidate_token_set]
+        if not missing_tokens:
+            continue
+        blocking_references.append(
+            {
+                "kind": reference["kind"],
+                "label": reference["label"],
+                "missing_tokens": missing_tokens,
+            }
+        )
+
+    return {
+        "formatted_text": json.dumps(payload, indent=2) + "\n",
+        "version": int(validated["version"]),
+        "summary": _quality_taxonomy_summary(validated),
+        "added_tokens": added_tokens,
+        "removed_tokens": removed_tokens,
+        "blocking_references": blocking_references,
+        "safe_to_apply": not blocking_references,
+    }
+
+
+def _append_quality_taxonomy_audit_entry(entry: dict[str, object]) -> str | None:
+    try:
+        QUALITY_TAXONOMY_AUDIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with QUALITY_TAXONOMY_AUDIT_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=True))
+            handle.write("\n")
+    except OSError as exc:
+        return str(exc)
+    return None
+
+
+def recent_quality_taxonomy_audit_entries(limit: int = 10) -> list[dict[str, object]]:
+    if limit <= 0:
+        return []
+
+    try:
+        raw_lines = QUALITY_TAXONOMY_AUDIT_PATH.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return []
+    except OSError:
+        return []
+
+    entries: list[dict[str, object]] = []
+    for raw_line in reversed(raw_lines):
+        if len(entries) >= limit:
+            break
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            entries.append(payload)
+    return entries
+
+
+def apply_quality_taxonomy_update(
+    raw_payload: str,
+    *,
+    change_note: str = "",
+) -> str | None:
+    payload = _parse_quality_taxonomy_json(raw_payload, source="submitted taxonomy")
+    validated = _validate_quality_taxonomy_payload(payload, source="submitted taxonomy")
+    formatted_text = json.dumps(payload, indent=2) + "\n"
+
+    try:
+        QUALITY_TAXONOMY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        QUALITY_TAXONOMY_PATH.write_text(formatted_text, encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(
+            f"Unable to write quality taxonomy to {QUALITY_TAXONOMY_PATH}: {exc}"
+        ) from exc
+
+    _clear_quality_taxonomy_cache()
+
+    audit_error = _append_quality_taxonomy_audit_entry(
+        {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "action": "apply",
+            "note": change_note.strip(),
+            "version": int(validated["version"]),
+            **_quality_taxonomy_summary(validated),
+        }
+    )
+    return audit_error
 
 
 QUALITY_PROFILE_LABELS: dict[str, str] = {

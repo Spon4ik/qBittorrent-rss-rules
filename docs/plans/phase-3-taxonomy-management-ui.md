@@ -2,8 +2,9 @@
 
 ## Status
 
-- Planned.
-- Depends on phase 2 schema availability.
+- Implementation is in progress in the repo.
+- A first server-rendered editor flow exists for inspect, validate, and apply.
+- Remaining work is validation in a full dev environment plus UX refinement if a richer client-side workflow is still desired.
 
 ## Goal
 
@@ -30,6 +31,7 @@ Provide a UI and API workflow to inspect, edit, validate, and safely apply taxon
    - Add endpoints for taxonomy read, validate, and apply actions.
 2. `app/templates/` + `app/static/`
    - Add taxonomy editor and validation feedback UI.
+   - Initial implementation may stay server-rendered; richer client-side polish can follow after workflow validation.
 3. `app/services/quality_filters.py`
    - Add safe reload hooks and impact-analysis helpers.
 4. `tests/test_routes.py`, `tests/test_quality_filters.py`

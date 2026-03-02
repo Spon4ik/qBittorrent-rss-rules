@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -24,12 +25,17 @@ from app.services.metadata import MetadataClient, MetadataLookupError
 from app.services.quality_filters import (
     AT_LEAST_UHD_PROFILE,
     BUILTIN_AT_LEAST_UHD_PROFILE_KEY,
+    apply_quality_taxonomy_update,
     available_filter_profile_choices,
     build_available_filter_profiles,
     normalize_saved_quality_profiles,
+    preview_quality_taxonomy_update,
     quality_option_choices,
     quality_option_groups,
     quality_profile_choices,
+    quality_taxonomy_snapshot,
+    read_quality_taxonomy_text,
+    recent_quality_taxonomy_audit_entries,
     resolve_quality_profile_rules,
     slugify_profile_key,
 )
@@ -110,6 +116,13 @@ def _raw_settings_form_data(form: Any) -> dict[str, Any]:
     }
 
 
+def _raw_taxonomy_form_data(form: Any) -> dict[str, str]:
+    return {
+        "taxonomy_json": str(form.get("taxonomy_json", "")),
+        "change_note": str(form.get("taxonomy_change_note", "")).strip(),
+    }
+
+
 def _render_rule_form(
     request: Request,
     *,
@@ -182,6 +195,53 @@ def _render_settings_page(
             "quality_options": quality_option_choices(),
             "quality_option_groups": quality_option_groups(),
             "metadata_choices": ["omdb", "disabled"],
+            "message": message,
+            "message_level": message_level,
+        },
+        status_code=status_code,
+    )
+
+
+def _render_taxonomy_page(
+    request: Request,
+    *,
+    session: Session,
+    form_data: dict[str, str],
+    errors: list[str],
+    preview: dict[str, object] | None = None,
+    message: str | None = None,
+    message_level: str = "info",
+    status_code: int = 400,
+) -> HTMLResponse:
+    current_errors = list(errors)
+    current_snapshot: dict[str, object] | None = None
+    current_preview: dict[str, object] | None = None
+
+    settings = SettingsService.get_or_create(session)
+    rules = session.scalars(select(Rule).order_by(Rule.rule_name.asc())).all()
+    try:
+        raw_taxonomy = read_quality_taxonomy_text()
+        current_snapshot = quality_taxonomy_snapshot()
+        current_preview = preview_quality_taxonomy_update(
+            raw_taxonomy,
+            settings=settings,
+            rules=rules,
+        )
+    except RuntimeError as exc:
+        if not current_errors:
+            current_errors.append(str(exc))
+
+    return templates.TemplateResponse(
+        "taxonomy.html",
+        {
+            "request": request,
+            "page_title": "Taxonomy",
+            "taxonomy_form": form_data,
+            "taxonomy_preview": preview,
+            "taxonomy_snapshot": current_snapshot,
+            "current_taxonomy_preview": current_preview,
+            "taxonomy_audit_entries": recent_quality_taxonomy_audit_entries(),
+            "errors": current_errors,
             "message": message,
             "message_level": message_level,
         },
@@ -567,6 +627,129 @@ def sync_all(session: Session = Depends(get_db_session)) -> RedirectResponse:
         f"{result.error_count} failed, drift detected on {result.drift_detected}."
     )
     return RedirectResponse(url=f"/?message={message}&level={level}", status_code=303)
+
+
+@router.post("/taxonomy/validate", response_class=HTMLResponse)
+async def validate_taxonomy(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> HTMLResponse:
+    form = await request.form()
+    form_data = _raw_taxonomy_form_data(form)
+    raw_taxonomy = form_data["taxonomy_json"]
+    if not raw_taxonomy.strip():
+        return _render_taxonomy_page(
+            request,
+            session=session,
+            form_data=form_data,
+            errors=["Taxonomy JSON is required."],
+        )
+
+    settings = SettingsService.get_or_create(session)
+    rules = session.scalars(select(Rule).order_by(Rule.rule_name.asc())).all()
+    try:
+        preview = preview_quality_taxonomy_update(
+            raw_taxonomy,
+            settings=settings,
+            rules=rules,
+        )
+    except RuntimeError as exc:
+        return _render_taxonomy_page(
+            request,
+            session=session,
+            form_data=form_data,
+            errors=[str(exc)],
+        )
+
+    message = "Draft validation passed."
+    level = "success"
+    if not bool(preview["safe_to_apply"]):
+        message = "Draft parsed, but applying it would orphan persisted tokens."
+        level = "warning"
+
+    return _render_taxonomy_page(
+        request,
+        session=session,
+        form_data={"taxonomy_json": str(preview["formatted_text"]), "change_note": form_data["change_note"]},
+        errors=[],
+        preview=preview,
+        message=message,
+        message_level=level,
+        status_code=200,
+    )
+
+
+@router.post("/taxonomy/apply", response_class=HTMLResponse)
+async def apply_taxonomy(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> Response:
+    form = await request.form()
+    form_data = _raw_taxonomy_form_data(form)
+    raw_taxonomy = form_data["taxonomy_json"]
+    if not raw_taxonomy.strip():
+        return _render_taxonomy_page(
+            request,
+            session=session,
+            form_data=form_data,
+            errors=["Taxonomy JSON is required."],
+        )
+
+    settings = SettingsService.get_or_create(session)
+    rules = session.scalars(select(Rule).order_by(Rule.rule_name.asc())).all()
+    try:
+        preview = preview_quality_taxonomy_update(
+            raw_taxonomy,
+            settings=settings,
+            rules=rules,
+        )
+    except RuntimeError as exc:
+        return _render_taxonomy_page(
+            request,
+            session=session,
+            form_data=form_data,
+            errors=[str(exc)],
+        )
+
+    normalized_form_data = {
+        "taxonomy_json": str(preview["formatted_text"]),
+        "change_note": form_data["change_note"],
+    }
+    if not bool(preview["safe_to_apply"]):
+        return _render_taxonomy_page(
+            request,
+            session=session,
+            form_data=normalized_form_data,
+            errors=["Cannot apply a taxonomy update that would orphan persisted tokens."],
+            preview=preview,
+            message="Resolve the blocking references before applying this draft.",
+            message_level="warning",
+        )
+
+    try:
+        audit_error = apply_quality_taxonomy_update(
+            normalized_form_data["taxonomy_json"],
+            change_note=normalized_form_data["change_note"],
+        )
+    except RuntimeError as exc:
+        return _render_taxonomy_page(
+            request,
+            session=session,
+            form_data=normalized_form_data,
+            errors=[str(exc)],
+            preview=preview,
+        )
+
+    message = "Taxonomy updated."
+    level = "success"
+    if audit_error:
+        message = f"Taxonomy updated, but the audit log could not be written: {audit_error}"
+        level = "warning"
+
+    return RedirectResponse(
+        url=f"/taxonomy?message={message}&level={level}",
+        status_code=303,
+    )
 
 
 @router.post("/settings", response_class=HTMLResponse)

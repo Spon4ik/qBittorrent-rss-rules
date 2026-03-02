@@ -6,19 +6,22 @@ import json
 
 import pytest
 
-from app.models import AppSettings, QualityProfile
+from app.models import AppSettings, QualityProfile, Rule
 from app.services import quality_filters
 from app.services.quality_filters import (
     AT_LEAST_UHD_PROFILE,
     DEFAULT_QUALITY_PROFILE_RULES,
     LEGACY_DEFAULT_QUALITY_PROFILE_RULES,
     _clear_quality_taxonomy_cache,
+    apply_quality_taxonomy_update,
     detect_matching_filter_profile_key,
     expand_quality_tokens,
     normalize_quality_tokens,
+    preview_quality_taxonomy_update,
     quality_bundle_choices,
     quality_option_choices,
     quality_option_groups,
+    recent_quality_taxonomy_audit_entries,
     resolve_quality_token,
     tokens_to_regex,
 )
@@ -190,6 +193,67 @@ def test_quality_taxonomy_rejects_rank_with_unknown_option(tmp_path, monkeypatch
 
     with pytest.raises(RuntimeError, match="unknown option 'missing-option'"):
         quality_option_choices()
+
+
+def test_preview_quality_taxonomy_update_flags_orphaned_rule_tokens() -> None:
+    payload = _read_default_quality_taxonomy()
+    options = payload["options"]
+    aliases = payload["aliases"]
+    assert isinstance(options, list)
+    assert isinstance(aliases, list)
+    payload["options"] = [item for item in options if item["value"] != "hevc"]
+    payload["aliases"] = [item for item in aliases if item["canonical"] != "hevc"]
+
+    rule = Rule(
+        rule_name="Rule Alpha",
+        content_name="Rule Alpha",
+        normalized_title="Rule Alpha",
+    )
+    rule.quality_include_tokens = ["hevc"]
+    rule.quality_exclude_tokens = []
+
+    preview = preview_quality_taxonomy_update(
+        json.dumps(payload),
+        settings=None,
+        rules=[rule],
+    )
+
+    assert preview["safe_to_apply"] is False
+    assert preview["removed_tokens"] == ["hevc"]
+    assert preview["blocking_references"] == [
+        {
+            "kind": "rule",
+            "label": "Rule Alpha",
+            "missing_tokens": ["hevc"],
+        }
+    ]
+
+
+def test_apply_quality_taxonomy_update_writes_file_and_audit_entry(tmp_path, monkeypatch) -> None:
+    payload = _read_default_quality_taxonomy()
+    aliases = payload["aliases"]
+    assert isinstance(aliases, list)
+    aliases.append(
+        {
+            "alias": "web_rip_alt",
+            "label": "Web Rip Alt",
+            "canonical": "web_rip",
+        }
+    )
+    taxonomy_path = _write_quality_taxonomy(tmp_path, _read_default_quality_taxonomy())
+    audit_path = tmp_path / "taxonomy_audit.jsonl"
+    monkeypatch.setattr(quality_filters, "QUALITY_TAXONOMY_PATH", taxonomy_path)
+    monkeypatch.setattr(quality_filters, "QUALITY_TAXONOMY_AUDIT_PATH", audit_path)
+    _clear_quality_taxonomy_cache()
+
+    audit_error = apply_quality_taxonomy_update(
+        json.dumps(payload),
+        change_note="service test",
+    )
+
+    assert audit_error is None
+    assert json.loads(taxonomy_path.read_text(encoding="utf-8"))["aliases"][-1]["alias"] == "web_rip_alt"
+    assert recent_quality_taxonomy_audit_entries(limit=1)[0]["note"] == "service test"
 
 
 def test_quality_taxonomy_rejects_duplicate_option_values(tmp_path, monkeypatch) -> None:

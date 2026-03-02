@@ -1,10 +1,31 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 
-from app.models import AppSettings, Rule, SyncStatus
+from app.models import AppSettings, MediaType, QualityProfile, Rule, SyncStatus
+from app.services import quality_filters
+
+
+def _use_temp_taxonomy(tmp_path: Path, monkeypatch):
+    payload = json.loads(quality_filters.QUALITY_TAXONOMY_PATH.read_text(encoding="utf-8"))
+    taxonomy_path = tmp_path / "quality_taxonomy.json"
+    audit_path = tmp_path / "taxonomy_audit.jsonl"
+    taxonomy_path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(quality_filters, "QUALITY_TAXONOMY_PATH", taxonomy_path)
+    monkeypatch.setattr(quality_filters, "QUALITY_TAXONOMY_AUDIT_PATH", audit_path)
+    quality_filters._clear_quality_taxonomy_cache()
+    return payload, taxonomy_path, audit_path
+
+
+@pytest.fixture(autouse=True)
+def clear_quality_taxonomy_cache() -> None:
+    quality_filters._clear_quality_taxonomy_cache()
+    yield
+    quality_filters._clear_quality_taxonomy_cache()
 
 
 def test_health_endpoint(app_client) -> None:
@@ -12,6 +33,69 @@ def test_health_endpoint(app_client) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_taxonomy_page_renders_editor(app_client) -> None:
+    response = app_client.get("/taxonomy")
+
+    assert response.status_code == 200
+    assert "Inspect and edit the quality taxonomy" in response.text
+    assert 'name="taxonomy_json"' in response.text
+
+
+def test_apply_taxonomy_updates_source_and_records_audit(app_client, tmp_path, monkeypatch) -> None:
+    payload, taxonomy_path, audit_path = _use_temp_taxonomy(tmp_path, monkeypatch)
+    bundles = payload["bundles"]
+    assert isinstance(bundles, list)
+    bundles[0]["label"] = "At Least HD Revised"
+
+    response = app_client.post(
+        "/api/taxonomy/apply",
+        data={
+            "taxonomy_json": json.dumps(payload),
+            "taxonomy_change_note": "rename bundle label",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert json.loads(taxonomy_path.read_text(encoding="utf-8"))["bundles"][0]["label"] == "At Least HD Revised"
+    assert "rename bundle label" in audit_path.read_text(encoding="utf-8")
+
+
+def test_apply_taxonomy_rejects_orphaning_rule_tokens(app_client, db_session, tmp_path, monkeypatch) -> None:
+    payload, taxonomy_path, audit_path = _use_temp_taxonomy(tmp_path, monkeypatch)
+    rule = Rule(
+        rule_name="Rule Beta",
+        content_name="Rule Beta",
+        normalized_title="Rule Beta",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        quality_include_tokens=["hevc"],
+        quality_exclude_tokens=[],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    options = payload["options"]
+    aliases = payload["aliases"]
+    assert isinstance(options, list)
+    assert isinstance(aliases, list)
+    payload["options"] = [item for item in options if item["value"] != "hevc"]
+    payload["aliases"] = [item for item in aliases if item["canonical"] != "hevc"]
+
+    response = app_client.post(
+        "/api/taxonomy/apply",
+        data={
+            "taxonomy_json": json.dumps(payload),
+            "taxonomy_change_note": "remove hevc",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Cannot apply a taxonomy update that would orphan persisted tokens." in response.text
+    assert any(item["value"] == "hevc" for item in json.loads(taxonomy_path.read_text(encoding="utf-8"))["options"])
+    assert not audit_path.exists()
 
 
 def test_new_rule_uses_ultra_hd_hdr_defaults(app_client) -> None:

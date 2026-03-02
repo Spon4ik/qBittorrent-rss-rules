@@ -13,9 +13,13 @@ from app.models import MediaType, Rule, media_type_choices, media_type_label
 from app.services.quality_filters import (
     available_filter_profile_choices,
     detect_matching_filter_profile_key,
+    preview_quality_taxonomy_update,
     quality_option_choices,
     quality_option_groups,
     quality_profile_choices,
+    quality_taxonomy_snapshot,
+    read_quality_taxonomy_text,
+    recent_quality_taxonomy_audit_entries,
     resolve_quality_profile_rules,
 )
 from app.services.qbittorrent import QbittorrentClientError
@@ -247,6 +251,37 @@ def settings_page(request: Request, session: Session = Depends(get_db_session)) 
         }
     )
     return templates.TemplateResponse("settings.html", context)
+
+
+@router.get("/taxonomy", response_class=HTMLResponse)
+def taxonomy_page(request: Request, session: Session = Depends(get_db_session)) -> HTMLResponse:
+    settings = SettingsService.get_or_create(session)
+    rules = session.scalars(select(Rule).order_by(Rule.rule_name.asc())).all()
+    context = _base_context(request, "Taxonomy")
+    context.update(
+        {
+            "taxonomy_form": {"taxonomy_json": "", "change_note": ""},
+            "taxonomy_preview": None,
+            "taxonomy_snapshot": None,
+            "current_taxonomy_preview": None,
+            "taxonomy_audit_entries": recent_quality_taxonomy_audit_entries(),
+            "errors": [],
+        }
+    )
+
+    try:
+        raw_taxonomy = read_quality_taxonomy_text()
+        context["taxonomy_form"] = {"taxonomy_json": raw_taxonomy, "change_note": ""}
+        context["taxonomy_snapshot"] = quality_taxonomy_snapshot()
+        context["current_taxonomy_preview"] = preview_quality_taxonomy_update(
+            raw_taxonomy,
+            settings=settings,
+            rules=rules,
+        )
+    except RuntimeError as exc:
+        context["errors"] = [str(exc)]
+
+    return templates.TemplateResponse("taxonomy.html", context)
 
 
 @router.get("/import", response_class=HTMLResponse)

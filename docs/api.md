@@ -6,6 +6,7 @@
 - `GET /rules/new`: new rule form
 - `GET /rules/{rule_id}`: edit rule form
 - `GET /settings`: settings page
+- `GET /taxonomy`: taxonomy editor and audit view
 - `GET /import`: import page
 - `GET /health`: JSON health check
 
@@ -15,6 +16,8 @@
 - `POST /api/feeds/refresh`: fetch the current qBittorrent feed list
 - `POST /api/filter-profiles`: save or overwrite a reusable saved filter profile
 - `POST /api/import/qb-json`: preview or apply an import from an exported JSON file
+- `POST /api/taxonomy/validate`: validate a taxonomy draft and render impact analysis
+- `POST /api/taxonomy/apply`: apply a validated taxonomy draft if no persisted tokens would be orphaned
 - `POST /api/rules`: create a rule
 - `POST /api/rules/{rule_id}`: update a rule
 - `POST /api/rules/{rule_id}/sync`: sync one rule
@@ -55,10 +58,13 @@ The settings routes extend the original v1 route list because the settings page 
 
 - `quality_option_choices() -> list[dict[str, str]]`
 - `quality_bundle_choices() -> list[dict[str, object]]`
+- `quality_taxonomy_snapshot() -> dict[str, object]`
+- `preview_quality_taxonomy_update(raw_payload: str, *, settings: AppSettings | None, rules: list[Rule] | tuple[Rule, ...] | None) -> dict[str, object]`
+- `apply_quality_taxonomy_update(raw_payload: str, *, change_note: str = "") -> str | None`
 - `normalize_quality_tokens(tokens: list[str] | tuple[str, ...] | None) -> list[str]`
 - `tokens_to_regex(tokens: list[str] | tuple[str, ...] | None) -> str`
 
-The app may accept bundle keys or alias keys as authoring conveniences, but persisted `quality_include_tokens`, `quality_exclude_tokens`, `quality_profile_rules`, and `saved_quality_profiles` stay normalized as flat leaf token IDs in this phase.
+The app may accept bundle keys or alias keys as authoring conveniences, but persisted `quality_include_tokens`, `quality_exclude_tokens`, `quality_profile_rules`, and `saved_quality_profiles` stay normalized as flat leaf token IDs in this phase. Taxonomy applies also append a local audit event to `data/taxonomy_audit.jsonl` when that file is writable.
 
 ### `Importer`
 

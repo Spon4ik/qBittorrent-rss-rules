@@ -2,7 +2,7 @@
 
 ## Current focus
 
-- Phase 2: richer taxonomy schema
+- Phase 3: taxonomy management UI
 
 ## Implemented
 
@@ -17,19 +17,23 @@
 - `app/services/quality_filters.py` now accepts taxonomy schema versions 1 and 2, validates phase-2 metadata, and resolves bundle or alias inputs back to flat leaf token IDs.
 - `tests/test_quality_filters.py` now covers schema-version compatibility plus bundle, alias, and rank validation paths.
 - `docs/architecture.md` and `docs/api.md` now document the richer taxonomy model and the flat-token persistence contract.
+- `app/services/quality_filters.py` now provides taxonomy draft preview, apply, cache refresh, and local audit-log helpers for the editor workflow.
+- `app/routes/pages.py` and `app/routes/api.py` now expose `/taxonomy`, `/api/taxonomy/validate`, and `/api/taxonomy/apply`.
+- `app/templates/taxonomy.html` now provides a server-rendered editor with impact analysis and recent audit entries.
+- `tests/test_routes.py` now covers taxonomy page rendering plus safe apply and orphan-token rejection flows.
 
 ## In progress
 
-- Phase 2 regression validation in a fully provisioned development environment.
+- Phase 3 is started with a server-rendered edit/validate/apply flow; richer UX refinement is still open.
+- Full pytest and manual validation are still pending in a fully provisioned development environment.
 
 ## Next actions
 
-- Run the targeted taxonomy pytest coverage and then the full pytest suite in the normal development environment.
-- Perform manual UI verification for `/rules/new` and `/settings` to confirm the quality selector still renders and saves unchanged leaf tokens.
-- Mark phase 2 complete after validation and activate phase 3 implementation.
-- Begin phase 3 work using `docs/plans/phase-3-taxonomy-management-ui.md` as the implementation source of truth.
+- Run the taxonomy service and route pytest coverage, then the full pytest suite, in the normal development environment.
+- Manually verify the `/taxonomy` edit, validate, and apply lifecycle, including audit-log behavior and blocking-reference messaging.
+- Revisit the `/taxonomy` UX for richer client-side editing feedback if the current server-rendered flow feels too coarse.
+- After validation, mark the implemented Phase 3 slice complete and continue with remaining Phase 3 refinement or Phase 4 planning.
 
 ## Deferred / future phases
 
-- Phase 3: taxonomy management and richer selector UI
 - Phase 4: feed UX improvements, including `Select all` and remembered default feed selections

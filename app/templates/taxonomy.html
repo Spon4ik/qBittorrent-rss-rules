@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel-head">
+  <div>
+    <p class="eyebrow">Taxonomy</p>
+    <h2>Inspect and edit the quality taxonomy</h2>
+    <p class="eyebrow">Validate changes before applying them to the live source of truth.</p>
+  </div>
+</section>
+
+<section class="stack">
+  <section class="form-grid">
+    <section class="rule-card">
+      <p class="eyebrow">Live Schema</p>
+      <h3>Current summary</h3>
+      {% if taxonomy_snapshot %}
+      <p>Version {{ taxonomy_snapshot.version }}</p>
+      <p>Groups: {{ taxonomy_snapshot.groups | length }}</p>
+      <p>Options: {{ taxonomy_snapshot.options | length }}</p>
+      <p>Bundles: {{ taxonomy_snapshot.bundles | length }}</p>
+      <p>Aliases: {{ taxonomy_snapshot.aliases | length }}</p>
+      <p>Ranks: {{ taxonomy_snapshot.ranks | length }}</p>
+      {% else %}
+      <p>The live taxonomy could not be summarized.</p>
+      {% endif %}
+      {% if current_taxonomy_preview %}
+      <p>
+        {% if current_taxonomy_preview.safe_to_apply %}
+        Current stored rules and profiles are compatible with the live taxonomy.
+        {% else %}
+        Current stored data has blocking references that should be reviewed.
+        {% endif %}
+      </p>
+      {% endif %}
+    </section>
+
+    <section class="rule-card">
+      <p class="eyebrow">Audit Trail</p>
+      <h3>Recent changes</h3>
+      {% if taxonomy_audit_entries %}
+      <div class="stack">
+        {% for entry in taxonomy_audit_entries %}
+        <div>
+          <strong>{{ entry.created_at }}</strong>
+          <div>Version {{ entry.version }} · {{ entry.option_count }} options · {{ entry.bundle_count }} bundles</div>
+          {% if entry.note %}
+          <div>{{ entry.note }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p>No taxonomy apply events recorded yet.</p>
+      {% endif %}
+    </section>
+  </section>
+
+  <form class="stack" method="post" action="/api/taxonomy/validate">
+    <label>
+      Change note
+      <input
+        type="text"
+        name="taxonomy_change_note"
+        value="{{ taxonomy_form.change_note }}"
+        placeholder="Optional local note for the audit trail"
+      />
+    </label>
+    <label>
+      Taxonomy JSON
+      <textarea name="taxonomy_json" rows="26" spellcheck="false">{{ taxonomy_form.taxonomy_json }}</textarea>
+    </label>
+
+    <div class="card-actions">
+      <button type="submit">Validate Draft</button>
+      <button type="submit" formaction="/api/taxonomy/apply">Apply Draft</button>
+    </div>
+  </form>
+
+  {% if taxonomy_preview %}
+  <section class="rule-card">
+    <p class="eyebrow">Draft Preview</p>
+    <h3>Impact analysis</h3>
+    <p>Version {{ taxonomy_preview.version }}</p>
+    <p>Groups: {{ taxonomy_preview.summary.group_count }}</p>
+    <p>Options: {{ taxonomy_preview.summary.option_count }}</p>
+    <p>Bundles: {{ taxonomy_preview.summary.bundle_count }}</p>
+    <p>Aliases: {{ taxonomy_preview.summary.alias_count }}</p>
+    <p>Ranks: {{ taxonomy_preview.summary.rank_count }}</p>
+    <p>
+      {% if taxonomy_preview.safe_to_apply %}
+      Safe to apply: no persisted tokens would be orphaned.
+      {% else %}
+      Unsafe to apply: persisted rules or profiles still reference removed tokens.
+      {% endif %}
+    </p>
+
+    {% if taxonomy_preview.added_tokens %}
+    <div>
+      <strong>Added tokens</strong>
+      <div>{{ taxonomy_preview.added_tokens | join(", ") }}</div>
+    </div>
+    {% endif %}
+
+    {% if taxonomy_preview.removed_tokens %}
+    <div>
+      <strong>Removed tokens</strong>
+      <div>{{ taxonomy_preview.removed_tokens | join(", ") }}</div>
+    </div>
+    {% endif %}
+
+    {% if taxonomy_preview.blocking_references %}
+    <div class="stack">
+      <strong>Blocking references</strong>
+      {% for item in taxonomy_preview.blocking_references %}
+      <div>{{ item.kind }}: {{ item.label }} ({{ item.missing_tokens | join(", ") }})</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+</section>
+{% endblock %}

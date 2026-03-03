@@ -15,13 +15,17 @@ from app.services.quality_filters import (
     _clear_quality_taxonomy_cache,
     apply_quality_taxonomy_update,
     available_filter_profile_choices,
+    available_filter_profile_choices_for_media_type,
     detect_matching_filter_profile_key,
     expand_quality_tokens,
+    infer_filter_profile_media_types,
     normalize_quality_tokens,
+    normalize_saved_quality_profiles,
     preview_quality_taxonomy_update,
     quality_bundle_choices,
     quality_option_choices,
     quality_option_groups,
+    quality_option_groups_for_media_type,
     quality_profile_choices,
     recent_quality_taxonomy_audit_entries,
     resolve_quality_token,
@@ -80,11 +84,14 @@ def test_quality_option_choices_preserve_current_order_and_groups() -> None:
     choices = quality_option_choices()
 
     assert [item["value"] for item in choices[:5]] == ["sd", "360p", "480p", "hd", "720p"]
-    assert [item["value"] for item in choices[-4:]] == ["tv_sync", "dvd", "ts", "cam"]
+    assert [item["value"] for item in choices[-4:]] == ["vbr", "lossless", "mono", "stereo"]
     assert [item["key"] for item in quality_option_groups()] == [
         "resolution",
         "definition",
         "source",
+        "audio_format",
+        "audio_quality",
+        "audio_channels",
     ]
 
 
@@ -94,6 +101,16 @@ def test_quality_bundle_choices_preserve_schema_order() -> None:
         "at_least_uhd",
         "ultra_hd_hdr",
     ]
+
+
+def test_quality_option_groups_for_media_type_filter_audio_and_video_tokens() -> None:
+    video_groups = quality_option_groups_for_media_type("series")
+    audio_groups = quality_option_groups_for_media_type("music")
+
+    assert [item["key"] for item in video_groups] == ["resolution", "definition", "source"]
+    assert [item["key"] for item in audio_groups] == ["audio_format", "audio_quality", "audio_channels"]
+    assert "m4b" not in [option["value"] for option in audio_groups[0]["options"]]
+    assert "flac" in [option["value"] for option in audio_groups[0]["options"]]
 
 
 def test_normalize_quality_tokens_filters_invalid_and_duplicate_values() -> None:
@@ -132,7 +149,7 @@ def test_quality_taxonomy_rejects_unsupported_version(tmp_path, monkeypatch) -> 
         _write_quality_taxonomy(tmp_path, payload),
     )
 
-    with pytest.raises(RuntimeError, match="version must be 1 or 2"):
+    with pytest.raises(RuntimeError, match="version must be 1, 2, or 3"):
         quality_option_choices()
 
 
@@ -150,6 +167,21 @@ def test_quality_taxonomy_supports_version_1_payloads(tmp_path, monkeypatch) -> 
 
     assert quality_option_choices()[0]["value"] == "sd"
     assert quality_bundle_choices() == []
+
+
+def test_quality_taxonomy_rejects_invalid_media_types(tmp_path, monkeypatch) -> None:
+    payload = _read_default_quality_taxonomy()
+    groups = payload["groups"]
+    assert isinstance(groups, list)
+    groups[0]["media_types"] = ["series", "podcast"]
+    monkeypatch.setattr(
+        quality_filters,
+        "QUALITY_TAXONOMY_PATH",
+        _write_quality_taxonomy(tmp_path, payload),
+    )
+
+    with pytest.raises(RuntimeError, match="groups\\[0\\]\\.media_types\\[1\\] must be one of"):
+        quality_option_choices()
 
 
 def test_quality_taxonomy_rejects_bundle_with_unknown_option(tmp_path, monkeypatch) -> None:
@@ -285,6 +317,47 @@ def test_quality_profile_labels_follow_matching_taxonomy_bundle_labels(tmp_path,
     assert filter_profiles["builtin-at-least-hd"] == "At Least Full HD"
     assert filter_profiles["builtin-at-least-uhd"] == "At Least Ultra HD"
     assert filter_profiles["builtin-ultra-hd-hdr"] == "Ultra HD + HDR"
+
+
+def test_builtin_audio_profiles_are_available_for_matching_media_types() -> None:
+    audio_profiles = {
+        item["key"]: item
+        for item in available_filter_profile_choices_for_media_type(None, "music")
+    }
+
+    assert "builtin-music-lossless" in audio_profiles
+    assert audio_profiles["builtin-music-lossless"]["media_types"] == ["music"]
+    assert "builtin-at-least-hd" not in audio_profiles
+
+
+def test_normalize_saved_quality_profiles_infers_media_types_from_legacy_tokens() -> None:
+    normalized = normalize_saved_quality_profiles(
+        {
+            "legacy-video": {
+                "label": "Legacy Video",
+                "include_tokens": ["1080p", "hdr"],
+                "exclude_tokens": ["sd"],
+            },
+            "legacy-audio": {
+                "label": "Legacy Audio",
+                "include_tokens": ["mp3", "aac"],
+                "exclude_tokens": ["64kbps"],
+            },
+            "legacy-mixed": {
+                "label": "Legacy Mixed",
+                "include_tokens": ["1080p", "mp3"],
+                "exclude_tokens": [],
+            },
+        }
+    )
+
+    assert normalized["legacy-video"]["media_types"] == ["series", "movie"]
+    assert normalized["legacy-audio"]["media_types"] == ["audiobook", "music"]
+    assert "media_types" not in normalized["legacy-mixed"]
+
+
+def test_infer_filter_profile_media_types_uses_intersection_for_specific_audio_formats() -> None:
+    assert infer_filter_profile_media_types(["m4b", "mp3"], ["64kbps"]) == ["audiobook"]
 
 
 def test_apply_quality_taxonomy_update_writes_file_and_audit_entry(tmp_path, monkeypatch) -> None:

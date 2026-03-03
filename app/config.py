@@ -26,6 +26,9 @@ class EnvironmentSettings:
     qb_base_url: str | None
     qb_username: str | None
     qb_password: str | None
+    jackett_api_url: str | None
+    jackett_qb_url: str | None
+    jackett_api_key: str | None
     omdb_api_key: str | None
     save_secrets_to_db: bool
 
@@ -41,6 +44,9 @@ def get_environment_settings() -> EnvironmentSettings:
         qb_base_url=os.getenv("QB_RULES_QB_BASE_URL") or None,
         qb_username=os.getenv("QB_RULES_QB_USERNAME") or None,
         qb_password=os.getenv("QB_RULES_QB_PASSWORD") or None,
+        jackett_api_url=os.getenv("QB_RULES_JACKETT_API_URL") or None,
+        jackett_qb_url=os.getenv("QB_RULES_JACKETT_QB_URL") or None,
+        jackett_api_key=os.getenv("QB_RULES_JACKETT_API_KEY") or None,
         omdb_api_key=os.getenv("QB_RULES_OMDB_API_KEY") or None,
         save_secrets_to_db=_get_bool(os.getenv("QB_RULES_SAVE_SECRETS_TO_DB"), False),
     )
@@ -62,4 +68,3 @@ def reveal_secret(value: str | None) -> str | None:
         return base64.urlsafe_b64decode(value.encode("ascii")).decode("utf-8")
     except Exception:
         return None
-

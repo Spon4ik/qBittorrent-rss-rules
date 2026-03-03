@@ -7,6 +7,8 @@
   </div>
   {% if mode == 'edit' %}
   <div class="card-actions">
+    <a class="button-link" href="/rules/{{ rule_id }}/search">Run Search</a>
+    <a class="button-link muted" href="/search?rule_id={{ rule_id }}">Adjust Search</a>
     <form method="post" action="/api/rules/{{ rule_id }}/sync">
       <button type="submit">Sync This Rule</button>
     </form>
@@ -27,6 +29,8 @@
   data-save-path-template="{{ settings_form.save_path_template }}"
   data-quality-options='{{ quality_options | tojson }}'
   data-available-filter-profiles='{{ available_filter_profiles | tojson }}'
+  data-metadata-providers='{{ metadata_lookup_providers | tojson }}'
+  data-metadata-disabled="{{ 'true' if metadata_lookup_disabled else 'false' }}"
 >
   <input type="hidden" name="quality_profile" value="{{ form_data.quality_profile }}" />
   <section class="form-grid">
@@ -38,12 +42,33 @@
       Content name
       <input type="text" name="content_name" value="{{ form_data.content_name }}" required />
     </label>
-    <label>
-      IMDb ID
+    <label class="full-span">
+      Metadata lookup
       <div class="control-row">
-        <input type="text" name="imdb_id" value="{{ form_data.imdb_id }}" placeholder="tt1234567" />
-        <button type="button" id="metadata-lookup">Lookup</button>
+        <select id="metadata-lookup-provider" {% if metadata_lookup_disabled %}disabled{% endif %}>
+          {% for choice in visible_metadata_lookup_providers %}
+          <option value="{{ choice.value }}" {% if form_data.metadata_lookup_provider == choice.value %}selected{% endif %}>{{ choice.label }}</option>
+          {% endfor %}
+        </select>
+        <input
+          type="text"
+          id="metadata-lookup-value"
+          placeholder="Title or source ID"
+          {% if metadata_lookup_disabled %}disabled{% endif %}
+        />
+        <button type="button" id="metadata-lookup" {% if metadata_lookup_disabled %}disabled{% endif %}>Lookup</button>
       </div>
+      <span class="helper-text">
+        {% if metadata_lookup_disabled %}
+        Metadata lookup is disabled in Settings.
+        {% else %}
+        Search by title or provider-specific ID using services relevant to the selected media type.
+        {% endif %}
+      </span>
+    </label>
+    <label data-imdb-field="true">
+      IMDb ID
+      <input type="text" name="imdb_id" value="{{ form_data.imdb_id }}" placeholder="tt1234567" />
     </label>
     <label>
       Resolved title
@@ -61,7 +86,7 @@
       Filter profile
       <select name="filter_profile_key" id="filter-profile-select">
         <option value="">Current manual selection</option>
-        {% for profile in available_filter_profiles %}
+        {% for profile in visible_filter_profiles %}
         <option value="{{ profile.key }}" {% if form_data.filter_profile_key == profile.key %}selected{% endif %}>{{ profile.label }}</option>
         {% endfor %}
       </select>
@@ -108,10 +133,19 @@
     <section class="form-grid">
       <div class="stack">
         {% for group in quality_option_groups %}
-        <fieldset class="stack" data-quality-selector="include-{{ group.key }}">
+        <fieldset
+          class="stack"
+          data-quality-selector="include-{{ group.key }}"
+          data-quality-group="true"
+          data-media-types="{{ group.media_types | join(',') }}"
+        >
           <legend>Include {{ group.label }}</legend>
           {% for choice in group.options %}
-          <label class="toggle">
+          <label
+            class="toggle"
+            data-quality-option="true"
+            data-media-types="{{ choice.media_types | join(',') }}"
+          >
             <input type="checkbox" name="quality_include_tokens" value="{{ choice.value }}" {% if choice.value in form_data.quality_include_tokens %}checked{% endif %} />
             <span>{{ choice.label }}</span>
           </label>
@@ -121,10 +155,19 @@
       </div>
       <div class="stack">
         {% for group in quality_option_groups %}
-        <fieldset class="stack" data-quality-selector="exclude-{{ group.key }}">
+        <fieldset
+          class="stack"
+          data-quality-selector="exclude-{{ group.key }}"
+          data-quality-group="true"
+          data-media-types="{{ group.media_types | join(',') }}"
+        >
           <legend>Exclude {{ group.label }}</legend>
           {% for choice in group.options %}
-          <label class="toggle">
+          <label
+            class="toggle"
+            data-quality-option="true"
+            data-media-types="{{ choice.media_types | join(',') }}"
+          >
             <input type="checkbox" name="quality_exclude_tokens" value="{{ choice.value }}" {% if choice.value in form_data.quality_exclude_tokens %}checked{% endif %} />
             <span>{{ choice.label }}</span>
           </label>
@@ -170,7 +213,7 @@
         <button type="button" id="feed-refresh">Refresh Feeds</button>
       </div>
     </div>
-    <p class="helper-text">Choose one or more feeds for this rule.</p>
+    <p class="helper-text">Choose one or more RSS feeds for this rule. Active Jackett search stays separate and does not populate this list.</p>
     <div
       class="feed-option-list"
       id="feed-options"

@@ -27,16 +27,33 @@
       <input type="password" name="qb_password" value="" placeholder="{% if form_data.has_env_qb_password %}Using environment value{% elif form_data.has_saved_qb_password %}Saved locally{% else %}Not set{% endif %}" />
     </label>
     <label>
-      Metadata provider
+      Jackett app URL
+      <input type="text" name="jackett_api_url" value="{{ form_data.jackett_api_url }}" placeholder="http://jackett:9117" />
+      <span class="helper-text">Used by the app for active search. In Docker, this is usually the container-to-container hostname.</span>
+    </label>
+    <label>
+      Jackett qB URL
+      <input type="text" name="jackett_qb_url" value="{{ form_data.jackett_qb_url }}" placeholder="http://jackett:9117" />
+      <span class="helper-text">Optional. Keep this separate when qBittorrent reaches Jackett through a different hostname or network path.</span>
+    </label>
+    <label>
+      Jackett API key
+      <input type="password" name="jackett_api_key" value="" placeholder="{% if form_data.has_env_jackett_key %}Using environment value{% elif form_data.has_saved_jackett_key %}Saved locally{% else %}Not set{% endif %}" />
+      <span class="helper-text">Used only for the separate Jackett active-search workspace in this slice. It is not mixed into RSS feed selection.</span>
+    </label>
+    <label>
+      Video metadata provider
       <select name="metadata_provider">
         {% for choice in metadata_choices %}
         <option value="{{ choice }}" {% if form_data.metadata_provider == choice %}selected{% endif %}>{{ choice }}</option>
         {% endfor %}
       </select>
+      <span class="helper-text">`omdb` powers series/movie lookups. `disabled` turns off all server-side metadata lookup.</span>
     </label>
     <label>
       OMDb API key (not full URL)
       <input type="password" name="omdb_api_key" value="" placeholder="{% if form_data.has_env_omdb_key %}Using environment value{% elif form_data.has_saved_omdb_key %}Saved locally{% else %}Example: 191938ea{% endif %}" />
+      <span class="helper-text">Music and audiobook providers are selected from the rule form and do not need a saved API key in this phase.</span>
     </label>
   </section>
 
@@ -125,6 +142,7 @@
   <div class="card-actions">
     <button type="submit">Save Settings</button>
     <button type="submit" formaction="/api/settings/test-qb">Test qBittorrent</button>
+    <button type="submit" formaction="/api/settings/test-jackett">Test Jackett</button>
     <button type="submit" formaction="/api/settings/test-metadata">Test Metadata</button>
   </div>
 </form>

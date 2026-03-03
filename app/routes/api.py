@@ -16,17 +16,25 @@ from app.models import AppSettings, MediaType, QualityProfile, Rule, media_type_
 from app.schemas import (
     FilterProfileSaveRequest,
     ImportMode,
+    JackettSearchRequest,
     MetadataLookupRequest,
     RuleFormPayload,
     SettingsFormPayload,
 )
 from app.services.importer import Importer
-from app.services.metadata import MetadataClient, MetadataLookupError
+from app.services.jackett import JackettClient, JackettClientError
+from app.services.metadata import (
+    MetadataClient,
+    MetadataLookupError,
+    default_metadata_lookup_provider,
+    metadata_lookup_provider_catalog,
+    metadata_lookup_provider_choices,
+)
 from app.services.quality_filters import (
-    AT_LEAST_UHD_PROFILE,
-    BUILTIN_AT_LEAST_UHD_PROFILE_KEY,
     apply_quality_taxonomy_update,
     available_filter_profile_choices,
+    available_filter_profile_choices_for_media_type,
+    builtin_filter_profile_keys,
     build_available_filter_profiles,
     normalize_saved_quality_profiles,
     preview_quality_taxonomy_update,
@@ -97,6 +105,9 @@ def _raw_settings_form_data(form: Any) -> dict[str, Any]:
         "qb_base_url": form.get("qb_base_url") or None,
         "qb_username": form.get("qb_username") or None,
         "qb_password": form.get("qb_password") or None,
+        "jackett_api_url": form.get("jackett_api_url") or None,
+        "jackett_qb_url": form.get("jackett_qb_url") or None,
+        "jackett_api_key": form.get("jackett_api_key") or None,
         "metadata_provider": form.get("metadata_provider", "omdb"),
         "omdb_api_key": form.get("omdb_api_key") or None,
         "series_category_template": form.get(
@@ -137,6 +148,9 @@ def _render_rule_form(
 ) -> HTMLResponse:
     settings = SettingsService.get_or_create(session)
     profile_rules = resolve_quality_profile_rules(settings)
+    current_media_type = str(form_data.get("media_type", MediaType.SERIES.value) or MediaType.SERIES.value)
+    form_data.setdefault("metadata_lookup_provider", default_metadata_lookup_provider(current_media_type))
+    available_filter_profiles = available_filter_profile_choices(settings)
     raw_selected_feed_urls = form_data.get("feed_urls", []) or []
     if isinstance(raw_selected_feed_urls, list):
         selected_feed_urls = raw_selected_feed_urls
@@ -155,8 +169,15 @@ def _render_rule_form(
         "quality_options": quality_option_choices(),
         "quality_option_groups": quality_option_groups(),
         "quality_profile_rules": profile_rules,
-        "available_filter_profiles": available_filter_profile_choices(settings),
+        "available_filter_profiles": available_filter_profiles,
+        "visible_filter_profiles": available_filter_profile_choices_for_media_type(
+            settings,
+            current_media_type,
+        ),
         "media_choices": media_type_choices(),
+        "metadata_lookup_providers": metadata_lookup_provider_catalog(),
+        "visible_metadata_lookup_providers": metadata_lookup_provider_choices(current_media_type),
+        "metadata_lookup_disabled": settings.metadata_provider.value == "disabled",
         "message": None,
         "message_level": "error",
     }
@@ -320,6 +341,9 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
         qb_base_url=settings.qb_base_url,
         qb_username=settings.qb_username,
         qb_password_encrypted=settings.qb_password_encrypted,
+        jackett_api_url=settings.jackett_api_url,
+        jackett_qb_url=settings.jackett_qb_url,
+        jackett_api_key_encrypted=settings.jackett_api_key_encrypted,
         metadata_provider=settings.metadata_provider,
         omdb_api_key_encrypted=settings.omdb_api_key_encrypted,
         series_category_template=settings.series_category_template,
@@ -343,8 +367,23 @@ def metadata_lookup(
     metadata_config = SettingsService.resolve_metadata(settings)
     client = MetadataClient(metadata_config.provider, metadata_config.api_key)
     try:
-        result = client.lookup_by_imdb_id(payload.imdb_id)
+        result = client.lookup(payload.provider, payload.lookup_value, payload.media_type)
     except MetadataLookupError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse(result.model_dump(mode="json"))
+
+
+@router.post("/search/jackett")
+def jackett_search(
+    payload: JackettSearchRequest,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    settings = SettingsService.get_or_create(session)
+    jackett = SettingsService.resolve_jackett(settings)
+    client = JackettClient(jackett.api_url, jackett.api_key)
+    try:
+        result = client.search(payload)
+    except JackettClientError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     return JSONResponse(result.model_dump(mode="json"))
 
@@ -372,18 +411,31 @@ def save_filter_profile(
     settings = SettingsService.get_or_create(session)
     saved_profiles = normalize_saved_quality_profiles(settings.saved_quality_profiles)
     all_profiles = build_available_filter_profiles(settings)
+    scoped_media_types = (
+        [payload.media_type.value]
+        if payload.media_type in {
+            MediaType.SERIES,
+            MediaType.MOVIE,
+            MediaType.AUDIOBOOK,
+            MediaType.MUSIC,
+        }
+        else None
+    )
 
     if payload.mode == "create":
         profile_key = slugify_profile_key(payload.profile_name)
         if not profile_key:
             return JSONResponse({"error": "A profile name is required."}, status_code=400)
-        if profile_key in all_profiles or profile_key in saved_profiles:
+        if profile_key in all_profiles:
             return JSONResponse({"error": "A profile with that name already exists."}, status_code=400)
-        saved_profiles[profile_key] = {
+        new_profile: dict[str, object] = {
             "label": payload.profile_name,
             "include_tokens": payload.include_tokens,
             "exclude_tokens": payload.exclude_tokens,
         }
+        if scoped_media_types:
+            new_profile["media_types"] = scoped_media_types
+        saved_profiles[profile_key] = new_profile
     else:
         if payload.target_key == "builtin-at-least-hd":
             profile_rules = resolve_quality_profile_rules(settings)
@@ -401,25 +453,25 @@ def save_filter_profile(
             }
             settings.quality_profile_rules = profile_rules
             profile_key = payload.target_key
-        elif payload.target_key == BUILTIN_AT_LEAST_UHD_PROFILE_KEY:
-            saved_profiles[payload.target_key] = {
-                "label": str(AT_LEAST_UHD_PROFILE["label"]),
-                "include_tokens": payload.include_tokens,
-                "exclude_tokens": payload.exclude_tokens,
-            }
-            profile_key = payload.target_key
-        elif payload.target_key not in saved_profiles:
+        elif payload.target_key not in all_profiles:
             return JSONResponse(
                 {"error": "Select an existing saved profile or preset to overwrite."},
                 status_code=400,
             )
         else:
-            existing = saved_profiles[payload.target_key]
-            saved_profiles[payload.target_key] = {
+            existing = all_profiles[payload.target_key]
+            updated_profile: dict[str, object] = {
                 "label": str(existing.get("label", payload.target_key)),
                 "include_tokens": payload.include_tokens,
                 "exclude_tokens": payload.exclude_tokens,
             }
+            if payload.target_key in builtin_filter_profile_keys():
+                existing_media_types = list(existing.get("media_types", []))
+                if existing_media_types:
+                    updated_profile["media_types"] = existing_media_types
+            elif scoped_media_types:
+                updated_profile["media_types"] = scoped_media_types
+            saved_profiles[payload.target_key] = updated_profile
             profile_key = payload.target_key
 
     settings.saved_quality_profiles = saved_profiles
@@ -835,6 +887,53 @@ async def test_qb_settings(
         form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
         errors=[],
         message="qBittorrent connection test succeeded.",
+        message_level="success",
+        status_code=200,
+    )
+
+
+@router.post("/settings/test-jackett", response_class=HTMLResponse)
+async def test_jackett_settings(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> HTMLResponse:
+    form = await request.form()
+    raw_form = _raw_settings_form_data(form)
+    try:
+        payload = SettingsFormPayload.model_validate(raw_form)
+    except ValidationError as exc:
+        return _render_settings_page(
+            request,
+            form_data=raw_form,
+            errors=[error["msg"] for error in exc.errors()],
+        )
+
+    settings = SettingsService.get_or_create(session)
+    temp_settings = _clone_settings(settings)
+    SettingsService.apply_payload(temp_settings, payload)
+    jackett = SettingsService.resolve_jackett(temp_settings)
+    if not jackett.app_ready:
+        return _render_settings_page(
+            request,
+            form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
+            errors=["Jackett app URL and API key are both required."],
+        )
+
+    try:
+        client = JackettClient(jackett.api_url, jackett.api_key)
+        client.test_connection()
+    except JackettClientError as exc:
+        return _render_settings_page(
+            request,
+            form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
+            errors=[str(exc)],
+        )
+
+    return _render_settings_page(
+        request,
+        form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
+        errors=[],
+        message="Jackett connection test succeeded.",
         message_level="success",
         status_code=200,
     )

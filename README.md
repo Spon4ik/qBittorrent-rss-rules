@@ -17,9 +17,10 @@ qBittorrent's built-in RSS rule editor is functional but awkward for large libra
 
 - Local SQLite source of truth for app-managed rules
 - qBittorrent WebUI API sync (`rss/setRule`, `rss/removeRule`, `torrents/createCategory`)
-- OMDb lookup by IMDb ID, with manual fallback
+- Separate Jackett-backed active search workspace for on-demand searching, including one-click rule-derived searches that reuse saved structured terms without sending raw regex text to Jackett
+- Media-aware metadata lookup via OMDb, MusicBrainz, OpenLibrary, and Google Books, with manual fallback
 - Rule generation from preset-managed include/exclude quality selections, optional year matching, and extra include keywords
-- Split resolution, video-definition, and source filters with reusable saved profiles
+- Split video and audio quality filters with reusable saved profiles and media-aware built-in presets
 - Bootstrap import for existing qBittorrent RSS rules export JSON
 - Sync event tracking and error reporting
 - Roadmap, ADRs, and release process docs included in the repo
@@ -63,7 +64,10 @@ The app binds to `127.0.0.1` by default and creates its SQLite DB under `./data`
 - `QB_RULES_QB_BASE_URL`: qBittorrent WebUI base URL
 - `QB_RULES_QB_USERNAME`: qBittorrent username
 - `QB_RULES_QB_PASSWORD`: qBittorrent password
-- `QB_RULES_OMDB_API_KEY`: OMDb API key
+- `QB_RULES_JACKETT_API_URL`: Jackett URL the app uses for active search (for Docker this is often a container hostname)
+- `QB_RULES_JACKETT_QB_URL`: optional Jackett URL qBittorrent uses if it reaches Jackett differently than the app
+- `QB_RULES_JACKETT_API_KEY`: Jackett API key used for active search
+- `QB_RULES_OMDB_API_KEY`: OMDb API key used for video lookups
 
 Environment values override saved app settings for secrets and connection details.
 
@@ -148,7 +152,9 @@ Use the Import page to upload an exported qBittorrent RSS rules JSON file. The i
 - v0.1.0 is designed for single-user localhost use.
 - qBittorrent secrets can be saved locally only as lightweight obfuscation; environment variables are preferred.
 - Drift detection is conservative and does not auto-resolve every remote edit case.
-- OMDb is the only metadata provider in v0.1.0.
+- Jackett active search is separate from RSS feed selection; this slice does not yet create persistent Jackett-backed rule sources automatically.
+- Metadata lookups use first-match provider results; there is no interactive multi-result picker yet.
+- Only OMDb uses a saved API key in this phase; the other providers use anonymous public endpoints.
 
 ## Project docs
 
@@ -163,5 +169,6 @@ Use the Import page to upload an exported qBittorrent RSS rules JSON file. The i
 ## Troubleshooting
 
 - If the feed list is empty, verify qBittorrent WebUI is enabled and the configured credentials are valid.
-- If metadata lookup fails, confirm the OMDb API key or use manual entry.
+- If metadata lookup fails, confirm the OMDb API key for video lookups, then try manual entry.
+- If Jackett search fails in Docker, verify the app-side Jackett URL is reachable from the app container and use a separate qB URL when qBittorrent is on a different network path.
 - If the app starts but data is not saved, confirm `QB_RULES_DATABASE_URL` points to a writable path.

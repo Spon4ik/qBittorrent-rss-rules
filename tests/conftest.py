@@ -13,6 +13,9 @@ def configured_app_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("QB_RULES_QB_BASE_URL", raising=False)
     monkeypatch.delenv("QB_RULES_QB_USERNAME", raising=False)
     monkeypatch.delenv("QB_RULES_QB_PASSWORD", raising=False)
+    monkeypatch.delenv("QB_RULES_JACKETT_API_URL", raising=False)
+    monkeypatch.delenv("QB_RULES_JACKETT_QB_URL", raising=False)
+    monkeypatch.delenv("QB_RULES_JACKETT_API_KEY", raising=False)
     monkeypatch.delenv("QB_RULES_OMDB_API_KEY", raising=False)
 
     from app.config import get_environment_settings

@@ -11,6 +11,8 @@ from app.services.quality_filters import normalize_quality_tokens
 
 IMDB_ID_RE = re.compile(r"^tt\d+$")
 YEAR_TOKEN_RE = re.compile(r"\b(\d{4})\b")
+KEYWORD_SPLIT_RE = re.compile(r"[\n,;]+")
+SEARCH_INDEXER_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 class FeedOption(BaseModel):
@@ -18,23 +20,194 @@ class FeedOption(BaseModel):
     url: str
 
 
+class MetadataLookupProvider(str, enum.Enum):
+    OMDB = "omdb"
+    MUSICBRAINZ = "musicbrainz"
+    OPENLIBRARY = "openlibrary"
+    GOOGLE_BOOKS = "google_books"
+
+
+class SearchSourceKind(str, enum.Enum):
+    RSS_FEED = "rss_feed"
+    JACKETT_ACTIVE_SEARCH = "jackett_active_search"
+    JACKETT_RULE_SOURCE = "jackett_rule_source"
+
+
 class MetadataLookupRequest(BaseModel):
-    imdb_id: str
+    provider: MetadataLookupProvider = MetadataLookupProvider.OMDB
+    lookup_value: str = ""
+    media_type: MediaType = MediaType.SERIES
+    imdb_id: str | None = None
+
+    @field_validator("lookup_value")
+    @classmethod
+    def normalize_lookup_value(cls, value: str) -> str:
+        return value.strip()
 
     @field_validator("imdb_id")
     @classmethod
-    def validate_imdb_id(cls, value: str) -> str:
-        cleaned = value.strip()
-        if not IMDB_ID_RE.match(cleaned):
-            raise ValueError("IMDb ID must look like tt1234567.")
-        return cleaned
+    def normalize_lookup_id(cls, value: str | None) -> str | None:
+        if value in {None, ""}:
+            return None
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_lookup(self) -> "MetadataLookupRequest":
+        if self.imdb_id and not self.lookup_value:
+            if not IMDB_ID_RE.match(self.imdb_id):
+                raise ValueError("IMDb ID must look like tt1234567.")
+            self.lookup_value = self.imdb_id
+            self.provider = MetadataLookupProvider.OMDB
+            return self
+        if not self.lookup_value:
+            raise ValueError("Enter a title or source ID first.")
+        return self
 
 
 class MetadataResult(BaseModel):
     title: str
-    imdb_id: str
+    provider: MetadataLookupProvider
+    imdb_id: str | None = None
+    source_id: str | None = None
     media_type: MediaType
     year: str | None = None
+
+
+class JackettSearchRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    query: str = Field(min_length=1, max_length=255)
+    media_type: MediaType = MediaType.SERIES
+    indexer: str = "all"
+    imdb_id: str | None = None
+    imdb_id_only: bool = False
+    release_year: str | None = None
+    keywords_all: list[str] = Field(default_factory=list)
+    keywords_any: list[str] = Field(default_factory=list)
+    keywords_any_groups: list[list[str]] = Field(default_factory=list)
+    keywords_not: list[str] = Field(default_factory=list)
+
+    @field_validator("indexer")
+    @classmethod
+    def normalize_indexer(cls, value: str) -> str:
+        cleaned = value.strip()
+        return cleaned or "all"
+
+    @field_validator("imdb_id")
+    @classmethod
+    def normalize_search_imdb_id(cls, value: str | None) -> str | None:
+        if value in {None, ""}:
+            return None
+        cleaned = value.strip().lower()
+        if cleaned.isdigit():
+            cleaned = f"tt{cleaned}"
+        if not IMDB_ID_RE.match(cleaned):
+            raise ValueError("IMDb ID must look like tt1234567.")
+        return cleaned
+
+    @field_validator("release_year")
+    @classmethod
+    def normalize_search_release_year(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        cleaned = value.strip()
+        match = YEAR_TOKEN_RE.search(cleaned)
+        if not match:
+            raise ValueError("Release year must include four digits.")
+        return match.group(1)
+
+    @field_validator("keywords_all", "keywords_any", "keywords_not", mode="before")
+    @classmethod
+    def normalize_keyword_list(cls, value: list[str] | str | None) -> list[str]:
+        if value is None or value == "":
+            return []
+        if isinstance(value, str):
+            raw_value = KEYWORD_SPLIT_RE.split(value)
+        else:
+            raw_value = list(value)
+
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in raw_value:
+            candidate = str(item).strip()
+            if not candidate:
+                continue
+            key = candidate.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(candidate)
+        return cleaned
+
+    @field_validator("keywords_any_groups", mode="before")
+    @classmethod
+    def normalize_keywords_any_groups(
+        cls,
+        value: list[list[str] | str] | None,
+    ) -> list[list[str]]:
+        if not value:
+            return []
+
+        normalized_groups: list[list[str]] = []
+        for item in value:
+            normalized_group = cls.normalize_keyword_list(item)
+            if normalized_group:
+                normalized_groups.append(normalized_group)
+        return normalized_groups
+
+    @model_validator(mode="after")
+    def validate_request(self) -> "JackettSearchRequest":
+        if self.indexer != "all" and not SEARCH_INDEXER_RE.match(self.indexer):
+            raise ValueError("Indexer must use letters, numbers, dots, dashes, or underscores.")
+        if self.imdb_id_only:
+            if not self.imdb_id:
+                raise ValueError("IMDb-only lookup requires an IMDb ID.")
+            if self.media_type not in {MediaType.MOVIE, MediaType.SERIES}:
+                raise ValueError("IMDb-only lookup is only available for movie or series searches.")
+        if len(self.keywords_all) > 24:
+            raise ValueError("Use up to 24 required keywords per search.")
+        if not self.keywords_any_groups and self.keywords_any:
+            self.keywords_any_groups = [list(self.keywords_any)]
+        if self.keywords_any_groups:
+            flattened_any: list[str] = []
+            seen_any: set[str] = set()
+            for group in self.keywords_any_groups:
+                if len(group) > 16:
+                    raise ValueError("Use up to 16 optional keywords per keyword group.")
+                for item in group:
+                    if item in seen_any:
+                        continue
+                    seen_any.add(item)
+                    flattened_any.append(item)
+            self.keywords_any = flattened_any
+        if len(self.keywords_any) > 64:
+            raise ValueError("Use up to 64 optional keywords total per search.")
+        if len(self.keywords_any_groups) > 8:
+            raise ValueError("Use up to 8 optional keyword groups per search.")
+        if len(self.keywords_not) > 48:
+            raise ValueError("Use up to 48 excluded keywords per search.")
+        return self
+
+
+class JackettSearchResult(BaseModel):
+    title: str
+    link: str
+    indexer: str | None = None
+    details_url: str | None = None
+    guid: str | None = None
+    info_hash: str | None = None
+    size_bytes: int | None = None
+    size_label: str | None = None
+    published_label: str | None = None
+    source_kind: SearchSourceKind = SearchSourceKind.JACKETT_ACTIVE_SEARCH
+
+
+class JackettSearchRun(BaseModel):
+    source_kind: SearchSourceKind = SearchSourceKind.JACKETT_ACTIVE_SEARCH
+    source_label: str = "Jackett active search"
+    query_variants: list[str] = Field(default_factory=list)
+    request_variants: list[str] = Field(default_factory=list)
+    results: list[JackettSearchResult] = Field(default_factory=list)
 
 
 class RuleFormPayload(BaseModel):
@@ -126,6 +299,9 @@ class SettingsFormPayload(BaseModel):
     qb_base_url: str | None = None
     qb_username: str | None = None
     qb_password: str | None = None
+    jackett_api_url: str | None = None
+    jackett_qb_url: str | None = None
+    jackett_api_key: str | None = None
     metadata_provider: MetadataProvider = MetadataProvider.OMDB
     omdb_api_key: str | None = None
     series_category_template: str = "Series/{title} [imdbid-{imdb_id}]"
@@ -173,6 +349,7 @@ class FilterProfileSaveRequest(BaseModel):
     mode: Literal["create", "overwrite"]
     profile_name: str = ""
     target_key: str = ""
+    media_type: MediaType | None = None
     include_tokens: list[str] = Field(default_factory=list)
     exclude_tokens: list[str] = Field(default_factory=list)
 

@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from app.models import AppSettings, QualityProfile, Rule
+from app.models import AppSettings, MediaType, QualityProfile, Rule
 
 QUALITY_TAXONOMY_PATH = Path(__file__).resolve().parent.parent / "data" / "quality_taxonomy.json"
 QUALITY_TAXONOMY_AUDIT_PATH = (
@@ -44,6 +44,60 @@ def _parse_quality_taxonomy_json(
     return payload
 
 
+SCOPED_MEDIA_TYPE_ORDER: tuple[str, ...] = (
+    MediaType.SERIES.value,
+    MediaType.MOVIE.value,
+    MediaType.AUDIOBOOK.value,
+    MediaType.MUSIC.value,
+)
+VIDEO_MEDIA_TYPES = {MediaType.SERIES.value, MediaType.MOVIE.value}
+AUDIO_MEDIA_TYPES = {MediaType.AUDIOBOOK.value, MediaType.MUSIC.value}
+
+
+def _normalize_media_type_scope(
+    raw_value: Any,
+    *,
+    field_name: str,
+    source: Path | str | None = None,
+    required: bool = False,
+) -> tuple[str, ...] | None:
+    if raw_value is None:
+        if required:
+            raise _quality_taxonomy_error(f"{field_name} must be a list", source=source)
+        return None
+    if not isinstance(raw_value, list):
+        raise _quality_taxonomy_error(f"{field_name} must be a list", source=source)
+
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for index, raw_item in enumerate(raw_value):
+        value = str(raw_item).strip()
+        if not value:
+            raise _quality_taxonomy_error(
+                f"{field_name}[{index}] must be a non-empty string",
+                source=source,
+            )
+        if value not in SCOPED_MEDIA_TYPE_ORDER:
+            raise _quality_taxonomy_error(
+                f"{field_name}[{index}] must be one of {', '.join(SCOPED_MEDIA_TYPE_ORDER)}",
+                source=source,
+            )
+        if value in seen:
+            raise _quality_taxonomy_error(
+                f"{field_name}[{index}] duplicates '{value}'",
+                source=source,
+            )
+        seen.add(value)
+        cleaned.append(value)
+
+    if not cleaned:
+        raise _quality_taxonomy_error(
+            f"{field_name} must contain at least one media type",
+            source=source,
+        )
+    return tuple(cleaned)
+
+
 def _validate_quality_taxonomy_payload(
     payload: dict[str, Any],
     *,
@@ -53,14 +107,14 @@ def _validate_quality_taxonomy_payload(
         raise _quality_taxonomy_error("top-level JSON value must be an object", source=source)
 
     version = payload.get("version")
-    if version not in (1, 2):
-        raise _quality_taxonomy_error("version must be 1 or 2", source=source)
+    if version not in (1, 2, 3):
+        raise _quality_taxonomy_error("version must be 1, 2, or 3", source=source)
 
     raw_groups = payload.get("groups")
     if not isinstance(raw_groups, list):
         raise _quality_taxonomy_error("groups must be a list", source=source)
 
-    groups: list[dict[str, str]] = []
+    groups: list[dict[str, object]] = []
     seen_group_keys: set[str] = set()
     for index, raw_group in enumerate(raw_groups):
         if not isinstance(raw_group, dict):
@@ -80,13 +134,21 @@ def _validate_quality_taxonomy_payload(
         if key in seen_group_keys:
             raise _quality_taxonomy_error(f"duplicate group key '{key}'", source=source)
         seen_group_keys.add(key)
-        groups.append({"key": key, "label": label})
+        group: dict[str, object] = {"key": key, "label": label}
+        media_types = _normalize_media_type_scope(
+            raw_group.get("media_types"),
+            field_name=f"groups[{index}].media_types",
+            source=source,
+        )
+        if media_types is not None:
+            group["media_types"] = media_types
+        groups.append(group)
 
     raw_options = payload.get("options")
     if not isinstance(raw_options, list):
         raise _quality_taxonomy_error("options must be a list", source=source)
 
-    options: list[dict[str, str]] = []
+    options: list[dict[str, object]] = []
     seen_option_values: set[str] = set()
     for index, raw_option in enumerate(raw_options):
         if not isinstance(raw_option, dict):
@@ -123,19 +185,25 @@ def _validate_quality_taxonomy_payload(
                 source=source,
             )
         seen_option_values.add(value)
-        options.append(
-            {
-                "value": value,
-                "label": label,
-                "pattern": pattern,
-                "group": group,
-            }
+        option: dict[str, object] = {
+            "value": value,
+            "label": label,
+            "pattern": pattern,
+            "group": group,
+        }
+        media_types = _normalize_media_type_scope(
+            raw_option.get("media_types"),
+            field_name=f"options[{index}].media_types",
+            source=source,
         )
+        if media_types is not None:
+            option["media_types"] = media_types
+        options.append(option)
 
     bundles: list[dict[str, object]] = []
     seen_bundle_keys: set[str] = set()
     raw_bundles = payload.get("bundles", [])
-    if version == 2:
+    if version in (2, 3):
         if not isinstance(raw_bundles, list):
             raise _quality_taxonomy_error("bundles must be a list", source=source)
         for index, raw_bundle in enumerate(raw_bundles):
@@ -194,7 +262,7 @@ def _validate_quality_taxonomy_payload(
 
     aliases: list[dict[str, str]] = []
     raw_aliases = payload.get("aliases", [])
-    if version == 2:
+    if version in (2, 3):
         if not isinstance(raw_aliases, list):
             raise _quality_taxonomy_error("aliases must be a list", source=source)
         seen_alias_keys: set[str] = set()
@@ -202,6 +270,7 @@ def _validate_quality_taxonomy_payload(
             if not isinstance(raw_alias, dict):
                 raise _quality_taxonomy_error(f"aliases[{index}] must be an object", source=source)
             alias = str(raw_alias.get("alias", "")).strip()
+            label = str(raw_alias.get("label", "")).strip()
             canonical = str(raw_alias.get("canonical", "")).strip()
             if not alias:
                 raise _quality_taxonomy_error(
@@ -232,11 +301,14 @@ def _validate_quality_taxonomy_payload(
                 )
 
             seen_alias_keys.add(alias)
-            aliases.append({"alias": alias, "canonical": canonical})
+            alias_entry = {"alias": alias, "canonical": canonical}
+            if label:
+                alias_entry["label"] = label
+            aliases.append(alias_entry)
 
     ranks: list[dict[str, object]] = []
     raw_ranks = payload.get("ranks", [])
-    if version == 2:
+    if version in (2, 3):
         if not isinstance(raw_ranks, list):
             raise _quality_taxonomy_error("ranks must be a list", source=source)
         seen_rank_keys: set[str] = set()
@@ -311,13 +383,18 @@ def _load_quality_taxonomy() -> dict[str, Any]:
 
 
 @lru_cache(maxsize=1)
-def _quality_group_labels() -> dict[str, str]:
-    groups = _load_quality_taxonomy()["groups"]
-    return {item["key"]: item["label"] for item in groups}
+def _quality_group_definitions() -> tuple[dict[str, object], ...]:
+    return _load_quality_taxonomy()["groups"]
 
 
 @lru_cache(maxsize=1)
-def _quality_options() -> tuple[dict[str, str], ...]:
+def _quality_group_labels() -> dict[str, str]:
+    groups = _quality_group_definitions()
+    return {str(item["key"]): str(item["label"]) for item in groups}
+
+
+@lru_cache(maxsize=1)
+def _quality_options() -> tuple[dict[str, object], ...]:
     return _load_quality_taxonomy()["options"]
 
 
@@ -352,7 +429,19 @@ def _quality_alias_map() -> dict[str, str]:
 
 @lru_cache(maxsize=1)
 def _quality_option_patterns() -> dict[str, str]:
-    return {item["value"]: item["pattern"] for item in _quality_options()}
+    return {str(item["value"]): str(item["pattern"]) for item in _quality_options()}
+
+
+@lru_cache(maxsize=1)
+def _quality_option_media_types() -> dict[str, tuple[str, ...] | None]:
+    return {
+        str(item["value"]): (
+            tuple(str(media_type) for media_type in item.get("media_types", ()))
+            if item.get("media_types")
+            else None
+        )
+        for item in _quality_options()
+    }
 
 
 @lru_cache(maxsize=1)
@@ -363,12 +452,14 @@ def _quality_option_order() -> dict[str, int]:
 def _clear_quality_taxonomy_cache() -> None:
     _quality_option_order.cache_clear()
     _quality_option_patterns.cache_clear()
+    _quality_option_media_types.cache_clear()
     _quality_alias_map.cache_clear()
     _quality_bundle_tokens.cache_clear()
     _quality_bundle_labels.cache_clear()
     _quality_bundle_definitions.cache_clear()
     _quality_options.cache_clear()
     _quality_group_labels.cache_clear()
+    _quality_group_definitions.cache_clear()
     _load_quality_taxonomy.cache_clear()
 
 
@@ -385,7 +476,14 @@ def quality_taxonomy_snapshot() -> dict[str, object]:
     taxonomy = _load_quality_taxonomy()
     return {
         "version": taxonomy["version"],
-        "groups": [dict(item) for item in taxonomy["groups"]],
+        "groups": [
+            {
+                "key": item["key"],
+                "label": item["label"],
+                "media_types": list(item.get("media_types", ())),
+            }
+            for item in taxonomy["groups"]
+        ],
         "options": quality_option_choices(),
         "bundles": quality_bundle_choices(),
         "aliases": [dict(item) for item in taxonomy["aliases"]],
@@ -595,6 +693,10 @@ QUALITY_PROFILE_BUNDLE_KEYS: dict[str, str] = {
 
 BUILTIN_AT_LEAST_UHD_PROFILE_KEY = "builtin-at-least-uhd"
 BUILTIN_AT_LEAST_UHD_PROFILE_LABEL = "At Least UHD"
+BUILTIN_AUDIOBOOK_PORTABLE_PROFILE_KEY = "builtin-audiobook-portable"
+BUILTIN_AUDIOBOOK_HIGH_BITRATE_PROFILE_KEY = "builtin-audiobook-high-bitrate"
+BUILTIN_MUSIC_LOSSLESS_PROFILE_KEY = "builtin-music-lossless"
+BUILTIN_MUSIC_LOSSY_PROFILE_KEY = "builtin-music-lossy"
 
 LEGACY_DEFAULT_QUALITY_PROFILE_RULES: dict[str, dict[str, list[str]]] = {
     QualityProfile.PLAIN.value: {"include_tokens": [], "exclude_tokens": []},
@@ -628,9 +730,114 @@ AT_LEAST_UHD_PROFILE: dict[str, object] = {
     "exclude_tokens": ["1080p", "720p", "480p", "360p", "sd"],
     "quality_profile_value": QualityProfile.CUSTOM.value,
     "built_in": True,
+    "media_types": [MediaType.SERIES.value, MediaType.MOVIE.value],
 }
 
+BUILTIN_FILTER_PROFILE_ORDER: tuple[str, ...] = (
+    "builtin-ultra-hd-hdr",
+    "builtin-at-least-hd",
+    BUILTIN_AT_LEAST_UHD_PROFILE_KEY,
+    BUILTIN_AUDIOBOOK_PORTABLE_PROFILE_KEY,
+    BUILTIN_AUDIOBOOK_HIGH_BITRATE_PROFILE_KEY,
+    BUILTIN_MUSIC_LOSSLESS_PROFILE_KEY,
+    BUILTIN_MUSIC_LOSSY_PROFILE_KEY,
+)
+
+BUILTIN_FILTER_PROFILE_SPECS: tuple[dict[str, object], ...] = (
+    {
+        "key": "builtin-ultra-hd-hdr",
+        "label_mode": "quality_profile",
+        "quality_profile_key": QualityProfile.UHD_2160P_HDR.value,
+        "quality_profile_value": QualityProfile.UHD_2160P_HDR.value,
+        "media_types": tuple(SCOPED_MEDIA_TYPE_ORDER[:2]),
+        "override_mode": "profile_rule",
+    },
+    {
+        "key": "builtin-at-least-hd",
+        "label_mode": "quality_profile",
+        "quality_profile_key": QualityProfile.HD_1080P.value,
+        "quality_profile_value": QualityProfile.HD_1080P.value,
+        "media_types": tuple(SCOPED_MEDIA_TYPE_ORDER[:2]),
+        "override_mode": "profile_rule",
+    },
+    {
+        "key": BUILTIN_AT_LEAST_UHD_PROFILE_KEY,
+        "label_mode": "bundle",
+        "bundle_key": "at_least_uhd",
+        "fallback_label": BUILTIN_AT_LEAST_UHD_PROFILE_LABEL,
+        "quality_profile_value": QualityProfile.CUSTOM.value,
+        "media_types": tuple(SCOPED_MEDIA_TYPE_ORDER[:2]),
+        "override_mode": "saved_profile",
+        "include_tokens": tuple(AT_LEAST_UHD_PROFILE["include_tokens"]),
+        "exclude_tokens": tuple(AT_LEAST_UHD_PROFILE["exclude_tokens"]),
+    },
+    {
+        "key": BUILTIN_AUDIOBOOK_PORTABLE_PROFILE_KEY,
+        "label_mode": "static",
+        "fallback_label": "Audiobook Portable (AAC/M4B/MP3)",
+        "quality_profile_value": QualityProfile.CUSTOM.value,
+        "media_types": (MediaType.AUDIOBOOK.value,),
+        "override_mode": "saved_profile",
+        "include_tokens": ("aac", "m4b", "mp3"),
+        "exclude_tokens": ("lossless", "flac", "alac", "wav"),
+    },
+    {
+        "key": BUILTIN_AUDIOBOOK_HIGH_BITRATE_PROFILE_KEY,
+        "label_mode": "static",
+        "fallback_label": "Audiobook High Bitrate (192k+)",
+        "quality_profile_value": QualityProfile.CUSTOM.value,
+        "media_types": (MediaType.AUDIOBOOK.value,),
+        "override_mode": "saved_profile",
+        "include_tokens": ("192kbps", "256kbps", "320kbps", "aac", "m4b", "mp3", "opus"),
+        "exclude_tokens": ("64kbps", "128kbps"),
+    },
+    {
+        "key": BUILTIN_MUSIC_LOSSLESS_PROFILE_KEY,
+        "label_mode": "static",
+        "fallback_label": "Music Lossless",
+        "quality_profile_value": QualityProfile.CUSTOM.value,
+        "media_types": (MediaType.MUSIC.value,),
+        "override_mode": "saved_profile",
+        "include_tokens": ("lossless", "flac", "alac", "wav"),
+        "exclude_tokens": ("64kbps", "128kbps", "192kbps", "mp3", "aac", "opus"),
+    },
+    {
+        "key": BUILTIN_MUSIC_LOSSY_PROFILE_KEY,
+        "label_mode": "static",
+        "fallback_label": "Music Lossy (256/320/VBR)",
+        "quality_profile_value": QualityProfile.CUSTOM.value,
+        "media_types": (MediaType.MUSIC.value,),
+        "override_mode": "saved_profile",
+        "include_tokens": ("256kbps", "320kbps", "vbr", "mp3", "aac", "opus", "m4a"),
+        "exclude_tokens": ("64kbps", "128kbps", "lossless", "flac", "alac", "wav"),
+    },
+)
+
 PROFILE_KEY_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _ordered_media_types(raw_media_types: tuple[str, ...] | list[str] | None) -> list[str]:
+    if not raw_media_types:
+        return []
+    available = {str(item) for item in raw_media_types}
+    return [item for item in SCOPED_MEDIA_TYPE_ORDER if item in available]
+
+
+def _media_type_is_other(media_type: MediaType | str | None) -> bool:
+    raw_value = media_type.value if isinstance(media_type, MediaType) else str(media_type or "")
+    return raw_value == MediaType.OTHER.value
+
+
+def _media_type_matches_scope(
+    media_type: MediaType | str | None,
+    scope: tuple[str, ...] | list[str] | None,
+) -> bool:
+    if _media_type_is_other(media_type):
+        return True
+    raw_value = media_type.value if isinstance(media_type, MediaType) else str(media_type or "")
+    if not raw_value:
+        return True
+    return not scope or raw_value in scope
 
 
 def _bundle_label_or_default(bundle_key: str, fallback: str) -> str:
@@ -648,27 +855,54 @@ def quality_profile_label(value: QualityProfile | str) -> str:
     return QUALITY_PROFILE_FALLBACK_LABELS.get(raw_value, raw_value)
 
 
-def quality_option_choices() -> list[dict[str, str]]:
+def quality_option_choices() -> list[dict[str, object]]:
     return [
         {
-            "value": item["value"],
-            "label": item["label"],
-            "pattern": item["pattern"],
-            "group": item["group"],
+            "value": str(item["value"]),
+            "label": str(item["label"]),
+            "pattern": str(item["pattern"]),
+            "group": str(item["group"]),
+            "media_types": _ordered_media_types(item.get("media_types")),
         }
         for item in _quality_options()
     ]
 
 
 def quality_option_groups() -> list[dict[str, object]]:
-    group_labels = _quality_group_labels()
-    grouped: dict[str, list[dict[str, str]]] = {key: [] for key in group_labels}
+    group_definitions = _quality_group_definitions()
+    grouped: dict[str, list[dict[str, object]]] = {
+        str(item["key"]): [] for item in group_definitions
+    }
     for item in quality_option_choices():
-        grouped[item["group"]].append(item)
+        grouped[str(item["group"])].append(item)
     return [
-        {"key": key, "label": group_labels[key], "options": grouped[key]}
-        for key in group_labels
+        {
+            "key": str(group["key"]),
+            "label": str(group["label"]),
+            "media_types": _ordered_media_types(group.get("media_types")),
+            "options": grouped[str(group["key"])],
+        }
+        for group in group_definitions
     ]
+
+
+def quality_option_groups_for_media_type(media_type: MediaType | str | None) -> list[dict[str, object]]:
+    if _media_type_is_other(media_type):
+        return quality_option_groups()
+
+    filtered_groups: list[dict[str, object]] = []
+    for group in quality_option_groups():
+        if not _media_type_matches_scope(media_type, group.get("media_types")):
+            continue
+        visible_options = [
+            option
+            for option in group["options"]
+            if _media_type_matches_scope(media_type, option.get("media_types"))
+        ]
+        if not visible_options:
+            continue
+        filtered_groups.append({**group, "options": visible_options})
+    return filtered_groups
 
 
 def quality_bundle_choices() -> list[dict[str, object]]:
@@ -770,6 +1004,71 @@ def resolve_quality_profile_rules(settings: AppSettings | None) -> dict[str, dic
     return normalize_profile_rules(settings.quality_profile_rules)
 
 
+def quality_token_media_types(token: str) -> list[str]:
+    return _ordered_media_types(_quality_option_media_types().get(token))
+
+
+def _scope_domain(media_types: list[str]) -> str | None:
+    if not media_types:
+        return None
+    media_type_set = set(media_types)
+    if media_type_set.issubset(VIDEO_MEDIA_TYPES):
+        return "video"
+    if media_type_set.issubset(AUDIO_MEDIA_TYPES):
+        return "audio"
+    return None
+
+
+def infer_filter_profile_media_types(
+    include_tokens: list[str] | tuple[str, ...] | None,
+    exclude_tokens: list[str] | tuple[str, ...] | None,
+) -> list[str] | None:
+    tokens = canonicalize_quality_tokens(
+        list(normalize_quality_tokens(include_tokens)) + list(normalize_quality_tokens(exclude_tokens))
+    )
+    if not tokens:
+        return None
+
+    domain: str | None = None
+    intersection: set[str] | None = None
+    for token in tokens:
+        token_media_types = quality_token_media_types(token)
+        if not token_media_types:
+            return None
+        token_domain = _scope_domain(token_media_types)
+        if token_domain is None:
+            return None
+        if domain is None:
+            domain = token_domain
+        elif domain != token_domain:
+            return None
+
+        token_scope = set(token_media_types)
+        if intersection is None:
+            intersection = token_scope
+        else:
+            intersection &= token_scope
+
+    if not intersection:
+        return None
+    return [item for item in SCOPED_MEDIA_TYPE_ORDER if item in intersection]
+
+
+def _normalize_saved_profile_media_types(raw_value: Any) -> list[str] | None:
+    if not isinstance(raw_value, list):
+        return None
+
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw_item in raw_value:
+        value = str(raw_item).strip()
+        if not value or value not in SCOPED_MEDIA_TYPE_ORDER or value in seen:
+            continue
+        seen.add(value)
+        cleaned.append(value)
+    return cleaned or None
+
+
 def normalize_saved_quality_profiles(raw_value: Any) -> dict[str, dict[str, object]]:
     if not isinstance(raw_value, dict):
         return {}
@@ -789,13 +1088,20 @@ def normalize_saved_quality_profiles(raw_value: Any) -> dict[str, dict[str, obje
             for token in normalize_quality_tokens(raw_profile.get("exclude_tokens"))
             if token not in include_set
         ]
-        normalized[key] = {
+        media_types = _normalize_saved_profile_media_types(raw_profile.get("media_types"))
+        if "media_types" not in raw_profile:
+            media_types = infer_filter_profile_media_types(include_tokens, exclude_tokens)
+
+        profile: dict[str, object] = {
             "label": label,
             "include_tokens": include_tokens,
             "exclude_tokens": exclude_tokens,
             "quality_profile_value": QualityProfile.CUSTOM.value,
             "built_in": False,
         }
+        if media_types:
+            profile["media_types"] = media_types
+        normalized[key] = profile
     return normalized
 
 
@@ -804,34 +1110,68 @@ def slugify_profile_key(value: str) -> str:
     return cleaned
 
 
+def builtin_filter_profile_keys() -> set[str]:
+    return {str(spec["key"]) for spec in BUILTIN_FILTER_PROFILE_SPECS}
+
+
+def filter_profile_matches_media_type(
+    profile: dict[str, object],
+    media_type: MediaType | str | None,
+) -> bool:
+    return _media_type_matches_scope(media_type, profile.get("media_types"))
+
+
+def _build_builtin_filter_profile(
+    spec: dict[str, object],
+    *,
+    profile_rules: dict[str, dict[str, list[str]]],
+    saved_profiles: dict[str, dict[str, object]],
+) -> dict[str, object]:
+    key = str(spec["key"])
+    override = saved_profiles.pop(key, None)
+    label_mode = str(spec.get("label_mode", "static"))
+    if label_mode == "quality_profile":
+        label = quality_profile_label(str(spec["quality_profile_key"]))
+    elif label_mode == "bundle":
+        label = _bundle_label_or_default(
+            str(spec["bundle_key"]),
+            str(spec.get("fallback_label", key)),
+        )
+    else:
+        label = str(spec.get("fallback_label", key))
+
+    override_mode = str(spec.get("override_mode", "saved_profile"))
+    if override_mode == "profile_rule":
+        profile_key = str(spec["quality_profile_key"])
+        include_tokens = list(profile_rules[profile_key]["include_tokens"])
+        exclude_tokens = list(profile_rules[profile_key]["exclude_tokens"])
+    else:
+        include_tokens = list(spec.get("include_tokens", ()))
+        exclude_tokens = list(spec.get("exclude_tokens", ()))
+        if override:
+            include_tokens = list(override.get("include_tokens", include_tokens))
+            exclude_tokens = list(override.get("exclude_tokens", exclude_tokens))
+
+    return {
+        "label": label,
+        "include_tokens": include_tokens,
+        "exclude_tokens": exclude_tokens,
+        "quality_profile_value": str(spec.get("quality_profile_value", QualityProfile.CUSTOM.value)),
+        "built_in": True,
+        "media_types": _ordered_media_types(spec.get("media_types")),
+    }
+
+
 def build_available_filter_profiles(settings: AppSettings | None) -> dict[str, dict[str, object]]:
     profile_rules = resolve_quality_profile_rules(settings)
     saved_profiles = normalize_saved_quality_profiles(settings.saved_quality_profiles if settings else {})
-    at_least_uhd_override = saved_profiles.pop(BUILTIN_AT_LEAST_UHD_PROFILE_KEY, None)
-    at_least_uhd_profile = deepcopy(AT_LEAST_UHD_PROFILE)
-    at_least_uhd_profile["label"] = _bundle_label_or_default(
-        "at_least_uhd",
-        BUILTIN_AT_LEAST_UHD_PROFILE_LABEL,
-    )
-    if at_least_uhd_override:
-        at_least_uhd_profile["include_tokens"] = list(at_least_uhd_override.get("include_tokens", []))
-        at_least_uhd_profile["exclude_tokens"] = list(at_least_uhd_override.get("exclude_tokens", []))
     available = {
-        "builtin-ultra-hd-hdr": {
-            "label": quality_profile_label(QualityProfile.UHD_2160P_HDR),
-            "include_tokens": list(profile_rules[QualityProfile.UHD_2160P_HDR.value]["include_tokens"]),
-            "exclude_tokens": list(profile_rules[QualityProfile.UHD_2160P_HDR.value]["exclude_tokens"]),
-            "quality_profile_value": QualityProfile.UHD_2160P_HDR.value,
-            "built_in": True,
-        },
-        "builtin-at-least-hd": {
-            "label": quality_profile_label(QualityProfile.HD_1080P),
-            "include_tokens": list(profile_rules[QualityProfile.HD_1080P.value]["include_tokens"]),
-            "exclude_tokens": list(profile_rules[QualityProfile.HD_1080P.value]["exclude_tokens"]),
-            "quality_profile_value": QualityProfile.HD_1080P.value,
-            "built_in": True,
-        },
-        BUILTIN_AT_LEAST_UHD_PROFILE_KEY: at_least_uhd_profile,
+        str(spec["key"]): _build_builtin_filter_profile(
+            spec,
+            profile_rules=profile_rules,
+            saved_profiles=saved_profiles,
+        )
+        for spec in BUILTIN_FILTER_PROFILE_SPECS
     }
     available.update(saved_profiles)
     return available
@@ -839,15 +1179,25 @@ def build_available_filter_profiles(settings: AppSettings | None) -> dict[str, d
 
 def available_filter_profile_choices(settings: AppSettings | None) -> list[dict[str, object]]:
     profiles = build_available_filter_profiles(settings)
-    ordered_keys = ["builtin-ultra-hd-hdr", "builtin-at-least-hd", BUILTIN_AT_LEAST_UHD_PROFILE_KEY]
     custom_keys = sorted(
         (key for key, profile in profiles.items() if not bool(profile.get("built_in"))),
         key=lambda key: str(profiles[key]["label"]).casefold(),
     )
     return [
         {"key": key, **profiles[key]}
-        for key in [*ordered_keys, *custom_keys]
+        for key in [*BUILTIN_FILTER_PROFILE_ORDER, *custom_keys]
         if key in profiles
+    ]
+
+
+def available_filter_profile_choices_for_media_type(
+    settings: AppSettings | None,
+    media_type: MediaType | str | None,
+) -> list[dict[str, object]]:
+    return [
+        profile
+        for profile in available_filter_profile_choices(settings)
+        if filter_profile_matches_media_type(profile, media_type)
     ]
 
 
@@ -855,10 +1205,14 @@ def detect_matching_filter_profile_key(
     include_tokens: list[str] | tuple[str, ...] | None,
     exclude_tokens: list[str] | tuple[str, ...] | None,
     settings: AppSettings | None,
+    *,
+    media_type: MediaType | str | None = None,
 ) -> str:
     normalized_include = canonicalize_quality_tokens(include_tokens)
     normalized_exclude = canonicalize_quality_tokens(exclude_tokens)
     for item in available_filter_profile_choices(settings):
+        if media_type is not None and not filter_profile_matches_media_type(item, media_type):
+            continue
         if (
             normalized_include == canonicalize_quality_tokens(item.get("include_tokens"))
             and normalized_exclude == canonicalize_quality_tokens(item.get("exclude_tokens"))

@@ -118,6 +118,9 @@ class AppSettings(Base):
     qb_base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     qb_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     qb_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    jackett_api_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    jackett_qb_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    jackett_api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_provider: Mapped[MetadataProvider] = mapped_column(
         Enum(MetadataProvider, name="metadata_provider"),
         nullable=False,

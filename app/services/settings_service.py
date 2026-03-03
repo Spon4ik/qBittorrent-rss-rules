@@ -9,9 +9,9 @@ from app.config import get_environment_settings, obfuscate_secret, reveal_secret
 from app.models import AppSettings, MetadataProvider, QualityProfile
 from app.schemas import SettingsFormPayload
 from app.services.quality_filters import (
-    BUILTIN_AT_LEAST_UHD_PROFILE_KEY,
     DEFAULT_QUALITY_PROFILE_RULES,
     LEGACY_DEFAULT_QUALITY_PROFILE_RULES,
+    builtin_filter_profile_keys,
     canonicalize_quality_tokens,
     normalize_saved_quality_profiles,
     resolve_quality_profile_rules,
@@ -37,6 +37,21 @@ class ResolvedMetadataConfig:
     @property
     def enabled(self) -> bool:
         return self.provider != MetadataProvider.DISABLED
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedJackettConfig:
+    api_url: str | None
+    qb_url: str | None
+    api_key: str | None
+
+    @property
+    def app_ready(self) -> bool:
+        return bool(self.api_url and self.api_key)
+
+    @property
+    def rule_ready(self) -> bool:
+        return bool((self.qb_url or self.api_url) and self.api_key)
 
 
 class SettingsService:
@@ -100,6 +115,8 @@ class SettingsService:
     def apply_payload(settings: AppSettings, payload: SettingsFormPayload) -> AppSettings:
         settings.qb_base_url = payload.qb_base_url or None
         settings.qb_username = payload.qb_username or None
+        settings.jackett_api_url = payload.jackett_api_url or None
+        settings.jackett_qb_url = payload.jackett_qb_url or None
         settings.metadata_provider = payload.metadata_provider
         settings.series_category_template = payload.series_category_template
         settings.movie_category_template = payload.movie_category_template
@@ -120,6 +137,8 @@ class SettingsService:
 
         if payload.qb_password:
             settings.qb_password_encrypted = obfuscate_secret(payload.qb_password)
+        if payload.jackett_api_key:
+            settings.jackett_api_key_encrypted = obfuscate_secret(payload.jackett_api_key)
         if payload.omdb_api_key:
             settings.omdb_api_key_encrypted = obfuscate_secret(payload.omdb_api_key)
         return settings
@@ -143,13 +162,28 @@ class SettingsService:
         )
 
     @staticmethod
+    def resolve_jackett(settings: AppSettings | None) -> ResolvedJackettConfig:
+        env = get_environment_settings()
+        api_url = env.jackett_api_url or (settings.jackett_api_url if settings else None)
+        qb_url = env.jackett_qb_url or (settings.jackett_qb_url if settings else None) or api_url
+        return ResolvedJackettConfig(
+            api_url=api_url,
+            qb_url=qb_url,
+            api_key=env.jackett_api_key
+            or reveal_secret(settings.jackett_api_key_encrypted if settings else None),
+        )
+
+    @staticmethod
     def to_form_dict(settings: AppSettings) -> dict[str, object]:
         profile_rules = resolve_quality_profile_rules(settings)
         saved_profiles = normalize_saved_quality_profiles(settings.saved_quality_profiles)
-        saved_profiles.pop(BUILTIN_AT_LEAST_UHD_PROFILE_KEY, None)
+        for builtin_key in builtin_filter_profile_keys():
+            saved_profiles.pop(builtin_key, None)
         return {
             "qb_base_url": settings.qb_base_url or "",
             "qb_username": settings.qb_username or "",
+            "jackett_api_url": settings.jackett_api_url or "",
+            "jackett_qb_url": settings.jackett_qb_url or "",
             "metadata_provider": settings.metadata_provider.value,
             "series_category_template": settings.series_category_template,
             "movie_category_template": settings.movie_category_template,
@@ -164,7 +198,9 @@ class SettingsService:
             "default_quality_profile": settings.default_quality_profile.value,
             "saved_quality_profile_count": len(saved_profiles),
             "has_saved_qb_password": bool(settings.qb_password_encrypted),
+            "has_saved_jackett_key": bool(settings.jackett_api_key_encrypted),
             "has_saved_omdb_key": bool(settings.omdb_api_key_encrypted),
             "has_env_qb_password": bool(get_environment_settings().qb_password),
+            "has_env_jackett_key": bool(get_environment_settings().jackett_api_key),
             "has_env_omdb_key": bool(get_environment_settings().omdb_api_key),
         }

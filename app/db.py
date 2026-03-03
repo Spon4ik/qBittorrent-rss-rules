@@ -68,6 +68,9 @@ def _ensure_rule_columns() -> None:
         "quality_exclude_tokens": "JSON NOT NULL DEFAULT '[]'",
     }
     expected_settings_columns = {
+        "jackett_api_url": "VARCHAR(255)",
+        "jackett_qb_url": "VARCHAR(255)",
+        "jackett_api_key_encrypted": "TEXT",
         "quality_profile_rules": "JSON NOT NULL DEFAULT '{}'",
         "saved_quality_profiles": "JSON NOT NULL DEFAULT '{}'",
         "default_feed_urls": "JSON NOT NULL DEFAULT '[]'",

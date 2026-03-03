@@ -119,6 +119,24 @@ function buildFilterProfileMap(profiles) {
   return profileMap;
 }
 
+function normalizeMediaTypes(scope) {
+  if (!Array.isArray(scope)) {
+    return [];
+  }
+  return scope.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
+}
+
+function mediaTypeMatchesScope(mediaType, scope) {
+  if (!mediaType || mediaType === "other") {
+    return true;
+  }
+  const normalizedScope = normalizeMediaTypes(scope);
+  if (normalizedScope.length === 0) {
+    return true;
+  }
+  return normalizedScope.includes(mediaType);
+}
+
 function getCheckedValues(container, name) {
   return Array.from(container.querySelectorAll(`input[name="${name}"]:checked`)).map((input) => input.value);
 }
@@ -289,30 +307,45 @@ function derivePattern(form, qualityPatternMap) {
 function initRuleForm(form) {
   const qualityOptions = parseJsonData(form.dataset.qualityOptions, []);
   const qualityPatternMap = buildQualityPatternMap(qualityOptions);
+  const qualityMediaTypeMap = Object.fromEntries(
+    qualityOptions.filter((option) => option?.value).map((option) => [
+      option.value,
+      normalizeMediaTypes(option.media_types),
+    ])
+  );
   const qualityOptionOrder = Object.fromEntries(
     qualityOptions.filter((option) => option?.value).map((option, index) => [option.value, index])
   );
   let availableFilterProfiles = parseJsonData(form.dataset.availableFilterProfiles, []);
   let availableFilterProfileMap = buildFilterProfileMap(availableFilterProfiles);
+  const metadataProviders = parseJsonData(form.dataset.metadataProviders, []);
+  const metadataLookupDisabled = form.dataset.metadataDisabled === "true";
   const categoryInput = form.querySelector('input[name="assigned_category"]');
   const savePathInput = form.querySelector('input[name="save_path"]');
   const patternPreview = form.querySelector("#pattern-preview");
+  const metadataProviderSelect = form.querySelector("#metadata-lookup-provider");
+  const metadataLookupValueInput = form.querySelector("#metadata-lookup-value");
   const metadataButton = form.querySelector("#metadata-lookup");
   const feedRefreshButton = form.querySelector("#feed-refresh");
   const feedSelectAllButton = form.querySelector("#feed-select-all");
   const feedClearAllButton = form.querySelector("#feed-clear-all");
   const feedOptionsContainer = form.querySelector("#feed-options");
+  const mediaField = form.querySelector('select[name="media_type"]');
   const qualityProfileInput = form.querySelector('input[name="quality_profile"]');
   const filterProfileSelect = form.querySelector("#filter-profile-select");
   const saveNewProfileButton = form.querySelector("#filter-profile-save-new");
   const overwriteProfileButton = form.querySelector("#filter-profile-overwrite");
   const releaseYearInput = form.querySelector('input[name="release_year"]');
+  const imdbFieldWrapper = form.querySelector("[data-imdb-field]");
 
   let categoryTouched = Boolean(categoryInput?.value.trim());
   let savePathTouched = Boolean(savePathInput?.value.trim());
   let releaseYearTouched = Boolean(releaseYearInput?.value.trim());
+  let currentMediaType = mediaField?.value || "series";
 
   const feedEmptyMessage = feedOptionsContainer?.dataset.emptyMessage || "No feeds available yet.";
+  const parseElementMediaTypes = (element) => normalizeMediaTypes((element?.dataset?.mediaTypes || "").split(","));
+  const getCurrentMediaType = () => mediaField?.value || currentMediaType || "series";
 
   const getFeedCheckboxes = () => Array.from(feedOptionsContainer?.querySelectorAll('input[name="feed_urls"]') || []);
 
@@ -413,9 +446,13 @@ function initRuleForm(form) {
     return normalizeTokenSelection(includeTokens, getCheckedValues(form, "quality_exclude_tokens"));
   };
 
-  const detectMatchingFilterProfileKey = () => {
+  const getProfilesForMediaType = (mediaType) => (
+    availableFilterProfiles.filter((profile) => mediaTypeMatchesScope(mediaType, profile.media_types))
+  );
+
+  const detectMatchingFilterProfileKey = (mediaType = getCurrentMediaType()) => {
     const currentProfile = buildCurrentProfilePayload();
-    for (const profile of availableFilterProfiles) {
+    for (const profile of getProfilesForMediaType(mediaType)) {
       const candidateProfile = normalizeTokenSelection(
         profile.include_tokens || [],
         profile.exclude_tokens || []
@@ -434,7 +471,7 @@ function initRuleForm(form) {
     if (!qualityProfileInput) {
       return;
     }
-    const matchingProfile = availableFilterProfileMap[detectMatchingFilterProfileKey()];
+    const matchingProfile = availableFilterProfileMap[detectMatchingFilterProfileKey(getCurrentMediaType())];
     if (matchingProfile?.quality_profile_value) {
       qualityProfileInput.value = matchingProfile.quality_profile_value;
       return;
@@ -463,25 +500,73 @@ function initRuleForm(form) {
     syncQualityProfileValue();
   };
 
-  const rebuildFilterProfileSelect = (selectedKey) => {
+  const rebuildFilterProfileSelect = (selectedKey, mediaType = getCurrentMediaType()) => {
     if (!filterProfileSelect) {
       return;
     }
+    const visibleProfiles = getProfilesForMediaType(mediaType);
     filterProfileSelect.innerHTML = "";
     const blankOption = document.createElement("option");
     blankOption.value = "";
     blankOption.textContent = "Current manual selection";
     filterProfileSelect.appendChild(blankOption);
-    for (const profile of availableFilterProfiles) {
+    let hasSelectedKey = false;
+    for (const profile of visibleProfiles) {
       const option = document.createElement("option");
       option.value = profile.key;
       option.textContent = profile.label;
       option.selected = profile.key === selectedKey;
+      hasSelectedKey ||= profile.key === selectedKey;
       filterProfileSelect.appendChild(option);
     }
-    if (!selectedKey) {
+    if (!selectedKey || !hasSelectedKey) {
       filterProfileSelect.value = "";
     }
+  };
+
+  const getMetadataProvidersForMediaType = (mediaType) => (
+    metadataProviders.filter((provider) => mediaTypeMatchesScope(mediaType, provider.media_types))
+  );
+
+  const updateMetadataLookupPlaceholder = (mediaType) => {
+    if (!metadataLookupValueInput) {
+      return;
+    }
+    if (mediaType === "music") {
+      metadataLookupValueInput.placeholder = "Album title or MusicBrainz ID";
+      return;
+    }
+    if (mediaType === "audiobook") {
+      metadataLookupValueInput.placeholder = "Book title, ISBN, or OpenLibrary ID";
+      return;
+    }
+    metadataLookupValueInput.placeholder = "Title or source ID";
+  };
+
+  const rebuildMetadataProviderSelect = (mediaType = getCurrentMediaType()) => {
+    if (!metadataProviderSelect) {
+      return;
+    }
+    const visibleProviders = getMetadataProvidersForMediaType(mediaType);
+    const currentValue = metadataProviderSelect.value;
+    metadataProviderSelect.innerHTML = "";
+    for (const provider of visibleProviders) {
+      const option = document.createElement("option");
+      option.value = provider.value;
+      option.textContent = provider.label;
+      option.selected = provider.value === currentValue;
+      metadataProviderSelect.appendChild(option);
+    }
+    if (visibleProviders.length === 0) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No provider";
+      metadataProviderSelect.appendChild(option);
+      metadataProviderSelect.value = "";
+    } else if (!visibleProviders.some((provider) => provider.value === currentValue)) {
+      metadataProviderSelect.value = visibleProviders[0].value;
+    }
+    updateMetadataLookupPlaceholder(mediaType);
   };
 
   const persistProfile = async (payload) => {
@@ -499,8 +584,102 @@ function initRuleForm(form) {
     }
     availableFilterProfiles = body.profiles || [];
     availableFilterProfileMap = buildFilterProfileMap(availableFilterProfiles);
-    rebuildFilterProfileSelect(body.profile_key || "");
+    rebuildFilterProfileSelect(body.profile_key || "", getCurrentMediaType());
     syncQualityProfileValue();
+  };
+
+  const getIncompatibleTokensForMediaType = (mediaType) => {
+    if (mediaType === "other") {
+      return [];
+    }
+    const incompatible = new Set();
+    for (const input of form.querySelectorAll('input[name="quality_include_tokens"], input[name="quality_exclude_tokens"]')) {
+      if (!input.checked && !input.defaultChecked) {
+        continue;
+      }
+      if (!input.checked) {
+        continue;
+      }
+      if (!mediaTypeMatchesScope(mediaType, qualityMediaTypeMap[input.value])) {
+        incompatible.add(input.value);
+      }
+    }
+    return Array.from(incompatible);
+  };
+
+  const clearIncompatibleTokens = (tokens) => {
+    const incompatible = new Set(tokens || []);
+    if (incompatible.size === 0) {
+      return;
+    }
+    form.querySelectorAll('input[name="quality_include_tokens"], input[name="quality_exclude_tokens"]').forEach((input) => {
+      if (incompatible.has(input.value)) {
+        input.checked = false;
+      }
+    });
+  };
+
+  const applyQualityVisibility = (mediaType) => {
+    form.querySelectorAll("[data-quality-option]").forEach((optionLabel) => {
+      optionLabel.hidden = !mediaTypeMatchesScope(mediaType, parseElementMediaTypes(optionLabel));
+    });
+
+    form.querySelectorAll("[data-quality-group]").forEach((group) => {
+      const groupMatches = mediaTypeMatchesScope(mediaType, parseElementMediaTypes(group));
+      const visibleOptions = Array.from(group.querySelectorAll("[data-quality-option]")).some((option) => !option.hidden);
+      group.hidden = !groupMatches || !visibleOptions;
+    });
+  };
+
+  const applyMediaTypeVisibility = (mediaType) => {
+    currentMediaType = mediaType || "series";
+    applyQualityVisibility(currentMediaType);
+    rebuildFilterProfileSelect(filterProfileSelect?.value || "", currentMediaType);
+    rebuildMetadataProviderSelect(currentMediaType);
+    if (imdbFieldWrapper) {
+      imdbFieldWrapper.hidden = currentMediaType === "music" || currentMediaType === "audiobook";
+    }
+  };
+
+  const handleMediaTypeSelectionChange = (nextMediaType) => {
+    const previousMediaType = currentMediaType;
+    if (!nextMediaType || nextMediaType === previousMediaType) {
+      applyMediaTypeVisibility(getCurrentMediaType());
+      refreshDerivedFields();
+      return;
+    }
+
+    const selectedProfileKey = filterProfileSelect?.value || "";
+    const selectedProfile = availableFilterProfileMap[selectedProfileKey];
+    const incompatibleTokens = getIncompatibleTokensForMediaType(nextMediaType);
+    const incompatibleProfileKey = (
+      nextMediaType !== "other"
+      && selectedProfileKey
+      && selectedProfile
+      && !mediaTypeMatchesScope(nextMediaType, selectedProfile.media_types)
+    )
+      ? selectedProfileKey
+      : "";
+
+    if (nextMediaType !== "other" && (incompatibleTokens.length > 0 || incompatibleProfileKey)) {
+      const confirmed = window.confirm(
+        "Switching media type will clear filters or presets that do not apply to the new media type. Continue?"
+      );
+      if (!confirmed) {
+        if (mediaField) {
+          mediaField.value = previousMediaType;
+        }
+        return;
+      }
+      clearIncompatibleTokens(incompatibleTokens);
+      if (incompatibleProfileKey && filterProfileSelect) {
+        filterProfileSelect.value = "";
+      }
+    }
+
+    applyMediaTypeVisibility(nextMediaType);
+    syncQualityProfileValue();
+    refreshDerivedFields();
   };
 
   const refreshDerivedFields = () => {
@@ -529,6 +708,9 @@ function initRuleForm(form) {
     syncQualityProfileValue();
     refreshDerivedFields();
   });
+  mediaField?.addEventListener("change", () => {
+    handleMediaTypeSelectionChange(mediaField.value);
+  });
   filterProfileSelect?.addEventListener("change", () => {
     const selectedKey = filterProfileSelect.value;
     if (!selectedKey) {
@@ -547,6 +729,7 @@ function initRuleForm(form) {
     await persistProfile({
       mode: "create",
       profile_name: profileName.trim(),
+      media_type: getCurrentMediaType(),
       ...buildCurrentProfilePayload(),
     });
   });
@@ -560,6 +743,7 @@ function initRuleForm(form) {
     await persistProfile({
       mode: "overwrite",
       target_key: selectedKey,
+      media_type: getCurrentMediaType(),
       ...buildCurrentProfilePayload(),
     });
   });
@@ -570,9 +754,12 @@ function initRuleForm(form) {
   });
 
   metadataButton?.addEventListener("click", async () => {
-    const imdbField = form.querySelector('input[name="imdb_id"]');
-    if (!imdbField || !imdbField.value.trim()) {
-      window.alert("Enter an IMDb ID first.");
+    if (metadataLookupDisabled) {
+      window.alert("Metadata lookup is disabled in Settings.");
+      return;
+    }
+    if (!metadataLookupValueInput || !metadataLookupValueInput.value.trim()) {
+      window.alert("Enter a title or source ID first.");
       return;
     }
 
@@ -581,7 +768,11 @@ function initRuleForm(form) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ imdb_id: imdbField.value.trim() }),
+      body: JSON.stringify({
+        provider: metadataProviderSelect?.value || "omdb",
+        lookup_value: metadataLookupValueInput.value.trim(),
+        media_type: getCurrentMediaType(),
+      }),
     });
     const payload = await response.json();
     if (!response.ok) {
@@ -592,7 +783,7 @@ function initRuleForm(form) {
     const titleField = form.querySelector('input[name="normalized_title"]');
     const contentField = form.querySelector('input[name="content_name"]');
     const ruleNameField = form.querySelector('input[name="rule_name"]');
-    const mediaField = form.querySelector('select[name="media_type"]');
+    const imdbField = form.querySelector('input[name="imdb_id"]');
 
     if (titleField) {
       titleField.value = payload.title || "";
@@ -605,6 +796,10 @@ function initRuleForm(form) {
     }
     if (mediaField && payload.media_type) {
       mediaField.value = payload.media_type;
+      handleMediaTypeSelectionChange(payload.media_type);
+    }
+    if (imdbField && payload.imdb_id) {
+      imdbField.value = payload.imdb_id;
     }
     if (releaseYearInput && (!releaseYearTouched || !releaseYearInput.value.trim())) {
       releaseYearInput.value = normalizeReleaseYear(payload.year || "");
@@ -667,6 +862,7 @@ function initRuleForm(form) {
     renderFeedOptions(mergedFeeds, selectedUrls);
   });
 
+  applyMediaTypeVisibility(currentMediaType);
   syncQualityProfileValue();
   refreshDerivedFields();
 }

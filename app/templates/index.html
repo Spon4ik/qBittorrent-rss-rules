@@ -5,9 +5,12 @@
     <p class="eyebrow">Rules</p>
     <h2>Library</h2>
   </div>
-  <form class="inline-action" method="post" action="/api/sync/all">
-    <button type="submit">Sync All</button>
-  </form>
+  <div class="card-actions">
+    <a class="button-link" href="/rules/new">Create Rule</a>
+    <form class="inline-action" method="post" action="/api/sync/all">
+      <button type="submit">Sync All</button>
+    </form>
+  </div>
 </section>
 
 <form class="filter-grid" method="get" action="/">
@@ -81,6 +84,8 @@
     </dl>
     <div class="card-actions">
       <a class="button-link" href="/rules/{{ rule.id }}">Edit</a>
+      <a class="button-link" href="/rules/{{ rule.id }}/search">Run Search</a>
+      <a class="button-link muted" href="/search?rule_id={{ rule.id }}">Adjust Search</a>
       <form method="post" action="/api/rules/{{ rule.id }}/sync">
         <button type="submit">Sync</button>
       </form>

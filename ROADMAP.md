@@ -7,19 +7,28 @@
 - Local FastAPI app with SQLite storage
 - qBittorrent API sync for rule create/update/delete
 - Import from exported qBittorrent rules JSON
-- Rule form with metadata lookup, grouped quality filters, and reusable saved filter profiles
+- Phase 1-5 work is already implemented in the current branch; remaining work is full test and manual validation
 - Baseline docs, ADRs, and test suite
+
+### Current phase track
+
+- Phase 1: JSON-backed quality taxonomy loader (implemented, awaiting final validation)
+- Phase 2: richer taxonomy schema (implemented, awaiting final validation)
+- Phase 3: taxonomy management UI (implemented, awaiting final validation)
+- Phase 4: feed selection UX improvements (implemented, awaiting final validation)
+- Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, awaiting final validation)
 
 ### Release focus
 
 - Keep the first release localhost-only
+- Close phase 4 and phase 5 validation before widening scope
 - Keep the data model stable and explicit
 - Avoid undocumented qBittorrent rule fields
 - Prefer correctness and maintainability over broad feature count
 
 ## Next release: v0.2.x
 
-- Phase 1: JSON-backed quality taxonomy loader (no behavior change)
+- Phase 6: Jackett-powered active search workspace with advanced query expansion and search-to-rule handoff
 - Bulk rule creation from list or CSV
 - Rule clone/duplicate flows
 - Improved feed grouping UX
@@ -31,11 +40,7 @@
 
 ## Future / North Star
 
-- Phase 2: richer taxonomy schema (bundles, ranks, alias families)
-- Phase 3: taxonomy management UI
-- Phase 4: feed selection UX improvements (`Select all`, remembered default feeds), use checkboxes instead of multi-select.
 - Rule templates and preset libraries
-- Metadata providers beyond OMDb
 - Sample feed simulation before save
 - Desktop packaging for Windows
 - Optional LAN-safe auth
@@ -57,4 +62,3 @@
 
 - Strong secret storage: deferred until a concrete platform-specific strategy is selected
 - Automatic drift healing: deferred to avoid surprising overwrites in early releases
-- Additional metadata providers: deferred until the base sync workflow is stable

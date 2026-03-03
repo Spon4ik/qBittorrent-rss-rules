@@ -1,17 +1,53 @@
 {
-  "version": 2,
+  "version": 3,
   "groups": [
     {
       "key": "resolution",
-      "label": "Resolution"
+      "label": "Resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "key": "definition",
-      "label": "Video Definition"
+      "label": "Video Definition",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "key": "source",
-      "label": "Source"
+      "label": "Source",
+      "media_types": [
+        "series",
+        "movie"
+      ]
+    },
+    {
+      "key": "audio_format",
+      "label": "Audio Format",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
+    },
+    {
+      "key": "audio_quality",
+      "label": "Audio Quality",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
+    },
+    {
+      "key": "audio_channels",
+      "label": "Audio Channels",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
     }
   ],
   "options": [
@@ -19,144 +55,419 @@
       "value": "sd",
       "label": "SD",
       "pattern": "sd",
-      "group": "resolution"
+      "group": "resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "360p",
       "label": "360p",
       "pattern": "360p",
-      "group": "resolution"
+      "group": "resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "480p",
       "label": "480p",
       "pattern": "480p",
-      "group": "resolution"
+      "group": "resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "hd",
       "label": "HD",
       "pattern": "hd",
-      "group": "resolution"
+      "group": "resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "720p",
       "label": "720p",
       "pattern": "720p",
-      "group": "resolution"
+      "group": "resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "full_hd",
       "label": "Full HD",
       "pattern": "full[\\s._-]*hd",
-      "group": "resolution"
+      "group": "resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "1080p",
       "label": "1080p",
       "pattern": "1080p",
-      "group": "resolution"
+      "group": "resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "ultra_hd",
       "label": "Ultra HD",
       "pattern": "ultra[\\s._-]*hd",
-      "group": "resolution"
+      "group": "resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "uhd",
       "label": "UHD",
       "pattern": "uhd",
-      "group": "resolution"
+      "group": "resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "2160p",
       "label": "2160p",
       "pattern": "2160p",
-      "group": "resolution"
+      "group": "resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "4k",
       "label": "4K",
       "pattern": "4k",
-      "group": "resolution"
+      "group": "resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "hdr",
       "label": "HDR",
       "pattern": "hdr10\\+?|hdr",
-      "group": "definition"
+      "group": "definition",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "dolby_vision",
       "label": "Dolby Vision",
       "pattern": "dolby[\\s._-]*vision|dv",
-      "group": "definition"
+      "group": "definition",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "hevc",
       "label": "HEVC",
       "pattern": "hevc|x265|h265",
-      "group": "definition"
+      "group": "definition",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "av1",
       "label": "AV1",
       "pattern": "av1",
-      "group": "definition"
+      "group": "definition",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "bdremux",
       "label": "bdremux",
       "pattern": "bdremux",
-      "group": "source"
+      "group": "source",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "bluray",
       "label": "BluRay",
       "pattern": "blu[\\s._-]*ray|bluray|b[dr]rip",
-      "group": "source"
+      "group": "source",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "web_dl",
       "label": "WEB-DL",
       "pattern": "web[\\s._-]*dl",
-      "group": "source"
+      "group": "source",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "web_rip",
       "label": "WEBRip",
       "pattern": "web[\\s._-]*rip",
-      "group": "source"
+      "group": "source",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "tv_sync",
       "label": "TV Sync",
       "pattern": "tv[\\s._-]*sync|tele[\\s._-]*sync|telesync",
-      "group": "source"
+      "group": "source",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "dvd",
       "label": "DVD",
       "pattern": "dvd(?:rip|scr)?|dvd[\\s._-]*rip",
-      "group": "source"
+      "group": "source",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "ts",
       "label": "TS",
       "pattern": "(?:hd)?ts",
-      "group": "source"
+      "group": "source",
+      "media_types": [
+        "series",
+        "movie"
+      ]
     },
     {
       "value": "cam",
       "label": "CAM",
       "pattern": "cam",
-      "group": "source"
+      "group": "source",
+      "media_types": [
+        "series",
+        "movie"
+      ]
+    },
+    {
+      "value": "m4b",
+      "label": "M4B",
+      "pattern": "m4b",
+      "group": "audio_format",
+      "media_types": [
+        "audiobook"
+      ]
+    },
+    {
+      "value": "aax",
+      "label": "AAX",
+      "pattern": "aax",
+      "group": "audio_format",
+      "media_types": [
+        "audiobook"
+      ]
+    },
+    {
+      "value": "m4a",
+      "label": "M4A",
+      "pattern": "m4a",
+      "group": "audio_format",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
+    },
+    {
+      "value": "mp3",
+      "label": "MP3",
+      "pattern": "mp3",
+      "group": "audio_format",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
+    },
+    {
+      "value": "aac",
+      "label": "AAC",
+      "pattern": "aac(?:-lc)?",
+      "group": "audio_format",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
+    },
+    {
+      "value": "opus",
+      "label": "Opus",
+      "pattern": "opus",
+      "group": "audio_format",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
+    },
+    {
+      "value": "flac",
+      "label": "FLAC",
+      "pattern": "flac",
+      "group": "audio_format",
+      "media_types": [
+        "music"
+      ]
+    },
+    {
+      "value": "alac",
+      "label": "ALAC",
+      "pattern": "alac",
+      "group": "audio_format",
+      "media_types": [
+        "music"
+      ]
+    },
+    {
+      "value": "wav",
+      "label": "WAV",
+      "pattern": "wav",
+      "group": "audio_format",
+      "media_types": [
+        "music"
+      ]
+    },
+    {
+      "value": "ogg",
+      "label": "OGG",
+      "pattern": "ogg|vorbis",
+      "group": "audio_format",
+      "media_types": [
+        "music"
+      ]
+    },
+    {
+      "value": "64kbps",
+      "label": "64 kbps",
+      "pattern": "64\\s?kbps|64k",
+      "group": "audio_quality",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
+    },
+    {
+      "value": "128kbps",
+      "label": "128 kbps",
+      "pattern": "128\\s?kbps|128k",
+      "group": "audio_quality",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
+    },
+    {
+      "value": "192kbps",
+      "label": "192 kbps",
+      "pattern": "192\\s?kbps|192k",
+      "group": "audio_quality",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
+    },
+    {
+      "value": "256kbps",
+      "label": "256 kbps",
+      "pattern": "256\\s?kbps|256k",
+      "group": "audio_quality",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
+    },
+    {
+      "value": "320kbps",
+      "label": "320 kbps",
+      "pattern": "320\\s?kbps|320k",
+      "group": "audio_quality",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
+    },
+    {
+      "value": "vbr",
+      "label": "VBR",
+      "pattern": "vbr",
+      "group": "audio_quality",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
+    },
+    {
+      "value": "lossless",
+      "label": "Lossless",
+      "pattern": "lossless",
+      "group": "audio_quality",
+      "media_types": [
+        "music"
+      ]
+    },
+    {
+      "value": "mono",
+      "label": "Mono",
+      "pattern": "mono|1\\.0",
+      "group": "audio_channels",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
+    },
+    {
+      "value": "stereo",
+      "label": "Stereo",
+      "pattern": "stereo|2\\.0",
+      "group": "audio_channels",
+      "media_types": [
+        "audiobook",
+        "music"
+      ]
     }
   ],
   "bundles": [
     {
-      "key": "at_least_full_hd",
+      "key": "at_least_hd",
       "label": "At Least Full HD",
       "tokens": [
         "hd",

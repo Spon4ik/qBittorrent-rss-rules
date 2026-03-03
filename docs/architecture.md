@@ -19,7 +19,7 @@ The app is designed around one rule authority:
 - `app/services/quality_filters.py`: quality taxonomy loading, validation, and token normalization
 - `app/services/rule_builder.py`: category, path, and pattern generation
 - `app/services/qbittorrent.py`: qBittorrent WebUI API client
-- `app/services/metadata.py`: OMDb lookup by IMDb ID
+- `app/services/metadata.py`: normalized metadata lookup dispatch for OMDb, MusicBrainz, OpenLibrary, and Google Books
 - `app/services/importer.py`: import exported qBittorrent rules JSON
 - `app/services/sync.py`: save-to-remote orchestration and sync event logging
 
@@ -47,17 +47,18 @@ The app is designed around one rule authority:
 ### Metadata lookup
 
 1. User clicks the metadata lookup button.
-2. The browser posts the IMDb ID to `/api/metadata/lookup`.
+2. The browser posts the selected provider, a title or provider-specific ID, and the current media type to `/api/metadata/lookup`.
 3. The server resolves the metadata provider configuration.
-4. The metadata client calls OMDb and returns normalized title and media type.
-5. The browser updates title/media/category preview fields in place.
+4. The metadata client dispatches to the relevant upstream provider and returns a normalized title, media type, and optional external IDs.
+5. The browser updates title/media/category preview fields in place and fills `IMDb ID` only when the chosen provider returns one.
 
 ### Quality token normalization
 
-1. The server loads `app/data/quality_taxonomy.json` and validates schema version `1` or `2` at startup-time use.
+1. The server loads `app/data/quality_taxonomy.json` and validates schema version `1`, `2`, or `3` at startup-time use.
 2. Leaf option IDs remain the canonical storage format for rules and saved filter profiles.
-3. If a future caller submits a bundle key or alias key, `app/services/quality_filters.py` expands it into leaf option IDs before persistence or regex generation.
-4. Rank metadata is loaded for future authoring UX, but it does not change current rule storage or rendering behavior in this phase.
+3. `app/services/quality_filters.py` keeps optional `media_types` metadata for UI scoping, but still expands bundles and aliases into leaf option IDs before persistence or regex generation.
+4. Saved filter profiles may carry optional `media_types` for rule-form visibility; stored rule tokens remain flat leaf IDs.
+5. Rank metadata is loaded for future authoring UX, but it does not change current rule storage or rendering behavior in this phase.
 
 
 
@@ -91,7 +92,7 @@ The app saves locally first. If qBittorrent sync fails, the user does not lose t
 
 - qBittorrent unreachable: local save succeeds, sync is marked `error`
 - qBittorrent auth failure: local save succeeds, sync is marked `error`
-- OMDb unavailable: metadata lookup fails; user can still fill the form manually
+- Metadata provider unavailable: lookup fails; user can still fill the form manually
 - Invalid import file: import page returns a validation error and writes nothing
 - Rule name collision: create or rename is rejected by the DB unique constraint unless import conflict mode allows a rename
 

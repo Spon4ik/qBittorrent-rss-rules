@@ -12,7 +12,7 @@
 
 ## Form and JSON action routes
 
-- `POST /api/metadata/lookup`: lookup title and media type from an IMDb ID
+- `POST /api/metadata/lookup`: lookup title and media metadata from a normalized provider request (`provider`, `lookup_value`, `media_type`) or the legacy `{ "imdb_id": "tt..." }` payload
 - `POST /api/feeds/refresh`: fetch the current qBittorrent feed list
 - `POST /api/filter-profiles`: save or overwrite a reusable saved filter profile
 - `POST /api/import/qb-json`: preview or apply an import from an exported JSON file
@@ -47,6 +47,7 @@ The rule form renders feeds as repeated checkbox inputs named `feed_urls`; check
 
 ### `MetadataClient`
 
+- `lookup(provider: MetadataLookupProvider | str, lookup_value: str, media_type: MediaType = MediaType.SERIES) -> MetadataResult`
 - `lookup_by_imdb_id(imdb_id: str) -> MetadataResult`
 
 ### `RuleBuilder`
@@ -69,6 +70,8 @@ The rule form renders feeds as repeated checkbox inputs named `feed_urls`; check
 - `tokens_to_regex(tokens: list[str] | tuple[str, ...] | None) -> str`
 
 The app may accept bundle keys or alias keys as authoring conveniences, but persisted `quality_include_tokens`, `quality_exclude_tokens`, `quality_profile_rules`, and `saved_quality_profiles` stay normalized as flat leaf token IDs in this phase. Draft apply checks only block option values newly removed by the submitted taxonomy; already-invalid legacy tokens are reported separately and do not block label-only edits. Taxonomy applies also append a local audit event to `data/taxonomy_audit.jsonl` when that file is writable.
+
+Saved filter profiles may now also carry optional `media_types` metadata so the rule form can limit profile visibility to relevant media types without changing the flat-token persistence contract.
 
 ### `Importer`
 

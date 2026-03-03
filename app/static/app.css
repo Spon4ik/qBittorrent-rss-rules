@@ -186,9 +186,22 @@ h3 {
   flex-wrap: wrap;
 }
 
+.control-row > input,
+.control-row > select {
+  flex: 1 1 12rem;
+}
+
+.control-row > button {
+  flex: 0 0 auto;
+}
+
 .helper-text {
   margin: 0;
   color: var(--muted);
+}
+
+[hidden] {
+  display: none !important;
 }
 
 .filter-grid,

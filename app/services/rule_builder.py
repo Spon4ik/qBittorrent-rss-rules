@@ -136,9 +136,9 @@ class RuleBuilder:
         template = "Other/{title} [imdbid-{imdb_id}]"
         if self.settings is not None:
             if rule.media_type == MediaType.MOVIE:
-                template = self.settings.movie_category_template
+                template = self.settings.movie_category_template or "Movies/{title} [imdbid-{imdb_id}]"
             elif rule.media_type == MediaType.SERIES:
-                template = self.settings.series_category_template
+                template = self.settings.series_category_template or "Series/{title} [imdbid-{imdb_id}]"
             elif rule.media_type == MediaType.AUDIOBOOK:
                 template = "Audiobooks/{title}"
             elif rule.media_type == MediaType.MUSIC:
@@ -161,9 +161,12 @@ class RuleBuilder:
     def render_save_path(self, rule: Rule) -> str:
         if rule.save_path.strip():
             return sanitize_path_fragment(rule.save_path)
-        if self.settings is None or not self.settings.save_path_template.strip():
+        save_path_template = ""
+        if self.settings is not None:
+            save_path_template = (self.settings.save_path_template or "").strip()
+        if not save_path_template:
             return ""
-        rendered = self.settings.save_path_template.format(
+        rendered = save_path_template.format(
             title=sanitize_path_fragment(self._resolved_title(rule)),
             imdb_id=rule.imdb_id or "unknown",
             media_type=rule.media_type.value,

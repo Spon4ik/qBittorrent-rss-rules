@@ -196,6 +196,7 @@ class JackettSearchResult(BaseModel):
     details_url: str | None = None
     guid: str | None = None
     info_hash: str | None = None
+    imdb_id: str | None = None
     size_bytes: int | None = None
     size_label: str | None = None
     published_label: str | None = None

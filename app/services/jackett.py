@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from itertools import product
@@ -68,6 +69,19 @@ TORZNAB_MODE_BY_MEDIA_TYPE: dict[MediaType, str] = {
     MediaType.AUDIOBOOK: "book",
 }
 TORZNAB_YEAR_MODES = {"movie", "tvsearch", "music", "book"}
+TORZNAB_CAPABILITY_TAG_BY_MODE = {
+    "search": "search",
+    "tvsearch": "tv-search",
+    "movie": "movie-search",
+    "music": "music-search",
+    "book": "book-search",
+}
+
+
+@dataclass(frozen=True)
+class JackettIndexerCapability:
+    indexer_id: str
+    supported_params: frozenset[str]
 
 
 def _local_name(tag: str) -> str:
@@ -669,15 +683,25 @@ class JackettClient:
         for variant in query_variants:
             request_params = self._search_params_for_variant(payload, variant)
             fallback_params = self._fallback_search_params_for_variant(payload, variant, request_params)
-            variant_results, successful_params = self._search_variant(
-                payload.indexer,
-                request_params,
-                fallback_params=fallback_params,
-            )
-            request_label = _request_variant_label(successful_params)
-            if request_label and request_label not in seen_request_variants:
-                seen_request_variants.add(request_label)
-                request_variants.append(request_label)
+            try:
+                variant_results, successful_params = self._search_variant(
+                    payload.indexer,
+                    request_params,
+                    fallback_params=fallback_params,
+                )
+                successful_requests = [successful_params]
+            except JackettHTTPError as exc:
+                if exc.status_code != 400 or not payload.imdb_id_only or payload.indexer != "all":
+                    raise
+                variant_results, successful_requests = self._search_variant_across_capable_indexers(
+                    payload,
+                    variant,
+                )
+            for successful_params in successful_requests:
+                request_label = _request_variant_label(successful_params)
+                if request_label and request_label not in seen_request_variants:
+                    seen_request_variants.add(request_label)
+                    request_variants.append(request_label)
             for published_at, result in variant_results:
                 if not self._matches_payload_terms(result, payload):
                     continue
@@ -856,6 +880,153 @@ class JackettClient:
 
         return fallback_params
 
+    def _search_variant_across_capable_indexers(
+        self,
+        payload: JackettSearchRequest,
+        query: str,
+    ) -> tuple[list[tuple[datetime | None, JackettSearchResult]], list[dict[str, object]]]:
+        search_mode = _torznab_mode_for_payload(payload)
+        indexers = self._configured_indexers_for_mode(search_mode)
+        successful_requests: list[dict[str, object]] = []
+        parsed_results: list[tuple[datetime | None, JackettSearchResult]] = []
+        last_bad_request_error: JackettHTTPError | None = None
+
+        for indexer in indexers:
+            request_attempts = self._imdb_enforced_params_for_indexer(payload, query, search_mode, indexer)
+            if not request_attempts:
+                continue
+            try:
+                indexer_results, successful_params = self._search_variant(
+                    indexer.indexer_id,
+                    request_attempts[0],
+                    fallback_params=request_attempts[1:],
+                )
+            except JackettHTTPError as exc:
+                if exc.status_code != 400:
+                    raise
+                last_bad_request_error = exc
+                continue
+            parsed_results.extend(indexer_results)
+            successful_requests.append(successful_params)
+
+        if successful_requests:
+            return parsed_results, successful_requests
+        if last_bad_request_error is not None:
+            raise last_bad_request_error
+        return self._search_variant_by_result_imdb_metadata(payload, query, search_mode)
+
+    def _search_variant_by_result_imdb_metadata(
+        self,
+        payload: JackettSearchRequest,
+        query: str,
+        search_mode: str,
+    ) -> tuple[list[tuple[datetime | None, JackettSearchResult]], list[dict[str, object]]]:
+        imdb_lookup_id = _torznab_imdb_lookup_id(payload.imdb_id)
+        if not imdb_lookup_id:
+            raise JackettClientError(
+                "Jackett could not find a configured indexer that supports IMDb-enforced search for this media type."
+            )
+
+        params: dict[str, object] = {
+            "apikey": self.api_key or "",
+            "t": search_mode,
+            "q": query,
+        }
+        categories = _torznab_categories_for_media_type(payload.media_type)
+        if categories:
+            params["cat"] = ",".join(categories)
+
+        parsed_results, successful_params = self._search_variant(
+            "all",
+            params,
+        )
+        filtered_results = [
+            item
+            for item in parsed_results
+            if _torznab_imdb_lookup_id(item[1].imdb_id) == imdb_lookup_id
+        ]
+        labeled_params = dict(successful_params)
+        labeled_params["result_imdbid"] = imdb_lookup_id
+        return filtered_results, [labeled_params]
+
+    def _configured_indexers_for_mode(self, search_mode: str) -> list[JackettIndexerCapability]:
+        capability_tag = TORZNAB_CAPABILITY_TAG_BY_MODE.get(search_mode)
+        if not capability_tag:
+            return []
+
+        root = self._request_xml(
+            self._torznab_endpoint("all"),
+            params={
+                "t": "indexers",
+                "apikey": self.api_key or "",
+                "configured": "true",
+            },
+        )
+
+        indexers: list[JackettIndexerCapability] = []
+        for indexer in root.iter():
+            if _local_name(indexer.tag) != "indexer":
+                continue
+            indexer_id = indexer.attrib.get("id", "").strip()
+            if not indexer_id or indexer_id == "all":
+                continue
+
+            supported_params: frozenset[str] = frozenset()
+            for item in indexer.iter():
+                if _local_name(item.tag) != capability_tag:
+                    continue
+                available = item.attrib.get("available", "").strip().casefold()
+                if available not in {"yes", "true", "1"}:
+                    break
+                supported = item.attrib.get("supportedParams") or item.attrib.get("supportedparams") or ""
+                supported_params = frozenset(
+                    param.strip().casefold()
+                    for param in supported.split(",")
+                    if param.strip()
+                )
+                break
+
+            if "imdbid" not in supported_params:
+                continue
+            indexers.append(
+                JackettIndexerCapability(
+                    indexer_id=indexer_id,
+                    supported_params=supported_params,
+                )
+            )
+        return indexers
+
+    def _imdb_enforced_params_for_indexer(
+        self,
+        payload: JackettSearchRequest,
+        query: str,
+        search_mode: str,
+        indexer: JackettIndexerCapability,
+    ) -> list[dict[str, object]]:
+        imdb_lookup_id = _torznab_imdb_lookup_id(payload.imdb_id)
+        if not imdb_lookup_id:
+            return []
+
+        categories = _torznab_categories_for_media_type(payload.media_type)
+        base_params = {
+            "apikey": self.api_key or "",
+            "t": search_mode,
+            "imdbid": imdb_lookup_id,
+        }
+        if categories:
+            base_params["cat"] = ",".join(categories)
+
+        request_attempts: list[dict[str, object]] = []
+        if "q" in indexer.supported_params and query:
+            request_attempts.append(
+                {
+                    **base_params,
+                    "q": query,
+                }
+            )
+        request_attempts.append(base_params)
+        return request_attempts
+
     def _parse_item(self, item: ET.Element) -> tuple[datetime | None, JackettSearchResult] | None:
         title = ""
         link = ""
@@ -864,6 +1035,7 @@ class JackettClient:
         published_at: datetime | None = None
         size_bytes: int | None = None
         info_hash: str | None = None
+        imdb_id: str | None = None
         indexer: str | None = None
 
         for child in item:
@@ -886,6 +1058,8 @@ class JackettClient:
                 attr_value = child.attrib.get("value", "").strip()
                 if attr_name == "size" and size_bytes is None:
                     size_bytes = _coerce_int(attr_value)
+                elif attr_name in {"imdbid", "imdb"} and imdb_id is None:
+                    imdb_id = _torznab_imdb_lookup_id(attr_value)
                 elif attr_name in {"infohash", "info_hash"}:
                     info_hash = attr_value or None
                 elif attr_name in {"jackettindexer", "indexer"}:
@@ -903,6 +1077,7 @@ class JackettClient:
                 details_url=details_url,
                 guid=guid,
                 info_hash=info_hash,
+                imdb_id=imdb_id,
                 size_bytes=size_bytes,
                 size_label=_format_size(size_bytes),
                 published_label=_format_published(published_at),

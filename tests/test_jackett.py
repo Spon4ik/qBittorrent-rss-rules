@@ -285,6 +285,279 @@ def test_jackett_client_retries_series_imdb_only_with_title_after_bad_request() 
     assert result.results == []
 
 
+def test_jackett_client_uses_direct_indexers_when_all_rejects_imdb_enforced_series_search() -> None:
+    seen_requests: list[tuple[str, dict[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = {key: value for key, value in request.url.params.multi_items()}
+        seen_requests.append((path, params))
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt17676654",
+        }:
+            return httpx.Response(400, text="Bad Request")
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt17676654",
+            "q": "American Classic",
+        }:
+            return httpx.Response(400, text="Bad Request")
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="rutracker">
+    <caps>
+      <searching>
+        <tv-search available="yes" supportedParams="q,imdbid,season,ep" />
+      </searching>
+    </caps>
+  </indexer>
+  <indexer id="plaintext">
+    <caps>
+      <searching>
+        <tv-search available="yes" supportedParams="q,season,ep" />
+      </searching>
+    </caps>
+  </indexer>
+</indexers>
+""",
+            )
+
+        if path == "/api/v2.0/indexers/rutracker/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt17676654",
+            "q": "American Classic",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>American Classic S01E01 1080p</title>
+      <guid>american-classic-guid</guid>
+      <link>magnet:?xt=urn:btih:AMERICAN1</link>
+      <torznab:attr name="jackettindexer" value="rutracker" />
+    </item>
+  </channel>
+</rss>
+""",
+            )
+
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="American Classic",
+            media_type="series",
+            imdb_id="tt17676654",
+            imdb_id_only=True,
+        )
+    )
+
+    assert seen_requests == [
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "tvsearch",
+                "cat": "5000",
+                "imdbid": "tt17676654",
+            },
+        ),
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "tvsearch",
+                "cat": "5000",
+                "imdbid": "tt17676654",
+                "q": "American Classic",
+            },
+        ),
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "indexers",
+                "configured": "true",
+            },
+        ),
+        (
+            "/api/v2.0/indexers/rutracker/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "tvsearch",
+                "cat": "5000",
+                "imdbid": "tt17676654",
+                "q": "American Classic",
+            },
+        ),
+    ]
+    assert result.request_variants == [
+        't=tvsearch q="American Classic" imdbid=tt17676654 cat=5000'
+    ]
+    assert [item.title for item in result.results] == ["American Classic S01E01 1080p"]
+
+
+def test_jackett_client_filters_by_result_imdb_when_tv_indexers_do_not_support_input_imdb() -> None:
+    seen_requests: list[tuple[str, dict[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = {key: value for key, value in request.url.params.multi_items()}
+        seen_requests.append((path, params))
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt17676654",
+        }:
+            return httpx.Response(400, text="Bad Request")
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt17676654",
+            "q": "American Classic",
+        }:
+            return httpx.Response(400, text="Bad Request")
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="fuzer">
+    <caps>
+      <searching>
+        <tv-search available="yes" supportedParams="q,season,ep" />
+      </searching>
+    </caps>
+  </indexer>
+</indexers>
+""",
+            )
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "q": "American Classic",
+            "cat": "5000",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>American Classic S01E01 1080p</title>
+      <guid>match-guid</guid>
+      <link>magnet:?xt=urn:btih:MATCH123</link>
+      <torznab:attr name="imdbid" value="tt17676654" />
+      <torznab:attr name="jackettindexer" value="fuzer" />
+    </item>
+    <item>
+      <title>American Classics Collection 1080p</title>
+      <guid>noise-guid</guid>
+      <link>magnet:?xt=urn:btih:NOISE123</link>
+      <torznab:attr name="imdbid" value="tt99999999" />
+      <torznab:attr name="jackettindexer" value="fuzer" />
+    </item>
+  </channel>
+</rss>
+""",
+            )
+
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="American Classic",
+            media_type="series",
+            imdb_id="tt17676654",
+            imdb_id_only=True,
+        )
+    )
+
+    assert seen_requests == [
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "tvsearch",
+                "cat": "5000",
+                "imdbid": "tt17676654",
+            },
+        ),
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "tvsearch",
+                "cat": "5000",
+                "imdbid": "tt17676654",
+                "q": "American Classic",
+            },
+        ),
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "indexers",
+                "configured": "true",
+            },
+        ),
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "tvsearch",
+                "q": "American Classic",
+                "cat": "5000",
+            },
+        ),
+    ]
+    assert result.request_variants == [
+        't=tvsearch q="American Classic" cat=5000 result_imdbid=tt17676654'
+    ]
+    assert [item.title for item in result.results] == ["American Classic S01E01 1080p"]
+
+
 def test_jackett_client_expands_multiple_optional_groups() -> None:
     seen_queries: list[str] = []
 

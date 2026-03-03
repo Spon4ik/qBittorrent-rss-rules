@@ -74,8 +74,8 @@
   </label>
   <label class="full-span">
     <input type="checkbox" name="imdb_id_only" value="on" {% if form_data.imdb_id_only %}checked{% endif %} />
-    Use IMDb ID only
-    <span class="helper-text">Send only `imdbid` to Jackett and skip title text in the Torznab request. Requires a movie or series IMDb ID.</span>
+    Require IMDb ID
+    <span class="helper-text">First try a strict `imdbid` lookup. If Jackett rejects that, retry with the title while keeping `imdbid`. Keywords still filter results locally.</span>
   </label>
   <label class="full-span">
     Required keywords

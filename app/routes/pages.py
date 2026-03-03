@@ -391,7 +391,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                 new_rule_href = f"/rules/new?{urlencode(rule_prefill)}"
                 summary_parts = ["Title"]
                 if active_payload.imdb_id_only:
-                    summary_parts.append("IMDb-only Jackett lookup")
+                    summary_parts.append("IMDb-enforced Jackett lookup")
                 if active_payload.keywords_all:
                     summary_parts.append("required keywords")
                 if keyword_fragment:

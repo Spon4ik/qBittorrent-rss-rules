@@ -223,6 +223,68 @@ def test_jackett_client_can_force_imdb_id_only_request() -> None:
     assert [item.title for item in result.results] == ["Ghosts S03E01 1080p"]
 
 
+def test_jackett_client_retries_series_imdb_only_with_title_after_bad_request() -> None:
+    seen_requests: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = {key: value for key, value in request.url.params.multi_items()}
+        seen_requests.append(params)
+
+        if params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt39781131",
+        }:
+            return httpx.Response(400, text="Bad Request")
+
+        if params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt39781131",
+            "q": "Common Title",
+        }:
+            return httpx.Response(200, text="<rss><channel /></rss>")
+
+        raise AssertionError(f"Unexpected request params: {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="Common Title",
+            media_type="series",
+            imdb_id="tt39781131",
+            imdb_id_only=True,
+        )
+    )
+
+    assert seen_requests == [
+        {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt39781131",
+        },
+        {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt39781131",
+            "q": "Common Title",
+        },
+    ]
+    assert result.request_variants == [
+        't=tvsearch q="Common Title" imdbid=tt39781131 cat=5000'
+    ]
+    assert result.results == []
+
+
 def test_jackett_client_expands_multiple_optional_groups() -> None:
     seen_queries: list[str] = []
 

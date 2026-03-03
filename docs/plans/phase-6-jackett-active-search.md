@@ -9,7 +9,7 @@
 - Rule-derived searches now also reuse saved IMDb IDs, release years, and media-type category narrowing when those fields are available, so Jackett can receive richer Torznab parameters than `q` alone.
 - IMDb-based Jackett narrowing now sends the full `tt1234567` identifier format that Jackett expects, avoiding `400 Bad Request` responses from the richer Torznab mode.
 - Richer Torznab requests now retry `400 Bad Request` responses in stages, preserving `imdbid` where possible before falling back to broad text search only as a last resort.
-- The `/search` UI now also supports an explicit `Use IMDb ID only` mode for movie/series lookups, sending only `imdbid` to Jackett when users need to test or force strict ID-based matching.
+- The `/search` UI now also supports an explicit `Require IMDb ID` mode for movie/series lookups, first trying strict `imdbid` requests and then retrying with `q + imdbid` if Jackett rejects the strict form, without ever dropping the ID entirely.
 - The project `.venv` now passes targeted phase-6 pytest coverage for `tests/test_jackett.py` and `tests/test_routes.py`.
 - The full repo pytest suite now also passes in the project `.venv`; remaining validation is manual browser coverage.
 - The goal is to add an on-demand search workflow beside RSS rule authoring, not to replace RSS automation.
@@ -82,7 +82,7 @@ qBittorrent's built-in search UI is a flat text box. The current app already mod
   - an indexer-limited search
   - the search-to-rule handoff into `/rules/new`
 - Manually verify `/rules/{rule_id}/search` for saved movie or series rules with metadata-filled `IMDb ID` / `Release year` fields and confirm Jackett still returns results with the narrower request.
-- Manually verify `/rules/{rule_id}/search` with `Use IMDb ID only` enabled and confirm the `Requests used` summary shows `imdbid` without `q=` when the search succeeds.
+- Manually verify `/rules/{rule_id}/search` with `Require IMDb ID` enabled and confirm the `Requests used` summary shows either strict `imdbid` only or the fallback `q + imdbid`, but never a request that omits the IMDb ID.
 - Manually verify `/rules/{rule_id}/search` for imported or legacy rules with unusually long saved titles and confirm the clamped title-only fallback still runs when structured reduction cannot.
 - Manually verify graceful errors for missing Jackett config, HTTP failures, and empty result sets.
 

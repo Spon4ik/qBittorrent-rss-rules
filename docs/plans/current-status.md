@@ -46,7 +46,7 @@
 - Jackett searches now reuse saved IMDb IDs, release years, and media-type category narrowing when available, so rule-derived searches can call richer Torznab parameters instead of only `q`.
 - Jackett `imdbid` requests now keep the full `tt1234567` form expected by Jackett instead of stripping the `tt` prefix, fixing live `400 Bad Request` failures from the richer search mode.
 - Jackett searches now retry `400 Bad Request` responses in stages, first dropping narrower fields like `year` while keeping `imdbid` when possible, and only falling back to broad text search last.
-- The `/search` form now exposes `IMDb ID`, `Release year`, and an explicit `Use IMDb ID only` toggle; when enabled, Jackett requests send only `imdbid` (no `q` or `year`) and skip broad-search fallback so strict IMDb-only testing is possible.
+- The `/search` form now exposes `IMDb ID`, `Release year`, and an explicit `Require IMDb ID` toggle; it first tries a strict `imdbid` lookup, then retries with `q + imdbid` if Jackett rejects the strict form, while still refusing to fall back to requests that drop the IMDb ID entirely.
 - Jackett search requests now retry transient timeout failures before surfacing an error to the UI.
 - Targeted Jackett pytest coverage now passes in the project `.venv` for `tests/test_jackett.py` and `tests/test_routes.py`, including the new Torznab-parameter narrowing path and the fixed keyword-list validator.
 - The full pytest suite now passes in the project `.venv` (`95 passed`), including a fix for `RuleBuilder` default category rendering when `AppSettings()` has in-memory `None` template fields.
@@ -67,7 +67,7 @@
 - Close out Phase 4 and Phase 5 after environment-level validation, then decide whether any remaining provider-specific UX polish should become a follow-up slice.
 - Manually verify `/search` for title-only search, optional-keyword search (`4k, 2160p`), and the `Use In New Rule` handoff.
 - Manually verify `/rules/{rule_id}/search` for saved movie/series rules with `IMDb ID` and `Release year` populated and confirm the same search still works while returning more precise Jackett matches.
-- Manually verify `/rules/{rule_id}/search` with `Use IMDb ID only` enabled and confirm `Requests used` shows `imdbid` without `q=` for movie/series rules that have saved IMDb IDs.
+- Manually verify `/rules/{rule_id}/search` with `Require IMDb ID` enabled and confirm `Requests used` either shows strict `imdbid` only or the fallback `q + imdbid`, but never a request that drops the IMDb ID.
 - Manually verify `/rules/{rule_id}/search` for regex-heavy legacy rules that exceed structured-term limits and confirm the title-only fallback warning renders instead of a server error.
 - Manually verify `/rules/{rule_id}/search` for regex-heavy rules that now hit reduced-keyword fallback and confirm the inherited terms remain useful.
 - Manually verify `/rules/{rule_id}/search` for imported or legacy rules with unusually long saved titles and confirm the search still runs with a clamped title-only fallback when needed.

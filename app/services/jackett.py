@@ -792,8 +792,27 @@ class JackettClient:
         query: str,
         params: dict[str, object],
     ) -> list[dict[str, object]]:
-        if params.get("t") == "search" or payload.imdb_id_only:
+        if params.get("t") == "search":
             return []
+
+        if payload.imdb_id_only:
+            imdb_lookup_id = _coerce_text(params.get("imdbid"))
+            if not imdb_lookup_id:
+                return []
+
+            fallback_params: dict[str, object] = {
+                "apikey": self.api_key or "",
+                "t": _coerce_text(params.get("t")) or "search",
+                "imdbid": imdb_lookup_id,
+            }
+            categories = _torznab_categories_for_media_type(payload.media_type)
+            if categories:
+                fallback_params["cat"] = ",".join(categories)
+            if query:
+                fallback_params["q"] = query
+            if fallback_params == params:
+                return []
+            return [fallback_params]
 
         fallback_params: list[dict[str, object]] = []
         seen_variants = {

@@ -143,7 +143,7 @@ def test_search_page_supports_imdb_only_toggle(app_client, monkeypatch) -> None:
 
     assert response.status_code == 200
     assert 'name="imdb_id_only" value="on" checked' in response.text
-    assert "IMDb-only Jackett lookup" in response.text
+    assert "IMDb-enforced Jackett lookup" in response.text
     assert "t=tvsearch imdbid=tt11379026 cat=5000" in response.text
 
 

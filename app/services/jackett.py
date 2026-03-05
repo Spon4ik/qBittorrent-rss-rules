@@ -30,6 +30,10 @@ class JackettConfigError(JackettClientError):
     pass
 
 
+class JackettTimeoutError(JackettClientError):
+    pass
+
+
 class JackettHTTPError(JackettClientError):
     def __init__(self, message: str, *, status_code: int | None = None) -> None:
         super().__init__(message)
@@ -220,6 +224,13 @@ def _request_variant_label(params: dict[str, object]) -> str:
             parts.append(f"{key}={value}")
 
     return " ".join(parts)
+
+
+def _request_error_context(url: str, params: dict[str, object]) -> str:
+    request_label = _request_variant_label(params)
+    if request_label:
+        return request_label
+    return url
 
 
 def _coerce_string_list(value: object | None) -> list[str]:
@@ -676,60 +687,53 @@ class JackettClient:
 
     def search(self, payload: JackettSearchRequest) -> JackettSearchRun:
         self._ensure_ready()
+        if payload.imdb_id_only:
+            return self._search_imdb_first(payload)
+
         query_variants = self._build_query_variants(payload)
         request_variants: list[str] = []
         seen_request_variants: set[str] = set()
+        warning_messages: list[str] = []
+        seen_warning_messages: set[str] = set()
         merged: dict[str, tuple[datetime | None, JackettSearchResult]] = {}
+        last_timeout_error: JackettTimeoutError | None = None
         for variant in query_variants:
             request_params = self._search_params_for_variant(payload, variant)
             fallback_params = self._fallback_search_params_for_variant(payload, variant, request_params)
             try:
-                variant_results, successful_params = self._search_variant(
+                variant_results, successful_params, _, timeout_messages = self._search_variant(
                     payload.indexer,
                     request_params,
                     fallback_params=fallback_params,
                 )
-                successful_requests = [successful_params]
-            except JackettHTTPError as exc:
-                if exc.status_code != 400 or not payload.imdb_id_only or payload.indexer != "all":
-                    raise
-                variant_results, successful_requests = self._search_variant_across_capable_indexers(
-                    payload,
-                    variant,
-                )
-            for successful_params in successful_requests:
-                request_label = _request_variant_label(successful_params)
-                if request_label and request_label not in seen_request_variants:
-                    seen_request_variants.add(request_label)
-                    request_variants.append(request_label)
-            for published_at, result in variant_results:
-                if not self._matches_payload_terms(result, payload):
-                    continue
-                merge_key = self._merge_key(result)
-                if merge_key in merged:
-                    continue
-                merged[merge_key] = (published_at, result)
+            except JackettTimeoutError as exc:
+                last_timeout_error = exc
+                self._add_warning(warning_messages, seen_warning_messages, str(exc))
+                continue
+            self._add_request_label(request_variants, seen_request_variants, successful_params)
+            for message in timeout_messages:
+                self._add_warning(warning_messages, seen_warning_messages, message)
+            self._merge_results(merged, variant_results, payload)
 
-        ordered_results = [
-            result
-            for _, result in sorted(
-                merged.values(),
-                key=lambda item: (
-                    item[0] is None,
-                    -(item[0].timestamp()) if item[0] is not None else 0.0,
-                    item[1].title.casefold(),
-                ),
-            )
-        ]
+        if not request_variants and last_timeout_error is not None:
+            raise last_timeout_error
+        ordered_results = self._ordered_results_from_merged(merged)
         return JackettSearchRun(
             query_variants=query_variants,
             request_variants=request_variants,
+            warning_messages=warning_messages,
             results=ordered_results,
         )
 
     def _build_query_variants(self, payload: JackettSearchRequest) -> list[str]:
         if payload.imdb_id_only:
             return [payload.query.strip()]
+        return self._expanded_query_variants(payload)
+
+    def _build_fallback_query_variants(self, payload: JackettSearchRequest) -> list[str]:
+        return self._expanded_query_variants(payload)
+
+    def _expanded_query_variants(self, payload: JackettSearchRequest) -> list[str]:
         base_parts = _ordered_unique_terms([payload.query.strip(), *payload.keywords_all])
         base_query = " ".join(part for part in base_parts if str(part).strip()).strip()
         any_groups = payload.keywords_any_groups or ([payload.keywords_any] if payload.keywords_any else [])
@@ -745,35 +749,143 @@ class JackettClient:
             for combo in combinations
         ]
 
-    def _search_variant(
-        self,
-        indexer: str,
-        params: dict[str, object],
-        *,
-        fallback_params: list[dict[str, object]] | None = None,
-    ) -> tuple[list[tuple[datetime | None, JackettSearchResult]], dict[str, object]]:
-        endpoint = self._torznab_endpoint(indexer)
-        request_attempts = [params, *(fallback_params or [])]
-        last_bad_request_error: JackettHTTPError | None = None
-        successful_params = params
-        for request_params in request_attempts:
-            try:
-                root = self._request_xml(
-                    endpoint,
-                    params=request_params,
-                )
-                successful_params = request_params
-                break
-            except JackettHTTPError as exc:
-                if exc.status_code != 400:
-                    raise
-                last_bad_request_error = exc
-                continue
-        else:
-            if last_bad_request_error is not None:
-                raise last_bad_request_error
-            raise JackettClientError("Jackett request failed.")
+    def _search_imdb_first(self, payload: JackettSearchRequest) -> JackettSearchRun:
+        primary_query = payload.query.strip()
+        request_variants: list[str] = []
+        seen_request_variants: set[str] = set()
+        warning_messages: list[str] = []
+        seen_warning_messages: set[str] = set()
+        primary_merged: dict[str, tuple[datetime | None, JackettSearchResult]] = {}
+        last_timeout_error: JackettTimeoutError | None = None
 
+        request_params = self._search_params_for_variant(payload, primary_query)
+        fallback_params = self._fallback_search_params_for_variant(payload, primary_query, request_params)
+        aggregate_attempts = [request_params, *fallback_params]
+
+        try:
+            variant_results, _, attempted_requests, timeout_messages = self._search_variant(
+                payload.indexer,
+                request_params,
+                fallback_params=fallback_params,
+                continue_on_empty=True,
+            )
+            for attempted_request in attempted_requests:
+                self._add_request_label(request_variants, seen_request_variants, attempted_request)
+            for message in timeout_messages:
+                self._add_warning(warning_messages, seen_warning_messages, message)
+            self._merge_results(primary_merged, variant_results, payload)
+        except JackettHTTPError as exc:
+            if exc.status_code != 400:
+                raise
+            for attempted_request in aggregate_attempts:
+                self._add_request_label(request_variants, seen_request_variants, attempted_request)
+            if payload.indexer == "all":
+                try:
+                    variant_results, _, attempted_requests, timeout_messages = self._search_variant_across_capable_indexers(
+                        payload,
+                        primary_query,
+                    )
+                except (JackettHTTPError, JackettClientError):
+                    variant_results = []
+                    attempted_requests = []
+                    timeout_messages = []
+                for attempted_request in attempted_requests:
+                    self._add_request_label(request_variants, seen_request_variants, attempted_request)
+                for message in timeout_messages:
+                    self._add_warning(warning_messages, seen_warning_messages, message)
+                self._merge_results(primary_merged, variant_results, payload)
+        except JackettTimeoutError as exc:
+            last_timeout_error = exc
+            self._add_warning(warning_messages, seen_warning_messages, str(exc))
+
+        fallback_request_variants: list[str] = []
+        seen_fallback_request_variants: set[str] = set()
+        fallback_merged: dict[str, tuple[datetime | None, JackettSearchResult]] = {}
+        if not primary_merged:
+            fallback_results, fallback_requests, fallback_warnings = self._search_title_fallback(
+                payload,
+                existing_merge_keys=set(primary_merged),
+            )
+            for fallback_request in fallback_requests:
+                self._add_request_label(
+                    fallback_request_variants,
+                    seen_fallback_request_variants,
+                    fallback_request,
+                )
+            for message in fallback_warnings:
+                self._add_warning(warning_messages, seen_warning_messages, message)
+            fallback_payload = payload.model_copy(update={"imdb_id_only": False, "imdb_id": None})
+            self._merge_results(fallback_merged, fallback_results, fallback_payload)
+
+        if not request_variants and not fallback_request_variants and last_timeout_error is not None:
+            raise last_timeout_error
+        return JackettSearchRun(
+            query_variants=[primary_query],
+            request_variants=request_variants,
+            warning_messages=warning_messages,
+            results=self._ordered_results_from_merged(primary_merged),
+            fallback_request_variants=fallback_request_variants,
+            fallback_results=self._ordered_results_from_merged(fallback_merged),
+        )
+
+    @staticmethod
+    def _add_request_label(
+        request_variants: list[str],
+        seen_request_variants: set[str],
+        params: dict[str, object],
+    ) -> None:
+        request_label = _request_variant_label(params)
+        if not request_label or request_label in seen_request_variants:
+            return
+        seen_request_variants.add(request_label)
+        request_variants.append(request_label)
+
+    @staticmethod
+    def _add_warning(
+        warning_messages: list[str],
+        seen_warning_messages: set[str],
+        message: str,
+    ) -> None:
+        cleaned = str(message or "").strip()
+        if not cleaned or cleaned in seen_warning_messages:
+            return
+        seen_warning_messages.add(cleaned)
+        warning_messages.append(cleaned)
+
+    def _merge_results(
+        self,
+        merged: dict[str, tuple[datetime | None, JackettSearchResult]],
+        variant_results: list[tuple[datetime | None, JackettSearchResult]],
+        payload: JackettSearchRequest,
+    ) -> None:
+        for published_at, result in variant_results:
+            if not self._matches_payload_terms(result, payload):
+                continue
+            merge_key = self._merge_key(result)
+            if merge_key in merged:
+                continue
+            merged[merge_key] = (published_at, result)
+
+    @staticmethod
+    def _ordered_results_from_merged(
+        merged: dict[str, tuple[datetime | None, JackettSearchResult]],
+    ) -> list[JackettSearchResult]:
+        return [
+            result
+            for _, result in sorted(
+                merged.values(),
+                key=lambda item: (
+                    item[0] is None,
+                    -(item[0].timestamp()) if item[0] is not None else 0.0,
+                    item[1].title.casefold(),
+                ),
+            )
+        ]
+
+    def _parse_results_from_root(
+        self,
+        root: ET.Element,
+    ) -> list[tuple[datetime | None, JackettSearchResult]]:
         parsed_results: list[tuple[datetime | None, JackettSearchResult]] = []
         for item in root.iter():
             if _local_name(item.tag) != "item":
@@ -782,7 +894,60 @@ class JackettClient:
             if parsed is None:
                 continue
             parsed_results.append(parsed)
-        return parsed_results, successful_params
+        return parsed_results
+
+    def _search_variant(
+        self,
+        indexer: str,
+        params: dict[str, object],
+        *,
+        fallback_params: list[dict[str, object]] | None = None,
+        continue_on_empty: bool = False,
+    ) -> tuple[
+        list[tuple[datetime | None, JackettSearchResult]],
+        dict[str, object],
+        list[dict[str, object]],
+        list[str],
+    ]:
+        endpoint = self._torznab_endpoint(indexer)
+        request_attempts = [params, *(fallback_params or [])]
+        last_bad_request_error: JackettHTTPError | None = None
+        last_timeout_error: JackettTimeoutError | None = None
+        successful_params = params
+        successful_results: list[tuple[datetime | None, JackettSearchResult]] = []
+        had_success = False
+        attempted_requests: list[dict[str, object]] = []
+        warning_messages: list[str] = []
+        for attempt_index, request_params in enumerate(request_attempts):
+            attempted_requests.append(request_params)
+            try:
+                root = self._request_xml(
+                    endpoint,
+                    params=request_params,
+                )
+            except JackettTimeoutError as exc:
+                last_timeout_error = exc
+                warning_messages.append(str(exc))
+                continue
+            except JackettHTTPError as exc:
+                if exc.status_code != 400:
+                    raise
+                last_bad_request_error = exc
+                continue
+            parsed_results = self._parse_results_from_root(root)
+            successful_params = request_params
+            successful_results = parsed_results
+            had_success = True
+            if parsed_results or not continue_on_empty or attempt_index == len(request_attempts) - 1:
+                return parsed_results, successful_params, attempted_requests, warning_messages
+
+        if had_success:
+            return successful_results, successful_params, attempted_requests, warning_messages
+        if last_bad_request_error is not None:
+            raise last_bad_request_error
+        if last_timeout_error is not None:
+            raise last_timeout_error
+        raise JackettClientError("Jackett request failed.")
 
     def _search_params_for_variant(
         self,
@@ -884,70 +1049,108 @@ class JackettClient:
         self,
         payload: JackettSearchRequest,
         query: str,
-    ) -> tuple[list[tuple[datetime | None, JackettSearchResult]], list[dict[str, object]]]:
+    ) -> tuple[
+        list[tuple[datetime | None, JackettSearchResult]],
+        list[dict[str, object]],
+        list[dict[str, object]],
+        list[str],
+    ]:
         search_mode = _torznab_mode_for_payload(payload)
         indexers = self._configured_indexers_for_mode(search_mode)
         successful_requests: list[dict[str, object]] = []
+        attempted_requests: list[dict[str, object]] = []
+        warning_messages: list[str] = []
         parsed_results: list[tuple[datetime | None, JackettSearchResult]] = []
         last_bad_request_error: JackettHTTPError | None = None
+        last_timeout_error: JackettTimeoutError | None = None
 
         for indexer in indexers:
             request_attempts = self._imdb_enforced_params_for_indexer(payload, query, search_mode, indexer)
             if not request_attempts:
                 continue
             try:
-                indexer_results, successful_params = self._search_variant(
+                indexer_results, successful_params, indexer_attempts, indexer_warnings = self._search_variant(
                     indexer.indexer_id,
                     request_attempts[0],
                     fallback_params=request_attempts[1:],
+                    continue_on_empty=True,
                 )
+            except JackettTimeoutError as exc:
+                attempted_requests.extend(request_attempts)
+                warning_messages.append(str(exc))
+                last_timeout_error = exc
+                continue
             except JackettHTTPError as exc:
+                attempted_requests.extend(request_attempts)
                 if exc.status_code != 400:
                     raise
                 last_bad_request_error = exc
                 continue
+            attempted_requests.extend(indexer_attempts)
+            warning_messages.extend(indexer_warnings)
             parsed_results.extend(indexer_results)
             successful_requests.append(successful_params)
 
         if successful_requests:
-            return parsed_results, successful_requests
+            return parsed_results, successful_requests, attempted_requests, warning_messages
         if last_bad_request_error is not None:
             raise last_bad_request_error
-        return self._search_variant_by_result_imdb_metadata(payload, query, search_mode)
+        if last_timeout_error is not None:
+            raise last_timeout_error
+        raise JackettClientError(
+            "Jackett could not find a configured indexer that supports IMDb-enforced search for this media type."
+        )
 
-    def _search_variant_by_result_imdb_metadata(
+    def _search_title_fallback(
         self,
         payload: JackettSearchRequest,
-        query: str,
-        search_mode: str,
-    ) -> tuple[list[tuple[datetime | None, JackettSearchResult]], list[dict[str, object]]]:
-        imdb_lookup_id = _torznab_imdb_lookup_id(payload.imdb_id)
-        if not imdb_lookup_id:
-            raise JackettClientError(
-                "Jackett could not find a configured indexer that supports IMDb-enforced search for this media type."
+        *,
+        existing_merge_keys: set[str] | None = None,
+    ) -> tuple[list[tuple[datetime | None, JackettSearchResult]], list[dict[str, object]], list[str]]:
+        fallback_payload = payload.model_copy(update={"imdb_id_only": False, "imdb_id": None})
+        query_variants = self._build_fallback_query_variants(fallback_payload)
+        if not query_variants:
+            return [], [], []
+
+        seen_merge_keys = set(existing_merge_keys or ())
+        request_variants: list[dict[str, object]] = []
+        filtered_results: list[tuple[datetime | None, JackettSearchResult]] = []
+        warning_messages: list[str] = []
+
+        for query in query_variants:
+            try:
+                params = self._search_params_for_variant(fallback_payload, query)
+                forced_mode = TORZNAB_MODE_BY_MEDIA_TYPE.get(payload.media_type)
+                if forced_mode:
+                    params["t"] = forced_mode
+                fallback_params = self._fallback_search_params_for_variant(
+                    fallback_payload,
+                    query,
+                    params,
+                )
+                parsed_results, successful_params, _, timeout_messages = self._search_variant(
+                    fallback_payload.indexer,
+                    params,
+                    fallback_params=fallback_params,
+                )
+            except JackettTimeoutError as exc:
+                warning_messages.append(str(exc))
+                continue
+            except JackettHTTPError as exc:
+                if exc.status_code != 400:
+                    raise
+                continue
+            request_variants.append(successful_params)
+            warning_messages.extend(timeout_messages)
+
+            filtered_results.extend(
+                item
+                for item in parsed_results
+                if self._merge_key(item[1]) not in seen_merge_keys
             )
+            seen_merge_keys.update(self._merge_key(item[1]) for item in parsed_results)
 
-        params: dict[str, object] = {
-            "apikey": self.api_key or "",
-            "t": search_mode,
-            "q": query,
-        }
-        categories = _torznab_categories_for_media_type(payload.media_type)
-        if categories:
-            params["cat"] = ",".join(categories)
-
-        parsed_results, successful_params = self._search_variant(
-            "all",
-            params,
-        )
-        filtered_results = [
-            item
-            for item in parsed_results
-            if _torznab_imdb_lookup_id(item[1].imdb_id) == imdb_lookup_id
-        ]
-        labeled_params = dict(successful_params)
-        labeled_params["result_imdbid"] = imdb_lookup_id
-        return filtered_results, [labeled_params]
+        return filtered_results, request_variants, warning_messages
 
     def _configured_indexers_for_mode(self, search_mode: str) -> list[JackettIndexerCapability]:
         capability_tag = TORZNAB_CAPABILITY_TAG_BY_MODE.get(search_mode)
@@ -1093,6 +1296,7 @@ class JackettClient:
         if not self.base_url:
             raise JackettConfigError("Jackett app URL is not configured.")
 
+        request_context = _request_error_context(url, params)
         timeout_error: httpx.TimeoutException | None = None
         for _ in range(TIMEOUT_RETRY_ATTEMPTS):
             try:
@@ -1105,20 +1309,34 @@ class JackettClient:
                 continue
             except httpx.HTTPStatusError as exc:
                 raise JackettHTTPError(
-                    f"Jackett request failed: {exc}",
+                    f"Jackett request failed for {request_context}: {exc}",
                     status_code=exc.response.status_code,
                 ) from exc
             except httpx.HTTPError as exc:
-                raise JackettClientError(f"Jackett request failed: {exc}") from exc
+                raise JackettClientError(
+                    f"Jackett request failed for {request_context}: {exc}"
+                ) from exc
         else:
-            raise JackettClientError(
-                f"Jackett request failed after {TIMEOUT_RETRY_ATTEMPTS} timeout attempts: {timeout_error}"
+            raise JackettTimeoutError(
+                "Jackett request failed after "
+                f"{TIMEOUT_RETRY_ATTEMPTS} timeout attempts for {request_context}: {timeout_error}"
             ) from timeout_error
 
         try:
-            return ET.fromstring(response.text)
+            root = ET.fromstring(response.text)
         except ET.ParseError as exc:
             raise JackettClientError("Jackett returned invalid XML.") from exc
+        if _local_name(root.tag) == "error":
+            error_code = _coerce_int(root.attrib.get("code"))
+            description = root.attrib.get("description", "").strip() or "Jackett returned an error."
+            detail = f"[{error_code}] {description}" if error_code is not None else description
+            if error_code is not None and 200 <= error_code < 300:
+                raise JackettHTTPError(
+                    f"Jackett request failed for {request_context}: {detail}",
+                    status_code=400,
+                )
+            raise JackettClientError(f"Jackett request failed for {request_context}: {detail}")
+        return root
 
     def _torznab_endpoint(self, indexer: str) -> str:
         resolved_indexer = (indexer or "all").strip() or "all"

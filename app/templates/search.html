@@ -70,12 +70,7 @@
   <label>
     Release year
     <input type="text" name="release_year" value="{{ form_data.release_year }}" placeholder="2025" />
-    <span class="helper-text">Optional. Sent only when not using IMDb-only mode.</span>
-  </label>
-  <label class="full-span">
-    <input type="checkbox" name="imdb_id_only" value="on" {% if form_data.imdb_id_only %}checked{% endif %} />
-    Require IMDb ID
-    <span class="helper-text">First try a strict `imdbid` lookup. If Jackett rejects that, retry with the title while keeping `imdbid`. Keywords still filter results locally.</span>
+    <span class="helper-text">Optional. Used for standard Jackett text search narrowing when an IMDb-first search is not active.</span>
   </label>
   <label class="full-span">
     Required keywords
@@ -96,9 +91,16 @@
 </form>
 
 {% if search_run %}
+{% if search_run.warning_messages %}
+<section class="flash flash-warning">
+  {% for message in search_run.warning_messages %}
+  <p>{{ message }}</p>
+  {% endfor %}
+</section>
+{% endif %}
 <section class="summary-strip">
   <div>
-    <p class="eyebrow">{{ search_run.source_label }}</p>
+    <p class="eyebrow">{{ search_run.primary_label }}</p>
     <strong>{{ search_run.results|length }} result(s)</strong>
     <p class="helper-text">{{ search_run.rule_prefill_summary }}</p>
     {% if search_run.source_rule_name %}
@@ -116,8 +118,13 @@
 
   {% if not search_run.results %}
   <section class="empty-state">
+    {% if search_run.primary_label == "IMDb-first results" %}
+    <h3>No IMDb-first matches</h3>
+    <p>No results matched the primary IMDb-constrained search.</p>
+    {% else %}
     <h3>No matches</h3>
     <p>Jackett returned no results for this search.</p>
+    {% endif %}
   </section>
   {% else %}
   <section class="rule-grid">
@@ -154,6 +161,62 @@
     </article>
     {% endfor %}
   </section>
+  {% endif %}
+
+  {% if search_run.fallback_request_variants %}
+  <section class="summary-strip">
+    <div>
+      <p class="eyebrow">{{ search_run.fallback_label }}</p>
+      <strong>{{ search_run.fallback_results|length }} result(s)</strong>
+      <p class="helper-text">Fallback title queries run separately so broader text matches stay below the IMDb-first section.</p>
+    </div>
+    <div>
+      <p class="eyebrow">Fallback Requests</p>
+      <p class="helper-text">{{ search_run.fallback_request_variants | join(' | ') }}</p>
+    </div>
+  </section>
+
+    {% if not search_run.fallback_results %}
+    <section class="empty-state">
+      <h3>No fallback matches</h3>
+      <p>No results matched the title-based fallback search.</p>
+    </section>
+    {% else %}
+    <section class="rule-grid">
+      {% for item in search_run.fallback_results %}
+      <article class="rule-card">
+        <div class="rule-card-top">
+          <div>
+            <p class="eyebrow">{{ item.indexer or 'Jackett' }}</p>
+            <h3>{{ item.title }}</h3>
+          </div>
+          <span class="status-chip status-ok">fallback</span>
+        </div>
+        <dl class="detail-list">
+          <div>
+            <dt>Source</dt>
+            <dd>Jackett title fallback</dd>
+          </div>
+          <div>
+            <dt>Size</dt>
+            <dd>{{ item.size_label or 'Unknown' }}</dd>
+          </div>
+          <div>
+            <dt>Published</dt>
+            <dd>{{ item.published_label or 'Unknown' }}</dd>
+          </div>
+        </dl>
+        <div class="card-actions">
+          <a class="button-link" href="{{ item.new_rule_href }}">Use In New Rule</a>
+          <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open Result</a>
+          {% if item.details_url %}
+          <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </section>
+    {% endif %}
   {% endif %}
 {% endif %}
 {% endblock %}

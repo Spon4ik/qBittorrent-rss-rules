@@ -161,9 +161,9 @@ class JackettSearchRequest(BaseModel):
             raise ValueError("Indexer must use letters, numbers, dots, dashes, or underscores.")
         if self.imdb_id_only:
             if not self.imdb_id:
-                raise ValueError("IMDb-only lookup requires an IMDb ID.")
+                raise ValueError("IMDb-first search requires an IMDb ID.")
             if self.media_type not in {MediaType.MOVIE, MediaType.SERIES}:
-                raise ValueError("IMDb-only lookup is only available for movie or series searches.")
+                raise ValueError("IMDb-first search is only available for movies and series.")
         if len(self.keywords_all) > 24:
             raise ValueError("Use up to 24 required keywords per search.")
         if not self.keywords_any_groups and self.keywords_any:
@@ -208,7 +208,10 @@ class JackettSearchRun(BaseModel):
     source_label: str = "Jackett active search"
     query_variants: list[str] = Field(default_factory=list)
     request_variants: list[str] = Field(default_factory=list)
+    warning_messages: list[str] = Field(default_factory=list)
     results: list[JackettSearchResult] = Field(default_factory=list)
+    fallback_request_variants: list[str] = Field(default_factory=list)
+    fallback_results: list[JackettSearchResult] = Field(default_factory=list)
 
 
 class RuleFormPayload(BaseModel):

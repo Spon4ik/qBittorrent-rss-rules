@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 
 from app.models import MediaType, QualityProfile, Rule
 from app.schemas import JackettSearchRequest, SearchSourceKind
 from app.services.jackett import (
     JackettClient,
+    JackettClientError,
     build_reduced_search_request_from_rule,
     build_search_request_from_rule,
     clamp_search_query_text,
@@ -105,6 +107,174 @@ def test_jackett_client_retries_timeout_before_success() -> None:
     assert attempts == 3
     assert result.query_variants == ["Example"]
     assert result.results == []
+
+
+def test_jackett_client_timeout_error_includes_request_context() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+        timeout=0.01,
+    )
+
+    with pytest.raises(JackettClientError) as exc_info:
+        client.search(
+            JackettSearchRequest(
+                query="American Classic",
+                media_type="series",
+                imdb_id="tt17676654",
+                imdb_id_only=True,
+            )
+        )
+
+    message = str(exc_info.value)
+    assert "Jackett request failed after 3 timeout attempts for" in message
+    assert 't=tvsearch q="American Classic" imdbid=tt17676654 cat=5000' in message
+
+
+def test_jackett_client_drops_year_after_timeout_for_same_variant() -> None:
+    seen_requests: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = {key: value for key, value in request.url.params.multi_items()}
+        seen_requests.append(params)
+
+        if params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "q": "American Classic uhd",
+            "cat": "5000",
+            "year": "2025",
+        }:
+            raise httpx.ReadTimeout("timed out", request=request)
+
+        if params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "q": "American Classic uhd",
+            "cat": "5000",
+        }:
+            return httpx.Response(200, text="<rss><channel /></rss>")
+
+        raise AssertionError(f"Unexpected request params: {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+        timeout=0.01,
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="American Classic",
+            media_type="series",
+            release_year="2025",
+            keywords_any=["uhd"],
+        )
+    )
+
+    assert seen_requests[:3] == [
+        {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "q": "American Classic uhd",
+            "cat": "5000",
+            "year": "2025",
+        }
+    ] * 3
+    assert seen_requests[3:] == [
+        {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "q": "American Classic uhd",
+            "cat": "5000",
+        },
+    ]
+    assert result.request_variants == ['t=tvsearch q="American Classic uhd" cat=5000']
+    assert result.warning_messages == [
+        'Jackett request failed after 3 timeout attempts for t=tvsearch q="American Classic uhd" year=2025 cat=5000: timed out'
+    ]
+    assert result.results == []
+
+
+def test_jackett_client_skips_timed_out_variant_when_another_variant_succeeds() -> None:
+    seen_requests: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = {key: value for key, value in request.url.params.multi_items()}
+        seen_requests.append(params)
+
+        if params == {
+            "apikey": "secret",
+            "t": "search",
+            "q": "American Classic uhd",
+            "cat": "5000",
+        }:
+            raise httpx.ReadTimeout("timed out", request=request)
+
+        if params == {
+            "apikey": "secret",
+            "t": "search",
+            "q": "American Classic 1080p",
+            "cat": "5000",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>American Classic S01E01 1080p</title>
+      <guid>classic-guid</guid>
+      <link>magnet:?xt=urn:btih:CLASSIC123</link>
+    </item>
+  </channel>
+</rss>
+""",
+            )
+
+        raise AssertionError(f"Unexpected request params: {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+        timeout=0.01,
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="American Classic",
+            media_type="series",
+            keywords_any=["uhd", "1080p"],
+        )
+    )
+
+    assert seen_requests[:3] == [
+        {
+            "apikey": "secret",
+            "t": "search",
+            "q": "American Classic uhd",
+            "cat": "5000",
+        }
+    ] * 3
+    assert seen_requests[3:] == [
+        {
+            "apikey": "secret",
+            "t": "search",
+            "q": "American Classic 1080p",
+            "cat": "5000",
+        },
+    ]
+    assert result.request_variants == ['t=search q="American Classic 1080p" cat=5000']
+    assert result.warning_messages == [
+        'Jackett request failed after 3 timeout attempts for t=search q="American Classic uhd" cat=5000: timed out'
+    ]
+    assert [item.title for item in result.results] == ["American Classic S01E01 1080p"]
 
 
 def test_jackett_client_retries_bad_request_before_dropping_imdb_id() -> None:
@@ -223,6 +393,83 @@ def test_jackett_client_can_force_imdb_id_only_request() -> None:
     assert [item.title for item in result.results] == ["Ghosts S03E01 1080p"]
 
 
+def test_jackett_client_retries_imdb_only_with_q_when_strict_match_is_empty() -> None:
+    seen_requests: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = {key: value for key, value in request.url.params.multi_items()}
+        seen_requests.append(params)
+
+        if params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt11379026",
+        }:
+            return httpx.Response(200, text="<rss><channel /></rss>")
+
+        if params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt11379026",
+            "q": "Ghosts",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>Ghosts S03E01 1080p</title>
+      <guid>ghosts-guid</guid>
+      <link>magnet:?xt=urn:btih:GHOSTS123</link>
+    </item>
+  </channel>
+</rss>
+""",
+            )
+
+        raise AssertionError(f"Unexpected request params: {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="Ghosts",
+            media_type="series",
+            imdb_id="tt11379026",
+            imdb_id_only=True,
+        )
+    )
+
+    assert seen_requests == [
+        {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt11379026",
+        },
+        {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt11379026",
+            "q": "Ghosts",
+        },
+    ]
+    assert result.request_variants == [
+        "t=tvsearch imdbid=tt11379026 cat=5000",
+        't=tvsearch q="Ghosts" imdbid=tt11379026 cat=5000'
+    ]
+    assert [item.title for item in result.results] == ["Ghosts S03E01 1080p"]
+    assert result.fallback_request_variants == []
+
+
 def test_jackett_client_retries_series_imdb_only_with_title_after_bad_request() -> None:
     seen_requests: list[dict[str, str]] = []
 
@@ -243,6 +490,14 @@ def test_jackett_client_retries_series_imdb_only_with_title_after_bad_request() 
             "t": "tvsearch",
             "cat": "5000",
             "imdbid": "tt39781131",
+            "q": "Common Title",
+        }:
+            return httpx.Response(200, text="<rss><channel /></rss>")
+
+        if params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
             "q": "Common Title",
         }:
             return httpx.Response(200, text="<rss><channel /></rss>")
@@ -278,11 +533,22 @@ def test_jackett_client_retries_series_imdb_only_with_title_after_bad_request() 
             "imdbid": "tt39781131",
             "q": "Common Title",
         },
+        {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "q": "Common Title",
+        },
     ]
     assert result.request_variants == [
+        "t=tvsearch imdbid=tt39781131 cat=5000",
         't=tvsearch q="Common Title" imdbid=tt39781131 cat=5000'
     ]
     assert result.results == []
+    assert result.fallback_request_variants == [
+        't=tvsearch q="Common Title" cat=5000'
+    ]
+    assert result.fallback_results == []
 
 
 def test_jackett_client_uses_direct_indexers_when_all_rejects_imdb_enforced_series_search() -> None:
@@ -417,12 +683,15 @@ def test_jackett_client_uses_direct_indexers_when_all_rejects_imdb_enforced_seri
         ),
     ]
     assert result.request_variants == [
+        "t=tvsearch imdbid=tt17676654 cat=5000",
         't=tvsearch q="American Classic" imdbid=tt17676654 cat=5000'
     ]
     assert [item.title for item in result.results] == ["American Classic S01E01 1080p"]
+    assert result.fallback_request_variants == []
+    assert result.fallback_results == []
 
 
-def test_jackett_client_filters_by_result_imdb_when_tv_indexers_do_not_support_input_imdb() -> None:
+def test_jackett_client_falls_back_to_broad_title_search_when_tv_indexers_do_not_support_input_imdb() -> None:
     seen_requests: list[tuple[str, dict[str, str]]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -436,7 +705,13 @@ def test_jackett_client_filters_by_result_imdb_when_tv_indexers_do_not_support_i
             "cat": "5000",
             "imdbid": "tt17676654",
         }:
-            return httpx.Response(400, text="Bad Request")
+            return httpx.Response(
+                200,
+                text=(
+                    '<?xml version="1.0" encoding="UTF-8"?>'
+                    '<error code="203" description="Function Not Available: imdbid is not supported for TV search by this indexer" />'
+                ),
+            )
 
         if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
             "apikey": "secret",
@@ -445,7 +720,13 @@ def test_jackett_client_filters_by_result_imdb_when_tv_indexers_do_not_support_i
             "imdbid": "tt17676654",
             "q": "American Classic",
         }:
-            return httpx.Response(400, text="Bad Request")
+            return httpx.Response(
+                200,
+                text=(
+                    '<?xml version="1.0" encoding="UTF-8"?>'
+                    '<error code="203" description="Function Not Available: imdbid is not supported for TV search by this indexer" />'
+                ),
+            )
 
         if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
             "apikey": "secret",
@@ -482,14 +763,6 @@ def test_jackett_client_filters_by_result_imdb_when_tv_indexers_do_not_support_i
       <title>American Classic S01E01 1080p</title>
       <guid>match-guid</guid>
       <link>magnet:?xt=urn:btih:MATCH123</link>
-      <torznab:attr name="imdbid" value="tt17676654" />
-      <torznab:attr name="jackettindexer" value="fuzer" />
-    </item>
-    <item>
-      <title>American Classics Collection 1080p</title>
-      <guid>noise-guid</guid>
-      <link>magnet:?xt=urn:btih:NOISE123</link>
-      <torznab:attr name="imdbid" value="tt99999999" />
       <torznab:attr name="jackettindexer" value="fuzer" />
     </item>
   </channel>
@@ -553,9 +826,14 @@ def test_jackett_client_filters_by_result_imdb_when_tv_indexers_do_not_support_i
         ),
     ]
     assert result.request_variants == [
-        't=tvsearch q="American Classic" cat=5000 result_imdbid=tt17676654'
+        "t=tvsearch imdbid=tt17676654 cat=5000",
+        't=tvsearch q="American Classic" imdbid=tt17676654 cat=5000'
     ]
-    assert [item.title for item in result.results] == ["American Classic S01E01 1080p"]
+    assert result.results == []
+    assert result.fallback_request_variants == [
+        't=tvsearch q="American Classic" cat=5000'
+    ]
+    assert [item.title for item in result.fallback_results] == ["American Classic S01E01 1080p"]
 
 
 def test_jackett_client_expands_multiple_optional_groups() -> None:

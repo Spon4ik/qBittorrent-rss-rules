@@ -114,7 +114,7 @@ def test_search_page_prefills_new_rule_from_active_search(app_client, monkeypatc
     assert "must_contain_override=%28%3F%3A4k%7C2160p%29" in response.text
 
 
-def test_search_page_supports_imdb_only_toggle(app_client, monkeypatch) -> None:
+def test_search_page_auto_enforces_imdb_and_renders_fallback_section(app_client, monkeypatch) -> None:
     def fake_search(self, payload):
         assert payload.query == "Ghosts"
         assert payload.imdb_id == "tt11379026"
@@ -125,6 +125,15 @@ def test_search_page_supports_imdb_only_toggle(app_client, monkeypatch) -> None:
             query_variants=["Ghosts"],
             request_variants=["t=tvsearch imdbid=tt11379026 cat=5000"],
             results=[],
+            fallback_request_variants=[
+                't=tvsearch q="Ghosts full hd" cat=5000'
+            ],
+            fallback_results=[
+                JackettSearchResult(
+                    title="Ghosts S03E01 1080p",
+                    link="magnet:?xt=urn:btih:GHOSTS123",
+                )
+            ],
         )
 
     monkeypatch.setattr(JackettClient, "search", fake_search)
@@ -135,16 +144,50 @@ def test_search_page_supports_imdb_only_toggle(app_client, monkeypatch) -> None:
             "query": "Ghosts",
             "media_type": "series",
             "imdb_id": "tt11379026",
-            "imdb_id_only": "on",
             "release_year": "2025",
             "keywords_any": "full hd, 1080p",
         },
     )
 
     assert response.status_code == 200
-    assert 'name="imdb_id_only" value="on" checked' in response.text
+    assert "Require IMDb ID" not in response.text
+    assert "IMDb-first results" in response.text
+    assert "No IMDb-first matches" in response.text
+    assert "Title fallback" in response.text
     assert "IMDb-enforced Jackett lookup" in response.text
     assert "t=tvsearch imdbid=tt11379026 cat=5000" in response.text
+    assert "Ghosts full hd" in response.text
+    assert "Fallback Requests" in response.text
+    assert "Ghosts S03E01 1080p" in response.text
+
+
+def test_search_page_renders_search_warnings(app_client, monkeypatch) -> None:
+    def fake_search(self, payload):
+        return JackettSearchRun(
+            query_variants=["American Classic uhd"],
+            request_variants=['t=tvsearch q="American Classic uhd" cat=5000'],
+            warning_messages=[
+                'Jackett request failed after 3 timeout attempts for t=tvsearch q="American Classic uhd" year=2025 cat=5000: timed out'
+            ],
+            results=[],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "American Classic",
+            "media_type": "series",
+            "release_year": "2025",
+            "keywords_any": "uhd",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Jackett request failed after 3 timeout attempts for" in response.text
+    assert "American Classic uhd" in response.text
+    assert "No IMDb-first matches" not in response.text
 
 
 def test_search_page_from_rule_uses_structured_terms_not_raw_regex(app_client, db_session, monkeypatch) -> None:

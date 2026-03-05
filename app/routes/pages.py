@@ -117,10 +117,6 @@ def _normalized_media_type(value: str | None) -> str:
     return MediaType.SERIES.value
 
 
-def _query_checkbox_enabled(value: str | None) -> bool:
-    return str(value or "").strip().lower() in {"1", "true", "on", "yes"}
-
-
 def _optional_keyword_regex_fragment(keywords: list[str]) -> str:
     if not keywords:
         return ""
@@ -171,6 +167,12 @@ def _title_only_search_request_from_rule(rule: Rule) -> JackettSearchRequest | N
         )
     except ValidationError:
         return None
+
+
+def _auto_imdb_first_payload(payload: JackettSearchRequest) -> JackettSearchRequest:
+    if payload.imdb_id and payload.media_type in {MediaType.MOVIE, MediaType.SERIES}:
+        return payload.model_copy(update={"imdb_id_only": True})
+    return payload
 
 
 def _prefill_rule_search_form_data(form_data: dict[str, str], rule: Rule) -> None:
@@ -242,7 +244,6 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
         "media_type": _normalized_media_type(request.query_params.get("media_type")),
         "indexer": request.query_params.get("indexer", "all").strip() or "all",
         "imdb_id": request.query_params.get("imdb_id", "").strip(),
-        "imdb_id_only": _query_checkbox_enabled(request.query_params.get("imdb_id_only")),
         "release_year": request.query_params.get("release_year", "").strip(),
         "keywords_all": request.query_params.get("keywords_all", "").strip(),
         "keywords_any": request.query_params.get("keywords_any", "").strip(),
@@ -340,7 +341,6 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "query": payload_from_rule.query,
                         "media_type": payload_from_rule.media_type.value,
                         "imdb_id": payload_from_rule.imdb_id or "",
-                        "imdb_id_only": payload_from_rule.imdb_id_only,
                         "release_year": payload_from_rule.release_year or "",
                         "keywords_all": ", ".join(payload_from_rule.keywords_all),
                         "keywords_any": ", ".join(payload_from_rule.keywords_any),
@@ -357,7 +357,6 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "media_type": form_data["media_type"],
                         "indexer": form_data["indexer"],
                         "imdb_id": form_data["imdb_id"],
-                        "imdb_id_only": form_data["imdb_id_only"],
                         "release_year": form_data["release_year"],
                         "keywords_all": form_data["keywords_all"],
                         "keywords_any": form_data["keywords_any"],
@@ -368,6 +367,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                 errors = [error["msg"] for error in exc.errors()]
         if active_payload is not None and not errors:
             try:
+                active_payload = _auto_imdb_first_payload(active_payload)
                 client = JackettClient(jackett_api_url, jackett_api_key)
                 result = client.search(active_payload)
                 rule_prefill = {
@@ -406,12 +406,25 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                 search_run = {
                     **result.model_dump(mode="json"),
                     "source_label": "Saved rule search" if source_rule else "Jackett active search",
+                    "primary_label": (
+                        "IMDb-first results"
+                        if active_payload.imdb_id_only
+                        else ("Saved rule search" if source_rule else "Jackett active search")
+                    ),
+                    "fallback_label": "Title fallback" if result.fallback_request_variants else "",
                     "results": [
                         {
                             **item.model_dump(mode="json"),
                             "new_rule_href": new_rule_href,
                         }
                         for item in result.results
+                    ],
+                    "fallback_results": [
+                        {
+                            **item.model_dump(mode="json"),
+                            "new_rule_href": new_rule_href,
+                        }
+                        for item in result.fallback_results
                     ],
                     "rule_prefill_summary": f"{', '.join(summary_parts)}.",
                     "source_rule_name": source_rule.rule_name if source_rule else "",

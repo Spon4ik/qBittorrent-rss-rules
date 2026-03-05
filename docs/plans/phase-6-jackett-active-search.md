@@ -9,8 +9,11 @@
 - Rule-derived searches now also reuse saved IMDb IDs, release years, and media-type category narrowing when those fields are available, so Jackett can receive richer Torznab parameters than `q` alone.
 - IMDb-based Jackett narrowing now sends the full `tt1234567` identifier format that Jackett expects, avoiding `400 Bad Request` responses from the richer Torznab mode.
 - Richer Torznab requests now retry `400 Bad Request` responses in stages, preserving `imdbid` where possible before falling back to broad text search only as a last resort.
-- The `/search` UI now also supports an explicit `Require IMDb ID` mode for movie/series lookups, first trying strict `imdbid`, then `q + imdbid`, and if the aggregate `all` indexer rejects both, retrying only direct indexers whose published Jackett capabilities include `imdbid`.
-- If the configured TV indexers do not advertise input-side `imdbid` support at all, the app now degrades to a title query and locally filters merged results by the returned Torznab `imdbid` metadata so series searches can stay IMDb-constrained without pretending the indexer accepted `imdbid` as an input parameter.
+- The `/search` UI now auto-enforces an IMDb-first path for movie/series lookups whenever an IMDb ID is present, first trying strict `imdbid`, then `q + imdbid`, and if the aggregate `all` indexer rejects both, retrying only direct indexers whose published Jackett capabilities include `imdbid`.
+- Jackett Torznab XML error bodies such as `<error code="203" ...>` are now treated as failed requests, so unsupported TV `imdbid` searches trigger the intended retries instead of silently appearing as empty result sets.
+- If the configured TV indexers do not advertise input-side `imdbid` support at all, the app now keeps the failed IMDb-first attempts in the primary section and renders a separate broader title-fallback section below instead of pretending the fallback itself was an IMDb-constrained search.
+- Jackett timeout failures now include the concrete request label in the surfaced error, so the UI identifies which Torznab query variant timed out.
+- Timed-out Jackett variants now degrade at the variant level: the client can retry that same variant's fallback params (for example, dropping `year`) and, if other expanded variants still succeed, return partial results with an inline warning instead of failing the entire search run.
 - The project `.venv` now passes targeted phase-6 pytest coverage for `tests/test_jackett.py` and `tests/test_routes.py`.
 - The full repo pytest suite now also passes in the project `.venv`; remaining validation is manual browser coverage.
 - The goal is to add an on-demand search workflow beside RSS rule authoring, not to replace RSS automation.
@@ -83,7 +86,7 @@ qBittorrent's built-in search UI is a flat text box. The current app already mod
   - an indexer-limited search
   - the search-to-rule handoff into `/rules/new`
 - Manually verify `/rules/{rule_id}/search` for saved movie or series rules with metadata-filled `IMDb ID` / `Release year` fields and confirm Jackett still returns results with the narrower request.
-- Manually verify `/rules/{rule_id}/search` with `Require IMDb ID` enabled and confirm the `Requests used` summary shows strict `imdbid`, aggregate `q + imdbid`, direct-indexer `q + imdbid`, or a metadata-filtered title search tagged with `result_imdbid=...`, and confirm the returned results stay constrained to the matching IMDb ID.
+- Manually verify `/rules/{rule_id}/search` for a movie or series rule with `IMDb ID` populated and confirm the page shows an `IMDb-first results` section with strict `imdbid`, aggregate `q + imdbid`, and optional direct-indexer retries, plus a separate `Title fallback` section below when the primary search returns no matches.
 - Manually verify `/rules/{rule_id}/search` for imported or legacy rules with unusually long saved titles and confirm the clamped title-only fallback still runs when structured reduction cannot.
 - Manually verify graceful errors for missing Jackett config, HTTP failures, and empty result sets.
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Management"
+  short_description: "Plan, track, and hand off project execution work"
+  default_prompt: "Use $project-management to plan this phase, track execution, and prepare a resumable status handoff."

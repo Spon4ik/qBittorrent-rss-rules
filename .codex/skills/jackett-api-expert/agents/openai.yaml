@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jackett API Expert"
+  short_description: "Design and debug robust Jackett Torznab queries."
+  default_prompt: "Use $jackett-api-expert to implement resilient Jackett search logic with clear fallbacks."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "QA Engineer"
+  short_description: "Design, execute, and report focused software QA."
+  default_prompt: "Use $qa-engineer to create and run a risk-based test plan for this change."

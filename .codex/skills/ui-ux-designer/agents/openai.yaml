@@ -1,0 +1,4 @@
+interface:
+  display_name: "UI UX Designer"
+  short_description: "Create usable UI/UX specs and flows for implementation."
+  default_prompt: "Use $ui-ux-designer to design this feature UI/UX and provide build-ready specs."

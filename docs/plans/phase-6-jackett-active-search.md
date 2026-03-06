@@ -16,6 +16,10 @@
 - Timed-out Jackett variants now degrade at the variant level: the client can retry that same variant's fallback params (for example, dropping `year`) and, if other expanded variants still succeed, return partial results with an inline warning instead of failing the entire search run.
 - The project `.venv` now passes targeted phase-6 pytest coverage for `tests/test_jackett.py` and `tests/test_routes.py`.
 - The full repo pytest suite now also passes in the project `.venv`; remaining validation is manual browser coverage.
+- A repo-local `project-management` skill now exists under `.codex/skills/project-management` so in-progress phase validation sessions can follow a consistent status/plan closeout workflow.
+- A repo-local `qa-engineer` skill now exists under `.codex/skills/qa-engineer` so validation sessions can follow a consistent risk-map, evidence capture, and severity-first reporting workflow.
+- A repo-local `jackett-api-expert` skill now exists under `.codex/skills/jackett-api-expert` to guide Torznab capability-aware query design, fallback sequencing, and failure triage.
+- A repo-local `ui-ux-designer` skill now exists under `.codex/skills/ui-ux-designer` to structure feature UX workflow, accessibility checks, and implementation-ready handoff specs during manual validation/polish passes.
 - The goal is to add an on-demand search workflow beside RSS rule authoring, not to replace RSS automation.
 
 ## Goal

@@ -7,6 +7,10 @@
 
 ## Implemented
 
+- Added a repo-local `ui-ux-designer` Codex skill under `.codex/skills/ui-ux-designer` with reusable UX workflow guidance plus handoff/checklist templates for implementation-ready UI design outputs.
+- Added a repo-local `jackett-api-expert` Codex skill under `.codex/skills/jackett-api-expert` with capability-aware Torznab query strategy and fallback/triage references.
+- Added a repo-local `qa-engineer` Codex skill under `.codex/skills/qa-engineer` with a risk-based QA workflow plus reusable test-plan and bug-report templates.
+- Added a repo-local `project-management` Codex skill under `.codex/skills/project-management` with reusable templates for current-status updates, active phase updates, and risk/decision logging.
 - Built-in `At Least UHD` filter profile can now be overwritten without duplicating the preset in the profile selector.
 - Repo-local resumability instructions now live in `AGENTS.md`.
 - Phase planning docs now live under `docs/plans/`.
@@ -65,6 +69,10 @@
 
 ## Next actions
 
+- Use the new `ui-ux-designer` skill for remaining phase-5 and phase-6 manual browser validation/polish sessions to keep UX findings and handoff notes consistent.
+- Use the new `jackett-api-expert` skill for phase-6 Jackett iterations that touch Torznab params, capability probing, or fallback/error behavior.
+- Use the new `qa-engineer` skill for remaining phase-5 and phase-6 manual validation passes to keep findings severity-ranked and reproducible.
+- Use the new `project-management` skill during remaining phase-5/phase-6 validation sessions to keep roadmap/plan/status artifacts synchronized at closeout.
 - Manually verify `/rules/new` and `/rules/{rule_id}` for `series -> music -> audiobook -> other` switching, the warning-and-clear prompt, provider filtering, and IMDb field visibility.
 - Manually verify metadata lookup population for OMDb title search plus MusicBrainz, OpenLibrary, and Google Books lookups.
 - Manually verify the new Rules-page header `Create Rule` action on desktop and mobile layouts.

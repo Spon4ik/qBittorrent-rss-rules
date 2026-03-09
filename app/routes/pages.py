@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import cast
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
@@ -41,7 +42,13 @@ from app.services.quality_filters import (
     recent_quality_taxonomy_audit_entries,
     resolve_quality_profile_rules,
 )
-from app.services.settings_service import SettingsService
+from app.services.settings_service import (
+    DEFAULT_SEARCH_RESULT_VIEW_MODE,
+    DEFAULT_SEARCH_SORT_CRITERIA,
+    SettingsService,
+    normalize_search_result_view_mode,
+    normalize_search_sort_criteria,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
@@ -178,6 +185,26 @@ def _format_keywords_any_groups(keyword_groups: list[list[str]]) -> str:
     return " | ".join(segments)
 
 
+def _merge_search_terms(*term_lists: list[str]) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for term_list in term_lists:
+        for raw_term in term_list:
+            candidate = str(raw_term or "").strip()
+            if not candidate:
+                continue
+            key = candidate.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(candidate)
+    return merged
+
+
+def _query_bool_values(values: list[str]) -> bool:
+    return any(str(value or "").strip().casefold() in {"1", "true", "on", "yes"} for value in values)
+
+
 def _rule_search_title(rule: Rule) -> str:
     return (
         str(rule.normalized_title or "").strip()
@@ -213,7 +240,7 @@ def _auto_imdb_first_payload(payload: JackettSearchRequest) -> JackettSearchRequ
     return payload
 
 
-def _prefill_rule_search_form_data(form_data: dict[str, str], rule: Rule) -> None:
+def _prefill_rule_search_form_data(form_data: dict[str, object], rule: Rule) -> None:
     if form_data["query"]:
         return
     fallback_title = clamp_search_query_text(_rule_search_title(rule))
@@ -223,6 +250,7 @@ def _prefill_rule_search_form_data(form_data: dict[str, str], rule: Rule) -> Non
     form_data["media_type"] = _rule_search_media_type(rule)
     form_data["imdb_id"] = str(rule.imdb_id or "").strip()
     form_data["release_year"] = str(rule.release_year or "").strip()
+    form_data["include_release_year"] = bool(rule.release_year)
 
 
 def _unexpected_error_message(prefix: str, exc: Exception) -> str:
@@ -268,6 +296,8 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
             "media_choices": media_type_choices(),
             "media_type_labels": {item.value: media_type_label(item) for item in MediaType},
             "sync_choices": ["never", "ok", "error", "drift"],
+            "shell_layout": "wide",
+            "content_layout": "wide",
         }
     )
     return templates.TemplateResponse("index.html", context)
@@ -277,19 +307,35 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
 def search_page(request: Request, session: Session = Depends(get_db_session)) -> HTMLResponse:
     source_rule: Rule | None = None
     source_rule_id = request.query_params.get("rule_id", "").strip()
+    query_params = request.query_params
+    quality_include_tokens = _parse_search_filter_terms(
+        ", ".join(query_params.getlist("quality_include_tokens"))
+    )
+    quality_exclude_tokens = _parse_search_filter_terms(
+        ", ".join(query_params.getlist("quality_exclude_tokens"))
+    )
     form_data = {
-        "query": request.query_params.get("query", "").strip(),
-        "media_type": _normalized_media_type(request.query_params.get("media_type")),
-        "indexer": request.query_params.get("indexer", "all").strip() or "all",
-        "imdb_id": request.query_params.get("imdb_id", "").strip(),
-        "release_year": request.query_params.get("release_year", "").strip(),
-        "keywords_all": request.query_params.get("keywords_all", "").strip(),
-        "keywords_any": request.query_params.get("keywords_any", "").strip(),
-        "keywords_not": request.query_params.get("keywords_not", "").strip(),
-        "size_min_mb": request.query_params.get("size_min_mb", "").strip(),
-        "size_max_mb": request.query_params.get("size_max_mb", "").strip(),
-        "filter_indexers": request.query_params.get("filter_indexers", "").strip(),
-        "filter_category_ids": request.query_params.get("filter_category_ids", "").strip(),
+        "query": query_params.get("query", "").strip(),
+        "media_type": _normalized_media_type(query_params.get("media_type")),
+        "indexer": query_params.get("indexer", "all").strip() or "all",
+        "imdb_id": query_params.get("imdb_id", "").strip(),
+        "include_release_year": (
+            _query_bool_values(query_params.getlist("include_release_year"))
+            or (
+                not query_params.getlist("include_release_year")
+                and bool(query_params.get("release_year", "").strip())
+            )
+        ),
+        "release_year": query_params.get("release_year", "").strip(),
+        "keywords_all": query_params.get("keywords_all", "").strip(),
+        "keywords_any": query_params.get("keywords_any", "").strip(),
+        "keywords_not": query_params.get("keywords_not", "").strip(),
+        "quality_include_tokens": quality_include_tokens,
+        "quality_exclude_tokens": quality_exclude_tokens,
+        "size_min_mb": query_params.get("size_min_mb", "").strip(),
+        "size_max_mb": query_params.get("size_max_mb", "").strip(),
+        "filter_indexers": query_params.get("filter_indexers", "").strip(),
+        "filter_category_ids": query_params.get("filter_category_ids", "").strip(),
     }
     errors: list[str] = []
     search_run: dict[str, object] | None = None
@@ -301,6 +347,10 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
     jackett_api_url = ""
     jackett_qb_url = ""
     jackett_api_key: str | None = None
+    search_view_defaults = {
+        "view_mode": DEFAULT_SEARCH_RESULT_VIEW_MODE,
+        "sort_criteria": [dict(item) for item in DEFAULT_SEARCH_SORT_CRITERIA],
+    }
 
     try:
         settings = SettingsService.get_or_create(session)
@@ -310,6 +360,10 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
         jackett_api_url = jackett.api_url or ""
         jackett_qb_url = jackett.qb_url or ""
         jackett_api_key = jackett.api_key
+        search_view_defaults = {
+            "view_mode": normalize_search_result_view_mode(settings.search_result_view_mode),
+            "sort_criteria": normalize_search_sort_criteria(settings.search_sort_criteria),
+        }
     except Exception as exc:
         errors = [_unexpected_error_message("Search setup failed unexpectedly", exc)]
 
@@ -383,6 +437,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "query": payload_from_rule.query,
                         "media_type": payload_from_rule.media_type.value,
                         "imdb_id": payload_from_rule.imdb_id or "",
+                        "include_release_year": bool(payload_from_rule.release_year),
                         "release_year": payload_from_rule.release_year or "",
                         "keywords_all": ", ".join(payload_from_rule.keywords_all),
                         "keywords_any": (
@@ -390,6 +445,8 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                             or ", ".join(payload_from_rule.keywords_any)
                         ),
                         "keywords_not": ", ".join(payload_from_rule.keywords_not),
+                        "quality_include_tokens": list(source_rule.quality_include_tokens or []),
+                        "quality_exclude_tokens": list(source_rule.quality_exclude_tokens or []),
                         "size_min_mb": "",
                         "size_max_mb": "",
                         "filter_indexers": "",
@@ -400,17 +457,33 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
     if form_data["query"] and not errors:
         if active_payload is None:
             try:
+                keywords_any_groups = _parse_keywords_any_groups(str(form_data["keywords_any"]))
+                quality_include_terms = _parse_search_filter_terms(
+                    ", ".join(cast(list[str], form_data.get("quality_include_tokens", [])))
+                )
+                if quality_include_terms:
+                    keywords_any_groups.append(quality_include_terms)
+                merged_keywords_any = _merge_search_terms(
+                    _parse_search_filter_terms(str(form_data["keywords_any"])),
+                    quality_include_terms,
+                )
+                merged_keywords_not = _merge_search_terms(
+                    _parse_search_filter_terms(str(form_data["keywords_not"])),
+                    cast(list[str], form_data.get("quality_exclude_tokens", [])),
+                )
                 active_payload = JackettSearchRequest.model_validate(
                     {
                         "query": form_data["query"],
                         "media_type": form_data["media_type"],
                         "indexer": form_data["indexer"],
                         "imdb_id": form_data["imdb_id"],
-                        "release_year": form_data["release_year"],
+                        "release_year": (
+                            form_data["release_year"] if cast(bool, form_data["include_release_year"]) else ""
+                        ),
                         "keywords_all": form_data["keywords_all"],
-                        "keywords_any": form_data["keywords_any"],
-                        "keywords_any_groups": _parse_keywords_any_groups(form_data["keywords_any"]),
-                        "keywords_not": form_data["keywords_not"],
+                        "keywords_any": merged_keywords_any,
+                        "keywords_any_groups": keywords_any_groups,
+                        "keywords_not": merged_keywords_not,
                         "size_min_mb": form_data["size_min_mb"],
                         "size_max_mb": form_data["size_max_mb"],
                         "filter_indexers": form_data["filter_indexers"],
@@ -456,8 +529,10 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
 
                 raw_primary = list(result.raw_results or result.results)
                 raw_fallback = list(result.raw_fallback_results or result.fallback_results)
+                all_raw_results = [*raw_primary, *raw_fallback]
                 visible_primary_keys = {_result_key(item) for item in result.results}
                 visible_fallback_keys = {_result_key(item) for item in result.fallback_results}
+                form_data["include_release_year"] = bool(active_payload.release_year)
                 summary_parts = ["Title"]
                 if active_payload.imdb_id_only:
                     summary_parts.append("IMDb-enforced Jackett lookup")
@@ -514,6 +589,9 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                     "rule_prefill_summary": f"{', '.join(summary_parts)}.",
                     "source_rule_name": source_rule.rule_name if source_rule else "",
                     "ignored_full_regex": ignored_full_regex,
+                    "show_peers_column": any(item.peers is not None for item in all_raw_results),
+                    "show_leechers_column": any(item.leechers is not None for item in all_raw_results),
+                    "show_grabs_column": any(item.grabs is not None for item in all_raw_results),
                 }
             except JackettClientError as exc:
                 errors = [str(exc)]
@@ -533,6 +611,10 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
             "source_rule": source_rule,
             "derivation_notice": derivation_notice,
             "search_run": search_run,
+            "quality_option_groups": quality_option_groups(),
+            "search_view_defaults": search_view_defaults,
+            "shell_layout": "wide",
+            "content_layout": "wide",
         }
     )
     return templates.TemplateResponse("search.html", context)
@@ -632,6 +714,8 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
             "metadata_lookup_providers": metadata_lookup_provider_catalog(),
             "visible_metadata_lookup_providers": metadata_lookup_provider_choices(requested_media_type),
             "metadata_lookup_disabled": settings.metadata_provider.value == "disabled",
+            "shell_layout": "wide",
+            "content_layout": "wide",
         }
     )
     return templates.TemplateResponse("rule_form.html", context)
@@ -656,6 +740,8 @@ def edit_rule(
                 "sync_choices": ["never", "ok", "error", "drift"],
                 "message": "Rule not found.",
                 "message_level": "error",
+                "shell_layout": "wide",
+                "content_layout": "wide",
             },
             status_code=404,
         )
@@ -695,6 +781,8 @@ def edit_rule(
                 form_media_type,
             ),
             "metadata_lookup_disabled": settings.metadata_provider.value == "disabled",
+            "shell_layout": "wide",
+            "content_layout": "wide",
         }
     )
     return templates.TemplateResponse("rule_form.html", context)

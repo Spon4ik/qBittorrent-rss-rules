@@ -75,6 +75,8 @@ def _ensure_rule_columns() -> None:
         "quality_profile_rules": "JSON NOT NULL DEFAULT '{}'",
         "saved_quality_profiles": "JSON NOT NULL DEFAULT '{}'",
         "default_feed_urls": "JSON NOT NULL DEFAULT '[]'",
+        "search_result_view_mode": "VARCHAR(16) NOT NULL DEFAULT 'table'",
+        "search_sort_criteria": "JSON NOT NULL DEFAULT '[]'",
     }
 
     with engine.begin() as connection:

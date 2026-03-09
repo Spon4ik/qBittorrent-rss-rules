@@ -1,134 +1,23 @@
 {% extends "base.html" %}
 {% block content %}
-<div data-search-page data-search-query="{{ form_data.query }}">
-<section class="panel-head">
-  <div>
-    <p class="eyebrow">Search</p>
-    <h2>Active Jackett search</h2>
-    <p class="helper-text">This is an on-demand search surface. It is separate from the RSS feeds attached to saved rules.</p>
-  </div>
-  {% if source_rule %}
-  <div class="card-actions">
-    <a class="button-link muted" href="/rules/{{ source_rule.id }}">Back To Rule</a>
-  </div>
-  {% endif %}
-</section>
-
-<section class="summary-strip">
+{% macro result_view_panel(section_label) -%}
+<section class="summary-strip search-controls result-view-panel" data-search-controls>
   <div class="stack">
     <div>
-      <p class="eyebrow">App source</p>
-      <strong>{{ 'Ready' if jackett_ready else 'Not configured' }}</strong>
-      <p class="helper-text">{{ jackett_api_url or 'Set a Jackett app URL in Settings to enable search.' }}</p>
+      <p class="eyebrow">Result view options</p>
+      <strong>{{ section_label }}</strong>
+      <p class="helper-text">Apply one shared view/sort state from either panel, then save it as your default.</p>
     </div>
-    <div>
-      <p class="eyebrow">Rule-source path</p>
-      <strong>{{ 'Configured' if jackett_rule_ready else 'Not configured yet' }}</strong>
-      <p class="helper-text">{{ jackett_qb_url or 'Set a separate qB URL only if qBittorrent reaches Jackett through a different hostname.' }}</p>
-    </div>
-  </div>
-  <div class="stack">
-    <div>
-      <p class="eyebrow">Model split</p>
-      <strong>Not mixed with RSS feeds</strong>
-      <p class="helper-text">Search runs against Jackett now. RSS feed selection still controls future polling for saved rules.</p>
+    <div class="search-controls-actions">
+      <button type="button" class="button-link muted" data-search-save-defaults>Save as default view</button>
+      <p class="helper-text" data-search-default-status aria-live="polite"></p>
     </div>
   </div>
-</section>
-
-{% if derivation_notice %}
-<section class="flash flash-warning">
-  {{ derivation_notice }}
-</section>
-{% endif %}
-
-<form class="filter-grid" method="get" action="/search" data-search-form>
-  {% if source_rule %}
-  <input type="hidden" name="rule_id" value="{{ source_rule.id }}" />
-  {% endif %}
-  <label>
-    Title
-    <input type="text" name="query" value="{{ form_data.query }}" placeholder="Dune Part Two" />
-  </label>
-  <label>
-    Media type
-    <select name="media_type">
-      {% for choice in media_choices %}
-      <option value="{{ choice.value }}" {% if form_data.media_type == choice.value %}selected{% endif %}>{{ choice.label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Indexer
-    <input type="text" name="indexer" value="{{ form_data.indexer }}" placeholder="all" />
-    <span class="helper-text">Use `all` or a Jackett indexer slug.</span>
-  </label>
-  <label>
-    IMDb ID
-    <input type="text" name="imdb_id" value="{{ form_data.imdb_id }}" placeholder="tt1234567" />
-    <span class="helper-text">Optional. Used for Jackett Torznab narrowing when the indexer supports it.</span>
-  </label>
-  <label>
-    Release year
-    <input type="text" name="release_year" value="{{ form_data.release_year }}" placeholder="2025" />
-    <span class="helper-text">Local cached filter. No new Jackett request is needed when this changes.</span>
-  </label>
-  <label>
-    Min size (MB)
-    <input type="text" name="size_min_mb" value="{{ form_data.size_min_mb }}" placeholder="700" />
-    <span class="helper-text">Local cached filter.</span>
-  </label>
-  <label>
-    Max size (MB)
-    <input type="text" name="size_max_mb" value="{{ form_data.size_max_mb }}" placeholder="50000" />
-    <span class="helper-text">Local cached filter.</span>
-  </label>
-  <label class="full-span">
-    Required keywords
-    <input type="text" name="keywords_all" value="{{ form_data.keywords_all }}" placeholder="remux, 2026" />
-    <span class="helper-text">Local cached filter. Every result must include these terms in title or metadata text.</span>
-  </label>
-  <label class="full-span">
-    Any-of keywords
-    <input type="text" name="keywords_any" value="{{ form_data.keywords_any }}" placeholder="4k, 2160p" />
-    <span class="helper-text">Local cached filter. Use `|` to separate groups (example: `uhd, 4k | hdr, hdr10`); each group requires at least one match.</span>
-  </label>
-  <label class="full-span">
-    Excluded keywords
-    <input type="text" name="keywords_not" value="{{ form_data.keywords_not }}" placeholder="cam, 720p" />
-    <span class="helper-text">Local cached filter. Matching results are hidden immediately.</span>
-  </label>
-  <label class="full-span">
-    Result indexers
-    <input type="text" name="filter_indexers" value="{{ form_data.filter_indexers }}" placeholder="rutracker, eztv" />
-    <span class="helper-text">Local cached filter by result indexer labels.</span>
-  </label>
-  <label class="full-span">
-    Result category IDs
-    <input type="text" name="filter_category_ids" value="{{ form_data.filter_category_ids }}" placeholder="5000, 5040" />
-    <span class="helper-text">Local cached filter by Torznab category IDs.</span>
-  </label>
-  <button type="submit">Search Jackett</button>
-</form>
-
-{% if search_run %}
-<script id="search-run-cache" type="application/json">
-{{ {"raw_results": search_run.raw_results, "raw_fallback_results": search_run.raw_fallback_results} | tojson }}
-</script>
-
-{% if search_run.warning_messages %}
-<section class="flash flash-warning">
-  {% for message in search_run.warning_messages %}
-  <p>{{ message }}</p>
-  {% endfor %}
-</section>
-{% endif %}
-<section class="summary-strip search-controls" data-search-controls>
   <label>
     Result view
     <select data-search-view-mode>
-      <option value="cards" selected>Cards</option>
-      <option value="table">Table</option>
+      <option value="cards">Cards</option>
+      <option value="table" selected>Table</option>
     </select>
   </label>
   <label>
@@ -196,7 +85,186 @@
       <option value="asc" selected>Ascending</option>
     </select>
   </label>
+  <p class="helper-text search-metrics-note">
+    Peers and leechers are tracker-reported availability numbers. Grabs is the tracker download-count metric when provided.
+  </p>
 </section>
+{%- endmacro %}
+
+<div
+  data-search-page
+  data-search-query="{{ form_data.query }}"
+  data-default-view-mode="{{ search_view_defaults.view_mode }}"
+  data-default-sort='{{ search_view_defaults.sort_criteria | tojson }}'
+>
+<section class="panel-head">
+  <div>
+    <p class="eyebrow">Search</p>
+    <h2>Active Jackett search</h2>
+    <p class="helper-text">This is an on-demand search surface. It is separate from the RSS feeds attached to saved rules.</p>
+  </div>
+  {% if source_rule %}
+  <div class="card-actions">
+    <a class="button-link muted" href="/rules/{{ source_rule.id }}">Back To Rule</a>
+  </div>
+  {% endif %}
+</section>
+
+<section class="summary-strip">
+  <div class="stack">
+    <div>
+      <p class="eyebrow">App source</p>
+      <strong>{{ 'Ready' if jackett_ready else 'Not configured' }}</strong>
+      <p class="helper-text">{{ jackett_api_url or 'Set a Jackett app URL in Settings to enable search.' }}</p>
+    </div>
+    <div>
+      <p class="eyebrow">Rule-source path</p>
+      <strong>{{ 'Configured' if jackett_rule_ready else 'Not configured yet' }}</strong>
+      <p class="helper-text">{{ jackett_qb_url or 'Set a separate qB URL only if qBittorrent reaches Jackett through a different hostname.' }}</p>
+    </div>
+  </div>
+  <div class="stack">
+    <div>
+      <p class="eyebrow">Model split</p>
+      <strong>Not mixed with RSS feeds</strong>
+      <p class="helper-text">Search runs against Jackett now. RSS feed selection still controls future polling for saved rules.</p>
+    </div>
+  </div>
+</section>
+
+{% if derivation_notice %}
+<section class="flash flash-warning">
+  {{ derivation_notice }}
+</section>
+{% endif %}
+
+<form class="filter-grid search-filter-grid" method="get" action="/search" data-search-form>
+  {% if source_rule %}
+  <input type="hidden" name="rule_id" value="{{ source_rule.id }}" />
+  {% endif %}
+  <label>
+    Title
+    <input type="text" name="query" value="{{ form_data.query }}" placeholder="Dune Part Two" />
+  </label>
+  <label>
+    Media type
+    <select name="media_type">
+      {% for choice in media_choices %}
+      <option value="{{ choice.value }}" {% if form_data.media_type == choice.value %}selected{% endif %}>{{ choice.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Indexer
+    <input type="text" name="indexer" value="{{ form_data.indexer }}" placeholder="all" />
+    <span class="helper-text">Use `all` or a Jackett indexer slug.</span>
+  </label>
+  <label>
+    IMDb ID
+    <input type="text" name="imdb_id" value="{{ form_data.imdb_id }}" placeholder="tt1234567" />
+    <span class="helper-text">Optional. Movies/series with IMDb ID auto-run IMDb-first and keep title fallback separate.</span>
+  </label>
+  <label class="toggle">
+    <input type="hidden" name="include_release_year" value="0" />
+    <input type="checkbox" name="include_release_year" value="on" data-search-include-year {% if form_data.include_release_year %}checked{% endif %} />
+    <span>Filter by release year</span>
+  </label>
+  <label>
+    Release year
+    <input type="text" name="release_year" value="{{ form_data.release_year }}" placeholder="2025" data-search-release-year />
+    <span class="helper-text">Local cached filter. It applies only when the checkbox is enabled.</span>
+  </label>
+  <label>
+    Min size (MB)
+    <input type="text" name="size_min_mb" value="{{ form_data.size_min_mb }}" placeholder="700" />
+    <span class="helper-text">Local cached filter.</span>
+  </label>
+  <label>
+    Max size (MB)
+    <input type="text" name="size_max_mb" value="{{ form_data.size_max_mb }}" placeholder="50000" />
+    <span class="helper-text">Local cached filter.</span>
+  </label>
+
+  <section class="full-span stack">
+    <div class="panel-head panel-head-tight">
+      <div>
+        <p class="eyebrow">Keyword filters</p>
+        <h3>Rule-style include/exclude checkboxes</h3>
+      </div>
+    </div>
+    <p class="helper-text">Use these quality token checkboxes like the rule form; they drive local search filtering immediately.</p>
+    <div class="form-grid search-quality-grid">
+      <div class="stack">
+        {% for group in quality_option_groups %}
+        <fieldset data-search-quality-group="include" data-media-types="{{ group.media_types | join(',') }}">
+          <legend>Include {{ group.label }}</legend>
+          {% for choice in group.options %}
+          <label class="toggle" data-search-quality-option data-media-types="{{ choice.media_types | join(',') }}">
+            <input type="checkbox" name="quality_include_tokens" value="{{ choice.value }}" {% if choice.value in form_data.quality_include_tokens %}checked{% endif %} />
+            <span>{{ choice.label }}</span>
+          </label>
+          {% endfor %}
+        </fieldset>
+        {% endfor %}
+      </div>
+      <div class="stack">
+        {% for group in quality_option_groups %}
+        <fieldset data-search-quality-group="exclude" data-media-types="{{ group.media_types | join(',') }}">
+          <legend>Exclude {{ group.label }}</legend>
+          {% for choice in group.options %}
+          <label class="toggle" data-search-quality-option data-media-types="{{ choice.media_types | join(',') }}">
+            <input type="checkbox" name="quality_exclude_tokens" value="{{ choice.value }}" {% if choice.value in form_data.quality_exclude_tokens %}checked{% endif %} />
+            <span>{{ choice.label }}</span>
+          </label>
+          {% endfor %}
+        </fieldset>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <label class="full-span">
+    Required keywords
+    <input type="text" name="keywords_all" value="{{ form_data.keywords_all }}" placeholder="remux, 2026" />
+    <span class="helper-text">Local cached filter. Every result must include these terms in title or metadata text.</span>
+  </label>
+  <label class="full-span">
+    Additional any-of keyword groups
+    <input type="text" name="keywords_any" value="{{ form_data.keywords_any }}" placeholder="uhd, 4k | hdr, hdr10" />
+    <span class="helper-text">Local cached filter. Use `|` between groups. Checkbox include tokens are added as another any-of group.</span>
+  </label>
+  <label class="full-span">
+    Additional excluded keywords
+    <input type="text" name="keywords_not" value="{{ form_data.keywords_not }}" placeholder="cam, ts" />
+    <span class="helper-text">Local cached filter. Checkbox exclude tokens are merged here.</span>
+  </label>
+  <label class="full-span">
+    Result indexers
+    <input type="text" name="filter_indexers" value="{{ form_data.filter_indexers }}" placeholder="rutracker, eztv" />
+    <span class="helper-text">Local cached filter by result indexer labels.</span>
+  </label>
+  <label class="full-span">
+    Result category IDs
+    <input type="text" name="filter_category_ids" value="{{ form_data.filter_category_ids }}" placeholder="5000, 5040" />
+    <span class="helper-text">Local cached filter by Torznab category IDs.</span>
+  </label>
+  <button type="submit">Search Jackett</button>
+</form>
+
+{% if search_run %}
+<script id="search-run-cache" type="application/json">
+{{ {"raw_results": search_run.raw_results, "raw_fallback_results": search_run.raw_fallback_results} | tojson }}
+</script>
+
+{% if search_run.warning_messages %}
+<section class="flash flash-warning">
+  {% for message in search_run.warning_messages %}
+  <p>{{ message }}</p>
+  {% endfor %}
+</section>
+{% endif %}
+
+{{ result_view_panel(search_run.primary_label) }}
 <section class="summary-strip" data-search-summary="primary">
   <div>
     <p class="eyebrow">{{ search_run.primary_label }}</p>
@@ -210,14 +278,24 @@
     {% endif %}
   </div>
   <div>
+    {% if search_run.primary_label == "IMDb-first results" and not search_run.raw_results %}
+    <p class="eyebrow">Query string</p>
+    <p class="helper-text">{{ form_data.query }}</p>
+    {% if search_run.request_variants or search_run.query_variants %}
+    <p class="helper-text">{{ (search_run.request_variants or search_run.query_variants) | join(' | ') }}</p>
+    {% endif %}
+    {% else %}
     <p class="eyebrow">Requests used</p>
     <p class="helper-text">{{ (search_run.request_variants or search_run.query_variants) | join(' | ') }}</p>
+    {% endif %}
   </div>
+  {% if not (search_run.primary_label == "IMDb-first results" and not search_run.raw_results) %}
   <div class="search-filter-impact">
     <p class="eyebrow">Filter impact</p>
     <p class="helper-text" data-filter-impact-empty="primary">No local filters are active.</p>
     <ul class="filter-impact-list" data-filter-impact-list="primary"></ul>
   </div>
+  {% endif %}
 </section>
 
 {% if not search_run.raw_results %}
@@ -256,7 +334,7 @@
   >
     <div class="rule-card-top">
       <div>
-        <p class="eyebrow">{{ item.indexer or 'Jackett' }}</p>
+        <p class="eyebrow">{{ item.indexer or 'Unknown indexer' }}</p>
         <h3>{{ item.title }}</h3>
       </div>
       <span class="status-chip status-ok">active</span>
@@ -264,7 +342,7 @@
     <dl class="detail-list">
       <div>
         <dt>Source</dt>
-        <dd>Jackett active search</dd>
+        <dd>Torznab via Jackett</dd>
       </div>
       <div>
         <dt>Size</dt>
@@ -309,9 +387,15 @@
         <th>Published</th>
         <th>Year</th>
         <th>Seeders</th>
-        <th>Peers</th>
+        {% if search_run.show_peers_column %}
+        <th>Peers (all)</th>
+        {% endif %}
+        {% if search_run.show_leechers_column %}
         <th>Leechers</th>
+        {% endif %}
+        {% if search_run.show_grabs_column %}
         <th>Grabs</th>
+        {% endif %}
         <th>Categories</th>
         <th>Actions</th>
       </tr>
@@ -335,14 +419,20 @@
         {% if not item.visible %}hidden{% endif %}
       >
         <td>{{ item.title }}</td>
-        <td>{{ item.indexer or 'Jackett' }}</td>
+        <td>{{ item.indexer or 'Unknown' }}</td>
         <td>{{ item.size_label or 'Unknown' }}</td>
         <td>{{ item.published_label or 'Unknown' }}</td>
         <td>{{ item.year or 'Unknown' }}</td>
         <td>{{ item.seeders if item.seeders is not none else 'Unknown' }}</td>
+        {% if search_run.show_peers_column %}
         <td>{{ item.peers if item.peers is not none else 'Unknown' }}</td>
+        {% endif %}
+        {% if search_run.show_leechers_column %}
         <td>{{ item.leechers if item.leechers is not none else 'Unknown' }}</td>
+        {% endif %}
+        {% if search_run.show_grabs_column %}
         <td>{{ item.grabs if item.grabs is not none else 'Unknown' }}</td>
+        {% endif %}
         <td>
           {% if item.category_ids %}
           {{ (item.category_ids or []) | join(', ') }}
@@ -367,6 +457,7 @@
 {% endif %}
 
 {% if search_run.fallback_request_variants or search_run.raw_fallback_results %}
+{{ result_view_panel(search_run.fallback_label or 'Title fallback') }}
 <section class="summary-strip" data-search-summary="fallback">
   <div>
     <p class="eyebrow">{{ search_run.fallback_label or 'Title fallback' }}</p>
@@ -377,11 +468,13 @@
     <p class="eyebrow">Fallback Requests</p>
     <p class="helper-text">{{ search_run.fallback_request_variants | join(' | ') }}</p>
   </div>
+  {% if search_run.raw_fallback_results %}
   <div class="search-filter-impact">
     <p class="eyebrow">Filter impact</p>
     <p class="helper-text" data-filter-impact-empty="fallback">No local filters are active.</p>
     <ul class="filter-impact-list" data-filter-impact-list="fallback"></ul>
   </div>
+  {% endif %}
 </section>
 
   {% if not search_run.raw_fallback_results %}
@@ -415,7 +508,7 @@
     >
       <div class="rule-card-top">
         <div>
-          <p class="eyebrow">{{ item.indexer or 'Jackett' }}</p>
+          <p class="eyebrow">{{ item.indexer or 'Unknown indexer' }}</p>
           <h3>{{ item.title }}</h3>
         </div>
         <span class="status-chip status-ok">fallback</span>
@@ -468,9 +561,15 @@
           <th>Published</th>
           <th>Year</th>
           <th>Seeders</th>
-          <th>Peers</th>
+          {% if search_run.show_peers_column %}
+          <th>Peers (all)</th>
+          {% endif %}
+          {% if search_run.show_leechers_column %}
           <th>Leechers</th>
+          {% endif %}
+          {% if search_run.show_grabs_column %}
           <th>Grabs</th>
+          {% endif %}
           <th>Categories</th>
           <th>Actions</th>
         </tr>
@@ -494,14 +593,20 @@
           {% if not item.visible %}hidden{% endif %}
         >
           <td>{{ item.title }}</td>
-          <td>{{ item.indexer or 'Jackett' }}</td>
+          <td>{{ item.indexer or 'Unknown' }}</td>
           <td>{{ item.size_label or 'Unknown' }}</td>
           <td>{{ item.published_label or 'Unknown' }}</td>
           <td>{{ item.year or 'Unknown' }}</td>
           <td>{{ item.seeders if item.seeders is not none else 'Unknown' }}</td>
+          {% if search_run.show_peers_column %}
           <td>{{ item.peers if item.peers is not none else 'Unknown' }}</td>
+          {% endif %}
+          {% if search_run.show_leechers_column %}
           <td>{{ item.leechers if item.leechers is not none else 'Unknown' }}</td>
+          {% endif %}
+          {% if search_run.show_grabs_column %}
           <td>{{ item.grabs if item.grabs is not none else 'Unknown' }}</td>
+          {% endif %}
           <td>
             {% if item.category_ids %}
             {{ (item.category_ids or []) | join(', ') }}

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 
@@ -16,6 +18,71 @@ from app.services.quality_filters import (
     normalize_saved_quality_profiles,
     resolve_quality_profile_rules,
 )
+
+SEARCH_RESULT_VIEW_MODES = frozenset({"cards", "table"})
+SEARCH_SORT_FIELDS = frozenset(
+    {
+        "published_at",
+        "seeders",
+        "peers",
+        "leechers",
+        "grabs",
+        "size_bytes",
+        "year",
+        "indexer",
+        "title",
+    }
+)
+DEFAULT_SEARCH_RESULT_VIEW_MODE = "table"
+DEFAULT_SEARCH_SORT_CRITERIA = [{"field": "published_at", "direction": "desc"}]
+
+
+def normalize_search_result_view_mode(value: object | None) -> str:
+    cleaned = str(value or "").strip().lower()
+    if cleaned in SEARCH_RESULT_VIEW_MODES:
+        return cleaned
+    return DEFAULT_SEARCH_RESULT_VIEW_MODE
+
+
+def normalize_search_sort_criteria(value: object | None) -> list[dict[str, str]]:
+    raw_items: list[object]
+    if value is None or value == "":
+        raw_items = []
+    elif isinstance(value, str):
+        cleaned = value.strip()
+        if not cleaned:
+            raw_items = []
+        else:
+            try:
+                loaded = json.loads(cleaned)
+            except ValueError:
+                raw_items = []
+            else:
+                raw_items = loaded if isinstance(loaded, list) else []
+    elif isinstance(value, list):
+        raw_items = value
+    else:
+        raw_items = []
+
+    normalized: list[dict[str, str]] = []
+    seen_fields: set[str] = set()
+    for raw_item in raw_items:
+        if not isinstance(raw_item, Mapping):
+            continue
+        field = str(raw_item.get("field", "")).strip()
+        if field not in SEARCH_SORT_FIELDS or field in seen_fields:
+            continue
+        direction = str(raw_item.get("direction", "asc")).strip().lower()
+        if direction not in {"asc", "desc"}:
+            direction = "asc"
+        normalized.append({"field": field, "direction": direction})
+        seen_fields.add(field)
+        if len(normalized) >= 3:
+            break
+
+    if normalized:
+        return normalized
+    return [dict(item) for item in DEFAULT_SEARCH_SORT_CRITERIA]
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +131,8 @@ class SettingsService:
                 quality_profile_rules=deepcopy(DEFAULT_QUALITY_PROFILE_RULES),
                 saved_quality_profiles={},
                 default_quality_profile=QualityProfile.UHD_2160P_HDR,
+                search_result_view_mode=DEFAULT_SEARCH_RESULT_VIEW_MODE,
+                search_sort_criteria=[dict(item) for item in DEFAULT_SEARCH_SORT_CRITERIA],
             )
             session.add(settings)
             session.commit()
@@ -104,6 +173,18 @@ class SettingsService:
         normalized_default_feeds = [str(url).strip() for url in (settings.default_feed_urls or []) if str(url).strip()]
         if normalized_default_feeds != (settings.default_feed_urls or []):
             settings.default_feed_urls = normalized_default_feeds
+            changed = True
+        normalized_view_mode = normalize_search_result_view_mode(
+            getattr(settings, "search_result_view_mode", DEFAULT_SEARCH_RESULT_VIEW_MODE)
+        )
+        if normalized_view_mode != settings.search_result_view_mode:
+            settings.search_result_view_mode = normalized_view_mode
+            changed = True
+        normalized_sort_criteria = normalize_search_sort_criteria(
+            getattr(settings, "search_sort_criteria", DEFAULT_SEARCH_SORT_CRITERIA)
+        )
+        if normalized_sort_criteria != list(settings.search_sort_criteria or []):
+            settings.search_sort_criteria = normalized_sort_criteria
             changed = True
         if changed:
             session.add(settings)
@@ -203,4 +284,6 @@ class SettingsService:
             "has_env_qb_password": bool(get_environment_settings().qb_password),
             "has_env_jackett_key": bool(get_environment_settings().jackett_api_key),
             "has_env_omdb_key": bool(get_environment_settings().omdb_api_key),
+            "search_result_view_mode": normalize_search_result_view_mode(settings.search_result_view_mode),
+            "search_sort_criteria": normalize_search_sort_criteria(settings.search_sort_criteria),
         }

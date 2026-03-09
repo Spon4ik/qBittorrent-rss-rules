@@ -72,6 +72,8 @@ def upgrade() -> None:
         sa.Column("quality_profile_rules", sa.JSON(), nullable=False),
         sa.Column("saved_quality_profiles", sa.JSON(), nullable=False),
         sa.Column("default_feed_urls", sa.JSON(), nullable=False),
+        sa.Column("search_result_view_mode", sa.String(length=16), nullable=False),
+        sa.Column("search_sort_criteria", sa.JSON(), nullable=False),
         sa.Column("default_quality_profile", sa.String(length=32), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),

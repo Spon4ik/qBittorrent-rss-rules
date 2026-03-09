@@ -52,7 +52,7 @@
 - Jackett searches now reuse saved IMDb IDs, release years, and media-type category narrowing when available, so rule-derived searches can call richer Torznab parameters instead of only `q`.
 - Jackett `imdbid` requests now keep the full `tt1234567` form expected by Jackett instead of stripping the `tt` prefix, fixing live `400 Bad Request` failures from the richer search mode.
 - Jackett searches now retry `400 Bad Request` responses in stages, first dropping narrower fields like `year` while keeping `imdbid` when possible, and only falling back to broad text search last.
-- The `/search` form now auto-enforces an IMDb-first flow for movie or series searches whenever an `IMDb ID` is present; it first tries strict `imdbid`, then `q + imdbid`, and if the aggregate `all` indexer rejects both, it asks Jackett for configured indexer capabilities and retries direct indexers that actually support `imdbid`.
+- The `/search` form now auto-enforces an IMDb-first flow for movie or series searches whenever an `IMDb ID` is present; it now keeps primary requests strict `imdbid`-only (aggregate plus optional direct-indexer retries) and keeps broader title text in the separate `Title fallback` section.
 - Jackett Torznab XML error payloads such as `<error code="203" ...>` are now treated as real request failures, so unsupported TV `imdbid` searches no longer look like empty successes.
 - Live Jackett capability inspection still confirms the current configured set advertises `movie-search imdbid` for some trackers but not `tv-search imdbid`; when that happens, the app now keeps the failed IMDb-first attempts in the primary section and renders a separate broad title-fallback section instead of silently switching the main search to result-level IMDb metadata filtering.
 - Jackett timeout errors now include the actual Torznab request summary (for example `t=search q="American Classic" cat=5000`), so UI errors expose which search variant hung instead of only saying `timed out`.
@@ -63,6 +63,7 @@
 - Jackett result normalization now captures richer Torznab metadata (`published_at`, `category_ids`, `year`, `seeders`, `peers`, `leechers`, `grabs`, `download_volume_factor`, `upload_volume_factor`) plus raw `torznab_attrs` for future local filtering slices.
 - `/search` now renders fetched-versus-filtered counts for both primary and fallback sections, embeds raw result pools in page JSON, and applies local filter edits interactively in the browser without calling Jackett again.
 - `/search` now includes a card/table toggle, 3-level hierarchical local sorting controls, and per-section filter-impact diagnostics showing each active filter value's standalone keep/drop counts plus blocker highlighting when the filtered list is empty.
+- `/search` now uses rule-style quality include/exclude checkbox groups plus an explicit `Filter by release year` checkbox, so quality/year local filters align with the rule form interaction model instead of only text fields.
 - `/search` filter-impact rows now render explicit sentence separators and clearer blocker messaging, fixing merged plain-text output like `Release year = 20260 ...` / `2160p1 ...` and clarifying when other active filters are still the reason results stay at zero.
 - Jackett search result normalization now falls back to title-derived year extraction when Torznab omits year attrs, so `release_year` local filtering and the rendered Year column stay aligned for titles like `The Rip (2026) ...`.
 - `/search` now accepts grouped any-of keyword syntax using `|` between groups (for example `uhd, 4k | hdr, hdr10`), and local filtering plus filter-impact diagnostics enforce group semantics instead of flattening all variants into one bucket.
@@ -70,6 +71,12 @@
 - Jackett local filtering now enforces title-query matching (so unrelated titles no longer survive fallback refinement), and short included keywords such as `hdr` now use token-level matching to avoid substring false positives from metadata text like `HDRezka`.
 - Title/query local matching now supports non-Latin text (for example Cyrillic titles), so Unicode-heavy libraries are filtered correctly instead of bypassing query checks.
 - IMDb-first local filtering now preserves localized titles when the result IMDb ID matches the requested IMDb ID exactly, even if title text differs from the query language.
+- IMDb-first request construction now uses strict `imdbid` input only (aggregate and direct-indexer retry paths), while broader title text matching is always kept in the separate `Title fallback` section.
+- Search result view defaults are now persisted in `AppSettings` (`search_result_view_mode`, `search_sort_criteria`) with a new `/api/search/preferences` endpoint; `/search` defaults to `Table` and can save current sort/view from the result-view panel.
+- Result-view controls now render as a redesigned panel above both `IMDb-first` and `Title fallback` sections, stay synchronized between the two copies, and show clearer availability metric context (`Peers`, `Leechers`, `Grabs`).
+- Rules and search pages now opt into a wider responsive shell/content layout to use more horizontal space and reduce vertical scrolling on large displays.
+- Jackett result parsing now also reads indexer labels from non-`attr` tags (for example `<jackettindexer>`), and search tables no longer label unknown indexers as `Jackett`.
+- When `IMDb-first` fetched count is `0`, the primary summary now suppresses filter-impact diagnostics and shows only query/request context for that empty primary section.
 - Saved-rule derivation now treats legacy sentinel overrides like literal `None`/`null` as empty optional text instead of converting them into required keyword filters.
 - Required/any keyword matching now treats season and episode shorthand tokens as equivalent variants (`s3` ~= `s03`, `e7` ~= `e07`, `s3e1` ~= `s03e01`) so local filtering no longer drops obvious season hits.
 - Jackett active search now appends per-run debug summaries (query/filter inputs plus raw/filtered counts) to `logs/search-debug.log` and includes local drop-reason counts at debug level to make refinement feedback loops easier.
@@ -97,6 +104,7 @@
 - Phase 4 validation and closeout are still pending as a separate follow-up even though the Phase 5 code landed.
 - Phase 6 is now in an initial implementation state with pytest coverage passing; manual browser checks are still pending.
 - Release-process automated checks now pass in the Linux `.venv-linux` environment through `./scripts/check.sh` (`ruff`, `mypy`, and full pytest).
+- Targeted service coverage for the new IMDb-only + UI slice passes in Linux `.venv-linux` (`tests/test_jackett.py`: `26 passed`); route-test execution via `fastapi.testclient.TestClient` is currently hanging in the Linux `.venv-linux` environment and needs follow-up before claiming full targeted rerun coverage there.
 
 ## Next actions
 
@@ -123,7 +131,8 @@
 - Manually verify `/search` card/table toggle and 3-level hierarchical sort controls while active local filters remain network-free.
 - Manually verify `/search` filter-impact diagnostics for both non-empty and empty-result states, including blocker highlighting when removing one active value restores results.
 - Manually verify `/rules/{rule_id}/search` for saved movie/series rules with `IMDb ID` and `Release year` populated and confirm the same search still works while returning more precise Jackett matches.
-- Manually verify `/rules/{rule_id}/search` for a movie or series rule with `IMDb ID` populated and confirm the page now shows an `IMDb-first results` section with strict `imdbid`, `q + imdbid`, and optional direct-indexer retries, plus a separate `Title fallback` section when the primary IMDb-constrained search returns no matches.
+- Manually verify `/rules/{rule_id}/search` for a movie or series rule with `IMDb ID` populated and confirm the page now shows an `IMDb-first results` section with strict `imdbid`-only attempts (including optional direct-indexer retries) plus a separate `Title fallback` section when the primary IMDb-constrained search returns no matches.
+- Investigate and resolve the current Linux `.venv-linux` `fastapi.testclient.TestClient` hang before rerunning the full `tests/test_routes.py` matrix for this UI slice.
 - Manually verify `/rules/{rule_id}/search` for a rule that returns IMDb-first matches and confirm the page still performs and displays a separate title-fallback fetch section with fetched/filtered counts.
 - Manually verify `/rules/{rule_id}/search` for regex-heavy legacy rules that exceed structured-term limits and confirm the title-only fallback warning renders instead of a server error.
 - Manually verify `/rules/{rule_id}/search` for regex-heavy rules that now hit reduced-keyword fallback and confirm the inherited terms remain useful.

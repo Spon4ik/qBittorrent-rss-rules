@@ -389,7 +389,9 @@ function initSearchPage(container) {
   }
 
   const queryInput = form.querySelector('input[name="query"]');
+  const mediaTypeInput = form.querySelector('select[name="media_type"]');
   const imdbIdInput = form.querySelector('input[name="imdb_id"]');
+  const includeReleaseYearInput = form.querySelector('input[name="include_release_year"]');
   const releaseYearInput = form.querySelector('input[name="release_year"]');
   const keywordsAllInput = form.querySelector('input[name="keywords_all"]');
   const keywordsAnyInput = form.querySelector('input[name="keywords_any"]');
@@ -398,16 +400,73 @@ function initSearchPage(container) {
   const sizeMaxInput = form.querySelector('input[name="size_max_mb"]');
   const filterIndexersInput = form.querySelector('input[name="filter_indexers"]');
   const filterCategoryIdsInput = form.querySelector('input[name="filter_category_ids"]');
-  const viewModeSelect = container.querySelector("[data-search-view-mode]");
-  const sortFieldInputs = [1, 2, 3]
-    .map((level) => container.querySelector(`[data-search-sort-field="${level}"]`))
-    .filter(Boolean);
-  const sortDirectionInputs = [1, 2, 3]
-    .map((level) => container.querySelector(`[data-search-sort-dir="${level}"]`))
-    .filter(Boolean);
+  const includeKeywordInputs = Array.from(form.querySelectorAll('input[name="quality_include_tokens"]'));
+  const excludeKeywordInputs = Array.from(form.querySelectorAll('input[name="quality_exclude_tokens"]'));
+  const controlSets = Array.from(container.querySelectorAll("[data-search-controls]")).map((controlContainer) => ({
+    controlContainer,
+    viewModeSelect: controlContainer.querySelector("[data-search-view-mode]"),
+    sortFieldInputs: [1, 2, 3]
+      .map((level) => controlContainer.querySelector(`[data-search-sort-field="${level}"]`))
+      .filter(Boolean),
+    sortDirectionInputs: [1, 2, 3]
+      .map((level) => controlContainer.querySelector(`[data-search-sort-dir="${level}"]`))
+      .filter(Boolean),
+    saveDefaultsButton: controlContainer.querySelector("[data-search-save-defaults]"),
+    saveDefaultsStatus: controlContainer.querySelector("[data-search-default-status]"),
+  }));
+  const allSortFieldInputs = controlSets.flatMap((set) => set.sortFieldInputs);
+  const allSortDirectionInputs = controlSets.flatMap((set) => set.sortDirectionInputs);
+  const saveDefaultsButtons = controlSets.map((set) => set.saveDefaultsButton).filter(Boolean);
+  const saveDefaultsStatuses = controlSets.map((set) => set.saveDefaultsStatus).filter(Boolean);
   const searchQueryLabel = String(container.dataset.searchQuery || queryInput?.value || "").trim();
   const searchQuery = normalizeSearchText(searchQueryLabel);
   const searchImdbId = normalizeSearchImdbId(imdbIdInput?.value || "");
+  const DEFAULT_SORT_FIELD = "published_at";
+  const SORT_FIELDS = new Set([
+    "published_at",
+    "seeders",
+    "peers",
+    "leechers",
+    "grabs",
+    "size_bytes",
+    "year",
+    "indexer",
+    "title",
+  ]);
+  const normalizeSortDirection = (value) => (String(value || "").trim().toLocaleLowerCase() === "desc"
+    ? "desc"
+    : "asc");
+  const normalizeSortField = (value) => {
+    const cleaned = String(value || "").trim();
+    return SORT_FIELDS.has(cleaned) ? cleaned : "";
+  };
+  const normalizeSortCriteria = (rawValue) => {
+    const normalized = [];
+    const seen = new Set();
+    for (const item of Array.isArray(rawValue) ? rawValue : []) {
+      const field = normalizeSortField(item?.field);
+      if (!field || seen.has(field)) {
+        continue;
+      }
+      normalized.push({ field, direction: normalizeSortDirection(item?.direction) });
+      seen.add(field);
+      if (normalized.length >= 3) {
+        break;
+      }
+    }
+    if (normalized.length > 0) {
+      return normalized;
+    }
+    return [{ field: DEFAULT_SORT_FIELD, direction: "desc" }];
+  };
+  const normalizeViewMode = (value) => {
+    const cleaned = String(value || "").trim().toLocaleLowerCase();
+    return cleaned === "cards" ? "cards" : "table";
+  };
+  let controlState = {
+    viewMode: normalizeViewMode(container.dataset.defaultViewMode || "table"),
+    sortCriteria: normalizeSortCriteria(parseJsonData(container.dataset.defaultSort || "", [])),
+  };
 
   const parseOptionalNumber = (value) => {
     const cleaned = String(value ?? "").trim();
@@ -446,6 +505,26 @@ function initSearchPage(container) {
     categories: [],
   });
 
+  const mergeUniqueTerms = (...termLists) => {
+    const merged = [];
+    const seen = new Set();
+    for (const termList of termLists) {
+      for (const rawTerm of termList || []) {
+        const candidate = String(rawTerm || "").trim();
+        if (!candidate) {
+          continue;
+        }
+        const key = candidate.toLocaleLowerCase();
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        merged.push(candidate);
+      }
+    }
+    return merged;
+  };
+
   const cloneFilters = (filters) => ({
     query: filters.query,
     imdbId: filters.imdbId,
@@ -459,13 +538,107 @@ function initSearchPage(container) {
     categories: [...filters.categories],
   });
 
+  const writeControlStateToSet = (controlSet, state) => {
+    if (controlSet.viewModeSelect) {
+      controlSet.viewModeSelect.value = state.viewMode;
+    }
+    for (const level of [1, 2, 3]) {
+      const fieldInput = controlSet.sortFieldInputs[level - 1];
+      const directionInput = controlSet.sortDirectionInputs[level - 1];
+      const criterion = state.sortCriteria[level - 1];
+      if (fieldInput) {
+        fieldInput.value = criterion?.field || "";
+      }
+      if (directionInput) {
+        directionInput.value = criterion?.direction || "asc";
+      }
+    }
+  };
+
+  const readControlStateFromSet = (controlSet) => {
+    const viewMode = normalizeViewMode(controlSet.viewModeSelect?.value || controlState.viewMode);
+    const rawSortCriteria = [1, 2, 3].map((level) => ({
+      field: controlSet.sortFieldInputs[level - 1]?.value || "",
+      direction: controlSet.sortDirectionInputs[level - 1]?.value || "asc",
+    }));
+    return {
+      viewMode,
+      sortCriteria: normalizeSortCriteria(rawSortCriteria),
+    };
+  };
+
+  const syncControlSets = (sourceControlSet = null) => {
+    for (const controlSet of controlSets) {
+      if (sourceControlSet && controlSet === sourceControlSet) {
+        continue;
+      }
+      writeControlStateToSet(controlSet, controlState);
+    }
+  };
+
+  const setSaveDefaultStatus = (message, isError = false) => {
+    for (const statusElement of saveDefaultsStatuses) {
+      statusElement.textContent = message;
+      statusElement.style.color = isError ? "var(--danger)" : "";
+    }
+  };
+
+  const syncReleaseYearFieldState = () => {
+    if (!releaseYearInput) {
+      return;
+    }
+    const includeYear = Boolean(includeReleaseYearInput?.checked);
+    releaseYearInput.disabled = !includeYear;
+  };
+
+  const syncSearchQualityVisibility = () => {
+    const mediaType = mediaTypeInput?.value || "series";
+    form.querySelectorAll("[data-search-quality-group]").forEach((groupElement) => {
+      const groupScope = (groupElement.dataset.mediaTypes || "").split(",");
+      const groupVisible = mediaTypeMatchesScope(mediaType, groupScope);
+      groupElement.hidden = !groupVisible;
+      groupElement.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+        if (!groupVisible && input.checked) {
+          input.checked = false;
+        }
+        input.disabled = !groupVisible;
+      });
+    });
+    form.querySelectorAll("[data-search-quality-option]").forEach((optionElement) => {
+      const optionScope = (optionElement.dataset.mediaTypes || "").split(",");
+      const optionVisible = mediaTypeMatchesScope(mediaType, optionScope);
+      optionElement.hidden = !optionVisible;
+      optionElement.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+        if (!optionVisible && input.checked) {
+          input.checked = false;
+        }
+        input.disabled = !optionVisible;
+      });
+    });
+  };
+
   const getActiveFilters = () => ({
-    query: searchQuery,
-    imdbId: searchImdbId,
-    releaseYear: normalizeReleaseYear(releaseYearInput?.value || ""),
-    keywordsAll: parseSearchFilterList(keywordsAllInput?.value || ""),
-    keywordsAnyGroups: parseSearchAnyKeywordGroups(keywordsAnyInput?.value || ""),
-    keywordsNot: parseSearchFilterList(keywordsNotInput?.value || ""),
+    ...(() => {
+      const includeKeywordTerms = getCheckedValues(form, "quality_include_tokens");
+      const excludeKeywordTerms = getCheckedValues(form, "quality_exclude_tokens");
+      const keywordsAnyGroups = parseSearchAnyKeywordGroups(keywordsAnyInput?.value || "");
+      if (includeKeywordTerms.length > 0) {
+        keywordsAnyGroups.push(includeKeywordTerms);
+      }
+      return {
+        query: searchQuery,
+        imdbId: searchImdbId,
+        releaseYear: includeReleaseYearInput?.checked
+          ? normalizeReleaseYear(releaseYearInput?.value || "")
+          : "",
+        keywordsAll: parseSearchFilterList(keywordsAllInput?.value || ""),
+        keywordsAnyGroups,
+        keywordsNot: mergeUniqueTerms(
+          parseSearchFilterList(keywordsNotInput?.value || ""),
+          excludeKeywordTerms
+        ),
+      };
+    })(),
     sizeMinMb: parseSearchMb(sizeMinInput?.value || ""),
     sizeMaxMb: parseSearchMb(sizeMaxInput?.value || ""),
     indexers: parseSearchFilterList(filterIndexersInput?.value || "").map((item) => item.toLocaleLowerCase()),
@@ -752,20 +925,7 @@ function initSearchPage(container) {
   };
 
   const getSortCriteria = () => {
-    const criteria = [];
-    for (const level of [1, 2, 3]) {
-      const fieldInput = container.querySelector(`[data-search-sort-field="${level}"]`);
-      const directionInput = container.querySelector(`[data-search-sort-dir="${level}"]`);
-      const field = String(fieldInput?.value || "").trim();
-      if (!field) {
-        continue;
-      }
-      const direction = String(directionInput?.value || "asc").toLocaleLowerCase() === "desc"
-        ? "desc"
-        : "asc";
-      criteria.push({ field, direction });
-    }
-    return criteria;
+    return controlState.sortCriteria;
   };
 
   const compareEntries = (left, right, criteria) => {
@@ -874,7 +1034,7 @@ function initSearchPage(container) {
   );
 
   const applyViewMode = () => {
-    const tableMode = (viewModeSelect?.value || "cards") === "table";
+    const tableMode = controlState.viewMode === "table";
     for (const section of sections) {
       const state = sectionState[section];
       if (!state) {
@@ -1010,6 +1170,7 @@ function initSearchPage(container) {
   };
 
   const localFilterInputs = [
+    includeReleaseYearInput,
     releaseYearInput,
     keywordsAllInput,
     keywordsAnyInput,
@@ -1018,9 +1179,9 @@ function initSearchPage(container) {
     sizeMaxInput,
     filterIndexersInput,
     filterCategoryIdsInput,
-    viewModeSelect,
-    ...sortFieldInputs,
-    ...sortDirectionInputs,
+    mediaTypeInput,
+    ...includeKeywordInputs,
+    ...excludeKeywordInputs,
   ].filter(Boolean);
 
   for (const input of localFilterInputs) {
@@ -1028,6 +1189,73 @@ function initSearchPage(container) {
     input.addEventListener("change", applyLocalFilters);
   }
 
+  if (mediaTypeInput) {
+    mediaTypeInput.addEventListener("change", () => {
+      syncSearchQualityVisibility();
+      applyLocalFilters();
+    });
+  }
+  if (includeReleaseYearInput) {
+    includeReleaseYearInput.addEventListener("change", () => {
+      syncReleaseYearFieldState();
+      applyLocalFilters();
+    });
+  }
+
+  bindExclusiveQualitySelections(form, "quality_include_tokens", "quality_exclude_tokens", applyLocalFilters);
+
+  for (const controlSet of controlSets) {
+    const syncFromControlSet = () => {
+      controlState = readControlStateFromSet(controlSet);
+      syncControlSets(controlSet);
+      applyLocalFilters();
+    };
+    if (controlSet.viewModeSelect) {
+      controlSet.viewModeSelect.addEventListener("change", syncFromControlSet);
+      controlSet.viewModeSelect.addEventListener("input", syncFromControlSet);
+    }
+    for (const input of [...controlSet.sortFieldInputs, ...controlSet.sortDirectionInputs]) {
+      input.addEventListener("change", syncFromControlSet);
+      input.addEventListener("input", syncFromControlSet);
+    }
+    if (controlSet.saveDefaultsButton) {
+      controlSet.saveDefaultsButton.addEventListener("click", async () => {
+        for (const button of saveDefaultsButtons) {
+          button.disabled = true;
+        }
+        setSaveDefaultStatus("Saving search view defaults...");
+        try {
+          const response = await fetch("/api/search/preferences", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              view_mode: controlState.viewMode,
+              sort_criteria: controlState.sortCriteria,
+            }),
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            const errorMessage = String(payload?.error || "Could not save search view defaults.");
+            throw new Error(errorMessage);
+          }
+          setSaveDefaultStatus("Saved. New searches will use this view and sort order.");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Could not save search view defaults.";
+          setSaveDefaultStatus(message, true);
+        } finally {
+          for (const button of saveDefaultsButtons) {
+            button.disabled = false;
+          }
+        }
+      });
+    }
+  }
+
+  syncSearchQualityVisibility();
+  syncReleaseYearFieldState();
+  syncControlSets();
   applyLocalFilters();
 }
 

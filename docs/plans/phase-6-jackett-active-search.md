@@ -9,7 +9,7 @@
 - Rule-derived searches now also reuse saved IMDb IDs, release years, and media-type category narrowing when those fields are available, so Jackett can receive richer Torznab parameters than `q` alone.
 - IMDb-based Jackett narrowing now sends the full `tt1234567` identifier format that Jackett expects, avoiding `400 Bad Request` responses from the richer Torznab mode.
 - Richer Torznab requests now retry `400 Bad Request` responses in stages, preserving `imdbid` where possible before falling back to broad text search only as a last resort.
-- The `/search` UI now auto-enforces an IMDb-first path for movie/series lookups whenever an IMDb ID is present, first trying strict `imdbid`, then `q + imdbid`, and if the aggregate `all` indexer rejects both, retrying only direct indexers whose published Jackett capabilities include `imdbid`.
+- The `/search` UI now auto-enforces an IMDb-first path for movie/series lookups whenever an IMDb ID is present, using strict `imdbid` requests only for primary IMDb-first fetches; if the aggregate `all` indexer rejects the request, the app retries only direct indexers that advertise `imdbid` input support, and broader title text matching remains isolated in the separate `Title fallback` section.
 - Jackett Torznab XML error bodies such as `<error code="203" ...>` are now treated as failed requests, so unsupported TV `imdbid` searches trigger the intended retries instead of silently appearing as empty result sets.
 - If the configured TV indexers do not advertise input-side `imdbid` support at all, the app now keeps the failed IMDb-first attempts in the primary section and renders a separate broader title-fallback section below instead of pretending the fallback itself was an IMDb-constrained search.
 - Jackett timeout failures now include the concrete request label in the surfaced error, so the UI identifies which Torznab query variant timed out.
@@ -18,8 +18,13 @@
 - Torznab results now capture richer normalized metadata (category IDs, year, peers/leechers, grabs, volume factors) plus raw Torznab attrs for local filtering and future UI slices.
 - `/search` now keeps split `IMDb-first` and `Title fallback` sections while exposing fetched-vs-filtered counts and client-side local filter updates without extra Jackett calls.
 - `/search` now also supports a card/table result view toggle, 3-level hierarchical local sorting (for example published -> seeders -> title), and per-section filter-impact diagnostics that show per-value keep/drop counts plus blocker highlighting when filters produce an empty list.
+- `/search` now defaults to table view and can persist default view mode + 3-level sort preferences via `AppSettings` and `/api/search/preferences`, with save actions exposed directly in the result-view options panel.
+- `/search` now renders synchronized result-view options panels above both `IMDb-first` and `Title fallback` sections so users can adjust display/sorting from either section without scrolling.
+- `/search` now aligns local keyword UX with the rule form via quality include/exclude checkbox groups and an explicit `Filter by release year` checkbox.
 - `/search` filter-impact diagnostics now render explicit sentence separators and clearer "sole blocker vs other active blockers" wording, preventing merged text like `20260` / `2160p1` in copied plain-text output.
+- When `IMDb-first` fetched count is `0`, the primary summary now suppresses filter-impact diagnostics and keeps only query/request context for the empty primary section.
 - Jackett result parsing now derives `year` from the title when Torznab omits year attrs, keeping release-year filtering and Year column rendering consistent for common title formats like `(2026)`.
+- Jackett result parsing now also reads indexer labels from non-`attr` Torznab tags such as `<jackettindexer>`/`<indexer>`, and search tables now show `Unknown` instead of `Jackett` when indexer labels are absent.
 - `/search` any-of keyword input now supports grouped syntax via `|` separators (for example `uhd, 4k | hdr, hdr10`), and client-side local filtering + filter-impact rows now preserve group semantics.
 - Excluded-keyword matching now treats very short terms (`sd`, `ts`) as whole tokens instead of broad substrings, reducing false positives from hidden Torznab metadata values like `sdr` and URL fragments.
 - Local Jackett refinement now requires title-query alignment (so unrelated fallback titles are removed), and very short included terms such as `hdr` now use token-aware matching to prevent substring false positives from metadata values like `HDRezka`.
@@ -37,6 +42,7 @@
 - DB-driven phase-6 release QA matrix execution on 2026-03-09 is now complete with `15/15` passing scenarios and no `critical/high` findings; evidence is captured in `logs/qa/phase6-matrix-20260309T220744Z.{json,md}` and `docs/plans/phase-6-release-qa-plan.md`.
 - v0.1.0 release docs were prepared on 2026-03-10 (`CHANGELOG.md`, `ROADMAP.md`) and release gates were re-run successfully; phase-6 remains a v0.2.0 target slice.
 - Local annotated git tag `v0.1.0` was created on 2026-03-10 from the release-prep `main` commit; phase-6 remains queued for the v0.2.0 cycle.
+- Targeted IMDb-first regression coverage now passes for `tests/test_jackett.py` (`26 passed`) after the strict `imdbid`-only request update; Linux `.venv-linux` route-test execution through `fastapi.testclient.TestClient` currently hangs and requires environment follow-up before route-level rerun sign-off.
 - A repo-local `project-management` skill now exists under `.codex/skills/project-management` so in-progress phase validation sessions can follow a consistent status/plan closeout workflow.
 - A repo-local `qa-engineer` skill now exists under `.codex/skills/qa-engineer` so validation sessions can follow a consistent risk-map, evidence capture, and severity-first reporting workflow.
 - A repo-local `jackett-api-expert` skill now exists under `.codex/skills/jackett-api-expert` to guide Torznab capability-aware query design, fallback sequencing, and failure triage.
@@ -108,7 +114,8 @@ qBittorrent's built-in search UI is a flat text box. The current app already mod
 
 ## Validation checklist
 
-- Run targeted service and route tests for Jackett client behavior and search page rendering. Current status: passing in the repo `.venv` for `tests/test_jackett.py` and `tests/test_routes.py`.
+- Run targeted service and route tests for Jackett client behavior and search page rendering.
+- Current status: `tests/test_jackett.py` passes in Linux `.venv-linux` (`26 passed`), while `tests/test_routes.py` reruns are currently blocked in Linux `.venv-linux` by a `fastapi.testclient.TestClient` hang that needs environment triage.
 - Run the full pytest suite through `scripts/test.sh` or `scripts/test.bat`. Current status: passing in repo `.venv` and `.venv-linux`.
 - Run `scripts/check.sh` / `scripts/check.bat` before release sign-off. Current status: passing in Linux `.venv-linux`.
 - For Linux/WSL shells, bootstrap a native test interpreter using `docs/native-python-pytest.md` so `python3 -m pytest` is runnable without the Windows `.venv`.

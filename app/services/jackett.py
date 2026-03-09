@@ -1240,23 +1240,7 @@ class JackettClient:
             return []
 
         if payload.imdb_id_only:
-            imdb_lookup_id = _coerce_text(params.get("imdbid"))
-            if not imdb_lookup_id:
-                return []
-
-            fallback_variant: dict[str, object] = {
-                "apikey": self.api_key or "",
-                "t": _coerce_text(params.get("t")) or "search",
-                "imdbid": imdb_lookup_id,
-            }
-            categories = _torznab_categories_for_media_type(payload.media_type)
-            if categories:
-                fallback_variant["cat"] = ",".join(categories)
-            if query:
-                fallback_variant["q"] = query
-            if fallback_variant == params:
-                return []
-            return [fallback_variant]
+            return []
 
         fallback_variants: list[dict[str, object]] = []
         seen_variants = {
@@ -1320,7 +1304,7 @@ class JackettClient:
         last_timeout_error: JackettTimeoutError | None = None
 
         for indexer in indexers:
-            request_attempts = self._imdb_enforced_params_for_indexer(payload, query, search_mode, indexer)
+            request_attempts = self._imdb_enforced_params_for_indexer(payload, search_mode)
             if not request_attempts:
                 continue
             try:
@@ -1471,9 +1455,7 @@ class JackettClient:
     def _imdb_enforced_params_for_indexer(
         self,
         payload: JackettSearchRequest,
-        query: str,
         search_mode: str,
-        indexer: JackettIndexerCapability,
     ) -> list[dict[str, object]]:
         imdb_lookup_id = _torznab_imdb_lookup_id(payload.imdb_id)
         if not imdb_lookup_id:
@@ -1488,16 +1470,7 @@ class JackettClient:
         if categories:
             base_params["cat"] = ",".join(categories)
 
-        request_attempts: list[dict[str, object]] = []
-        if "q" in indexer.supported_params and query:
-            request_attempts.append(
-                {
-                    **base_params,
-                    "q": query,
-                }
-            )
-        request_attempts.append(base_params)
-        return request_attempts
+        return [base_params]
 
     def _parse_item(self, item: ET.Element) -> tuple[datetime | None, JackettSearchResult] | None:
         title = ""
@@ -1555,7 +1528,7 @@ class JackettClient:
                     imdb_id = _torznab_imdb_lookup_id(attr_value)
                 elif attr_name in {"infohash", "info_hash"}:
                     info_hash = attr_value or None
-                elif attr_name in {"jackettindexer", "indexer"}:
+                elif attr_name in {"jackettindexer", "indexer", "tracker", "trackername"}:
                     indexer = attr_value or None
                 elif attr_name in {"category", "categories", "cat"}:
                     for category_id in _extract_category_ids(attr_value):
@@ -1585,8 +1558,14 @@ class JackettClient:
                 ):
                     upload_volume_factor = _coerce_float(attr_value)
 
+            elif tag in {"jackettindexer", "indexer"} and not indexer:
+                indexer = text or None
+
         if not title or not link:
             return None
+
+        if peers is None and seeders is not None and leechers is not None:
+            peers = seeders + leechers
 
         year = _resolved_result_year(explicit_year=year, title=title)
         merge_key = _result_merge_key(

@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ request.url_for('static', path='app.css') }}" />
   </head>
   <body>
-    <div class="page-shell">
+    <div class="page-shell{% if shell_layout == 'wide' %} page-shell--wide{% endif %}">
       <header class="site-header">
         <div>
           <p class="eyebrow">Local control plane</p>
@@ -40,7 +40,7 @@
       </section>
       {% endif %}
 
-      <main class="content-card">
+      <main class="content-card{% if content_layout == 'wide' %} content-card--wide{% endif %}">
         {% block content %}{% endblock %}
       </main>
     </div>

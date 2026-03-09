@@ -26,6 +26,7 @@ from app.schemas import (
     JackettSearchRequest,
     MetadataLookupRequest,
     RuleFormPayload,
+    SearchViewPreferencesPayload,
     SettingsFormPayload,
 )
 from app.services.importer import Importer
@@ -187,6 +188,8 @@ def _render_rule_form(
         "metadata_lookup_disabled": settings.metadata_provider.value == "disabled",
         "message": None,
         "message_level": "error",
+        "shell_layout": "wide",
+        "content_layout": "wide",
     }
 
     connection = SettingsService.resolve_qb_connection(settings)
@@ -361,6 +364,8 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
         quality_profile_rules=settings.quality_profile_rules,
         saved_quality_profiles=settings.saved_quality_profiles,
         default_feed_urls=settings.default_feed_urls,
+        search_result_view_mode=settings.search_result_view_mode,
+        search_sort_criteria=settings.search_sort_criteria,
         default_quality_profile=settings.default_quality_profile,
     )
 
@@ -393,6 +398,24 @@ def jackett_search(
     except JackettClientError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     return JSONResponse(result.model_dump(mode="json"))
+
+
+@router.post("/search/preferences")
+def save_search_preferences(
+    payload: SearchViewPreferencesPayload,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    settings = SettingsService.get_or_create(session)
+    settings.search_result_view_mode = payload.view_mode
+    settings.search_sort_criteria = [item.model_dump(mode="json") for item in payload.sort_criteria]
+    session.add(settings)
+    session.commit()
+    return JSONResponse(
+        {
+            "view_mode": settings.search_result_view_mode,
+            "sort_criteria": list(settings.search_sort_criteria or []),
+        }
+    )
 
 
 @router.post("/feeds/refresh")

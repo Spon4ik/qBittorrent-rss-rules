@@ -151,6 +151,12 @@ class AppSettings(Base):
         default=dict,
     )
     default_feed_urls: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    search_result_view_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="table")
+    search_sort_criteria: Mapped[list[dict[str, str]]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
     default_quality_profile: Mapped[QualityProfile] = mapped_column(
         Enum(QualityProfile, name="default_quality_profile"),
         nullable=False,

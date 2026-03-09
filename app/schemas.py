@@ -13,6 +13,18 @@ IMDB_ID_RE = re.compile(r"^tt\d+$")
 YEAR_TOKEN_RE = re.compile(r"\b(\d{4})\b")
 KEYWORD_SPLIT_RE = re.compile(r"[\n,;]+")
 SEARCH_INDEXER_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+SEARCH_VIEW_MODE_OPTIONS = {"cards", "table"}
+SEARCH_SORT_FIELDS = {
+    "published_at",
+    "seeders",
+    "peers",
+    "leechers",
+    "grabs",
+    "size_bytes",
+    "year",
+    "indexer",
+    "title",
+}
 
 
 class FeedOption(BaseModel):
@@ -268,6 +280,58 @@ class JackettSearchRun(BaseModel):
     fallback_request_variants: list[str] = Field(default_factory=list)
     raw_fallback_results: list[JackettSearchResult] = Field(default_factory=list)
     fallback_results: list[JackettSearchResult] = Field(default_factory=list)
+
+
+class SearchSortPreference(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    field: str
+    direction: str = "asc"
+
+    @field_validator("field")
+    @classmethod
+    def validate_field(cls, value: str) -> str:
+        cleaned = value.strip()
+        if cleaned not in SEARCH_SORT_FIELDS:
+            raise ValueError("Unsupported sort field.")
+        return cleaned
+
+    @field_validator("direction")
+    @classmethod
+    def validate_direction(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if cleaned not in {"asc", "desc"}:
+            raise ValueError("Sort direction must be asc or desc.")
+        return cleaned
+
+
+class SearchViewPreferencesPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    view_mode: str = "table"
+    sort_criteria: list[SearchSortPreference] = Field(default_factory=list)
+
+    @field_validator("view_mode")
+    @classmethod
+    def validate_view_mode(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if cleaned not in SEARCH_VIEW_MODE_OPTIONS:
+            raise ValueError("View mode must be cards or table.")
+        return cleaned
+
+    @model_validator(mode="after")
+    def normalize_sort_criteria(self) -> SearchViewPreferencesPayload:
+        normalized: list[SearchSortPreference] = []
+        seen_fields: set[str] = set()
+        for item in self.sort_criteria:
+            if item.field in seen_fields:
+                continue
+            normalized.append(item)
+            seen_fields.add(item.field)
+            if len(normalized) >= 3:
+                break
+        self.sort_criteria = normalized or [SearchSortPreference(field="published_at", direction="desc")]
+        return self
 
 
 class RuleFormPayload(BaseModel):

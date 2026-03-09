@@ -136,7 +136,7 @@ def test_jackett_client_timeout_error_includes_request_context() -> None:
 
     message = str(exc_info.value)
     assert "Jackett request failed after 3 timeout attempts for" in message
-    assert 't=tvsearch q="American Classic" imdbid=tt17676654 cat=5000' in message
+    assert "t=tvsearch imdbid=tt17676654 cat=5000" in message
 
 
 def test_jackett_client_reports_timeout_for_single_broad_variant() -> None:
@@ -710,7 +710,7 @@ def test_jackett_client_keeps_imdb_match_when_title_text_differs() -> None:
     assert [item.title for item in result.results] == ["Крёстный отец 1972 UHD"]
 
 
-def test_jackett_client_retries_imdb_only_with_q_when_strict_match_is_empty() -> None:
+def test_jackett_client_uses_title_fallback_when_strict_imdb_match_is_empty() -> None:
     seen_requests: list[dict[str, str]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -725,27 +725,6 @@ def test_jackett_client_retries_imdb_only_with_q_when_strict_match_is_empty() ->
         }:
             return httpx.Response(200, text="<rss><channel /></rss>")
 
-        if params == {
-            "apikey": "secret",
-            "t": "tvsearch",
-            "cat": "5000",
-            "imdbid": "tt11379026",
-            "q": "Ghosts",
-        }:
-            return httpx.Response(
-                200,
-                text="""
-<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
-  <channel>
-    <item>
-      <title>Ghosts S03E01 1080p</title>
-      <guid>ghosts-guid</guid>
-      <link>magnet:?xt=urn:btih:GHOSTS123</link>
-    </item>
-  </channel>
-</rss>
-""",
-            )
         if params == {
             "apikey": "secret",
             "t": "tvsearch",
@@ -795,23 +774,13 @@ def test_jackett_client_retries_imdb_only_with_q_when_strict_match_is_empty() ->
             "apikey": "secret",
             "t": "tvsearch",
             "cat": "5000",
-            "imdbid": "tt11379026",
-            "q": "Ghosts",
-        },
-        {
-            "apikey": "secret",
-            "t": "tvsearch",
-            "cat": "5000",
             "q": "Ghosts",
         },
     ]
-    assert result.request_variants == [
-        "t=tvsearch imdbid=tt11379026 cat=5000",
-        't=tvsearch q="Ghosts" imdbid=tt11379026 cat=5000'
-    ]
-    assert [item.title for item in result.results] == ["Ghosts S03E01 1080p"]
+    assert result.request_variants == ["t=tvsearch imdbid=tt11379026 cat=5000"]
+    assert result.results == []
     assert result.fallback_request_variants == ['t=tvsearch q="Ghosts" cat=5000']
-    assert result.fallback_results == []
+    assert [item.title for item in result.fallback_results] == ["Ghosts S03E01 1080p"]
 
 
 def test_jackett_client_retries_series_imdb_only_with_title_after_bad_request() -> None:
@@ -831,12 +800,23 @@ def test_jackett_client_retries_series_imdb_only_with_title_after_bad_request() 
 
         if params == {
             "apikey": "secret",
-            "t": "tvsearch",
-            "cat": "5000",
-            "imdbid": "tt39781131",
-            "q": "Common Title",
+            "t": "indexers",
+            "configured": "true",
         }:
-            return httpx.Response(200, text="<rss><channel /></rss>")
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="plaintext">
+    <caps>
+      <searching>
+        <tv-search available="yes" supportedParams="q,season,ep" />
+      </searching>
+    </caps>
+  </indexer>
+</indexers>
+""",
+            )
 
         if params == {
             "apikey": "secret",
@@ -872,10 +852,8 @@ def test_jackett_client_retries_series_imdb_only_with_title_after_bad_request() 
         },
         {
             "apikey": "secret",
-            "t": "tvsearch",
-            "cat": "5000",
-            "imdbid": "tt39781131",
-            "q": "Common Title",
+            "t": "indexers",
+            "configured": "true",
         },
         {
             "apikey": "secret",
@@ -884,10 +862,7 @@ def test_jackett_client_retries_series_imdb_only_with_title_after_bad_request() 
             "q": "Common Title",
         },
     ]
-    assert result.request_variants == [
-        "t=tvsearch imdbid=tt39781131 cat=5000",
-        't=tvsearch q="Common Title" imdbid=tt39781131 cat=5000'
-    ]
+    assert result.request_variants == ["t=tvsearch imdbid=tt39781131 cat=5000"]
     assert result.results == []
     assert result.fallback_request_variants == [
         't=tvsearch q="Common Title" cat=5000'
@@ -952,7 +927,6 @@ def test_jackett_client_uses_direct_indexers_when_all_rejects_imdb_enforced_seri
             "t": "tvsearch",
             "cat": "5000",
             "imdbid": "tt17676654",
-            "q": "American Classic",
         }:
             return httpx.Response(
                 200,
@@ -1022,16 +996,6 @@ def test_jackett_client_uses_direct_indexers_when_all_rejects_imdb_enforced_seri
             "/api/v2.0/indexers/all/results/torznab/api",
             {
                 "apikey": "secret",
-                "t": "tvsearch",
-                "cat": "5000",
-                "imdbid": "tt17676654",
-                "q": "American Classic",
-            },
-        ),
-        (
-            "/api/v2.0/indexers/all/results/torznab/api",
-            {
-                "apikey": "secret",
                 "t": "indexers",
                 "configured": "true",
             },
@@ -1043,7 +1007,6 @@ def test_jackett_client_uses_direct_indexers_when_all_rejects_imdb_enforced_seri
                 "t": "tvsearch",
                 "cat": "5000",
                 "imdbid": "tt17676654",
-                "q": "American Classic",
             },
         ),
         (
@@ -1056,10 +1019,7 @@ def test_jackett_client_uses_direct_indexers_when_all_rejects_imdb_enforced_seri
             },
         ),
     ]
-    assert result.request_variants == [
-        "t=tvsearch imdbid=tt17676654 cat=5000",
-        't=tvsearch q="American Classic" imdbid=tt17676654 cat=5000'
-    ]
+    assert result.request_variants == ["t=tvsearch imdbid=tt17676654 cat=5000"]
     assert [item.title for item in result.results] == ["American Classic S01E01 1080p"]
     assert result.fallback_request_variants == [
         't=tvsearch q="American Classic" cat=5000'
@@ -1080,21 +1040,6 @@ def test_jackett_client_falls_back_to_broad_title_search_when_tv_indexers_do_not
             "t": "tvsearch",
             "cat": "5000",
             "imdbid": "tt17676654",
-        }:
-            return httpx.Response(
-                200,
-                text=(
-                    '<?xml version="1.0" encoding="UTF-8"?>'
-                    '<error code="203" description="Function Not Available: imdbid is not supported for TV search by this indexer" />'
-                ),
-            )
-
-        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
-            "apikey": "secret",
-            "t": "tvsearch",
-            "cat": "5000",
-            "imdbid": "tt17676654",
-            "q": "American Classic",
         }:
             return httpx.Response(
                 200,
@@ -1177,16 +1122,6 @@ def test_jackett_client_falls_back_to_broad_title_search_when_tv_indexers_do_not
             "/api/v2.0/indexers/all/results/torznab/api",
             {
                 "apikey": "secret",
-                "t": "tvsearch",
-                "cat": "5000",
-                "imdbid": "tt17676654",
-                "q": "American Classic",
-            },
-        ),
-        (
-            "/api/v2.0/indexers/all/results/torznab/api",
-            {
-                "apikey": "secret",
                 "t": "indexers",
                 "configured": "true",
             },
@@ -1201,10 +1136,7 @@ def test_jackett_client_falls_back_to_broad_title_search_when_tv_indexers_do_not
             },
         ),
     ]
-    assert result.request_variants == [
-        "t=tvsearch imdbid=tt17676654 cat=5000",
-        't=tvsearch q="American Classic" imdbid=tt17676654 cat=5000'
-    ]
+    assert result.request_variants == ["t=tvsearch imdbid=tt17676654 cat=5000"]
     assert result.results == []
     assert result.fallback_request_variants == [
         't=tvsearch q="American Classic" cat=5000'

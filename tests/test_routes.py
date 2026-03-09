@@ -161,6 +161,36 @@ def test_search_page_embeds_raw_cache_payload_for_local_refinement(app_client, m
     assert 'data-search-fetched-count="primary"' in response.text
 
 
+def test_search_page_uses_saved_result_view_defaults(app_client, db_session, monkeypatch) -> None:
+    settings = AppSettings(
+        id="default",
+        search_result_view_mode="cards",
+        search_sort_criteria=[
+            {"field": "seeders", "direction": "desc"},
+            {"field": "title", "direction": "asc"},
+        ],
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        return JackettSearchRun(query_variants=["Dune Part Two"], results=[])
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "Dune Part Two",
+            "media_type": "movie",
+        },
+    )
+
+    assert response.status_code == 200
+    assert 'data-default-view-mode="cards"' in response.text
+    assert '"field": "seeders"' in response.text
+
+
 def test_search_page_auto_enforces_imdb_and_renders_fallback_section(app_client, monkeypatch) -> None:
     def fake_search(self, payload):
         assert payload.query == "Ghosts"
@@ -540,6 +570,33 @@ def test_jackett_search_api_returns_results(app_client, monkeypatch) -> None:
     payload = response.json()
     assert payload["source_kind"] == "jackett_active_search"
     assert payload["results"][0]["title"] == "The Expanse S01"
+
+
+def test_save_search_preferences_api_persists_defaults(app_client, db_session) -> None:
+    response = app_client.post(
+        "/api/search/preferences",
+        json={
+            "view_mode": "cards",
+            "sort_criteria": [
+                {"field": "seeders", "direction": "desc"},
+                {"field": "title", "direction": "asc"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["view_mode"] == "cards"
+    assert response.json()["sort_criteria"] == [
+        {"field": "seeders", "direction": "desc"},
+        {"field": "title", "direction": "asc"},
+    ]
+    settings = db_session.get(AppSettings, "default")
+    assert settings is not None
+    assert settings.search_result_view_mode == "cards"
+    assert settings.search_sort_criteria == [
+        {"field": "seeders", "direction": "desc"},
+        {"field": "title", "direction": "asc"},
+    ]
 
 
 def test_taxonomy_page_renders_editor(app_client) -> None:

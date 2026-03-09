@@ -56,8 +56,24 @@
 - Manual `/search` query with grouped any-of keywords (`|`) and short tokens (`hdr`, `sd`, `ts`).
 - Manual `/search` non-Latin query check.
 
+## Execution Log (2026-03-09)
+
+- DB snapshot created: `logs/qa/qb_rules-20260309T220744Z.db`.
+- Previous debug log rotated: `logs/qa/search-debug-pre-20260309T220744Z.log`.
+- Matrix evidence recorded in `logs/qa/phase6-matrix-20260309T220744Z.json` and `logs/qa/phase6-matrix-20260309T220744Z.md`.
+- Matrix scope executed: 13 DB-backed rule scenarios and 2 direct `/search` regression scenarios (grouped any-of + short tokens, non-Latin query).
+- Matrix results: `15/15` pass, `0 critical`, `0 high`, `0 medium`, `0 low`.
+- For all 15 scenarios: `/search` returned HTTP `200`, no inline UI errors/warnings were shown, and one structured JSON debug line was appended per run in `logs/search-debug.log`.
+- Primary/fallback fetched-vs-filtered counters rendered when applicable, and `Use In New Rule` prefill payload validation passed for all result-bearing scenarios (12 cases).
+- Linux release-gate rerun also passed on 2026-03-09 via `source .venv-linux/bin/activate && ./scripts/check.sh` (`ruff check .`, `mypy app`, `pytest` with `117 passed`, `24 warnings`).
+
 ## Release Gate Decision
 
 - Ship: all matrix items pass and no `critical/high`.
 - Ship with mitigations: only `medium/low`, with explicit follow-up owners.
 - Do not ship: any reproducible relevance regression, IMDb-first correctness break, or rule-derivation defect.
+
+### Decision For This Run (2026-03-09)
+
+- Recommendation: **Ship** (no `critical`/`high` defects found in the DB-backed matrix or automated gates).
+- Follow-up (non-blocking): complete remaining manual browser UX validation listed in `docs/plans/current-status.md` for phase-4/phase-5 closeout and phase-6 interaction polish.

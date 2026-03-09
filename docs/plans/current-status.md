@@ -78,6 +78,8 @@
 - Targeted Jackett pytest coverage now passes in the project `.venv` for `tests/test_jackett.py` and `tests/test_routes.py`, including the new Torznab-parameter narrowing path and the fixed keyword-list validator.
 - The full pytest suite now passes in the project `.venv` (`95 passed`), including a fix for `RuleBuilder` default category rendering when `AppSettings()` has in-memory `None` template fields.
 - Release-validation reruns on 2026-03-09 now pass in both the Windows `.venv` and Linux `.venv-linux` (`117 passed`, `24 warnings`) for full-suite pytest, and `tests/test_jackett.py` + `tests/test_routes.py` targeted coverage passes (`63 passed`, `24 warnings`).
+- Executed the DB-driven phase-6 QA matrix on 2026-03-09 using live `data/qb_rules.db` and recorded artifacts at `logs/qa/phase6-matrix-20260309T220744Z.{json,md}` with `15/15` scenarios passing (`0 critical/high`) plus one structured `logs/search-debug.log` event per run.
+- Verified Linux release-gate wrappers on 2026-03-09 via `source .venv-linux/bin/activate && ./scripts/check.sh` (`ruff`, `mypy`, full pytest) with `117 passed`, `24 warnings`.
 - `scripts/test.sh` now defaults to `--capture=sys` when no capture mode is passed, fixing Linux/WSL wrapper failures from pytest capture teardown `FileNotFoundError` while preserving explicit user capture args such as `-s`.
 - Added `docs/native-python-pytest.md` with resumable Linux/WSL bootstrap steps for native `python3 -m pytest` usage, and added `.venv-linux/` to `.gitignore` for the Linux-native virtual environment path.
 - `scripts/test.sh` now also auto-detects `.venv-linux/bin/python` ahead of system Python, so Linux/WSL wrapper runs work without manual activation when the repo-local Linux venv exists.
@@ -101,7 +103,7 @@
 - Use the new `project-management` skill during remaining phase-5/phase-6 validation sessions to keep roadmap/plan/status artifacts synchronized at closeout.
 - Use the new `project-design-documentation-engineer` skill when drafting or updating project/design artifacts so status, phase plans, specs, and decisions stay aligned.
 - Use the new `versioning-manager` skill when choosing release version bumps or synchronizing version strings across code/docs before tagging.
-- Execute `docs/plans/phase-6-release-qa-plan.md` against current DB rule IDs and log findings by severity before phase-6 release sign-off.
+- Review `logs/qa/phase6-matrix-20260309T220744Z.md` and decide whether to tag/release now (`ship`) or hold for optional manual UX-only follow-ups.
 - Manually verify `/rules/new` and `/rules/{rule_id}` for `series -> music -> audiobook -> other` switching, the warning-and-clear prompt, provider filtering, and IMDb field visibility.
 - Manually verify metadata lookup population for OMDb title search plus MusicBrainz, OpenLibrary, and Google Books lookups.
 - Manually verify the new Rules-page header `Create Rule` action on desktop and mobile layouts.

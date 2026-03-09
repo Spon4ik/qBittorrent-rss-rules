@@ -34,6 +34,7 @@
 - 2026-03-09 reruns confirm targeted (`63 passed`) and full-suite (`117 passed`) pytest coverage still pass in the Windows `.venv`, and full-suite pytest also passes in Linux `.venv-linux`.
 - `scripts/test.sh` now defaults to `--capture=sys` when no capture mode is provided and auto-detects `.venv-linux/bin/python`, so Linux/WSL wrapper runs no longer require manual `-s` or explicit activation in the common path.
 - Branch-level static quality gates now pass in Linux `.venv-linux` (`ruff check .`, `mypy app`, and full pytest via `./scripts/check.sh`), so remaining release risk is primarily manual QA coverage.
+- DB-driven phase-6 release QA matrix execution on 2026-03-09 is now complete with `15/15` passing scenarios and no `critical/high` findings; evidence is captured in `logs/qa/phase6-matrix-20260309T220744Z.{json,md}` and `docs/plans/phase-6-release-qa-plan.md`.
 - A repo-local `project-management` skill now exists under `.codex/skills/project-management` so in-progress phase validation sessions can follow a consistent status/plan closeout workflow.
 - A repo-local `qa-engineer` skill now exists under `.codex/skills/qa-engineer` so validation sessions can follow a consistent risk-map, evidence capture, and severity-first reporting workflow.
 - A repo-local `jackett-api-expert` skill now exists under `.codex/skills/jackett-api-expert` to guide Torznab capability-aware query design, fallback sequencing, and failure triage.
@@ -110,6 +111,7 @@ qBittorrent's built-in search UI is a flat text box. The current app already mod
 - Run `scripts/check.sh` / `scripts/check.bat` before release sign-off. Current status: passing in Linux `.venv-linux`.
 - For Linux/WSL shells, bootstrap a native test interpreter using `docs/native-python-pytest.md` so `python3 -m pytest` is runnable without the Windows `.venv`.
 - Execute the DB-backed QA matrix in `docs/plans/phase-6-release-qa-plan.md` and record severity-ranked findings before phase-6 release sign-off.
+- Current status: completed on 2026-03-09 with `15/15` pass and no `critical/high`; see `logs/qa/phase6-matrix-20260309T220744Z.md`.
 - Manually verify `/search` for:
   - a plain title-only fetch with local keyword refinement
   - grouped any-of keyword refinement using `|` separators (for example `uhd, 4k | hdr, hdr10`) so each group is enforced independently

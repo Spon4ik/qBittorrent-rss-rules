@@ -1,0 +1,4 @@
+interface:
+  display_name: "Versioning Manager"
+  short_description: "Manage semver bumps and release version sync"
+  default_prompt: "Use $versioning-manager to choose the next version, sync version fields, and prepare release notes."

@@ -114,6 +114,53 @@ def test_search_page_prefills_new_rule_from_active_search(app_client, monkeypatc
     assert "must_contain_override=%28%3F%3A4k%7C2160p%29" in response.text
 
 
+def test_search_page_embeds_raw_cache_payload_for_local_refinement(app_client, monkeypatch) -> None:
+    def fake_search(self, payload):
+        return JackettSearchRun(
+            query_variants=["Dune Part Two"],
+            raw_results=[
+                JackettSearchResult(
+                    merge_key="hash:abc123",
+                    title="Dune Part Two 2160p",
+                    link="magnet:?xt=urn:btih:ABC123",
+                    indexer="rutracker",
+                    size_bytes=1073741824,
+                    size_label="1.0 GB",
+                    year="2024",
+                    category_ids=["2000"],
+                    text_surface="dune part two 2160p rutracker 2024 2000",
+                )
+            ],
+            results=[
+                JackettSearchResult(
+                    merge_key="hash:abc123",
+                    title="Dune Part Two 2160p",
+                    link="magnet:?xt=urn:btih:ABC123",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "Dune Part Two",
+            "media_type": "movie",
+        },
+    )
+
+    assert response.status_code == 200
+    assert 'id="search-run-cache"' in response.text
+    assert 'data-search-card="primary"' in response.text
+    assert 'data-search-row="primary"' in response.text
+    assert 'data-search-view-mode' in response.text
+    assert 'data-search-sort-field="1"' in response.text
+    assert 'data-filter-impact-list="primary"' in response.text
+    assert 'data-search-filtered-count="primary"' in response.text
+    assert 'data-search-fetched-count="primary"' in response.text
+
+
 def test_search_page_auto_enforces_imdb_and_renders_fallback_section(app_client, monkeypatch) -> None:
     def fake_search(self, payload):
         assert payload.query == "Ghosts"
@@ -159,6 +206,38 @@ def test_search_page_auto_enforces_imdb_and_renders_fallback_section(app_client,
     assert "Ghosts full hd" in response.text
     assert "Fallback Requests" in response.text
     assert "Ghosts S03E01 1080p" in response.text
+
+
+def test_search_page_parses_pipe_delimited_any_keyword_groups(app_client, monkeypatch) -> None:
+    def fake_search(self, payload):
+        assert payload.query == "The Rip"
+        assert payload.release_year == "2026"
+        assert payload.keywords_any_groups == [["uhd", "4k", "ultra hd"], ["hdr", "hdr10"]]
+        assert payload.keywords_any == ["uhd", "4k", "ultra hd", "hdr", "hdr10"]
+        return JackettSearchRun(
+            query_variants=["The Rip"],
+            results=[
+                JackettSearchResult(
+                    title="The Rip (2026) 4K HDR10",
+                    link="magnet:?xt=urn:btih:THERIP123",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "The Rip",
+            "media_type": "movie",
+            "release_year": "2026",
+            "keywords_any": "uhd, 4k, ultra hd | hdr, hdr10",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "The Rip (2026) 4K HDR10" in response.text
 
 
 def test_search_page_renders_search_warnings(app_client, monkeypatch) -> None:

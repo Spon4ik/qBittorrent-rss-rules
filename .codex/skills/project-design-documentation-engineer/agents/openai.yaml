@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project and Design Docs Engineer"
+  short_description: "Build project and design docs with resumable rigor"
+  default_prompt: "Use $project-design-documentation-engineer to draft or update project and design documentation for this task."

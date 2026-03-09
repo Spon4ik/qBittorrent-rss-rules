@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<div data-search-page data-search-query="{{ form_data.query }}">
 <section class="panel-head">
   <div>
     <p class="eyebrow">Search</p>
@@ -41,7 +42,7 @@
 </section>
 {% endif %}
 
-<form class="filter-grid" method="get" action="/search">
+<form class="filter-grid" method="get" action="/search" data-search-form>
   {% if source_rule %}
   <input type="hidden" name="rule_id" value="{{ source_rule.id }}" />
   {% endif %}
@@ -70,27 +71,51 @@
   <label>
     Release year
     <input type="text" name="release_year" value="{{ form_data.release_year }}" placeholder="2025" />
-    <span class="helper-text">Optional. Used for standard Jackett text search narrowing when an IMDb-first search is not active.</span>
+    <span class="helper-text">Local cached filter. No new Jackett request is needed when this changes.</span>
+  </label>
+  <label>
+    Min size (MB)
+    <input type="text" name="size_min_mb" value="{{ form_data.size_min_mb }}" placeholder="700" />
+    <span class="helper-text">Local cached filter.</span>
+  </label>
+  <label>
+    Max size (MB)
+    <input type="text" name="size_max_mb" value="{{ form_data.size_max_mb }}" placeholder="50000" />
+    <span class="helper-text">Local cached filter.</span>
   </label>
   <label class="full-span">
     Required keywords
     <input type="text" name="keywords_all" value="{{ form_data.keywords_all }}" placeholder="remux, 2026" />
-    <span class="helper-text">Every result title must include these terms after the search response is merged locally.</span>
+    <span class="helper-text">Local cached filter. Every result must include these terms in title or metadata text.</span>
   </label>
   <label class="full-span">
     Any-of keywords
     <input type="text" name="keywords_any" value="{{ form_data.keywords_any }}" placeholder="4k, 2160p" />
-    <span class="helper-text">Comma-separated synonyms. The app expands this into multiple Jackett searches, then merges duplicates.</span>
+    <span class="helper-text">Local cached filter. Use `|` to separate groups (example: `uhd, 4k | hdr, hdr10`); each group requires at least one match.</span>
   </label>
   <label class="full-span">
     Excluded keywords
     <input type="text" name="keywords_not" value="{{ form_data.keywords_not }}" placeholder="cam, 720p" />
-    <span class="helper-text">Results containing these terms in the title are filtered out locally.</span>
+    <span class="helper-text">Local cached filter. Matching results are hidden immediately.</span>
+  </label>
+  <label class="full-span">
+    Result indexers
+    <input type="text" name="filter_indexers" value="{{ form_data.filter_indexers }}" placeholder="rutracker, eztv" />
+    <span class="helper-text">Local cached filter by result indexer labels.</span>
+  </label>
+  <label class="full-span">
+    Result category IDs
+    <input type="text" name="filter_category_ids" value="{{ form_data.filter_category_ids }}" placeholder="5000, 5040" />
+    <span class="helper-text">Local cached filter by Torznab category IDs.</span>
   </label>
   <button type="submit">Search Jackett</button>
 </form>
 
 {% if search_run %}
+<script id="search-run-cache" type="application/json">
+{{ {"raw_results": search_run.raw_results, "raw_fallback_results": search_run.raw_fallback_results} | tojson }}
+</script>
+
 {% if search_run.warning_messages %}
 <section class="flash flash-warning">
   {% for message in search_run.warning_messages %}
@@ -98,10 +123,84 @@
   {% endfor %}
 </section>
 {% endif %}
-<section class="summary-strip">
+<section class="summary-strip search-controls" data-search-controls>
+  <label>
+    Result view
+    <select data-search-view-mode>
+      <option value="cards" selected>Cards</option>
+      <option value="table">Table</option>
+    </select>
+  </label>
+  <label>
+    Sort level 1
+    <select data-search-sort-field="1">
+      <option value="published_at" selected>Published time</option>
+      <option value="seeders">Seeders</option>
+      <option value="peers">Peers</option>
+      <option value="leechers">Leechers</option>
+      <option value="grabs">Grabs</option>
+      <option value="size_bytes">Size</option>
+      <option value="year">Year</option>
+      <option value="indexer">Indexer</option>
+      <option value="title">Title</option>
+    </select>
+  </label>
+  <label>
+    Direction 1
+    <select data-search-sort-dir="1">
+      <option value="desc" selected>Descending</option>
+      <option value="asc">Ascending</option>
+    </select>
+  </label>
+  <label>
+    Sort level 2
+    <select data-search-sort-field="2">
+      <option value="" selected>None</option>
+      <option value="published_at">Published time</option>
+      <option value="seeders">Seeders</option>
+      <option value="peers">Peers</option>
+      <option value="leechers">Leechers</option>
+      <option value="grabs">Grabs</option>
+      <option value="size_bytes">Size</option>
+      <option value="year">Year</option>
+      <option value="indexer">Indexer</option>
+      <option value="title">Title</option>
+    </select>
+  </label>
+  <label>
+    Direction 2
+    <select data-search-sort-dir="2">
+      <option value="desc">Descending</option>
+      <option value="asc" selected>Ascending</option>
+    </select>
+  </label>
+  <label>
+    Sort level 3
+    <select data-search-sort-field="3">
+      <option value="" selected>None</option>
+      <option value="published_at">Published time</option>
+      <option value="seeders">Seeders</option>
+      <option value="peers">Peers</option>
+      <option value="leechers">Leechers</option>
+      <option value="grabs">Grabs</option>
+      <option value="size_bytes">Size</option>
+      <option value="year">Year</option>
+      <option value="indexer">Indexer</option>
+      <option value="title">Title</option>
+    </select>
+  </label>
+  <label>
+    Direction 3
+    <select data-search-sort-dir="3">
+      <option value="desc">Descending</option>
+      <option value="asc" selected>Ascending</option>
+    </select>
+  </label>
+</section>
+<section class="summary-strip" data-search-summary="primary">
   <div>
     <p class="eyebrow">{{ search_run.primary_label }}</p>
-    <strong>{{ search_run.results|length }} result(s)</strong>
+    <strong><span data-search-filtered-count="primary">{{ search_run.results|length }}</span> filtered / <span data-search-fetched-count="primary">{{ search_run.raw_results|length }}</span> fetched</strong>
     <p class="helper-text">{{ search_run.rule_prefill_summary }}</p>
     {% if search_run.source_rule_name %}
     <p class="helper-text">Derived from rule: {{ search_run.source_rule_name }}</p>
@@ -114,33 +213,217 @@
     <p class="eyebrow">Requests used</p>
     <p class="helper-text">{{ (search_run.request_variants or search_run.query_variants) | join(' | ') }}</p>
   </div>
+  <div class="search-filter-impact">
+    <p class="eyebrow">Filter impact</p>
+    <p class="helper-text" data-filter-impact-empty="primary">No local filters are active.</p>
+    <ul class="filter-impact-list" data-filter-impact-list="primary"></ul>
+  </div>
 </section>
 
-  {% if not search_run.results %}
+{% if not search_run.raw_results %}
+<section class="empty-state">
+  {% if search_run.primary_label == "IMDb-first results" %}
+  <h3>No IMDb-first matches</h3>
+  <p>No results matched the primary IMDb-constrained search.</p>
+  {% else %}
+  <h3>No matches</h3>
+  <p>Jackett returned no results for this search.</p>
+  {% endif %}
+</section>
+{% else %}
+<section class="empty-state" data-search-empty="primary" {% if search_run.results %}hidden{% endif %}>
+  <h3>No filtered matches</h3>
+  <p>No fetched primary results match the current local filters.</p>
+</section>
+<section class="rule-grid" data-search-results="primary">
+  {% for item in search_run.raw_results %}
+  <article
+    class="rule-card"
+    data-search-card="primary"
+    data-title="{{ item.title }}"
+    data-text-surface="{{ item.text_surface or '' }}"
+    data-imdb-id="{{ item.imdb_id or '' }}"
+    data-indexer="{{ item.indexer or '' }}"
+    data-size-bytes="{{ item.size_bytes if item.size_bytes is not none else '' }}"
+    data-published-at="{{ item.published_at or '' }}"
+    data-year="{{ item.year or '' }}"
+    data-seeders="{{ item.seeders if item.seeders is not none else '' }}"
+    data-peers="{{ item.peers if item.peers is not none else '' }}"
+    data-leechers="{{ item.leechers if item.leechers is not none else '' }}"
+    data-grabs="{{ item.grabs if item.grabs is not none else '' }}"
+    data-category-ids="{{ (item.category_ids or []) | join(',') }}"
+    {% if not item.visible %}hidden{% endif %}
+  >
+    <div class="rule-card-top">
+      <div>
+        <p class="eyebrow">{{ item.indexer or 'Jackett' }}</p>
+        <h3>{{ item.title }}</h3>
+      </div>
+      <span class="status-chip status-ok">active</span>
+    </div>
+    <dl class="detail-list">
+      <div>
+        <dt>Source</dt>
+        <dd>Jackett active search</dd>
+      </div>
+      <div>
+        <dt>Size</dt>
+        <dd>{{ item.size_label or 'Unknown' }}</dd>
+      </div>
+      <div>
+        <dt>Published</dt>
+        <dd>{{ item.published_label or 'Unknown' }}</dd>
+      </div>
+      <div>
+        <dt>Year</dt>
+        <dd>{{ item.year or 'Unknown' }}</dd>
+      </div>
+      <div>
+        <dt>Categories</dt>
+        <dd>
+          {% if item.category_ids %}
+          {{ (item.category_ids or []) | join(', ') }}
+          {% else %}
+          Unknown
+          {% endif %}
+        </dd>
+      </div>
+    </dl>
+    <div class="card-actions">
+      <a class="button-link" href="{{ item.new_rule_href }}">Use In New Rule</a>
+      <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open Result</a>
+      {% if item.details_url %}
+      <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
+      {% endif %}
+    </div>
+  </article>
+  {% endfor %}
+</section>
+<section class="table-wrap search-table-wrap" data-search-table-wrap="primary" hidden>
+  <table class="search-table">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Indexer</th>
+        <th>Size</th>
+        <th>Published</th>
+        <th>Year</th>
+        <th>Seeders</th>
+        <th>Peers</th>
+        <th>Leechers</th>
+        <th>Grabs</th>
+        <th>Categories</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody data-search-table-body="primary">
+      {% for item in search_run.raw_results %}
+      <tr
+        data-search-row="primary"
+        data-title="{{ item.title }}"
+        data-text-surface="{{ item.text_surface or '' }}"
+        data-imdb-id="{{ item.imdb_id or '' }}"
+        data-indexer="{{ item.indexer or '' }}"
+        data-size-bytes="{{ item.size_bytes if item.size_bytes is not none else '' }}"
+        data-published-at="{{ item.published_at or '' }}"
+        data-year="{{ item.year or '' }}"
+        data-seeders="{{ item.seeders if item.seeders is not none else '' }}"
+        data-peers="{{ item.peers if item.peers is not none else '' }}"
+        data-leechers="{{ item.leechers if item.leechers is not none else '' }}"
+        data-grabs="{{ item.grabs if item.grabs is not none else '' }}"
+        data-category-ids="{{ (item.category_ids or []) | join(',') }}"
+        {% if not item.visible %}hidden{% endif %}
+      >
+        <td>{{ item.title }}</td>
+        <td>{{ item.indexer or 'Jackett' }}</td>
+        <td>{{ item.size_label or 'Unknown' }}</td>
+        <td>{{ item.published_label or 'Unknown' }}</td>
+        <td>{{ item.year or 'Unknown' }}</td>
+        <td>{{ item.seeders if item.seeders is not none else 'Unknown' }}</td>
+        <td>{{ item.peers if item.peers is not none else 'Unknown' }}</td>
+        <td>{{ item.leechers if item.leechers is not none else 'Unknown' }}</td>
+        <td>{{ item.grabs if item.grabs is not none else 'Unknown' }}</td>
+        <td>
+          {% if item.category_ids %}
+          {{ (item.category_ids or []) | join(', ') }}
+          {% else %}
+          Unknown
+          {% endif %}
+        </td>
+        <td>
+          <div class="search-row-actions">
+            <a class="button-link" href="{{ item.new_rule_href }}">Use In New Rule</a>
+            <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open</a>
+            {% if item.details_url %}
+            <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if search_run.fallback_request_variants or search_run.raw_fallback_results %}
+<section class="summary-strip" data-search-summary="fallback">
+  <div>
+    <p class="eyebrow">{{ search_run.fallback_label or 'Title fallback' }}</p>
+    <strong><span data-search-filtered-count="fallback">{{ search_run.fallback_results|length }}</span> filtered / <span data-search-fetched-count="fallback">{{ search_run.raw_fallback_results|length }}</span> fetched</strong>
+    <p class="helper-text">Fallback title queries run separately so broader text matches stay below the IMDb-first section.</p>
+  </div>
+  <div>
+    <p class="eyebrow">Fallback Requests</p>
+    <p class="helper-text">{{ search_run.fallback_request_variants | join(' | ') }}</p>
+  </div>
+  <div class="search-filter-impact">
+    <p class="eyebrow">Filter impact</p>
+    <p class="helper-text" data-filter-impact-empty="fallback">No local filters are active.</p>
+    <ul class="filter-impact-list" data-filter-impact-list="fallback"></ul>
+  </div>
+</section>
+
+  {% if not search_run.raw_fallback_results %}
   <section class="empty-state">
-    {% if search_run.primary_label == "IMDb-first results" %}
-    <h3>No IMDb-first matches</h3>
-    <p>No results matched the primary IMDb-constrained search.</p>
-    {% else %}
-    <h3>No matches</h3>
-    <p>Jackett returned no results for this search.</p>
-    {% endif %}
+    <h3>No fallback matches</h3>
+    <p>No results matched the title-based fallback search.</p>
   </section>
   {% else %}
-  <section class="rule-grid">
-    {% for item in search_run.results %}
-    <article class="rule-card">
+  <section class="empty-state" data-search-empty="fallback" {% if search_run.fallback_results %}hidden{% endif %}>
+    <h3>No filtered fallback matches</h3>
+    <p>No fetched fallback results match the current local filters.</p>
+  </section>
+  <section class="rule-grid" data-search-results="fallback">
+    {% for item in search_run.raw_fallback_results %}
+    <article
+      class="rule-card"
+      data-search-card="fallback"
+      data-title="{{ item.title }}"
+      data-text-surface="{{ item.text_surface or '' }}"
+      data-imdb-id="{{ item.imdb_id or '' }}"
+      data-indexer="{{ item.indexer or '' }}"
+      data-size-bytes="{{ item.size_bytes if item.size_bytes is not none else '' }}"
+      data-published-at="{{ item.published_at or '' }}"
+      data-year="{{ item.year or '' }}"
+      data-seeders="{{ item.seeders if item.seeders is not none else '' }}"
+      data-peers="{{ item.peers if item.peers is not none else '' }}"
+      data-leechers="{{ item.leechers if item.leechers is not none else '' }}"
+      data-grabs="{{ item.grabs if item.grabs is not none else '' }}"
+      data-category-ids="{{ (item.category_ids or []) | join(',') }}"
+      {% if not item.visible %}hidden{% endif %}
+    >
       <div class="rule-card-top">
         <div>
           <p class="eyebrow">{{ item.indexer or 'Jackett' }}</p>
           <h3>{{ item.title }}</h3>
         </div>
-        <span class="status-chip status-ok">active</span>
+        <span class="status-chip status-ok">fallback</span>
       </div>
       <dl class="detail-list">
         <div>
           <dt>Source</dt>
-          <dd>Jackett active search</dd>
+          <dd>Jackett title fallback</dd>
         </div>
         <div>
           <dt>Size</dt>
@@ -149,6 +432,20 @@
         <div>
           <dt>Published</dt>
           <dd>{{ item.published_label or 'Unknown' }}</dd>
+        </div>
+        <div>
+          <dt>Year</dt>
+          <dd>{{ item.year or 'Unknown' }}</dd>
+        </div>
+        <div>
+          <dt>Categories</dt>
+          <dd>
+            {% if item.category_ids %}
+            {{ (item.category_ids or []) | join(', ') }}
+            {% else %}
+            Unknown
+            {% endif %}
+          </dd>
         </div>
       </dl>
       <div class="card-actions">
@@ -161,62 +458,73 @@
     </article>
     {% endfor %}
   </section>
-  {% endif %}
-
-  {% if search_run.fallback_request_variants %}
-  <section class="summary-strip">
-    <div>
-      <p class="eyebrow">{{ search_run.fallback_label }}</p>
-      <strong>{{ search_run.fallback_results|length }} result(s)</strong>
-      <p class="helper-text">Fallback title queries run separately so broader text matches stay below the IMDb-first section.</p>
-    </div>
-    <div>
-      <p class="eyebrow">Fallback Requests</p>
-      <p class="helper-text">{{ search_run.fallback_request_variants | join(' | ') }}</p>
-    </div>
+  <section class="table-wrap search-table-wrap" data-search-table-wrap="fallback" hidden>
+    <table class="search-table">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Indexer</th>
+          <th>Size</th>
+          <th>Published</th>
+          <th>Year</th>
+          <th>Seeders</th>
+          <th>Peers</th>
+          <th>Leechers</th>
+          <th>Grabs</th>
+          <th>Categories</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody data-search-table-body="fallback">
+        {% for item in search_run.raw_fallback_results %}
+        <tr
+          data-search-row="fallback"
+          data-title="{{ item.title }}"
+          data-text-surface="{{ item.text_surface or '' }}"
+          data-imdb-id="{{ item.imdb_id or '' }}"
+          data-indexer="{{ item.indexer or '' }}"
+          data-size-bytes="{{ item.size_bytes if item.size_bytes is not none else '' }}"
+          data-published-at="{{ item.published_at or '' }}"
+          data-year="{{ item.year or '' }}"
+          data-seeders="{{ item.seeders if item.seeders is not none else '' }}"
+          data-peers="{{ item.peers if item.peers is not none else '' }}"
+          data-leechers="{{ item.leechers if item.leechers is not none else '' }}"
+          data-grabs="{{ item.grabs if item.grabs is not none else '' }}"
+          data-category-ids="{{ (item.category_ids or []) | join(',') }}"
+          {% if not item.visible %}hidden{% endif %}
+        >
+          <td>{{ item.title }}</td>
+          <td>{{ item.indexer or 'Jackett' }}</td>
+          <td>{{ item.size_label or 'Unknown' }}</td>
+          <td>{{ item.published_label or 'Unknown' }}</td>
+          <td>{{ item.year or 'Unknown' }}</td>
+          <td>{{ item.seeders if item.seeders is not none else 'Unknown' }}</td>
+          <td>{{ item.peers if item.peers is not none else 'Unknown' }}</td>
+          <td>{{ item.leechers if item.leechers is not none else 'Unknown' }}</td>
+          <td>{{ item.grabs if item.grabs is not none else 'Unknown' }}</td>
+          <td>
+            {% if item.category_ids %}
+            {{ (item.category_ids or []) | join(', ') }}
+            {% else %}
+            Unknown
+            {% endif %}
+          </td>
+          <td>
+            <div class="search-row-actions">
+              <a class="button-link" href="{{ item.new_rule_href }}">Use In New Rule</a>
+              <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open</a>
+              {% if item.details_url %}
+              <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </section>
-
-    {% if not search_run.fallback_results %}
-    <section class="empty-state">
-      <h3>No fallback matches</h3>
-      <p>No results matched the title-based fallback search.</p>
-    </section>
-    {% else %}
-    <section class="rule-grid">
-      {% for item in search_run.fallback_results %}
-      <article class="rule-card">
-        <div class="rule-card-top">
-          <div>
-            <p class="eyebrow">{{ item.indexer or 'Jackett' }}</p>
-            <h3>{{ item.title }}</h3>
-          </div>
-          <span class="status-chip status-ok">fallback</span>
-        </div>
-        <dl class="detail-list">
-          <div>
-            <dt>Source</dt>
-            <dd>Jackett title fallback</dd>
-          </div>
-          <div>
-            <dt>Size</dt>
-            <dd>{{ item.size_label or 'Unknown' }}</dd>
-          </div>
-          <div>
-            <dt>Published</dt>
-            <dd>{{ item.published_label or 'Unknown' }}</dd>
-          </div>
-        </dl>
-        <div class="card-actions">
-          <a class="button-link" href="{{ item.new_rule_href }}">Use In New Rule</a>
-          <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open Result</a>
-          {% if item.details_url %}
-          <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
-          {% endif %}
-        </div>
-      </article>
-      {% endfor %}
-    </section>
-    {% endif %}
   {% endif %}
 {% endif %}
+{% endif %}
+</div>
 {% endblock %}

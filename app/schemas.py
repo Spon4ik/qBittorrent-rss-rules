@@ -86,6 +86,10 @@ class JackettSearchRequest(BaseModel):
     keywords_any: list[str] = Field(default_factory=list)
     keywords_any_groups: list[list[str]] = Field(default_factory=list)
     keywords_not: list[str] = Field(default_factory=list)
+    size_min_mb: float | None = Field(default=None, ge=0)
+    size_max_mb: float | None = Field(default=None, ge=0)
+    filter_indexers: list[str] = Field(default_factory=list)
+    filter_category_ids: list[str] = Field(default_factory=list)
 
     @field_validator("indexer")
     @classmethod
@@ -155,6 +159,38 @@ class JackettSearchRequest(BaseModel):
                 normalized_groups.append(normalized_group)
         return normalized_groups
 
+    @field_validator("size_min_mb", "size_max_mb", mode="before")
+    @classmethod
+    def normalize_size_bounds(cls, value: float | int | str | None) -> float | None:
+        if value in {None, ""}:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            raise ValueError("Size filters must be numeric.")
+
+    @field_validator("filter_indexers", mode="before")
+    @classmethod
+    def normalize_filter_indexers(cls, value: list[str] | str | None) -> list[str]:
+        return cls.normalize_keyword_list(value)
+
+    @field_validator("filter_category_ids", mode="before")
+    @classmethod
+    def normalize_filter_category_ids(cls, value: list[str] | str | None) -> list[str]:
+        raw_items = cls.normalize_keyword_list(value)
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in raw_items:
+            candidate = item.strip()
+            if not candidate:
+                continue
+            key = candidate.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(candidate)
+        return cleaned
+
     @model_validator(mode="after")
     def validate_request(self) -> "JackettSearchRequest":
         if self.indexer != "all" and not SEARCH_INDEXER_RE.match(self.indexer):
@@ -186,10 +222,17 @@ class JackettSearchRequest(BaseModel):
             raise ValueError("Use up to 8 optional keyword groups per search.")
         if len(self.keywords_not) > 48:
             raise ValueError("Use up to 48 excluded keywords per search.")
+        if (
+            self.size_min_mb is not None
+            and self.size_max_mb is not None
+            and self.size_min_mb > self.size_max_mb
+        ):
+            raise ValueError("Minimum size cannot be greater than maximum size.")
         return self
 
 
 class JackettSearchResult(BaseModel):
+    merge_key: str = ""
     title: str
     link: str
     indexer: str | None = None
@@ -199,7 +242,18 @@ class JackettSearchResult(BaseModel):
     imdb_id: str | None = None
     size_bytes: int | None = None
     size_label: str | None = None
+    published_at: str | None = None
     published_label: str | None = None
+    category_ids: list[str] = Field(default_factory=list)
+    year: str | None = None
+    seeders: int | None = None
+    peers: int | None = None
+    leechers: int | None = None
+    grabs: int | None = None
+    download_volume_factor: float | None = None
+    upload_volume_factor: float | None = None
+    torznab_attrs: dict[str, str] = Field(default_factory=dict)
+    text_surface: str = ""
     source_kind: SearchSourceKind = SearchSourceKind.JACKETT_ACTIVE_SEARCH
 
 
@@ -209,8 +263,10 @@ class JackettSearchRun(BaseModel):
     query_variants: list[str] = Field(default_factory=list)
     request_variants: list[str] = Field(default_factory=list)
     warning_messages: list[str] = Field(default_factory=list)
+    raw_results: list[JackettSearchResult] = Field(default_factory=list)
     results: list[JackettSearchResult] = Field(default_factory=list)
     fallback_request_variants: list[str] = Field(default_factory=list)
+    raw_fallback_results: list[JackettSearchResult] = Field(default_factory=list)
     fallback_results: list[JackettSearchResult] = Field(default_factory=list)
 
 

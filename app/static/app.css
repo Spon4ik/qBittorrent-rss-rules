@@ -388,6 +388,15 @@ textarea {
   background: rgba(255, 252, 246, 0.72);
 }
 
+.search-controls {
+  align-items: flex-end;
+}
+
+.search-controls label {
+  flex: 1 1 11rem;
+  min-width: 11rem;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -402,6 +411,83 @@ td {
   padding: 0.75rem;
   text-align: left;
   border-bottom: 1px solid rgba(19, 37, 40, 0.08);
+}
+
+.search-table-wrap {
+  margin-top: 1rem;
+  padding: 0.65rem;
+  border: 1px solid rgba(19, 37, 40, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 252, 246, 0.84);
+}
+
+.search-table th {
+  white-space: nowrap;
+  font-size: 0.85rem;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.search-table td {
+  vertical-align: top;
+}
+
+.search-row-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.search-row-actions .button-link {
+  min-height: 34px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+.search-filter-impact {
+  flex: 1 1 18rem;
+  min-width: 16rem;
+}
+
+.filter-impact-list {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.filter-impact-item {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(19, 37, 40, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 252, 246, 0.76);
+}
+
+.filter-impact-item.blocker {
+  border-color: rgba(141, 47, 47, 0.55);
+  background: rgba(141, 47, 47, 0.08);
+}
+
+.filter-impact-label {
+  display: block;
+  font-weight: 700;
+}
+
+.filter-impact-metrics,
+.filter-impact-blocker-note {
+  display: block;
+  line-height: 1.35;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.filter-impact-blocker-note {
+  color: var(--danger);
+  font-weight: 700;
 }
 
 details {

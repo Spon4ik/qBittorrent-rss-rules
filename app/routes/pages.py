@@ -46,6 +46,7 @@ from app.services.settings_service import SettingsService
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
+SEARCH_FILTER_SPLIT_RE = re.compile(r"[\n,;]+")
 
 
 def _base_context(request: Request, page_title: str) -> dict[str, object]:
@@ -139,6 +140,43 @@ def _optional_keyword_group_regex(keyword_groups: list[list[str]]) -> str:
         if fragment:
             lines.append(f"(?:{fragment})")
     return "\n".join(lines)
+
+
+def _parse_search_filter_terms(value: str | None) -> list[str]:
+    parts = SEARCH_FILTER_SPLIT_RE.split(str(value or ""))
+    terms: list[str] = []
+    seen: set[str] = set()
+    for raw_part in parts:
+        candidate = raw_part.strip()
+        if not candidate:
+            continue
+        key = candidate.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        terms.append(candidate)
+    return terms
+
+
+def _parse_keywords_any_groups(value: str | None) -> list[list[str]]:
+    cleaned = str(value or "").strip()
+    if not cleaned or "|" not in cleaned:
+        return []
+    groups: list[list[str]] = []
+    for raw_group in cleaned.split("|"):
+        normalized_group = _parse_search_filter_terms(raw_group)
+        if normalized_group:
+            groups.append(normalized_group)
+    return groups
+
+
+def _format_keywords_any_groups(keyword_groups: list[list[str]]) -> str:
+    segments: list[str] = []
+    for group in keyword_groups:
+        normalized_group = _parse_search_filter_terms(", ".join(group))
+        if normalized_group:
+            segments.append(", ".join(normalized_group))
+    return " | ".join(segments)
 
 
 def _rule_search_title(rule: Rule) -> str:
@@ -248,6 +286,10 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
         "keywords_all": request.query_params.get("keywords_all", "").strip(),
         "keywords_any": request.query_params.get("keywords_any", "").strip(),
         "keywords_not": request.query_params.get("keywords_not", "").strip(),
+        "size_min_mb": request.query_params.get("size_min_mb", "").strip(),
+        "size_max_mb": request.query_params.get("size_max_mb", "").strip(),
+        "filter_indexers": request.query_params.get("filter_indexers", "").strip(),
+        "filter_category_ids": request.query_params.get("filter_category_ids", "").strip(),
     }
     errors: list[str] = []
     search_run: dict[str, object] | None = None
@@ -343,8 +385,15 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "imdb_id": payload_from_rule.imdb_id or "",
                         "release_year": payload_from_rule.release_year or "",
                         "keywords_all": ", ".join(payload_from_rule.keywords_all),
-                        "keywords_any": ", ".join(payload_from_rule.keywords_any),
+                        "keywords_any": (
+                            _format_keywords_any_groups(payload_from_rule.keywords_any_groups)
+                            or ", ".join(payload_from_rule.keywords_any)
+                        ),
                         "keywords_not": ", ".join(payload_from_rule.keywords_not),
+                        "size_min_mb": "",
+                        "size_max_mb": "",
+                        "filter_indexers": "",
+                        "filter_category_ids": "",
                     }
                 )
 
@@ -360,7 +409,12 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "release_year": form_data["release_year"],
                         "keywords_all": form_data["keywords_all"],
                         "keywords_any": form_data["keywords_any"],
+                        "keywords_any_groups": _parse_keywords_any_groups(form_data["keywords_any"]),
                         "keywords_not": form_data["keywords_not"],
+                        "size_min_mb": form_data["size_min_mb"],
+                        "size_max_mb": form_data["size_max_mb"],
+                        "filter_indexers": form_data["filter_indexers"],
+                        "filter_category_ids": form_data["filter_category_ids"],
                     }
                 )
             except ValidationError as exc:
@@ -389,6 +443,21 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                 if keyword_fragment:
                     rule_prefill["must_contain_override"] = keyword_fragment
                 new_rule_href = f"/rules/new?{urlencode(rule_prefill)}"
+
+                def _result_key(item: object) -> str:
+                    merge_key = str(getattr(item, "merge_key", "") or "").strip()
+                    if merge_key:
+                        return merge_key
+                    info_hash = str(getattr(item, "info_hash", "") or "").strip().casefold()
+                    guid = str(getattr(item, "guid", "") or "").strip().casefold()
+                    title = str(getattr(item, "title", "") or "").strip().casefold()
+                    size_bytes = getattr(item, "size_bytes", None)
+                    return f"{info_hash}|{guid}|{title}|{size_bytes}"
+
+                raw_primary = list(result.raw_results or result.results)
+                raw_fallback = list(result.raw_fallback_results or result.fallback_results)
+                visible_primary_keys = {_result_key(item) for item in result.results}
+                visible_fallback_keys = {_result_key(item) for item in result.fallback_results}
                 summary_parts = ["Title"]
                 if active_payload.imdb_id_only:
                     summary_parts.append("IMDb-enforced Jackett lookup")
@@ -412,12 +481,28 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         else ("Saved rule search" if source_rule else "Jackett active search")
                     ),
                     "fallback_label": "Title fallback" if result.fallback_request_variants else "",
+                    "raw_results": [
+                        {
+                            **item.model_dump(mode="json"),
+                            "new_rule_href": new_rule_href,
+                            "visible": _result_key(item) in visible_primary_keys,
+                        }
+                        for item in raw_primary
+                    ],
                     "results": [
                         {
                             **item.model_dump(mode="json"),
                             "new_rule_href": new_rule_href,
                         }
                         for item in result.results
+                    ],
+                    "raw_fallback_results": [
+                        {
+                            **item.model_dump(mode="json"),
+                            "new_rule_href": new_rule_href,
+                            "visible": _result_key(item) in visible_fallback_keys,
+                        }
+                        for item in raw_fallback
                     ],
                     "fallback_results": [
                         {

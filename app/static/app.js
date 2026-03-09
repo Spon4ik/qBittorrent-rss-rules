@@ -304,6 +304,733 @@ function derivePattern(form, qualityPatternMap) {
   return pattern;
 }
 
+const SEARCH_WORD_CHAR_RE = (() => {
+  try {
+    return new RegExp("[\\p{L}\\p{N}]", "u");
+  } catch {
+    return /[a-z0-9]/u;
+  }
+})();
+
+function normalizeSearchText(value) {
+  const lowered = String(value || "").toLocaleLowerCase();
+  let normalized = "";
+  for (const char of lowered) {
+    normalized += SEARCH_WORD_CHAR_RE.test(char) ? char : " ";
+  }
+  return normalized.replace(/\s+/gu, " ").trim();
+}
+
+function parseSearchFilterList(value) {
+  const parts = String(value || "").split(/[\n,;]+/u);
+  const items = [];
+  const seen = new Set();
+  for (const rawPart of parts) {
+    const candidate = rawPart.trim();
+    if (!candidate) {
+      continue;
+    }
+    const key = candidate.toLocaleLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    items.push(candidate);
+  }
+  return items;
+}
+
+function parseSearchAnyKeywordGroups(value) {
+  const cleaned = String(value || "").trim();
+  if (!cleaned) {
+    return [];
+  }
+  const groupSegments = cleaned.includes("|") ? cleaned.split("|") : [cleaned];
+  const groups = [];
+  for (const segment of groupSegments) {
+    const terms = parseSearchFilterList(segment);
+    if (terms.length > 0) {
+      groups.push(terms);
+    }
+  }
+  return groups;
+}
+
+function parseSearchMb(value) {
+  const cleaned = String(value || "").trim();
+  if (!cleaned) {
+    return null;
+  }
+  const numeric = Number(cleaned);
+  if (!Number.isFinite(numeric) || numeric < 0) {
+    return null;
+  }
+  return numeric;
+}
+
+function normalizeSearchImdbId(value) {
+  const cleaned = String(value || "").trim().toLocaleLowerCase();
+  if (!cleaned) {
+    return "";
+  }
+  if (/^\d+$/u.test(cleaned)) {
+    return `tt${cleaned}`;
+  }
+  if (/^tt\d+$/u.test(cleaned)) {
+    return cleaned;
+  }
+  return "";
+}
+
+function initSearchPage(container) {
+  const form = container.querySelector("[data-search-form]");
+  if (!form) {
+    return;
+  }
+
+  const queryInput = form.querySelector('input[name="query"]');
+  const imdbIdInput = form.querySelector('input[name="imdb_id"]');
+  const releaseYearInput = form.querySelector('input[name="release_year"]');
+  const keywordsAllInput = form.querySelector('input[name="keywords_all"]');
+  const keywordsAnyInput = form.querySelector('input[name="keywords_any"]');
+  const keywordsNotInput = form.querySelector('input[name="keywords_not"]');
+  const sizeMinInput = form.querySelector('input[name="size_min_mb"]');
+  const sizeMaxInput = form.querySelector('input[name="size_max_mb"]');
+  const filterIndexersInput = form.querySelector('input[name="filter_indexers"]');
+  const filterCategoryIdsInput = form.querySelector('input[name="filter_category_ids"]');
+  const viewModeSelect = container.querySelector("[data-search-view-mode]");
+  const sortFieldInputs = [1, 2, 3]
+    .map((level) => container.querySelector(`[data-search-sort-field="${level}"]`))
+    .filter(Boolean);
+  const sortDirectionInputs = [1, 2, 3]
+    .map((level) => container.querySelector(`[data-search-sort-dir="${level}"]`))
+    .filter(Boolean);
+  const searchQueryLabel = String(container.dataset.searchQuery || queryInput?.value || "").trim();
+  const searchQuery = normalizeSearchText(searchQueryLabel);
+  const searchImdbId = normalizeSearchImdbId(imdbIdInput?.value || "");
+
+  const parseOptionalNumber = (value) => {
+    const cleaned = String(value ?? "").trim();
+    if (!cleaned) {
+      return null;
+    }
+    const numeric = Number(cleaned);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    return numeric;
+  };
+
+  const parseIsoDateMs = (value) => {
+    const cleaned = String(value || "").trim();
+    if (!cleaned) {
+      return null;
+    }
+    const timestamp = Date.parse(cleaned);
+    if (!Number.isFinite(timestamp)) {
+      return null;
+    }
+    return timestamp;
+  };
+
+  const emptyFilters = () => ({
+    query: "",
+    imdbId: searchImdbId,
+    releaseYear: "",
+    keywordsAll: [],
+    keywordsAnyGroups: [],
+    keywordsNot: [],
+    sizeMinMb: null,
+    sizeMaxMb: null,
+    indexers: [],
+    categories: [],
+  });
+
+  const cloneFilters = (filters) => ({
+    query: filters.query,
+    imdbId: filters.imdbId,
+    releaseYear: filters.releaseYear,
+    keywordsAll: [...filters.keywordsAll],
+    keywordsAnyGroups: filters.keywordsAnyGroups.map((group) => [...group]),
+    keywordsNot: [...filters.keywordsNot],
+    sizeMinMb: filters.sizeMinMb,
+    sizeMaxMb: filters.sizeMaxMb,
+    indexers: [...filters.indexers],
+    categories: [...filters.categories],
+  });
+
+  const getActiveFilters = () => ({
+    query: searchQuery,
+    imdbId: searchImdbId,
+    releaseYear: normalizeReleaseYear(releaseYearInput?.value || ""),
+    keywordsAll: parseSearchFilterList(keywordsAllInput?.value || ""),
+    keywordsAnyGroups: parseSearchAnyKeywordGroups(keywordsAnyInput?.value || ""),
+    keywordsNot: parseSearchFilterList(keywordsNotInput?.value || ""),
+    sizeMinMb: parseSearchMb(sizeMinInput?.value || ""),
+    sizeMaxMb: parseSearchMb(sizeMaxInput?.value || ""),
+    indexers: parseSearchFilterList(filterIndexersInput?.value || "").map((item) => item.toLocaleLowerCase()),
+    categories: parseSearchFilterList(filterCategoryIdsInput?.value || "").map((item) => item.toLocaleLowerCase()),
+  });
+
+  const buildFilterValues = (filters) => {
+    const values = [];
+    if (filters.query) {
+      values.push({
+        kind: "query",
+        label: `Title query: ${searchQueryLabel || filters.query}`,
+        value: filters.query,
+      });
+    }
+    if (filters.releaseYear) {
+      values.push({
+        kind: "release_year",
+        label: `Release year = ${filters.releaseYear}`,
+        value: filters.releaseYear,
+      });
+    }
+    for (const keyword of filters.keywordsAll) {
+      values.push({
+        kind: "keywords_all",
+        label: `Required keyword: ${keyword}`,
+        value: keyword,
+        matchKey: normalizeSearchText(keyword),
+      });
+    }
+    for (const [groupIndex, group] of filters.keywordsAnyGroups.entries()) {
+      const groupLabel = group.join(" | ");
+      const groupMatchKey = group.map((item) => normalizeSearchText(item)).filter(Boolean).join("||");
+      values.push({
+        kind: "keywords_any_group",
+        label: `Any-of group ${groupIndex + 1}: ${groupLabel}`,
+        value: [...group],
+        matchKey: groupMatchKey,
+      });
+    }
+    for (const keyword of filters.keywordsNot) {
+      values.push({
+        kind: "keywords_not",
+        label: `Excluded keyword: ${keyword}`,
+        value: keyword,
+        matchKey: normalizeSearchText(keyword),
+      });
+    }
+    if (filters.sizeMinMb !== null) {
+      values.push({
+        kind: "size_min_mb",
+        label: `Minimum size >= ${filters.sizeMinMb} MB`,
+        value: filters.sizeMinMb,
+      });
+    }
+    if (filters.sizeMaxMb !== null) {
+      values.push({
+        kind: "size_max_mb",
+        label: `Maximum size <= ${filters.sizeMaxMb} MB`,
+        value: filters.sizeMaxMb,
+      });
+    }
+    for (const indexer of filters.indexers) {
+      values.push({
+        kind: "filter_indexer",
+        label: `Indexer = ${indexer}`,
+        value: indexer,
+      });
+    }
+    for (const categoryId of filters.categories) {
+      values.push({
+        kind: "filter_category",
+        label: `Category = ${categoryId}`,
+        value: categoryId,
+      });
+    }
+    return values;
+  };
+
+  const filtersWithOnlyValue = (filterValue) => {
+    const filters = emptyFilters();
+    if (filterValue.kind === "query") {
+      filters.query = filterValue.value;
+    } else if (filterValue.kind === "release_year") {
+      filters.releaseYear = filterValue.value;
+    } else if (filterValue.kind === "keywords_all") {
+      filters.keywordsAll = [filterValue.value];
+    } else if (filterValue.kind === "keywords_any_group") {
+      filters.keywordsAnyGroups = [[...filterValue.value]];
+    } else if (filterValue.kind === "keywords_not") {
+      filters.keywordsNot = [filterValue.value];
+    } else if (filterValue.kind === "size_min_mb") {
+      filters.sizeMinMb = filterValue.value;
+    } else if (filterValue.kind === "size_max_mb") {
+      filters.sizeMaxMb = filterValue.value;
+    } else if (filterValue.kind === "filter_indexer") {
+      filters.indexers = [filterValue.value];
+    } else if (filterValue.kind === "filter_category") {
+      filters.categories = [filterValue.value];
+    }
+    return filters;
+  };
+
+  const filtersWithoutValue = (filters, filterValue) => {
+    const next = cloneFilters(filters);
+    if (filterValue.kind === "query") {
+      next.query = "";
+    } else if (filterValue.kind === "release_year") {
+      next.releaseYear = "";
+    } else if (filterValue.kind === "keywords_all") {
+      next.keywordsAll = next.keywordsAll.filter((item) => normalizeSearchText(item) !== filterValue.matchKey);
+    } else if (filterValue.kind === "keywords_any_group") {
+      next.keywordsAnyGroups = next.keywordsAnyGroups.filter(
+        (group) => group.map((item) => normalizeSearchText(item)).filter(Boolean).join("||") !== filterValue.matchKey
+      );
+    } else if (filterValue.kind === "keywords_not") {
+      next.keywordsNot = next.keywordsNot.filter((item) => normalizeSearchText(item) !== filterValue.matchKey);
+    } else if (filterValue.kind === "size_min_mb") {
+      next.sizeMinMb = null;
+    } else if (filterValue.kind === "size_max_mb") {
+      next.sizeMaxMb = null;
+    } else if (filterValue.kind === "filter_indexer") {
+      next.indexers = next.indexers.filter((item) => item !== filterValue.value);
+    } else if (filterValue.kind === "filter_category") {
+      next.categories = next.categories.filter((item) => item !== filterValue.value);
+    }
+    return next;
+  };
+
+  const matchesStructuredKeywordToken = (textSurface, normalizedTerm) => {
+    const tokens = textSurface.split(" ").filter(Boolean);
+    const seasonEpisodeMatch = normalizedTerm.match(/^s0*(\d{1,2})e0*(\d{1,3})$/u);
+    if (seasonEpisodeMatch) {
+      const season = Number(seasonEpisodeMatch[1]);
+      const episode = Number(seasonEpisodeMatch[2]);
+      const variants = [
+        `s${season}e${episode}`,
+        `s${String(season).padStart(2, "0")}e${episode}`,
+        `s${season}e${String(episode).padStart(2, "0")}`,
+        `s${String(season).padStart(2, "0")}e${String(episode).padStart(2, "0")}`,
+      ];
+      return tokens.some((token) => variants.includes(token));
+    }
+    const seasonMatch = normalizedTerm.match(/^s0*(\d{1,2})$/u);
+    if (seasonMatch) {
+      const season = Number(seasonMatch[1]);
+      const variants = [`s${season}`, `s${String(season).padStart(2, "0")}`];
+      return tokens.some((token) => {
+        if (variants.includes(token)) {
+          return true;
+        }
+        return variants.some((variant) => {
+          if (!token.startsWith(`${variant}e`) || token.length <= variant.length + 1) {
+            return false;
+          }
+          const suffix = token.slice(variant.length + 1);
+          return /^\d+$/u.test(suffix);
+        });
+      });
+    }
+    const episodeMatch = normalizedTerm.match(/^e0*(\d{1,3})$/u);
+    if (episodeMatch) {
+      const episode = Number(episodeMatch[1]);
+      const variants = [`e${episode}`, `e${String(episode).padStart(2, "0")}`];
+      return tokens.some((token) => {
+        if (variants.includes(token)) {
+          return true;
+        }
+        if (!token.startsWith("s") || token.indexOf("e", 1) === -1) {
+          return false;
+        }
+        const eIndex = token.indexOf("e", 1);
+        const seasonToken = token.slice(1, eIndex);
+        const episodeToken = token.slice(eIndex + 1);
+        if (!/^\d+$/u.test(seasonToken) || !/^\d+$/u.test(episodeToken)) {
+          return false;
+        }
+        return Number(episodeToken) === episode;
+      });
+    }
+    return false;
+  };
+
+  const containsTerm = (textSurface, term) => {
+    const normalizedTerm = normalizeSearchText(term);
+    if (!normalizedTerm) {
+      return false;
+    }
+    if (matchesStructuredKeywordToken(textSurface, normalizedTerm)) {
+      return true;
+    }
+    if (!normalizedTerm.includes(" ") && normalizedTerm.length <= 3) {
+      const paddedSurface = ` ${textSurface} `;
+      return paddedSurface.includes(` ${normalizedTerm} `);
+    }
+    return textSurface.includes(normalizedTerm);
+  };
+
+  const containsExcludedTerm = (textSurface, term) => {
+    const normalizedTerm = normalizeSearchText(term);
+    if (!normalizedTerm) {
+      return false;
+    }
+    if (!normalizedTerm.includes(" ") && normalizedTerm.length <= 2) {
+      const paddedSurface = ` ${textSurface} `;
+      return paddedSurface.includes(` ${normalizedTerm} `);
+    }
+    return textSurface.includes(normalizedTerm);
+  };
+
+  const matchesQuery = (titleSurface, normalizedQuery, entryImdbId, normalizedImdbId) => {
+    if (normalizedImdbId && entryImdbId && entryImdbId === normalizedImdbId) {
+      return true;
+    }
+    if (!normalizedQuery) {
+      return true;
+    }
+    if (titleSurface.includes(normalizedQuery)) {
+      return true;
+    }
+    const queryTerms = normalizedQuery.split(" ").filter(Boolean);
+    if (queryTerms.length === 0) {
+      return true;
+    }
+    const titleTerms = new Set(titleSurface.split(" ").filter(Boolean));
+    return queryTerms.every((term) => titleTerms.has(term));
+  };
+
+  const entryMatchesFilters = (entry, filters) => {
+    if (!matchesQuery(entry.titleSurface, filters.query, entry.imdbId, filters.imdbId)) {
+      return false;
+    }
+
+    for (const keyword of filters.keywordsAll) {
+      if (!containsTerm(entry.textSurface, keyword)) {
+        return false;
+      }
+    }
+
+    for (const group of filters.keywordsAnyGroups) {
+      if (!group.some((keyword) => containsTerm(entry.textSurface, keyword))) {
+        return false;
+      }
+    }
+
+    for (const keyword of filters.keywordsNot) {
+      if (containsExcludedTerm(entry.textSurface, keyword)) {
+        return false;
+      }
+    }
+
+    if (filters.releaseYear) {
+      if (!entry.year || entry.year !== filters.releaseYear) {
+        return false;
+      }
+    }
+
+    if (filters.sizeMinMb !== null || filters.sizeMaxMb !== null) {
+      if (entry.sizeBytes === null) {
+        return false;
+      }
+      const sizeMb = entry.sizeBytes / (1024 * 1024);
+      if (filters.sizeMinMb !== null && sizeMb < filters.sizeMinMb) {
+        return false;
+      }
+      if (filters.sizeMaxMb !== null && sizeMb > filters.sizeMaxMb) {
+        return false;
+      }
+    }
+
+    if (filters.indexers.length > 0) {
+      if (!entry.indexer || !filters.indexers.includes(entry.indexer)) {
+        return false;
+      }
+    }
+
+    if (filters.categories.length > 0) {
+      if (entry.categories.length === 0 || !entry.categories.some((item) => filters.categories.includes(item))) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const getSortCriteria = () => {
+    const criteria = [];
+    for (const level of [1, 2, 3]) {
+      const fieldInput = container.querySelector(`[data-search-sort-field="${level}"]`);
+      const directionInput = container.querySelector(`[data-search-sort-dir="${level}"]`);
+      const field = String(fieldInput?.value || "").trim();
+      if (!field) {
+        continue;
+      }
+      const direction = String(directionInput?.value || "asc").toLocaleLowerCase() === "desc"
+        ? "desc"
+        : "asc";
+      criteria.push({ field, direction });
+    }
+    return criteria;
+  };
+
+  const compareEntries = (left, right, criteria) => {
+    const compareValue = (field) => {
+      if (field === "size_bytes") {
+        return { type: "number", left: left.sizeBytes, right: right.sizeBytes };
+      }
+      if (field === "published_at") {
+        return { type: "number", left: left.publishedAtMs, right: right.publishedAtMs };
+      }
+      if (field === "year") {
+        return {
+          type: "number",
+          left: parseOptionalNumber(left.year),
+          right: parseOptionalNumber(right.year),
+        };
+      }
+      if (field === "seeders") {
+        return { type: "number", left: left.seeders, right: right.seeders };
+      }
+      if (field === "peers") {
+        return { type: "number", left: left.peers, right: right.peers };
+      }
+      if (field === "leechers") {
+        return { type: "number", left: left.leechers, right: right.leechers };
+      }
+      if (field === "grabs") {
+        return { type: "number", left: left.grabs, right: right.grabs };
+      }
+      if (field === "indexer") {
+        return { type: "string", left: left.indexer || "", right: right.indexer || "" };
+      }
+      return { type: "string", left: left.title || "", right: right.title || "" };
+    };
+
+    for (const criterion of criteria) {
+      const compared = compareValue(criterion.field);
+      const leftMissing = compared.left === null || compared.left === "";
+      const rightMissing = compared.right === null || compared.right === "";
+      if (leftMissing && rightMissing) {
+        continue;
+      }
+      if (leftMissing) {
+        return 1;
+      }
+      if (rightMissing) {
+        return -1;
+      }
+
+      let result = 0;
+      if (compared.type === "number") {
+        result = compared.left < compared.right ? -1 : (compared.left > compared.right ? 1 : 0);
+      } else {
+        result = String(compared.left).localeCompare(String(compared.right), undefined, { sensitivity: "base" });
+      }
+      if (result !== 0) {
+        return criterion.direction === "desc" ? -result : result;
+      }
+    }
+
+    return left.originalIndex - right.originalIndex;
+  };
+
+  const sections = ["primary", "fallback"];
+  const sectionState = Object.fromEntries(
+    sections.map((section) => {
+      const cardContainer = container.querySelector(`[data-search-results="${section}"]`);
+      const cards = Array.from(container.querySelectorAll(`[data-search-card="${section}"]`));
+      const tableWrap = container.querySelector(`[data-search-table-wrap="${section}"]`);
+      const tableBody = container.querySelector(`[data-search-table-body="${section}"]`);
+      const rows = Array.from(container.querySelectorAll(`[data-search-row="${section}"]`));
+      const entries = cards.map((card, index) => ({
+        originalIndex: index,
+        card,
+        row: rows[index] || null,
+        title: String(card.dataset.title || "").trim(),
+        titleSurface: normalizeSearchText(card.dataset.title || ""),
+        textSurface: normalizeSearchText(card.dataset.textSurface || ""),
+        imdbId: normalizeSearchImdbId(card.dataset.imdbId || ""),
+        indexer: String(card.dataset.indexer || "").trim().toLocaleLowerCase(),
+        sizeBytes: parseOptionalNumber(card.dataset.sizeBytes),
+        publishedAtMs: parseIsoDateMs(card.dataset.publishedAt),
+        year: normalizeReleaseYear(card.dataset.year || card.dataset.title || ""),
+        seeders: parseOptionalNumber(card.dataset.seeders),
+        peers: parseOptionalNumber(card.dataset.peers),
+        leechers: parseOptionalNumber(card.dataset.leechers),
+        grabs: parseOptionalNumber(card.dataset.grabs),
+        categories: parseSearchFilterList(card.dataset.categoryIds || "").map((item) => item.toLocaleLowerCase()),
+      }));
+
+      return [
+        section,
+        {
+          entries,
+          cardContainer,
+          tableWrap,
+          tableBody,
+          filteredCountElement: container.querySelector(`[data-search-filtered-count="${section}"]`),
+          fetchedCountElement: container.querySelector(`[data-search-fetched-count="${section}"]`),
+          emptyState: container.querySelector(`[data-search-empty="${section}"]`),
+          filterImpactList: container.querySelector(`[data-filter-impact-list="${section}"]`),
+          filterImpactEmpty: container.querySelector(`[data-filter-impact-empty="${section}"]`),
+        },
+      ];
+    })
+  );
+
+  const applyViewMode = () => {
+    const tableMode = (viewModeSelect?.value || "cards") === "table";
+    for (const section of sections) {
+      const state = sectionState[section];
+      if (!state) {
+        continue;
+      }
+      if (state.cardContainer) {
+        state.cardContainer.hidden = tableMode;
+      }
+      if (state.tableWrap) {
+        state.tableWrap.hidden = !tableMode;
+      }
+    }
+  };
+
+  const renderFilterImpact = (section, filters, visibleCount) => {
+    const state = sectionState[section];
+    if (!state || !state.filterImpactList || !state.filterImpactEmpty) {
+      return;
+    }
+    const values = buildFilterValues(filters);
+    state.filterImpactList.innerHTML = "";
+    if (values.length === 0) {
+      state.filterImpactEmpty.hidden = false;
+      return;
+    }
+    state.filterImpactEmpty.hidden = true;
+
+    const total = state.entries.length;
+    const emptyResultSet = total > 0 && visibleCount === 0;
+    const formatResultCount = (count) => `${count} result${count === 1 ? "" : "s"}`;
+    for (const filterValue of values) {
+      const onlyFilters = filtersWithOnlyValue(filterValue);
+      let onlyRemainCount = 0;
+      for (const entry of state.entries) {
+        if (entryMatchesFilters(entry, onlyFilters)) {
+          onlyRemainCount += 1;
+        }
+      }
+      const onlyFilteredOutCount = total - onlyRemainCount;
+      let withoutThisCount = 0;
+      let isBlocker = false;
+
+      if (emptyResultSet) {
+        const withoutThisFilters = filtersWithoutValue(filters, filterValue);
+        for (const entry of state.entries) {
+          if (entryMatchesFilters(entry, withoutThisFilters)) {
+            withoutThisCount += 1;
+          }
+        }
+        isBlocker = withoutThisCount > 0;
+      }
+
+      const item = document.createElement("li");
+      item.className = "filter-impact-item";
+      if (isBlocker) {
+        item.classList.add("blocker");
+      }
+
+      const label = document.createElement("span");
+      label.className = "filter-impact-label";
+      label.textContent = `${filterValue.label}.`;
+
+      const metrics = document.createElement("span");
+      metrics.className = "filter-impact-metrics";
+      metrics.textContent = `If applied alone: ${onlyRemainCount} remain; ${onlyFilteredOutCount} filtered out.`;
+
+      item.append(label, metrics);
+
+      if (emptyResultSet) {
+        const blockerNote = document.createElement("span");
+        blockerNote.className = "filter-impact-blocker-note";
+        blockerNote.textContent = isBlocker
+          ? `Blocks current list: removing this value would leave ${formatResultCount(withoutThisCount)}.`
+          : "Not the only blocker: removing this value still leaves 0 results because other active filters also block matches.";
+        item.appendChild(blockerNote);
+      }
+
+      state.filterImpactList.appendChild(item);
+    }
+  };
+
+  const applyFiltersForSection = (section, filters, sortCriteria) => {
+    const state = sectionState[section];
+    if (!state) {
+      return;
+    }
+
+    const sortedEntries = [...state.entries].sort((left, right) => compareEntries(left, right, sortCriteria));
+    if (state.cardContainer) {
+      for (const entry of sortedEntries) {
+        state.cardContainer.appendChild(entry.card);
+      }
+    }
+    if (state.tableBody) {
+      for (const entry of sortedEntries) {
+        if (entry.row) {
+          state.tableBody.appendChild(entry.row);
+        }
+      }
+    }
+
+    let visibleCount = 0;
+    for (const entry of sortedEntries) {
+      const visible = entryMatchesFilters(entry, filters);
+      entry.card.hidden = !visible;
+      if (entry.row) {
+        entry.row.hidden = !visible;
+      }
+      if (visible) {
+        visibleCount += 1;
+      }
+    }
+
+    if (state.filteredCountElement) {
+      state.filteredCountElement.textContent = String(visibleCount);
+    }
+    if (state.fetchedCountElement) {
+      state.fetchedCountElement.textContent = String(state.entries.length);
+    }
+    if (state.emptyState) {
+      state.emptyState.hidden = visibleCount > 0;
+    }
+
+    renderFilterImpact(section, filters, visibleCount);
+  };
+
+  const applyLocalFilters = () => {
+    const filters = getActiveFilters();
+    const sortCriteria = getSortCriteria();
+    applyViewMode();
+    applyFiltersForSection("primary", filters, sortCriteria);
+    applyFiltersForSection("fallback", filters, sortCriteria);
+  };
+
+  const localFilterInputs = [
+    releaseYearInput,
+    keywordsAllInput,
+    keywordsAnyInput,
+    keywordsNotInput,
+    sizeMinInput,
+    sizeMaxInput,
+    filterIndexersInput,
+    filterCategoryIdsInput,
+    viewModeSelect,
+    ...sortFieldInputs,
+    ...sortDirectionInputs,
+  ].filter(Boolean);
+
+  for (const input of localFilterInputs) {
+    input.addEventListener("input", applyLocalFilters);
+    input.addEventListener("change", applyLocalFilters);
+  }
+
+  applyLocalFilters();
+}
+
 function initRuleForm(form) {
   const qualityOptions = parseJsonData(form.dataset.qualityOptions, []);
   const qualityPatternMap = buildQualityPatternMap(qualityOptions);
@@ -881,6 +1608,11 @@ function initSettingsForm(form) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  const searchPage = document.querySelector("[data-search-page]");
+  if (searchPage) {
+    initSearchPage(searchPage);
+  }
+
   const ruleForm = document.querySelector("[data-rule-form]");
   if (ruleForm) {
     initRuleForm(ruleForm);

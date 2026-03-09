@@ -11,6 +11,8 @@
 - Added a repo-local `jackett-api-expert` Codex skill under `.codex/skills/jackett-api-expert` with capability-aware Torznab query strategy and fallback/triage references.
 - Added a repo-local `qa-engineer` Codex skill under `.codex/skills/qa-engineer` with a risk-based QA workflow plus reusable test-plan and bug-report templates.
 - Added a repo-local `project-management` Codex skill under `.codex/skills/project-management` with reusable templates for current-status updates, active phase updates, and risk/decision logging.
+- Added a repo-local `project-design-documentation-engineer` Codex skill under `.codex/skills/project-design-documentation-engineer` with workflow guidance and templates for synchronized project plans, design specs, ADRs, QA plans, and resumable handoffs.
+- Added a repo-local `versioning-manager` Codex skill under `.codex/skills/versioning-manager` with SemVer bump guidance, cross-file version sync workflow, and release-prep verification checklists.
 - Built-in `At Least UHD` filter profile can now be overwritten without duplicating the preset in the profile selector.
 - Repo-local resumability instructions now live in `AGENTS.md`.
 - Phase planning docs now live under `docs/plans/`.
@@ -56,6 +58,23 @@
 - Jackett timeout errors now include the actual Torznab request summary (for example `t=search q="American Classic" cat=5000`), so UI errors expose which search variant hung instead of only saying `timed out`.
 - Timed-out Jackett request variants now degrade per variant instead of aborting the full search immediately: the client can fall through to that variant's safer fallback params (such as dropping `year`) and, when later variants still succeed, the page returns partial results plus an inline warning for the skipped timeout.
 - Jackett search requests now retry transient timeout failures before surfacing an error to the UI.
+- Jackett standard searches now run a single broad remote fetch (title/media/indexer scope) and apply keyword/year/size/indexer/category filtering locally against cached results instead of expanding remote keyword variants.
+- IMDb-first searches now always execute a separate broad title fallback fetch pass (split section), even when primary IMDb-constrained results are present.
+- Jackett result normalization now captures richer Torznab metadata (`published_at`, `category_ids`, `year`, `seeders`, `peers`, `leechers`, `grabs`, `download_volume_factor`, `upload_volume_factor`) plus raw `torznab_attrs` for future local filtering slices.
+- `/search` now renders fetched-versus-filtered counts for both primary and fallback sections, embeds raw result pools in page JSON, and applies local filter edits interactively in the browser without calling Jackett again.
+- `/search` now includes a card/table toggle, 3-level hierarchical local sorting controls, and per-section filter-impact diagnostics showing each active filter value's standalone keep/drop counts plus blocker highlighting when the filtered list is empty.
+- `/search` filter-impact rows now render explicit sentence separators and clearer blocker messaging, fixing merged plain-text output like `Release year = 20260 ...` / `2160p1 ...` and clarifying when other active filters are still the reason results stay at zero.
+- Jackett search result normalization now falls back to title-derived year extraction when Torznab omits year attrs, so `release_year` local filtering and the rendered Year column stay aligned for titles like `The Rip (2026) ...`.
+- `/search` now accepts grouped any-of keyword syntax using `|` between groups (for example `uhd, 4k | hdr, hdr10`), and local filtering plus filter-impact diagnostics enforce group semantics instead of flattening all variants into one bucket.
+- Short excluded keywords such as `sd` / `ts` now use token-level matching instead of broad substring matching, preventing false positives from hidden Torznab metadata text like `sdr` or URL fragments.
+- Jackett local filtering now enforces title-query matching (so unrelated titles no longer survive fallback refinement), and short included keywords such as `hdr` now use token-level matching to avoid substring false positives from metadata text like `HDRezka`.
+- Title/query local matching now supports non-Latin text (for example Cyrillic titles), so Unicode-heavy libraries are filtered correctly instead of bypassing query checks.
+- IMDb-first local filtering now preserves localized titles when the result IMDb ID matches the requested IMDb ID exactly, even if title text differs from the query language.
+- Saved-rule derivation now treats legacy sentinel overrides like literal `None`/`null` as empty optional text instead of converting them into required keyword filters.
+- Required/any keyword matching now treats season and episode shorthand tokens as equivalent variants (`s3` ~= `s03`, `e7` ~= `e07`, `s3e1` ~= `s03e01`) so local filtering no longer drops obvious season hits.
+- Jackett active search now appends per-run debug summaries (query/filter inputs plus raw/filtered counts) to `logs/search-debug.log` and includes local drop-reason counts at debug level to make refinement feedback loops easier.
+- Added regression coverage for title-derived release-year matching, title-query local filtering, short included/excluded token matching, and pipe-delimited any-of keyword groups in `tests/test_jackett.py` and `tests/test_routes.py`.
+- Added a DB-driven phase-6 release QA matrix plan at `docs/plans/phase-6-release-qa-plan.md` covering multilingual titles, IMDb-first localized titles, regex-derived rules, and legacy imported rule edge cases.
 - Targeted Jackett pytest coverage now passes in the project `.venv` for `tests/test_jackett.py` and `tests/test_routes.py`, including the new Torznab-parameter narrowing path and the fixed keyword-list validator.
 - The full pytest suite now passes in the project `.venv` (`95 passed`), including a fix for `RuleBuilder` default category rendering when `AppSettings()` has in-memory `None` template fields.
 - Added initial service and route coverage for the Jackett client, search page, and settings persistence.
@@ -66,6 +85,7 @@
 - The repo-local Windows `.venv` now has the required test dependencies and can run the full suite, but the default Linux `python3` in this shell still does not have `pytest`.
 - Phase 4 validation and closeout are still pending as a separate follow-up even though the Phase 5 code landed.
 - Phase 6 is now in an initial implementation state with pytest coverage passing; manual browser checks are still pending.
+- The current shell still cannot run project pytest directly (`python3 -m pytest` missing, `.venv/Scripts/python.exe` fails in WSL), so this slice has static checks only until a runnable test interpreter is available in this environment.
 
 ## Next actions
 
@@ -73,13 +93,27 @@
 - Use the new `jackett-api-expert` skill for phase-6 Jackett iterations that touch Torznab params, capability probing, or fallback/error behavior.
 - Use the new `qa-engineer` skill for remaining phase-5 and phase-6 manual validation passes to keep findings severity-ranked and reproducible.
 - Use the new `project-management` skill during remaining phase-5/phase-6 validation sessions to keep roadmap/plan/status artifacts synchronized at closeout.
+- Use the new `project-design-documentation-engineer` skill when drafting or updating project/design artifacts so status, phase plans, specs, and decisions stay aligned.
+- Use the new `versioning-manager` skill when choosing release version bumps or synchronizing version strings across code/docs before tagging.
+- Execute `docs/plans/phase-6-release-qa-plan.md` against current DB rule IDs and log findings by severity before phase-6 release sign-off.
 - Manually verify `/rules/new` and `/rules/{rule_id}` for `series -> music -> audiobook -> other` switching, the warning-and-clear prompt, provider filtering, and IMDb field visibility.
 - Manually verify metadata lookup population for OMDb title search plus MusicBrainz, OpenLibrary, and Google Books lookups.
 - Manually verify the new Rules-page header `Create Rule` action on desktop and mobile layouts.
 - Close out Phase 4 and Phase 5 after environment-level validation, then decide whether any remaining provider-specific UX polish should become a follow-up slice.
 - Manually verify `/search` for title-only search, optional-keyword search (`4k, 2160p`), and the `Use In New Rule` handoff.
+- Manually verify `/search` interactive local filtering over cached results for `release_year`, `size_min_mb` / `size_max_mb`, `filter_indexers`, and `filter_category_ids` without triggering a new Jackett request.
+- Manually verify `/search` grouped any-of keyword syntax (`group A | group B`) so each group behaves as an independent required any-of section in both card and table views.
+- Manually verify `/search` release-year filtering for trackers that omit Torznab year attrs but include year in the title (for example `(2026)`), and confirm filter-impact counts now match visible results.
+- Manually verify required/any keyword season shorthand (`s3`, `e7`, `s3e1`) against zero-padded title tokens (`s03`, `e07`, `s03e01`) in both primary and fallback sections.
+- Manually verify `/search` query/title alignment so unrelated fallback titles no longer appear in filtered results when they do not contain the search title terms.
+- Manually verify short included tokens (`hdr`) only match explicit tokens and no longer pass due to metadata-substring noise (for example `HDRezka`).
+- Manually verify short excluded tokens (`sd`, `ts`) only block explicit tokens and no longer hide results due to `sdr`/metadata-substring false positives.
+- Manually verify `logs/search-debug.log` output for Jackett search debug summaries and debug-level drop-reason diagnostics during filter tuning sessions.
+- Manually verify `/search` card/table toggle and 3-level hierarchical sort controls while active local filters remain network-free.
+- Manually verify `/search` filter-impact diagnostics for both non-empty and empty-result states, including blocker highlighting when removing one active value restores results.
 - Manually verify `/rules/{rule_id}/search` for saved movie/series rules with `IMDb ID` and `Release year` populated and confirm the same search still works while returning more precise Jackett matches.
 - Manually verify `/rules/{rule_id}/search` for a movie or series rule with `IMDb ID` populated and confirm the page now shows an `IMDb-first results` section with strict `imdbid`, `q + imdbid`, and optional direct-indexer retries, plus a separate `Title fallback` section when the primary IMDb-constrained search returns no matches.
+- Manually verify `/rules/{rule_id}/search` for a rule that returns IMDb-first matches and confirm the page still performs and displays a separate title-fallback fetch section with fetched/filtered counts.
 - Manually verify `/rules/{rule_id}/search` for regex-heavy legacy rules that exceed structured-term limits and confirm the title-only fallback warning renders instead of a server error.
 - Manually verify `/rules/{rule_id}/search` for regex-heavy rules that now hit reduced-keyword fallback and confirm the inherited terms remain useful.
 - Manually verify `/rules/{rule_id}/search` for imported or legacy rules with unusually long saved titles and confirm the search still runs with a clamped title-only fallback when needed.

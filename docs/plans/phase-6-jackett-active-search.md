@@ -14,12 +14,29 @@
 - If the configured TV indexers do not advertise input-side `imdbid` support at all, the app now keeps the failed IMDb-first attempts in the primary section and renders a separate broader title-fallback section below instead of pretending the fallback itself was an IMDb-constrained search.
 - Jackett timeout failures now include the concrete request label in the surfaced error, so the UI identifies which Torznab query variant timed out.
 - Timed-out Jackett variants now degrade at the variant level: the client can retry that same variant's fallback params (for example, dropping `year`) and, if other expanded variants still succeed, return partial results with an inline warning instead of failing the entire search run.
+- The search strategy now uses a high-recall hybrid flow: IMDb-first remote fetch when available, plus an always-run broad title fallback fetch, then local refinement over cached result pools.
+- Torznab results now capture richer normalized metadata (category IDs, year, peers/leechers, grabs, volume factors) plus raw Torznab attrs for local filtering and future UI slices.
+- `/search` now keeps split `IMDb-first` and `Title fallback` sections while exposing fetched-vs-filtered counts and client-side local filter updates without extra Jackett calls.
+- `/search` now also supports a card/table result view toggle, 3-level hierarchical local sorting (for example published -> seeders -> title), and per-section filter-impact diagnostics that show per-value keep/drop counts plus blocker highlighting when filters produce an empty list.
+- `/search` filter-impact diagnostics now render explicit sentence separators and clearer "sole blocker vs other active blockers" wording, preventing merged text like `20260` / `2160p1` in copied plain-text output.
+- Jackett result parsing now derives `year` from the title when Torznab omits year attrs, keeping release-year filtering and Year column rendering consistent for common title formats like `(2026)`.
+- `/search` any-of keyword input now supports grouped syntax via `|` separators (for example `uhd, 4k | hdr, hdr10`), and client-side local filtering + filter-impact rows now preserve group semantics.
+- Excluded-keyword matching now treats very short terms (`sd`, `ts`) as whole tokens instead of broad substrings, reducing false positives from hidden Torznab metadata values like `sdr` and URL fragments.
+- Local Jackett refinement now requires title-query alignment (so unrelated fallback titles are removed), and very short included terms such as `hdr` now use token-aware matching to prevent substring false positives from metadata values like `HDRezka`.
+- Local title/query refinement now supports non-Latin scripts (for example Cyrillic), so multilingual libraries do not bypass query matching.
+- IMDb-first local refinement now keeps localized-title results when the Torznab result IMDb ID exactly matches the requested IMDb ID.
+- Rule-derived search term extraction now treats legacy sentinel text values such as `None` / `null` as empty optional override fields.
+- Local keyword matching now recognizes season/episode shorthand variants (`s3`, `e7`, `s3e1`) against zero-padded title tokens (`s03`, `e07`, `s03e01`) so required-keyword filtering stays intuitive.
+- Jackett search runs now append structured debug events to `logs/search-debug.log` (search payload filters, fetched-vs-filtered counts) and emit debug-level drop-reason aggregates for local-filter tuning.
+- Added `docs/plans/phase-6-release-qa-plan.md` with a DB-backed release matrix that exercises phase-6 search behavior against representative saved rules from `data/qb_rules.db`.
 - The project `.venv` now passes targeted phase-6 pytest coverage for `tests/test_jackett.py` and `tests/test_routes.py`.
 - The full repo pytest suite now also passes in the project `.venv`; remaining validation is manual browser coverage.
 - A repo-local `project-management` skill now exists under `.codex/skills/project-management` so in-progress phase validation sessions can follow a consistent status/plan closeout workflow.
 - A repo-local `qa-engineer` skill now exists under `.codex/skills/qa-engineer` so validation sessions can follow a consistent risk-map, evidence capture, and severity-first reporting workflow.
 - A repo-local `jackett-api-expert` skill now exists under `.codex/skills/jackett-api-expert` to guide Torznab capability-aware query design, fallback sequencing, and failure triage.
 - A repo-local `ui-ux-designer` skill now exists under `.codex/skills/ui-ux-designer` to structure feature UX workflow, accessibility checks, and implementation-ready handoff specs during manual validation/polish passes.
+- A repo-local `project-design-documentation-engineer` skill now exists under `.codex/skills/project-design-documentation-engineer` to standardize project and design documentation updates (plans, specs, ADRs, QA docs) during phase execution and validation.
+- A repo-local `versioning-manager` skill now exists under `.codex/skills/versioning-manager` to standardize SemVer bump decisions and cross-file version synchronization during release prep.
 - The goal is to add an on-demand search workflow beside RSS rule authoring, not to replace RSS automation.
 
 ## Goal
@@ -28,7 +45,7 @@ Add a local active-search workspace that queries Jackett from the app, supports 
 
 ## Why this phase exists
 
-qBittorrent's built-in search UI is a flat text box. The current app already models optional include keywords and media-aware filters for RSS rules, so it can provide a better front end for Jackett by expanding one structured search into multiple Jackett requests and merging the results locally.
+qBittorrent's built-in search UI is a flat text box. The current app already models optional include keywords and media-aware filters for RSS rules, so it can provide a better front end for Jackett by fetching a high-recall result pool once and refining it locally.
 
 ## In scope
 
@@ -40,8 +57,10 @@ qBittorrent's built-in search UI is a flat text box. The current app already mod
 - Derive active searches from saved rules using structured title/include/exclude terms instead of passing saved regex text through Jackett's plain-text query field, including multiple preserved any-of groups from saved regex lookaheads when possible.
 - If a saved regex expands past the structured search limits, fall back to a title-only search with a visible warning instead of failing the page render.
 - Prefer a reduced inherited keyword set before dropping all the way to title-only fallback, so saved-rule searches stay closer to the original rule intent.
-- Add app-side query expansion for "any of" terms such as `4k` or `2160p`, then merge and de-duplicate results by infohash, GUID, or normalized title.
+- Fetch a broad Jackett result pool per search run, then apply keyword and metadata filters locally (`release_year`, size range, indexer, category IDs) against cached results without new Jackett requests.
 - Render an active-search page with result metadata, source indexer, size, age, and search actions.
+- Provide both card and table result views and local multi-level (hierarchical) sorting over cached results.
+- Surface filter-impact diagnostics so users can see how many results each active filter value removes or keeps and which value blocks an otherwise non-empty result set.
 - Add a search-to-rule handoff so an active search can prefill the rule form with the same title and filter intent.
 
 ## Out of scope
@@ -60,7 +79,8 @@ qBittorrent's built-in search UI is a flat text box. The current app already mod
 3. `app/services/jackett.py`
    - Add a client for Jackett Torznab search requests.
    - Normalize XML results into app-level search result models.
-   - Expand structured "any of" keyword groups into multiple requests when Torznab cannot express the logic directly.
+   - Keep remote fetch params broad and apply keyword/metadata refinement locally on cached result pools.
+   - Store raw and filtered result sets in one run model so the UI can refresh filters interactively without re-querying Jackett.
    - Keep this as an app-local client instead of importing qBittorrent's Jackett plugin directly, because the plugin depends on qB-specific helper modules, printer hooks, and config-file conventions.
 4. `app/routes/pages.py`, `app/routes/api.py`, `app/templates/search.html`, `app/static/app.js`
    - Add a `/search` page and supporting API endpoint for structured active searches.
@@ -73,8 +93,8 @@ qBittorrent's built-in search UI is a flat text box. The current app already mod
 ## Acceptance criteria
 
 - A user can run an active search against Jackett from the app without leaving the local UI.
-- A single structured search can represent optional synonym groups such as `4k` or `2160p`.
-- Duplicate results from multiple expanded queries or multiple indexers are merged before rendering.
+- A single structured search can fetch once and refine interactively with local keyword + metadata filters.
+- Duplicate results across strict and fallback fetch paths are merged deterministically before rendering.
 - Search failures return actionable configuration or provider errors.
 - Setup, saved-rule, or search-time edge cases degrade into an editable search form with a visible error instead of a 500 page.
 - Transient Jackett timeout failures are retried automatically before the UI treats the search as failed.
@@ -84,13 +104,23 @@ qBittorrent's built-in search UI is a flat text box. The current app already mod
 
 - Run targeted service and route tests for Jackett client behavior and search page rendering. Current status: passing in the repo `.venv` for `tests/test_jackett.py` and `tests/test_routes.py`.
 - Run the full pytest suite through `scripts/test.sh` or `scripts/test.bat`. Current status: passing in the repo `.venv`.
+- Execute the DB-backed QA matrix in `docs/plans/phase-6-release-qa-plan.md` and record severity-ranked findings before phase-6 release sign-off.
 - Manually verify `/search` for:
-  - a plain title-only search
-  - an expanded keyword search
+  - a plain title-only fetch with local keyword refinement
+  - grouped any-of keyword refinement using `|` separators (for example `uhd, 4k | hdr, hdr10`) so each group is enforced independently
+  - local refinement for release year, size, indexer, and category filters without extra network calls
+  - release-year filtering where Torznab omits `year` attrs but the title includes a year token (for example `(2026)`)
+  - short excluded-token behavior (`sd`, `ts`) to confirm token-only blocking and no substring-driven false positives
+  - short included-token behavior (`hdr`) to confirm token-only matching and no metadata-substring false positives (for example `HDRezka`)
+  - season/episode shorthand behavior (`s3`, `e7`, `s3e1`) to confirm matches against zero-padded title tokens (`s03`, `e07`, `s03e01`)
+  - query/title alignment behavior so unrelated fallback titles do not remain in filtered results when title query terms are missing
+  - card/table view toggle and 3-level hierarchical sort behavior without extra network calls
+  - filter-impact diagnostics (`remain if alone`, `filtered out`, and blocker highlighting for empty results)
+  - `logs/search-debug.log` output for Jackett search debug summaries and drop-reason diagnostics while iterating on filters
   - an indexer-limited search
   - the search-to-rule handoff into `/rules/new`
 - Manually verify `/rules/{rule_id}/search` for saved movie or series rules with metadata-filled `IMDb ID` / `Release year` fields and confirm Jackett still returns results with the narrower request.
-- Manually verify `/rules/{rule_id}/search` for a movie or series rule with `IMDb ID` populated and confirm the page shows an `IMDb-first results` section with strict `imdbid`, aggregate `q + imdbid`, and optional direct-indexer retries, plus a separate `Title fallback` section below when the primary search returns no matches.
+- Manually verify `/rules/{rule_id}/search` for a movie or series rule with `IMDb ID` populated and confirm the page shows split `IMDb-first` and `Title fallback` sections where fallback fetch still runs even when IMDb-first has hits.
 - Manually verify `/rules/{rule_id}/search` for imported or legacy rules with unusually long saved titles and confirm the clamped title-only fallback still runs when structured reduction cannot.
 - Manually verify graceful errors for missing Jackett config, HTTP failures, and empty result sets.
 

@@ -6,13 +6,12 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
-- Initial repository scaffold
-- First implementation of the local web app, sync services, docs, and tests
-- Rule builder now uses UI-selected quality include/exclude tags with Full HD and Ultra HD preset management, plus optional release year and extra include keywords
-- New and untouched legacy settings now default to the `Ultra HD HDR` preset instead of `plain`
-- qBittorrent category creation now treats HTTP 409 conflicts as non-fatal so existing categories do not block rule sync
-- Saved reusable filter profiles can now be created from the rule form, with grouped resolution, video-definition, and source selectors
+- No entries yet.
 
-## [0.1.0]
+## [0.1.0] - 2026-03-10
 
-- Initial public release placeholder
+- Initial public release.
+- Local FastAPI app with SQLite-backed rule storage, import flows, and qBittorrent WebUI sync.
+- Taxonomy-driven quality filtering with media-aware rule authoring, reusable profiles, and metadata lookup integrations.
+- Jackett-backed active search workspace with rule-derived queries, IMDb-first fallback behavior, and search-to-rule handoff.
+- Regression-tested release path with `ruff`, `mypy`, full `pytest`, and DB-driven phase-6 search QA evidence.

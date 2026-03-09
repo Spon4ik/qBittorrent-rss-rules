@@ -1,34 +1,38 @@
 # Roadmap
 
-## Current release target: v0.1.0
+## Current release target: v0.2.0
 
 ### In progress
 
-- Local FastAPI app with SQLite storage
-- qBittorrent API sync for rule create/update/delete
-- Import from exported qBittorrent rules JSON
-- Phase 1-5 work is already implemented in the current branch; remaining work is full test and manual validation
-- Baseline docs, ADRs, and test suite
+- Phase 6: Jackett-powered active search hardening and follow-up UX validation
+- Phase 4 and Phase 5 manual browser validation closeout
+- Release-process polish and release automation improvements
 
 ### Current phase track
 
-- Phase 1: JSON-backed quality taxonomy loader (implemented, awaiting final validation)
-- Phase 2: richer taxonomy schema (implemented, awaiting final validation)
-- Phase 3: taxonomy management UI (implemented, awaiting final validation)
-- Phase 4: feed selection UX improvements (implemented, awaiting final validation)
-- Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, awaiting final validation)
+- Phase 6: Jackett-backed active search workspace (initial implementation complete, follow-up validation/polish in progress)
+- Phase 4: feed selection UX improvements (implemented, closeout validation pending)
+- Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, closeout validation pending)
 
 ### Release focus
 
-- Keep the first release localhost-only
-- Close phase 4 and phase 5 validation before widening scope
+- Keep localhost-only defaults while phase-6 workflows mature
+- Close remaining phase 4 and phase 5 validation before broadening scope
+- Keep Jackett active search explicitly separate from persistent RSS feed rule sources
 - Keep the data model stable and explicit
 - Avoid undocumented qBittorrent rule fields
 - Prefer correctness and maintainability over broad feature count
 
-## Next release: v0.2.x
+## Recently released: v0.1.0 (2026-03-10)
 
-- Phase 6: Jackett-powered active search workspace with advanced query expansion and search-to-rule handoff
+- Local FastAPI app with SQLite storage
+- qBittorrent API sync for rule create/update/delete
+- Import from exported qBittorrent rules JSON
+- Taxonomy-driven quality filtering and media-aware rule form
+- Baseline docs, ADRs, and automated test suite
+
+## Planned after v0.2.x
+
 - Bulk rule creation from list or CSV
 - Rule clone/duplicate flows
 - Improved feed grouping UX

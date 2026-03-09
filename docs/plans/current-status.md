@@ -80,6 +80,8 @@
 - Release-validation reruns on 2026-03-09 now pass in both the Windows `.venv` and Linux `.venv-linux` (`117 passed`, `24 warnings`) for full-suite pytest, and `tests/test_jackett.py` + `tests/test_routes.py` targeted coverage passes (`63 passed`, `24 warnings`).
 - Executed the DB-driven phase-6 QA matrix on 2026-03-09 using live `data/qb_rules.db` and recorded artifacts at `logs/qa/phase6-matrix-20260309T220744Z.{json,md}` with `15/15` scenarios passing (`0 critical/high`) plus one structured `logs/search-debug.log` event per run.
 - Verified Linux release-gate wrappers on 2026-03-09 via `source .venv-linux/bin/activate && ./scripts/check.sh` (`ruff`, `mypy`, full pytest) with `117 passed`, `24 warnings`.
+- Prepared v0.1.0 release documentation on 2026-03-10 by updating `CHANGELOG.md` with dated release notes and transitioning `ROADMAP.md` to `v0.2.0` as the active target.
+- Re-ran release gates on 2026-03-10 in Linux `.venv-linux` via `source .venv-linux/bin/activate && ./scripts/check.sh` (`117 passed`, `24 warnings`).
 - `scripts/test.sh` now defaults to `--capture=sys` when no capture mode is passed, fixing Linux/WSL wrapper failures from pytest capture teardown `FileNotFoundError` while preserving explicit user capture args such as `-s`.
 - Added `docs/native-python-pytest.md` with resumable Linux/WSL bootstrap steps for native `python3 -m pytest` usage, and added `.venv-linux/` to `.gitignore` for the Linux-native virtual environment path.
 - `scripts/test.sh` now also auto-detects `.venv-linux/bin/python` ahead of system Python, so Linux/WSL wrapper runs work without manual activation when the repo-local Linux venv exists.
@@ -103,7 +105,7 @@
 - Use the new `project-management` skill during remaining phase-5/phase-6 validation sessions to keep roadmap/plan/status artifacts synchronized at closeout.
 - Use the new `project-design-documentation-engineer` skill when drafting or updating project/design artifacts so status, phase plans, specs, and decisions stay aligned.
 - Use the new `versioning-manager` skill when choosing release version bumps or synchronizing version strings across code/docs before tagging.
-- Review `logs/qa/phase6-matrix-20260309T220744Z.md` and decide whether to tag/release now (`ship`) or hold for optional manual UX-only follow-ups.
+- Create and push the `v0.1.0` git tag from the QA-approved commit, then publish release notes from `CHANGELOG.md`.
 - Manually verify `/rules/new` and `/rules/{rule_id}` for `series -> music -> audiobook -> other` switching, the warning-and-clear prompt, provider filtering, and IMDb field visibility.
 - Manually verify metadata lookup population for OMDb title search plus MusicBrainz, OpenLibrary, and Google Books lookups.
 - Manually verify the new Rules-page header `Create Rule` action on desktop and mobile layouts.

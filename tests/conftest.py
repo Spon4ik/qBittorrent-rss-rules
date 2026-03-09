@@ -40,7 +40,7 @@ def app_client(configured_app_env: Path) -> TestClient:
 
 @pytest.fixture()
 def db_session(configured_app_env: Path):
-    from app.db import init_db, get_session_factory
+    from app.db import get_session_factory, init_db
 
     init_db()
 

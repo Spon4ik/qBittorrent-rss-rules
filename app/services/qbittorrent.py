@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from types import TracebackType
+from typing import Any, cast
 
 import httpx
 
@@ -42,10 +44,15 @@ class QbittorrentClient:
             transport=transport,
         )
 
-    def __enter__(self) -> "QbittorrentClient":
+    def __enter__(self) -> QbittorrentClient:
         return self
 
-    def __exit__(self, exc_type, exc, exc_tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         self.close()
 
     def close(self) -> None:
@@ -117,8 +124,8 @@ class QbittorrentClient:
         *,
         expect_json: bool = True,
         allowed_status_codes: set[int] | None = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> object | None:
         if not self._authenticated:
             self.login()
         allowed_status_codes = allowed_status_codes or set()
@@ -133,7 +140,7 @@ class QbittorrentClient:
                 raise QbittorrentClientError(f"qBittorrent request failed: {exc}") from exc
         if not expect_json:
             return None
-        return response.json()
+        return cast(object, response.json())
 
     @classmethod
     def flatten_feed_tree(cls, payload: object) -> list[FeedOption]:

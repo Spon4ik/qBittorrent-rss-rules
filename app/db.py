@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 from functools import lru_cache
-from typing import Generator
 
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_environment_settings
@@ -20,7 +21,7 @@ def _connect_args(database_url: str) -> dict[str, object]:
 
 
 @lru_cache
-def get_engine():
+def get_engine() -> Engine:
     settings = get_environment_settings()
     return create_engine(
         settings.database_url,

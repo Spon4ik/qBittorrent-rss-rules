@@ -31,6 +31,9 @@
 - Added `docs/plans/phase-6-release-qa-plan.md` with a DB-backed release matrix that exercises phase-6 search behavior against representative saved rules from `data/qb_rules.db`.
 - The project `.venv` now passes targeted phase-6 pytest coverage for `tests/test_jackett.py` and `tests/test_routes.py`.
 - The full repo pytest suite now also passes in the project `.venv`; remaining validation is manual browser coverage.
+- 2026-03-09 reruns confirm targeted (`63 passed`) and full-suite (`117 passed`) pytest coverage still pass in the Windows `.venv`, and full-suite pytest also passes in Linux `.venv-linux`.
+- `scripts/test.sh` now defaults to `--capture=sys` when no capture mode is provided and auto-detects `.venv-linux/bin/python`, so Linux/WSL wrapper runs no longer require manual `-s` or explicit activation in the common path.
+- Branch-level static quality gates now pass in Linux `.venv-linux` (`ruff check .`, `mypy app`, and full pytest via `./scripts/check.sh`), so remaining release risk is primarily manual QA coverage.
 - A repo-local `project-management` skill now exists under `.codex/skills/project-management` so in-progress phase validation sessions can follow a consistent status/plan closeout workflow.
 - A repo-local `qa-engineer` skill now exists under `.codex/skills/qa-engineer` so validation sessions can follow a consistent risk-map, evidence capture, and severity-first reporting workflow.
 - A repo-local `jackett-api-expert` skill now exists under `.codex/skills/jackett-api-expert` to guide Torznab capability-aware query design, fallback sequencing, and failure triage.
@@ -103,7 +106,9 @@ qBittorrent's built-in search UI is a flat text box. The current app already mod
 ## Validation checklist
 
 - Run targeted service and route tests for Jackett client behavior and search page rendering. Current status: passing in the repo `.venv` for `tests/test_jackett.py` and `tests/test_routes.py`.
-- Run the full pytest suite through `scripts/test.sh` or `scripts/test.bat`. Current status: passing in the repo `.venv`.
+- Run the full pytest suite through `scripts/test.sh` or `scripts/test.bat`. Current status: passing in repo `.venv` and `.venv-linux`.
+- Run `scripts/check.sh` / `scripts/check.bat` before release sign-off. Current status: passing in Linux `.venv-linux`.
+- For Linux/WSL shells, bootstrap a native test interpreter using `docs/native-python-pytest.md` so `python3 -m pytest` is runnable without the Windows `.venv`.
 - Execute the DB-backed QA matrix in `docs/plans/phase-6-release-qa-plan.md` and record severity-ranked findings before phase-6 release sign-off.
 - Manually verify `/search` for:
   - a plain title-only fetch with local keyword refinement
@@ -128,6 +133,7 @@ qBittorrent's built-in search UI is a flat text box. The current app already mod
 
 - Jackett must be reachable from the local app host and expose Torznab endpoints for the configured indexers.
 - Phase 5 validation should close first so the existing rule-form contract is stable before the new search surface is added.
+- Linux/WSL validation environments need `python3-venv` and `python3-pip` available so native `python3 -m pytest` runs can be provisioned.
 
 ## Roll-forward notes
 

@@ -107,6 +107,9 @@ Each test run writes fresh artifacts to:
 - `logs/tests/pytest-last.xml`
 
 The wrapper also accepts normal `pytest` arguments, for example `./scripts/test.sh tests/test_routes.py` or `scripts\test.bat tests\test_routes.py`.
+On bash/WSL, `scripts/test.sh` prefers repo-local interpreters (`.venv/bin/python`, then `.venv-linux/bin/python`) and defaults to `--capture=sys` unless you pass an explicit capture flag.
+
+For Linux/WSL-native `python3 -m pytest` setup and resume steps, see `docs/native-python-pytest.md`.
 
 Full checks:
 

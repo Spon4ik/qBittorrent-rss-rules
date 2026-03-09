@@ -47,12 +47,12 @@ class MetadataLookupRequest(BaseModel):
     @field_validator("imdb_id")
     @classmethod
     def normalize_lookup_id(cls, value: str | None) -> str | None:
-        if value in {None, ""}:
+        if value is None or value == "":
             return None
         return value.strip()
 
     @model_validator(mode="after")
-    def validate_lookup(self) -> "MetadataLookupRequest":
+    def validate_lookup(self) -> MetadataLookupRequest:
         if self.imdb_id and not self.lookup_value:
             if not IMDB_ID_RE.match(self.imdb_id):
                 raise ValueError("IMDb ID must look like tt1234567.")
@@ -100,7 +100,7 @@ class JackettSearchRequest(BaseModel):
     @field_validator("imdb_id")
     @classmethod
     def normalize_search_imdb_id(cls, value: str | None) -> str | None:
-        if value in {None, ""}:
+        if value is None or value == "":
             return None
         cleaned = value.strip().lower()
         if cleaned.isdigit():
@@ -162,12 +162,12 @@ class JackettSearchRequest(BaseModel):
     @field_validator("size_min_mb", "size_max_mb", mode="before")
     @classmethod
     def normalize_size_bounds(cls, value: float | int | str | None) -> float | None:
-        if value in {None, ""}:
+        if value is None or value == "":
             return None
         try:
             return float(value)
-        except (TypeError, ValueError):
-            raise ValueError("Size filters must be numeric.")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Size filters must be numeric.") from exc
 
     @field_validator("filter_indexers", mode="before")
     @classmethod
@@ -192,7 +192,7 @@ class JackettSearchRequest(BaseModel):
         return cleaned
 
     @model_validator(mode="after")
-    def validate_request(self) -> "JackettSearchRequest":
+    def validate_request(self) -> JackettSearchRequest:
         if self.indexer != "all" and not SEARCH_INDEXER_RE.match(self.indexer):
             raise ValueError("Indexer must use letters, numbers, dots, dashes, or underscores.")
         if self.imdb_id_only:
@@ -300,7 +300,7 @@ class RuleFormPayload(BaseModel):
     @field_validator("imdb_id")
     @classmethod
     def normalize_imdb_id(cls, value: str | None) -> str | None:
-        if value in {None, ""}:
+        if value is None or value == "":
             return None
         cleaned = value.strip()
         if not IMDB_ID_RE.match(cleaned):
@@ -330,7 +330,7 @@ class RuleFormPayload(BaseModel):
         return normalize_quality_tokens(raw_value)
 
     @model_validator(mode="after")
-    def remove_quality_overlap(self) -> "RuleFormPayload":
+    def remove_quality_overlap(self) -> RuleFormPayload:
         include_set = set(self.quality_include_tokens)
         self.quality_exclude_tokens = [
             token for token in self.quality_exclude_tokens if token not in include_set
@@ -393,7 +393,7 @@ class SettingsFormPayload(BaseModel):
         return normalize_quality_tokens(raw_value)
 
     @model_validator(mode="after")
-    def remove_profile_overlap(self) -> "SettingsFormPayload":
+    def remove_profile_overlap(self) -> SettingsFormPayload:
         include_1080 = set(self.profile_1080p_include_tokens)
         self.profile_1080p_exclude_tokens = [
             token for token in self.profile_1080p_exclude_tokens if token not in include_1080
@@ -430,7 +430,7 @@ class FilterProfileSaveRequest(BaseModel):
         return normalize_quality_tokens(raw_value)
 
     @model_validator(mode="after")
-    def validate_payload(self) -> "FilterProfileSaveRequest":
+    def validate_payload(self) -> FilterProfileSaveRequest:
         include_set = set(self.include_tokens)
         self.exclude_tokens = [token for token in self.exclude_tokens if token not in include_set]
         if self.mode == "create" and not self.profile_name:

@@ -176,7 +176,7 @@ class RuleBuilder:
 
     def build_generated_pattern(self, rule: Rule) -> str:
         if looks_like_full_must_contain_override(rule.must_contain_override):
-            return rule.must_contain_override.strip()
+            return str(rule.must_contain_override or "").strip()
 
         title = self._resolved_title(rule)
         if not rule.use_regex and not self._has_generated_regex_conditions(rule):

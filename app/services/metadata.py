@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from typing import TypeAlias, TypedDict
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -17,7 +18,18 @@ ISBN_RE = re.compile(r"^(?:97[89])?\d{9}[\dXx]$")
 OPENLIBRARY_ID_RE = re.compile(r"^OL\d+[MW]$", re.IGNORECASE)
 YEAR_RE = re.compile(r"\b(\d{4})\b")
 
-_LOOKUP_PROVIDER_CATALOG: tuple[dict[str, object], ...] = (
+class ProviderCatalogEntry(TypedDict):
+    value: str
+    label: str
+    media_types: list[str]
+
+
+HTTPQueryScalar: TypeAlias = str | int | float | bool | None
+HTTPQueryValue: TypeAlias = HTTPQueryScalar | list[HTTPQueryScalar] | tuple[HTTPQueryScalar, ...]
+HTTPQueryParams: TypeAlias = dict[str, HTTPQueryValue]
+
+
+_LOOKUP_PROVIDER_CATALOG: tuple[ProviderCatalogEntry, ...] = (
     {
         "value": MetadataLookupProvider.OMDB.value,
         "label": "OMDb (Video)",
@@ -67,7 +79,7 @@ def normalize_omdb_api_key(value: str | None) -> str | None:
     return cleaned
 
 
-def metadata_lookup_provider_catalog() -> list[dict[str, object]]:
+def metadata_lookup_provider_catalog() -> list[ProviderCatalogEntry]:
     return [
         {
             "value": str(item["value"]),
@@ -78,7 +90,7 @@ def metadata_lookup_provider_catalog() -> list[dict[str, object]]:
     ]
 
 
-def metadata_lookup_provider_choices(media_type: MediaType | str | None) -> list[dict[str, object]]:
+def metadata_lookup_provider_choices(media_type: MediaType | str | None) -> list[ProviderCatalogEntry]:
     raw_media_type = media_type.value if isinstance(media_type, MediaType) else str(media_type or "")
     if not raw_media_type or raw_media_type == MediaType.OTHER.value:
         return metadata_lookup_provider_catalog()
@@ -156,7 +168,7 @@ class MetadataClient:
         self,
         url: str,
         *,
-        params: dict[str, object] | None = None,
+        params: HTTPQueryParams | None = None,
         headers: dict[str, str] | None = None,
         provider_label: str,
     ) -> dict[str, object]:
@@ -184,7 +196,7 @@ class MetadataClient:
         if not self.api_key:
             raise MetadataLookupError("OMDb API key is not configured.")
 
-        params: dict[str, object] = {"apikey": self.api_key}
+        params: HTTPQueryParams = {"apikey": self.api_key}
         if IMDB_ID_RE.match(lookup_value):
             params["i"] = lookup_value
         else:

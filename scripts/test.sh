@@ -22,20 +22,40 @@ EOF
 
 if [[ -x "${PROJECT_DIR}/.venv/bin/python" ]]; then
   PYTHON_EXE="${PROJECT_DIR}/.venv/bin/python"
+elif [[ -x "${PROJECT_DIR}/.venv-linux/bin/python" ]]; then
+  PYTHON_EXE="${PROJECT_DIR}/.venv-linux/bin/python"
+elif [[ -x "${PROJECT_DIR}/.venv/Scripts/python.exe" ]]; then
+  PYTHON_EXE="${PROJECT_DIR}/.venv/Scripts/python.exe"
 elif command -v python3 >/dev/null 2>&1; then
   PYTHON_EXE="$(command -v python3)"
 elif command -v python >/dev/null 2>&1; then
   PYTHON_EXE="$(command -v python)"
-elif [[ -x "${PROJECT_DIR}/.venv/Scripts/python.exe" ]]; then
-  PYTHON_EXE="${PROJECT_DIR}/.venv/Scripts/python.exe"
 else
   printf "No Python interpreter found.\n" | tee "${LOG_FILE}"
   write_fallback_junit_xml
   exit 127
 fi
 
+# Default to sys capture for stable Linux/WSL runs unless caller sets capture mode.
+CAPTURE_ARG=()
+CAPTURE_CONFIGURED=0
+for arg in "$@"; do
+  case "${arg}" in
+    -s|--capture|--capture=*)
+      CAPTURE_CONFIGURED=1
+      break
+      ;;
+  esac
+done
+if [[ ${CAPTURE_CONFIGURED} -eq 0 ]]; then
+  CAPTURE_ARG=(--capture=sys)
+fi
+
 {
   printf "Command: %s -m pytest --junitxml %s" "${PYTHON_EXE}" "${XML_FILE}"
+  for arg in "${CAPTURE_ARG[@]}"; do
+    printf " %q" "${arg}"
+  done
   for arg in "$@"; do
     printf " %q" "${arg}"
   done
@@ -45,7 +65,7 @@ fi
 } > "${LOG_FILE}"
 
 set +e
-"${PYTHON_EXE}" -m pytest --junitxml "${XML_FILE}" "$@" 2>&1 | tee -a "${LOG_FILE}"
+"${PYTHON_EXE}" -m pytest --junitxml "${XML_FILE}" "${CAPTURE_ARG[@]}" "$@" 2>&1 | tee -a "${LOG_FILE}"
 EXIT_CODE=${PIPESTATUS[0]}
 set -e
 

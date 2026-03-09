@@ -77,15 +77,21 @@
 - Added a DB-driven phase-6 release QA matrix plan at `docs/plans/phase-6-release-qa-plan.md` covering multilingual titles, IMDb-first localized titles, regex-derived rules, and legacy imported rule edge cases.
 - Targeted Jackett pytest coverage now passes in the project `.venv` for `tests/test_jackett.py` and `tests/test_routes.py`, including the new Torznab-parameter narrowing path and the fixed keyword-list validator.
 - The full pytest suite now passes in the project `.venv` (`95 passed`), including a fix for `RuleBuilder` default category rendering when `AppSettings()` has in-memory `None` template fields.
+- Release-validation reruns on 2026-03-09 now pass in both the Windows `.venv` and Linux `.venv-linux` (`117 passed`, `24 warnings`) for full-suite pytest, and `tests/test_jackett.py` + `tests/test_routes.py` targeted coverage passes (`63 passed`, `24 warnings`).
+- `scripts/test.sh` now defaults to `--capture=sys` when no capture mode is passed, fixing Linux/WSL wrapper failures from pytest capture teardown `FileNotFoundError` while preserving explicit user capture args such as `-s`.
+- Added `docs/native-python-pytest.md` with resumable Linux/WSL bootstrap steps for native `python3 -m pytest` usage, and added `.venv-linux/` to `.gitignore` for the Linux-native virtual environment path.
+- `scripts/test.sh` now also auto-detects `.venv-linux/bin/python` ahead of system Python, so Linux/WSL wrapper runs work without manual activation when the repo-local Linux venv exists.
+- Mypy cleanup for the release-gating stack is now complete (`mypy app` passes), including typing fixes across `quality_filters`, `jackett`, `api` routes, `pages` routes, and supporting service modules.
+- Ruff policy now explicitly ignores FastAPI dependency-in-default warnings for route handlers (`B008` via `app/routes/*.py`) and defers bulk formatting/modernization churn (`E501`, `UP040`, `UP042`); after that policy update and safe auto-fixes, `ruff check .` now passes.
 - Added initial service and route coverage for the Jackett client, search page, and settings persistence.
 
 ## In progress
 
 - Phase 5 code is implemented in the current branch, and pytest now passes in the repo `.venv`; manual browser validation is still pending.
-- The repo-local Windows `.venv` now has the required test dependencies and can run the full suite, but the default Linux `python3` in this shell still does not have `pytest`.
+- The repo-local Windows `.venv` and Linux `.venv-linux` now both run the full suite successfully; the unactivated system `python3` still does not include project dependencies by default.
 - Phase 4 validation and closeout are still pending as a separate follow-up even though the Phase 5 code landed.
 - Phase 6 is now in an initial implementation state with pytest coverage passing; manual browser checks are still pending.
-- The current shell still cannot run project pytest directly (`python3 -m pytest` missing, `.venv/Scripts/python.exe` fails in WSL), so this slice has static checks only until a runnable test interpreter is available in this environment.
+- Release-process automated checks now pass in the Linux `.venv-linux` environment through `./scripts/check.sh` (`ruff`, `mypy`, and full pytest).
 
 ## Next actions
 

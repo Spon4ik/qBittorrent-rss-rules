@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
@@ -12,7 +12,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db_session
-from app.models import AppSettings, MediaType, QualityProfile, Rule, media_type_choices, media_type_label
+from app.models import (
+    AppSettings,
+    MediaType,
+    QualityProfile,
+    Rule,
+    media_type_choices,
+    media_type_label,
+)
 from app.schemas import (
     FilterProfileSaveRequest,
     ImportMode,
@@ -30,25 +37,25 @@ from app.services.metadata import (
     metadata_lookup_provider_catalog,
     metadata_lookup_provider_choices,
 )
+from app.services.qbittorrent import QbittorrentClient, QbittorrentClientError
 from app.services.quality_filters import (
     apply_quality_taxonomy_update,
     available_filter_profile_choices,
     available_filter_profile_choices_for_media_type,
-    builtin_filter_profile_keys,
     build_available_filter_profiles,
+    builtin_filter_profile_keys,
     normalize_saved_quality_profiles,
     preview_quality_taxonomy_update,
-    quality_profile_label,
     quality_option_choices,
     quality_option_groups,
     quality_profile_choices,
+    quality_profile_label,
     quality_taxonomy_snapshot,
     read_quality_taxonomy_text,
     recent_quality_taxonomy_audit_entries,
     resolve_quality_profile_rules,
     slugify_profile_key,
 )
-from app.services.qbittorrent import QbittorrentClient, QbittorrentClientError
 from app.services.rule_builder import RuleBuilder
 from app.services.settings_service import SettingsService
 from app.services.sync import SyncService, SyncServiceError
@@ -156,7 +163,7 @@ def _render_rule_form(
         selected_feed_urls = raw_selected_feed_urls
     else:
         selected_feed_urls = [str(raw_selected_feed_urls)]
-    context = {
+    context: dict[str, Any] = {
         "request": request,
         "page_title": "New Rule" if mode == "create" else f"Edit {form_data.get('rule_name', 'Rule')}",
         "mode": mode,
@@ -466,7 +473,12 @@ def save_filter_profile(
                 "exclude_tokens": payload.exclude_tokens,
             }
             if payload.target_key in builtin_filter_profile_keys():
-                existing_media_types = list(existing.get("media_types", []))
+                raw_existing_media_types = existing.get("media_types")
+                existing_media_types = (
+                    [str(item) for item in raw_existing_media_types]
+                    if isinstance(raw_existing_media_types, list)
+                    else []
+                )
                 if existing_media_types:
                     updated_profile["media_types"] = existing_media_types
             elif scoped_media_types:
@@ -493,13 +505,22 @@ async def import_qb_json(
     session: Session = Depends(get_db_session),
 ) -> Response:
     form = await request.form()
-    upload = form.get("rules_file")
-    if upload is None or not hasattr(upload, "read") or not getattr(upload, "filename", ""):
+    upload_candidate = form.get("rules_file")
+    if upload_candidate is None:
         return _render_import_page(
             request,
             preview_entries=[],
             errors=["Choose a JSON export file first."],
         )
+    upload_filename = str(getattr(upload_candidate, "filename", "") or "").strip()
+    upload_reader = getattr(upload_candidate, "read", None)
+    if not upload_filename or not callable(upload_reader):
+        return _render_import_page(
+            request,
+            preview_entries=[],
+            errors=["Choose a JSON export file first."],
+        )
+    upload = cast(UploadFile, upload_candidate)
 
     mode_raw = form.get("mode", ImportMode.SKIP.value)
     preview_only = str(form.get("preview_only", "0")) == "1"
@@ -530,7 +551,7 @@ async def import_qb_json(
         result = importer.apply_import_from_bytes(
             raw_bytes,
             mode=mode,
-            source_name=upload.filename or "uploaded-rules.json",
+            source_name=upload_filename or "uploaded-rules.json",
         )
     except ValueError as exc:
         return _render_import_page(

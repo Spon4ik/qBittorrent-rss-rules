@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
+from app.models import AppSettings, MediaType, QualityProfile, Rule, SyncStatus
 from app.schemas import (
     JackettSearchRequest,
     JackettSearchResult,
@@ -13,10 +14,9 @@ from app.schemas import (
     MetadataLookupProvider,
     MetadataResult,
 )
+from app.services import quality_filters
 from app.services.jackett import JackettClient, clamp_search_query_text
 from app.services.metadata import MetadataClient
-from app.models import AppSettings, MediaType, QualityProfile, Rule, SyncStatus
-from app.services import quality_filters
 
 
 def _use_temp_taxonomy(tmp_path: Path, monkeypatch):

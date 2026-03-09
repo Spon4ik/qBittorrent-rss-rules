@@ -155,13 +155,31 @@ class Importer:
         rule.must_not_contain = str(payload.get("mustNotContain", "") or "")
         rule.use_regex = use_regex
         rule.episode_filter = str(payload.get("episodeFilter", "") or "")
-        rule.ignore_days = int(payload.get("ignoreDays", 0) or 0)
+        rule.ignore_days = self._coerce_int(payload.get("ignoreDays", 0), default=0)
         rule.add_paused = bool(payload.get("addPaused", True))
         rule.smart_filter = bool(payload.get("smartFilter", False))
         rule.media_type = infer_media_type_from_category(category)
         rule.imdb_id = extract_imdb_id_from_category(category)
         rule.quality_profile = self._infer_quality_profile(must_contain, use_regex)
         rule.last_sync_error = None
+
+    @staticmethod
+    def _coerce_int(raw_value: object, *, default: int) -> int:
+        if isinstance(raw_value, bool):
+            return int(raw_value)
+        if isinstance(raw_value, int):
+            return raw_value
+        if isinstance(raw_value, float):
+            return int(raw_value)
+        if isinstance(raw_value, str):
+            cleaned = raw_value.strip()
+            if not cleaned:
+                return default
+            try:
+                return int(cleaned)
+            except ValueError:
+                return default
+        return default
 
     @staticmethod
     def _clean_feeds(raw_value: object) -> list[str]:

@@ -17,10 +17,12 @@ The project uses a service-heavy architecture, so the test suite is weighted tow
 ## Test logs
 
 - Prefer `scripts/test.sh` on bash or `scripts/test.bat` on Windows `cmd.exe` when you want a reproducible artifact after each run.
+- `scripts/test.sh` now prefers repo-local interpreters (`.venv/bin/python`, then `.venv-linux/bin/python`) before system Python and defaults to `--capture=sys` unless a capture arg is explicitly passed.
 - Each wrapper overwrites two repo-local files on every invocation:
 - `logs/tests/pytest-last.log` for the readable console transcript
 - `logs/tests/pytest-last.xml` for structured JUnit results
 - Pass normal `pytest` arguments through the wrapper, such as `scripts/test.bat tests\test_routes.py`.
+- For Linux/WSL-native `python3 -m pytest` bootstrap and resume flow, use `docs/native-python-pytest.md`.
 
 ## Critical coverage areas
 

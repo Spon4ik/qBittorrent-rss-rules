@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
+from typing import Any, cast
 
 import httpx
 
@@ -106,8 +108,8 @@ def _parse_datetime(value: str | None) -> datetime | None:
     except (TypeError, ValueError, IndexError):
         return None
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _format_published(value: datetime | None) -> str | None:
@@ -276,11 +278,11 @@ def _resolved_result_year(*, explicit_year: str | None, title: str) -> str | Non
     return _normalize_release_year_token(explicit_year) or _normalize_release_year_token(title)
 
 
-def _append_search_debug_event(event: dict[str, object]) -> None:
+def _append_search_debug_event(event: Mapping[str, Any]) -> None:
     try:
         SEARCH_DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with SEARCH_DEBUG_LOG_PATH.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(event, ensure_ascii=True))
+            handle.write(json.dumps(dict(event), ensure_ascii=True))
             handle.write("\n")
     except OSError:
         LOGGER.exception("Failed to write Jackett search debug log.")
@@ -379,7 +381,7 @@ def _torznab_mode_for_payload(payload: JackettSearchRequest) -> str:
     return "search"
 
 
-def _request_variant_label(params: dict[str, object]) -> str:
+def _request_variant_label(params: Mapping[str, Any]) -> str:
     ordered_keys = ("t", "q", "imdbid", "year", "cat")
     parts: list[str] = []
 
@@ -407,7 +409,7 @@ def _request_variant_label(params: dict[str, object]) -> str:
     return " ".join(parts)
 
 
-def _request_error_context(url: str, params: dict[str, object]) -> str:
+def _request_error_context(url: str, params: Mapping[str, Any]) -> str:
     request_label = _request_variant_label(params)
     if request_label:
         return request_label
@@ -727,7 +729,7 @@ def _regex_search_terms(pattern: str) -> tuple[str, list[str], list[list[str]], 
     )
 
 
-def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, object], bool]:
+def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, Any], bool]:
     fallback_title = _first_nonempty_text(
         rule.normalized_title,
         rule.content_name,
@@ -796,8 +798,10 @@ def build_search_request_from_rule(rule: Rule) -> tuple[JackettSearchRequest, bo
 
 def build_reduced_search_request_from_rule(rule: Rule) -> tuple[JackettSearchRequest, bool]:
     payload_data, ignored_full_regex = _search_request_data_from_rule(rule)
-    keywords_all = list(payload_data["keywords_all"])[:MAX_REQUIRED_KEYWORDS]
-    keywords_any_groups = _limit_optional_groups(list(payload_data["keywords_any_groups"]))
+    keywords_all = list(cast(list[str], payload_data["keywords_all"]))[:MAX_REQUIRED_KEYWORDS]
+    keywords_any_groups = _limit_optional_groups(
+        list(cast(list[list[str]], payload_data["keywords_any_groups"]))
+    )
     flattened_any: list[str] = []
     for group in keywords_any_groups:
         flattened_any.extend(group)
@@ -805,15 +809,15 @@ def build_reduced_search_request_from_rule(rule: Rule) -> tuple[JackettSearchReq
     keywords_all = [item for item in keywords_all if item not in normalized_any_terms]
     keywords_not = [
         item
-        for item in list(payload_data["keywords_not"])[:MAX_EXCLUDED_KEYWORDS]
+        for item in list(cast(list[str], payload_data["keywords_not"]))[:MAX_EXCLUDED_KEYWORDS]
         if item not in normalized_any_terms
     ]
-    query = clamp_search_query_text(payload_data["query"], fallback="Search")
+    query = clamp_search_query_text(str(payload_data["query"]), fallback="Search")
     payload = JackettSearchRequest(
         query=query,
-        media_type=_coerce_media_type(payload_data["media_type"]),
-        imdb_id=payload_data["imdb_id"],
-        release_year=payload_data["release_year"],
+        media_type=_coerce_media_type(payload_data.get("media_type")),
+        imdb_id=_coerce_text(payload_data.get("imdb_id")) or None,
+        release_year=normalize_release_year(_coerce_text(payload_data.get("release_year"))) or None,
         keywords_all=keywords_all,
         keywords_any=flattened_any,
         keywords_any_groups=keywords_any_groups,
@@ -1079,7 +1083,7 @@ class JackettClient:
     def _log_search_run(payload: JackettSearchRequest, run: JackettSearchRun) -> None:
         keywords_any_groups = payload.keywords_any_groups or ([payload.keywords_any] if payload.keywords_any else [])
         event = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "query": payload.query,
             "media_type": payload.media_type.value,
             "indexer": payload.indexer,
@@ -1240,21 +1244,21 @@ class JackettClient:
             if not imdb_lookup_id:
                 return []
 
-            fallback_params: dict[str, object] = {
+            fallback_variant: dict[str, object] = {
                 "apikey": self.api_key or "",
                 "t": _coerce_text(params.get("t")) or "search",
                 "imdbid": imdb_lookup_id,
             }
             categories = _torznab_categories_for_media_type(payload.media_type)
             if categories:
-                fallback_params["cat"] = ",".join(categories)
+                fallback_variant["cat"] = ",".join(categories)
             if query:
-                fallback_params["q"] = query
-            if fallback_params == params:
+                fallback_variant["q"] = query
+            if fallback_variant == params:
                 return []
-            return [fallback_params]
+            return [fallback_variant]
 
-        fallback_params: list[dict[str, object]] = []
+        fallback_variants: list[dict[str, object]] = []
         seen_variants = {
             tuple(sorted((str(key), _coerce_text(value)) for key, value in params.items()))
         }
@@ -1267,7 +1271,7 @@ class JackettClient:
             if candidate_key in seen_variants:
                 return
             seen_variants.add(candidate_key)
-            fallback_params.append(candidate)
+            fallback_variants.append(candidate)
 
         if "year" in params:
             candidate = dict(params)
@@ -1294,7 +1298,7 @@ class JackettClient:
             candidate["cat"] = ",".join(categories)
         add_candidate(candidate)
 
-        return fallback_params
+        return fallback_variants
 
     def _search_variant_across_capable_indexers(
         self,
@@ -1476,7 +1480,7 @@ class JackettClient:
             return []
 
         categories = _torznab_categories_for_media_type(payload.media_type)
-        base_params = {
+        base_params: dict[str, object] = {
             "apikey": self.api_key or "",
             "t": search_mode,
             "imdbid": imdb_lookup_id,
@@ -1633,7 +1637,7 @@ class JackettClient:
         self,
         url: str,
         *,
-        params: dict[str, object],
+        params: dict[str, Any],
     ) -> ET.Element:
         if not self.base_url:
             raise JackettConfigError("Jackett app URL is not configured.")
@@ -1643,7 +1647,7 @@ class JackettClient:
         for _ in range(TIMEOUT_RETRY_ATTEMPTS):
             try:
                 with httpx.Client(timeout=self.timeout, transport=self.transport) as client:
-                    response = client.get(url, params=params)
+                    response = client.get(url, params=cast(Any, params))
                     response.raise_for_status()
                 break
             except httpx.TimeoutException as exc:

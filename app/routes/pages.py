@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
+from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
@@ -26,22 +26,21 @@ from app.services.metadata import (
     metadata_lookup_provider_catalog,
     metadata_lookup_provider_choices,
 )
+from app.services.qbittorrent import QbittorrentClient, QbittorrentClientError
 from app.services.quality_filters import (
     available_filter_profile_choices,
     available_filter_profile_choices_for_media_type,
     detect_matching_filter_profile_key,
     preview_quality_taxonomy_update,
-    quality_profile_label,
     quality_option_choices,
     quality_option_groups,
     quality_profile_choices,
+    quality_profile_label,
     quality_taxonomy_snapshot,
     read_quality_taxonomy_text,
     recent_quality_taxonomy_audit_entries,
     resolve_quality_profile_rules,
 )
-from app.services.qbittorrent import QbittorrentClientError
-from app.services.qbittorrent import QbittorrentClient
 from app.services.settings_service import SettingsService
 
 router = APIRouter()
@@ -197,9 +196,10 @@ def _title_only_search_request_from_rule(rule: Rule) -> JackettSearchRequest | N
     if not fallback_title:
         return None
     try:
+        media_type = MediaType(_rule_search_media_type(rule))
         return JackettSearchRequest(
             query=fallback_title,
-            media_type=_rule_search_media_type(rule),
+            media_type=media_type,
             imdb_id=rule.imdb_id or None,
             release_year=rule.release_year or None,
         )
@@ -663,11 +663,12 @@ def edit_rule(
     settings = SettingsService.get_or_create(session)
     profile_rules = resolve_quality_profile_rules(settings)
     form_data = _rule_to_form_data(rule)
+    form_media_type = str(form_data.get("media_type", MediaType.SERIES.value) or MediaType.SERIES.value)
     form_data["filter_profile_key"] = detect_matching_filter_profile_key(
         form_data["quality_include_tokens"],
         form_data["quality_exclude_tokens"],
         settings,
-        media_type=form_data["media_type"],
+        media_type=form_media_type,
     )
     context = _base_context(request, f"Edit {rule.rule_name}")
     available_filter_profiles = available_filter_profile_choices(settings)
@@ -686,12 +687,12 @@ def edit_rule(
             "available_filter_profiles": available_filter_profiles,
             "visible_filter_profiles": available_filter_profile_choices_for_media_type(
                 settings,
-                form_data["media_type"],
+                form_media_type,
             ),
             "media_choices": media_type_choices(),
             "metadata_lookup_providers": metadata_lookup_provider_catalog(),
             "visible_metadata_lookup_providers": metadata_lookup_provider_choices(
-                form_data["media_type"],
+                form_media_type,
             ),
             "metadata_lookup_disabled": settings.metadata_provider.value == "disabled",
         }

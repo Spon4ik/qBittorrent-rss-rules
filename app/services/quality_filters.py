@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from datetime import datetime, timezone
-from functools import lru_cache
 import json
-from pathlib import Path
 import re
-from typing import Any
+from collections.abc import Sequence
+from copy import deepcopy
+from datetime import UTC, datetime
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, cast
 
 from app.models import AppSettings, MediaType, QualityProfile, Rule
 
@@ -156,7 +157,7 @@ def _validate_quality_taxonomy_payload(
         value = str(raw_option.get("value", "")).strip()
         label = str(raw_option.get("label", "")).strip()
         pattern = str(raw_option.get("pattern", "")).strip()
-        group = str(raw_option.get("group", "")).strip()
+        group_key = str(raw_option.get("group", "")).strip()
         if not value:
             raise _quality_taxonomy_error(
                 f"options[{index}].value must be a non-empty string",
@@ -172,16 +173,16 @@ def _validate_quality_taxonomy_payload(
                 f"options[{index}].pattern must be a non-empty string",
                 source=source,
             )
-        if not group:
+        if not group_key:
             raise _quality_taxonomy_error(
                 f"options[{index}].group must be a non-empty string",
                 source=source,
             )
         if value in seen_option_values:
             raise _quality_taxonomy_error(f"duplicate option value '{value}'", source=source)
-        if group not in seen_group_keys:
+        if group_key not in seen_group_keys:
             raise _quality_taxonomy_error(
-                f"options[{index}].group references unknown group '{group}'",
+                f"options[{index}].group references unknown group '{group_key}'",
                 source=source,
             )
         seen_option_values.add(value)
@@ -189,7 +190,7 @@ def _validate_quality_taxonomy_payload(
             "value": value,
             "label": label,
             "pattern": pattern,
-            "group": group,
+            "group": group_key,
         }
         media_types = _normalize_media_type_scope(
             raw_option.get("media_types"),
@@ -384,7 +385,8 @@ def _load_quality_taxonomy() -> dict[str, Any]:
 
 @lru_cache(maxsize=1)
 def _quality_group_definitions() -> tuple[dict[str, object], ...]:
-    return _load_quality_taxonomy()["groups"]
+    groups = _load_quality_taxonomy()["groups"]
+    return cast(tuple[dict[str, object], ...], groups)
 
 
 @lru_cache(maxsize=1)
@@ -395,12 +397,14 @@ def _quality_group_labels() -> dict[str, str]:
 
 @lru_cache(maxsize=1)
 def _quality_options() -> tuple[dict[str, object], ...]:
-    return _load_quality_taxonomy()["options"]
+    options = _load_quality_taxonomy()["options"]
+    return cast(tuple[dict[str, object], ...], options)
 
 
 @lru_cache(maxsize=1)
 def _quality_bundle_definitions() -> tuple[dict[str, object], ...]:
-    return _load_quality_taxonomy()["bundles"]
+    bundles = _load_quality_taxonomy()["bundles"]
+    return cast(tuple[dict[str, object], ...], bundles)
 
 
 @lru_cache(maxsize=1)
@@ -414,7 +418,7 @@ def _quality_bundle_labels() -> dict[str, str]:
 @lru_cache(maxsize=1)
 def _quality_bundle_tokens() -> dict[str, tuple[str, ...]]:
     return {
-        str(item["key"]): tuple(str(token) for token in item["tokens"])
+        str(item["key"]): tuple(str(token) for token in _coerce_token_values(item.get("tokens")))
         for item in _quality_bundle_definitions()
     }
 
@@ -423,7 +427,7 @@ def _quality_bundle_tokens() -> dict[str, tuple[str, ...]]:
 def _quality_alias_map() -> dict[str, str]:
     return {
         str(item["alias"]): str(item["canonical"])
-        for item in _load_quality_taxonomy()["aliases"]
+        for item in cast(tuple[dict[str, str], ...], _load_quality_taxonomy()["aliases"])
     }
 
 
@@ -436,8 +440,8 @@ def _quality_option_patterns() -> dict[str, str]:
 def _quality_option_media_types() -> dict[str, tuple[str, ...] | None]:
     return {
         str(item["value"]): (
-            tuple(str(media_type) for media_type in item.get("media_types", ()))
-            if item.get("media_types")
+            tuple(str(media_type) for media_type in _coerce_media_type_values(item.get("media_types")))
+            if _coerce_media_type_values(item.get("media_types"))
             else None
         )
         for item in _quality_options()
@@ -446,7 +450,7 @@ def _quality_option_media_types() -> dict[str, tuple[str, ...] | None]:
 
 @lru_cache(maxsize=1)
 def _quality_option_order() -> dict[str, int]:
-    return {item["value"]: index for index, item in enumerate(_quality_options())}
+    return {str(item["value"]): index for index, item in enumerate(_quality_options())}
 
 
 def _clear_quality_taxonomy_cache() -> None:
@@ -521,14 +525,27 @@ def _dedupe_stored_tokens(raw_tokens: list[str] | tuple[str, ...] | None) -> lis
     return cleaned
 
 
+def _coerce_token_values(raw_value: object | None) -> list[str]:
+    if isinstance(raw_value, (list, tuple)):
+        return [str(item) for item in raw_value]
+    return []
+
+
+def _coerce_media_type_values(raw_value: object | None) -> list[str]:
+    if isinstance(raw_value, (list, tuple)):
+        return [str(item) for item in raw_value]
+    return []
+
+
 def _quality_taxonomy_references(
     settings: AppSettings | None,
-    rules: list[Rule] | tuple[Rule, ...] | None,
+    rules: Sequence[Rule] | None,
 ) -> list[dict[str, object]]:
     references: list[dict[str, object]] = []
     for profile in available_filter_profile_choices(settings):
         tokens = _dedupe_stored_tokens(
-            list(profile.get("include_tokens", [])) + list(profile.get("exclude_tokens", []))
+            _coerce_token_values(profile.get("include_tokens"))
+            + _coerce_token_values(profile.get("exclude_tokens"))
         )
         if not tokens:
             continue
@@ -561,7 +578,7 @@ def preview_quality_taxonomy_update(
     raw_payload: str,
     *,
     settings: AppSettings | None,
-    rules: list[Rule] | tuple[Rule, ...] | None,
+    rules: Sequence[Rule] | None,
 ) -> dict[str, object]:
     payload = _parse_quality_taxonomy_json(raw_payload, source="submitted taxonomy")
     validated = _validate_quality_taxonomy_payload(payload, source="submitted taxonomy")
@@ -578,7 +595,8 @@ def preview_quality_taxonomy_update(
     existing_invalid_references: list[dict[str, object]] = []
     blocking_references: list[dict[str, object]] = []
     for reference in _quality_taxonomy_references(settings, rules):
-        existing_invalid_tokens = [token for token in reference["tokens"] if token not in current_token_set]
+        reference_tokens = _coerce_token_values(reference.get("tokens"))
+        existing_invalid_tokens = [token for token in reference_tokens if token not in current_token_set]
         if existing_invalid_tokens:
             existing_invalid_references.append(
                 {
@@ -588,7 +606,7 @@ def preview_quality_taxonomy_update(
                 }
             )
 
-        newly_orphaned_tokens = [token for token in reference["tokens"] if token in removed_token_set]
+        newly_orphaned_tokens = [token for token in reference_tokens if token in removed_token_set]
         if newly_orphaned_tokens:
             blocking_references.append(
                 {
@@ -669,7 +687,7 @@ def apply_quality_taxonomy_update(
 
     audit_error = _append_quality_taxonomy_audit_entry(
         {
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "action": "apply",
             "note": change_note.strip(),
             "version": int(validated["version"]),
@@ -768,8 +786,8 @@ BUILTIN_FILTER_PROFILE_SPECS: tuple[dict[str, object], ...] = (
         "quality_profile_value": QualityProfile.CUSTOM.value,
         "media_types": tuple(SCOPED_MEDIA_TYPE_ORDER[:2]),
         "override_mode": "saved_profile",
-        "include_tokens": tuple(AT_LEAST_UHD_PROFILE["include_tokens"]),
-        "exclude_tokens": tuple(AT_LEAST_UHD_PROFILE["exclude_tokens"]),
+        "include_tokens": tuple(cast(list[str], AT_LEAST_UHD_PROFILE["include_tokens"])),
+        "exclude_tokens": tuple(cast(list[str], AT_LEAST_UHD_PROFILE["exclude_tokens"])),
     },
     {
         "key": BUILTIN_AUDIOBOOK_PORTABLE_PROFILE_KEY,
@@ -862,7 +880,7 @@ def quality_option_choices() -> list[dict[str, object]]:
             "label": str(item["label"]),
             "pattern": str(item["pattern"]),
             "group": str(item["group"]),
-            "media_types": _ordered_media_types(item.get("media_types")),
+            "media_types": _ordered_media_types(_coerce_media_type_values(item.get("media_types"))),
         }
         for item in _quality_options()
     ]
@@ -879,7 +897,7 @@ def quality_option_groups() -> list[dict[str, object]]:
         {
             "key": str(group["key"]),
             "label": str(group["label"]),
-            "media_types": _ordered_media_types(group.get("media_types")),
+            "media_types": _ordered_media_types(_coerce_media_type_values(group.get("media_types"))),
             "options": grouped[str(group["key"])],
         }
         for group in group_definitions
@@ -892,12 +910,12 @@ def quality_option_groups_for_media_type(media_type: MediaType | str | None) -> 
 
     filtered_groups: list[dict[str, object]] = []
     for group in quality_option_groups():
-        if not _media_type_matches_scope(media_type, group.get("media_types")):
+        if not _media_type_matches_scope(media_type, _coerce_media_type_values(group.get("media_types"))):
             continue
         visible_options = [
             option
-            for option in group["options"]
-            if _media_type_matches_scope(media_type, option.get("media_types"))
+            for option in cast(list[dict[str, object]], group["options"])
+            if _media_type_matches_scope(media_type, _coerce_media_type_values(option.get("media_types")))
         ]
         if not visible_options:
             continue
@@ -910,7 +928,7 @@ def quality_bundle_choices() -> list[dict[str, object]]:
         {
             "key": item["key"],
             "label": item["label"],
-            "tokens": list(item["tokens"]),
+            "tokens": _coerce_token_values(item.get("tokens")),
         }
         for item in _quality_bundle_definitions()
     ]
@@ -931,8 +949,8 @@ def resolve_quality_token(raw_token: str) -> list[str]:
     return [canonical]
 
 
-def expand_quality_tokens(raw_tokens: list[str] | tuple[str, ...] | None) -> list[str]:
-    tokens = raw_tokens or []
+def expand_quality_tokens(raw_tokens: object | None) -> list[str]:
+    tokens = _coerce_token_values(raw_tokens)
     cleaned: list[str] = []
     seen: set[str] = set()
     for raw_token in tokens:
@@ -948,11 +966,11 @@ def quality_profile_choices() -> list[dict[str, str]]:
     return [{"value": item.value, "label": quality_profile_label(item)} for item in QualityProfile]
 
 
-def normalize_quality_tokens(raw_tokens: list[str] | tuple[str, ...] | None) -> list[str]:
+def normalize_quality_tokens(raw_tokens: object | None) -> list[str]:
     return expand_quality_tokens(raw_tokens)
 
 
-def canonicalize_quality_tokens(raw_tokens: list[str] | tuple[str, ...] | None) -> list[str]:
+def canonicalize_quality_tokens(raw_tokens: object | None) -> list[str]:
     option_order = _quality_option_order()
     return sorted(
         normalize_quality_tokens(raw_tokens),
@@ -960,7 +978,7 @@ def canonicalize_quality_tokens(raw_tokens: list[str] | tuple[str, ...] | None) 
     )
 
 
-def tokens_to_regex(tokens: list[str] | tuple[str, ...] | None) -> str:
+def tokens_to_regex(tokens: object | None) -> str:
     option_patterns = _quality_option_patterns()
     ordered_patterns: list[str] = []
     seen_patterns: set[str] = set()
@@ -1020,8 +1038,8 @@ def _scope_domain(media_types: list[str]) -> str | None:
 
 
 def infer_filter_profile_media_types(
-    include_tokens: list[str] | tuple[str, ...] | None,
-    exclude_tokens: list[str] | tuple[str, ...] | None,
+    include_tokens: object | None,
+    exclude_tokens: object | None,
 ) -> list[str] | None:
     tokens = canonicalize_quality_tokens(
         list(normalize_quality_tokens(include_tokens)) + list(normalize_quality_tokens(exclude_tokens))
@@ -1118,7 +1136,7 @@ def filter_profile_matches_media_type(
     profile: dict[str, object],
     media_type: MediaType | str | None,
 ) -> bool:
-    return _media_type_matches_scope(media_type, profile.get("media_types"))
+    return _media_type_matches_scope(media_type, _coerce_media_type_values(profile.get("media_types")))
 
 
 def _build_builtin_filter_profile(
@@ -1146,11 +1164,11 @@ def _build_builtin_filter_profile(
         include_tokens = list(profile_rules[profile_key]["include_tokens"])
         exclude_tokens = list(profile_rules[profile_key]["exclude_tokens"])
     else:
-        include_tokens = list(spec.get("include_tokens", ()))
-        exclude_tokens = list(spec.get("exclude_tokens", ()))
+        include_tokens = _coerce_token_values(spec.get("include_tokens"))
+        exclude_tokens = _coerce_token_values(spec.get("exclude_tokens"))
         if override:
-            include_tokens = list(override.get("include_tokens", include_tokens))
-            exclude_tokens = list(override.get("exclude_tokens", exclude_tokens))
+            include_tokens = _coerce_token_values(override.get("include_tokens")) or include_tokens
+            exclude_tokens = _coerce_token_values(override.get("exclude_tokens")) or exclude_tokens
 
     return {
         "label": label,
@@ -1158,7 +1176,7 @@ def _build_builtin_filter_profile(
         "exclude_tokens": exclude_tokens,
         "quality_profile_value": str(spec.get("quality_profile_value", QualityProfile.CUSTOM.value)),
         "built_in": True,
-        "media_types": _ordered_media_types(spec.get("media_types")),
+        "media_types": _ordered_media_types(_coerce_media_type_values(spec.get("media_types"))),
     }
 
 
@@ -1202,8 +1220,8 @@ def available_filter_profile_choices_for_media_type(
 
 
 def detect_matching_filter_profile_key(
-    include_tokens: list[str] | tuple[str, ...] | None,
-    exclude_tokens: list[str] | tuple[str, ...] | None,
+    include_tokens: object | None,
+    exclude_tokens: object | None,
     settings: AppSettings | None,
     *,
     media_type: MediaType | str | None = None,
@@ -1214,8 +1232,9 @@ def detect_matching_filter_profile_key(
         if media_type is not None and not filter_profile_matches_media_type(item, media_type):
             continue
         if (
-            normalized_include == canonicalize_quality_tokens(item.get("include_tokens"))
-            and normalized_exclude == canonicalize_quality_tokens(item.get("exclude_tokens"))
+            normalized_include == canonicalize_quality_tokens(_coerce_token_values(item.get("include_tokens")))
+            and normalized_exclude
+            == canonicalize_quality_tokens(_coerce_token_values(item.get("exclude_tokens")))
         ):
             return str(item["key"])
     return ""

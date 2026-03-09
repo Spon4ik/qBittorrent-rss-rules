@@ -55,6 +55,14 @@ select = [
   "UP",
   "B",
 ]
+ignore = [
+  "E501",
+  "UP040",
+  "UP042",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"app/routes/*.py" = ["B008"]
 
 [tool.mypy]
 python_version = "3.12"

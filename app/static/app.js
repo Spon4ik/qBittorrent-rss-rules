@@ -617,6 +617,10 @@ function initSearchPage(container) {
         input.disabled = !optionVisible;
       });
     });
+    form.querySelectorAll("[data-search-quality-pair]").forEach((pairElement) => {
+      const pairScope = (pairElement.dataset.mediaTypes || "").split(",");
+      pairElement.hidden = !mediaTypeMatchesScope(mediaType, pairScope);
+    });
   };
 
   const getActiveFilters = () => ({

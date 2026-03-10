@@ -52,7 +52,16 @@
 - A repo-local `project-design-documentation-engineer` skill now exists under `.codex/skills/project-design-documentation-engineer` to standardize project and design documentation updates (plans, specs, ADRs, QA docs) during phase execution and validation.
 - A repo-local `versioning-manager` skill now exists under `.codex/skills/versioning-manager` to standardize SemVer bump decisions and cross-file version synchronization during release prep.
 - A repo-local `programming-sprint-manager` skill now exists under `.codex/skills/programming-sprint-manager` to split mixed bug/feature/improvement execution into small validated slices with consistent sprint tracking and closeout notes.
-- The dated execution checklist for the latest UX/request slice (`P6-01` through `P6-07`) is completed as of 2026-03-10 with evidence links in the checklist table.
+- The dated execution checklist for the latest UX/request slice (`P6-01` through `P6-09`) is completed as of 2026-03-10 with evidence links in the checklist table.
+- `/search` now uses a denser phase-6 polish layout: explicit `Search criteria` and `Local refinement` panels, paired include/exclude checkbox rows per quality group, and a collapsible keyword-checkbox section.
+- `/search` summary/filter-impact rendering now uses compact grid composition with multi-column, scrollable impact rows so large filter sets consume less vertical space.
+- `/search` source-context summary now renders as 3 aligned cards (`App source`, `Rule-source path`, `Model split`), and filter-impact sections are now individually collapsible.
+- Result-view controls now render as grouped cards (`view mode` + three sort-level blocks) with clearer visual hierarchy while keeping the existing synchronized control behavior.
+- Added automated UX screenshot tooling (`scripts/capture_search_ui.py`, `scripts/capture_ui.sh`, `scripts/capture_ui.bat`) and README usage docs so iterative `/search` visual review runs can be repeated quickly.
+- Screenshot capture defaults now target stable non-query `/search` states; live Jackett-query captures are opt-in via `--include-live-search` to avoid routine timeout failures during UX iteration.
+- Screenshot capture now skips auto-starting uvicorn when a local server is already reachable, preventing duplicate server churn during multi-shell iteration loops.
+- `scripts/run_dev.sh` now auto-detects repo-local interpreters and launches via `python -m uvicorn`, removing the prior hard dependency on a globally installed `uvicorn` binary in WSL/Linux shells.
+- Linux/WSL screenshot runs currently require host browser libraries (`python -m playwright install-deps chromium` with sudo); when missing, the script now exits with an explicit remediation message instead of a traceback.
 - The goal is to add an on-demand search workflow beside RSS rule authoring, not to replace RSS automation.
 
 ## Request Checklist (2026-03-10 refresh)
@@ -79,6 +88,10 @@ This section maps the requested UX/search improvements to implementation status 
    - Status: implemented; tracked in this phase plan plus `docs/plans/current-status.md`.
 10. Additional expert recommendations across UX/backend/QA/ops.
    - Status: documented as follow-up opportunities; implementation pending prioritization.
+11. Rework dense `/search` layout usage (`criteria`, checkbox rows, filter-impact density) to reduce wasted space on wide screens.
+   - Status: implemented.
+12. Add an automated visual-feedback capture loop for repeatable UI/UX review.
+   - Status: implemented with explicit Linux/WSL host dependency notes.
 
 ## Step-by-step implementation plan
 
@@ -93,6 +106,8 @@ This section maps the requested UX/search improvements to implementation status 
 | P6-05 | Validate result metadata semantics and column relevance. | Codex | 2026-03-11 | completed | Indexer labels appear when provided; unknown fallback is accurate; peers/leechers/grabs columns appear only when populated. | `tests/test_jackett.py::test_jackett_client_parses_indexer_tag_and_infers_peers`, `tests/test_routes.py::test_search_page_hides_availability_columns_when_metrics_absent` |
 | P6-06 | Resolve Linux route-test environment blocker and rerun targeted route tests. | Codex | 2026-03-12 | completed | `tests/test_routes.py` targeted reruns complete in `.venv-linux` without `TestClient` hang. | `./scripts/test.sh tests/test_routes.py` (`44 passed`, 2026-03-10) |
 | P6-07 | Final closeout for this request set. | Codex | 2026-03-12 | completed | `current-status`, phase plan status rows, and residual risks are synchronized and decision-complete. | `docs/plans/current-status.md`, this phase plan |
+| P6-08 | Deliver compact `/search` layout polish for high-density desktop use. | Codex | 2026-03-10 | completed | Search criteria layout uses explicit panel grids, include/exclude checkbox rows are paired per group, and result-view/filter-impact composition is visibly denser. | `app/templates/search.html`, `app/static/app.css`, `app/static/app.js`, `./scripts/test.sh tests/test_routes.py` (`44 passed`, 2026-03-10) |
+| P6-09 | Add automated `/search` visual feedback tooling for iterative UX polish. | Codex | 2026-03-10 | completed | Screenshot tooling exists with desktop/mobile capture support, wrappers, and documented setup/remediation steps. | `scripts/capture_search_ui.py`, `scripts/capture_ui.sh`, `scripts/capture_ui.bat`, `README.md` |
 
 ## Goal
 
@@ -158,7 +173,7 @@ qBittorrent's built-in search UI is a flat text box. The current app already mod
 ## Validation checklist
 
 - Run targeted service and route tests for Jackett client behavior and search page rendering.
-- Current status: `tests/test_jackett.py` passes in Linux `.venv-linux` (`26 passed`), while `tests/test_routes.py` reruns are currently blocked in Linux `.venv-linux` by a `fastapi.testclient.TestClient` hang that needs environment triage.
+- Current status: targeted Linux wrapper reruns pass in `.venv-linux` (`./scripts/test.sh tests/test_jackett.py`: `28 passed`; `./scripts/test.sh tests/test_routes.py`: `44 passed` on 2026-03-10).
 - Run the full pytest suite through `scripts/test.sh` or `scripts/test.bat`. Current status: passing in repo `.venv` and `.venv-linux`.
 - Run `scripts/check.sh` / `scripts/check.bat` before release sign-off. Current status: passing in Linux `.venv-linux`.
 - For Linux/WSL shells, bootstrap a native test interpreter using `docs/native-python-pytest.md` so `python3 -m pytest` is runnable without the Windows `.venv`.

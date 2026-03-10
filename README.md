@@ -129,6 +129,43 @@ The check script runs:
 - `mypy app`
 - `pytest` through the logging wrapper, which refreshes `logs/tests/pytest-last.log` and `logs/tests/pytest-last.xml`
 
+## Automated UI screenshots
+
+Use the screenshot helper to generate repeatable desktop/mobile captures for `/search` UX review:
+
+```bash
+python -m pip install playwright
+python -m playwright install chromium
+./scripts/capture_ui.sh --start-server
+```
+
+If your shell does not expose `python` (common on WSL), use the repo interpreter path instead:
+
+```bash
+./.venv-linux/bin/python -m pip install playwright
+./.venv-linux/bin/python -m playwright install chromium
+./scripts/capture_ui.sh --start-server
+```
+
+If the app server is already running on `127.0.0.1:8000`, the shortest command is:
+
+```bash
+./scripts/capture_ui.sh
+```
+
+On Windows `cmd.exe`:
+
+```bat
+python -m pip install playwright
+python -m playwright install chromium
+scripts\capture_ui.bat --start-server
+```
+
+Artifacts are written under `logs/ui-feedback/<timestamp>/` with a `manifest.json` so follow-up polish passes can compare the exact captured screens.
+The default run captures stable `/search` UI states without triggering live Jackett queries.
+Use `--include-live-search` only when you explicitly want a live query screenshot.
+On Linux/WSL hosts, if Chromium fails to launch, run `./.venv-linux/bin/python -m playwright install-deps chromium`.
+
 ## qBittorrent sync
 
 The app does not depend on qBittorrent's manual "Import RSS Rules" action. It uses the WebUI API directly:
@@ -175,3 +212,5 @@ Use the Import page to upload an exported qBittorrent RSS rules JSON file. The i
 - If metadata lookup fails, confirm the OMDb API key for video lookups, then try manual entry.
 - If Jackett search fails in Docker, verify the app-side Jackett URL is reachable from the app container and use a separate qB URL when qBittorrent is on a different network path.
 - If the app starts but data is not saved, confirm `QB_RULES_DATABASE_URL` points to a writable path.
+- On WSL/Linux, do not source Windows venv paths like `C:\\...\\.venv\\Scripts\\activate`; use a Linux venv path (`source .venv-linux/bin/activate`) and run `./scripts/run_dev.sh`.
+- If `./scripts/capture_ui.sh` reports missing Chromium libs on WSL/Linux, run `./.venv-linux/bin/python -m playwright install-deps chromium` (this command elevates with sudo when needed).

@@ -2,8 +2,8 @@
 {% block content %}
 {% macro result_view_panel(section_label) -%}
 <section class="summary-strip search-controls result-view-panel" data-search-controls>
-  <div class="stack">
-    <div>
+  <div class="result-view-header">
+    <div class="result-view-title">
       <p class="eyebrow">Result view options</p>
       <strong>{{ section_label }}</strong>
       <p class="helper-text">Apply one shared view/sort state from either panel, then save it as your default.</p>
@@ -13,78 +13,86 @@
       <p class="helper-text" data-search-default-status aria-live="polite"></p>
     </div>
   </div>
-  <label>
-    Result view
-    <select data-search-view-mode>
-      <option value="cards">Cards</option>
-      <option value="table" selected>Table</option>
-    </select>
-  </label>
-  <label>
-    Sort level 1
-    <select data-search-sort-field="1">
-      <option value="published_at" selected>Published time</option>
-      <option value="seeders">Seeders</option>
-      <option value="peers">Peers</option>
-      <option value="leechers">Leechers</option>
-      <option value="grabs">Grabs</option>
-      <option value="size_bytes">Size</option>
-      <option value="year">Year</option>
-      <option value="indexer">Indexer</option>
-      <option value="title">Title</option>
-    </select>
-  </label>
-  <label>
-    Direction 1
-    <select data-search-sort-dir="1">
-      <option value="desc" selected>Descending</option>
-      <option value="asc">Ascending</option>
-    </select>
-  </label>
-  <label>
-    Sort level 2
-    <select data-search-sort-field="2">
-      <option value="" selected>None</option>
-      <option value="published_at">Published time</option>
-      <option value="seeders">Seeders</option>
-      <option value="peers">Peers</option>
-      <option value="leechers">Leechers</option>
-      <option value="grabs">Grabs</option>
-      <option value="size_bytes">Size</option>
-      <option value="year">Year</option>
-      <option value="indexer">Indexer</option>
-      <option value="title">Title</option>
-    </select>
-  </label>
-  <label>
-    Direction 2
-    <select data-search-sort-dir="2">
-      <option value="desc">Descending</option>
-      <option value="asc" selected>Ascending</option>
-    </select>
-  </label>
-  <label>
-    Sort level 3
-    <select data-search-sort-field="3">
-      <option value="" selected>None</option>
-      <option value="published_at">Published time</option>
-      <option value="seeders">Seeders</option>
-      <option value="peers">Peers</option>
-      <option value="leechers">Leechers</option>
-      <option value="grabs">Grabs</option>
-      <option value="size_bytes">Size</option>
-      <option value="year">Year</option>
-      <option value="indexer">Indexer</option>
-      <option value="title">Title</option>
-    </select>
-  </label>
-  <label>
-    Direction 3
-    <select data-search-sort-dir="3">
-      <option value="desc">Descending</option>
-      <option value="asc" selected>Ascending</option>
-    </select>
-  </label>
+  <div class="result-view-grid">
+    <label class="result-view-mode-field">
+      Result view
+      <select data-search-view-mode>
+        <option value="cards">Cards</option>
+        <option value="table" selected>Table</option>
+      </select>
+    </label>
+    <div class="result-view-sort-group">
+      <label>
+        Sort level 1
+        <select data-search-sort-field="1">
+          <option value="published_at" selected>Published time</option>
+          <option value="seeders">Seeders</option>
+          <option value="peers">Peers</option>
+          <option value="leechers">Leechers</option>
+          <option value="grabs">Grabs</option>
+          <option value="size_bytes">Size</option>
+          <option value="year">Year</option>
+          <option value="indexer">Indexer</option>
+          <option value="title">Title</option>
+        </select>
+      </label>
+      <label>
+        Direction 1
+        <select data-search-sort-dir="1">
+          <option value="desc" selected>Descending</option>
+          <option value="asc">Ascending</option>
+        </select>
+      </label>
+    </div>
+    <div class="result-view-sort-group">
+      <label>
+        Sort level 2
+        <select data-search-sort-field="2">
+          <option value="" selected>None</option>
+          <option value="published_at">Published time</option>
+          <option value="seeders">Seeders</option>
+          <option value="peers">Peers</option>
+          <option value="leechers">Leechers</option>
+          <option value="grabs">Grabs</option>
+          <option value="size_bytes">Size</option>
+          <option value="year">Year</option>
+          <option value="indexer">Indexer</option>
+          <option value="title">Title</option>
+        </select>
+      </label>
+      <label>
+        Direction 2
+        <select data-search-sort-dir="2">
+          <option value="desc">Descending</option>
+          <option value="asc" selected>Ascending</option>
+        </select>
+      </label>
+    </div>
+    <div class="result-view-sort-group">
+      <label>
+        Sort level 3
+        <select data-search-sort-field="3">
+          <option value="" selected>None</option>
+          <option value="published_at">Published time</option>
+          <option value="seeders">Seeders</option>
+          <option value="peers">Peers</option>
+          <option value="leechers">Leechers</option>
+          <option value="grabs">Grabs</option>
+          <option value="size_bytes">Size</option>
+          <option value="year">Year</option>
+          <option value="indexer">Indexer</option>
+          <option value="title">Title</option>
+        </select>
+      </label>
+      <label>
+        Direction 3
+        <select data-search-sort-dir="3">
+          <option value="desc">Descending</option>
+          <option value="asc" selected>Ascending</option>
+        </select>
+      </label>
+    </div>
+  </div>
   <p class="helper-text search-metrics-note">
     Peers and leechers are tracker-reported availability numbers. Grabs is the tracker download-count metric when provided.
   </p>
@@ -110,26 +118,22 @@
   {% endif %}
 </section>
 
-<section class="summary-strip">
-  <div class="stack">
-    <div>
-      <p class="eyebrow">App source</p>
-      <strong>{{ 'Ready' if jackett_ready else 'Not configured' }}</strong>
-      <p class="helper-text">{{ jackett_api_url or 'Set a Jackett app URL in Settings to enable search.' }}</p>
-    </div>
-    <div>
-      <p class="eyebrow">Rule-source path</p>
-      <strong>{{ 'Configured' if jackett_rule_ready else 'Not configured yet' }}</strong>
-      <p class="helper-text">{{ jackett_qb_url or 'Set a separate qB URL only if qBittorrent reaches Jackett through a different hostname.' }}</p>
-    </div>
-  </div>
-  <div class="stack">
-    <div>
-      <p class="eyebrow">Model split</p>
-      <strong>Not mixed with RSS feeds</strong>
-      <p class="helper-text">Search runs against Jackett now. RSS feed selection still controls future polling for saved rules.</p>
-    </div>
-  </div>
+<section class="summary-strip search-source-summary">
+  <article class="search-source-card">
+    <p class="eyebrow">App source</p>
+    <strong>{{ 'Ready' if jackett_ready else 'Not configured' }}</strong>
+    <p class="helper-text">{{ jackett_api_url or 'Set a Jackett app URL in Settings to enable search.' }}</p>
+  </article>
+  <article class="search-source-card">
+    <p class="eyebrow">Rule-source path</p>
+    <strong>{{ 'Configured' if jackett_rule_ready else 'Not configured yet' }}</strong>
+    <p class="helper-text">{{ jackett_qb_url or 'Set a separate qB URL only if qBittorrent reaches Jackett through a different hostname.' }}</p>
+  </article>
+  <article class="search-source-card">
+    <p class="eyebrow">Model split</p>
+    <strong>Not mixed with RSS feeds</strong>
+    <p class="helper-text">Search runs against Jackett now. RSS feed selection still controls future polling for saved rules.</p>
+  </article>
 </section>
 
 {% if derivation_notice %}
@@ -138,64 +142,76 @@
 </section>
 {% endif %}
 
-<form class="filter-grid search-filter-grid" method="get" action="/search" data-search-form>
+<form class="search-filter-grid" method="get" action="/search" data-search-form>
   {% if source_rule %}
   <input type="hidden" name="rule_id" value="{{ source_rule.id }}" />
   {% endif %}
-  <label>
-    Title
-    <input type="text" name="query" value="{{ form_data.query }}" placeholder="Dune Part Two" />
-  </label>
-  <label>
-    Media type
-    <select name="media_type">
-      {% for choice in media_choices %}
-      <option value="{{ choice.value }}" {% if form_data.media_type == choice.value %}selected{% endif %}>{{ choice.label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Indexer
-    <input type="text" name="indexer" value="{{ form_data.indexer }}" placeholder="all" />
-    <span class="helper-text">Use `all` or a Jackett indexer slug.</span>
-  </label>
-  <label>
-    IMDb ID
-    <input type="text" name="imdb_id" value="{{ form_data.imdb_id }}" placeholder="tt1234567" />
-    <span class="helper-text">Optional. Movies/series with IMDb ID auto-run IMDb-first and keep title fallback separate.</span>
-  </label>
-  <label class="toggle">
-    <input type="hidden" name="include_release_year" value="0" />
-    <input type="checkbox" name="include_release_year" value="on" data-search-include-year {% if form_data.include_release_year %}checked{% endif %} />
-    <span>Filter by release year</span>
-  </label>
-  <label>
-    Release year
-    <input type="text" name="release_year" value="{{ form_data.release_year }}" placeholder="2025" data-search-release-year />
-    <span class="helper-text">Local cached filter. It applies only when the checkbox is enabled.</span>
-  </label>
-  <label>
-    Min size (MB)
-    <input type="text" name="size_min_mb" value="{{ form_data.size_min_mb }}" placeholder="700" />
-    <span class="helper-text">Local cached filter.</span>
-  </label>
-  <label>
-    Max size (MB)
-    <input type="text" name="size_max_mb" value="{{ form_data.size_max_mb }}" placeholder="50000" />
-    <span class="helper-text">Local cached filter.</span>
-  </label>
-
-  <section class="full-span stack">
-    <div class="panel-head panel-head-tight">
+  <section class="search-section search-core-section full-span">
+    <div class="panel-head panel-head-tight search-section-head">
       <div>
-        <p class="eyebrow">Keyword filters</p>
-        <h3>Rule-style include/exclude checkboxes</h3>
+        <p class="eyebrow">Search criteria</p>
+        <h3>Remote fetch scope</h3>
       </div>
+      <p class="helper-text">Use these fields to shape the one Jackett fetch pass before local filtering.</p>
     </div>
-    <p class="helper-text">Use these quality token checkboxes like the rule form; they drive local search filtering immediately.</p>
-    <div class="form-grid search-quality-grid">
-      <div class="stack">
-        {% for group in quality_option_groups %}
+    <div class="search-core-grid">
+      <label class="search-field search-field-title">
+        Title
+        <input type="text" name="query" value="{{ form_data.query }}" placeholder="Dune Part Two" />
+      </label>
+      <label class="search-field search-field-media">
+        Media type
+        <select name="media_type">
+          {% for choice in media_choices %}
+          <option value="{{ choice.value }}" {% if form_data.media_type == choice.value %}selected{% endif %}>{{ choice.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="search-field search-field-indexer">
+        Indexer
+        <input type="text" name="indexer" value="{{ form_data.indexer }}" placeholder="all" />
+        <span class="helper-text">Use `all` or a Jackett indexer slug.</span>
+      </label>
+      <label class="search-field search-field-imdb">
+        IMDb ID
+        <input type="text" name="imdb_id" value="{{ form_data.imdb_id }}" placeholder="tt1234567" />
+        <span class="helper-text">Optional. Movies/series with IMDb ID auto-run IMDb-first and keep title fallback separate.</span>
+      </label>
+      <label class="search-field search-field-year-toggle toggle">
+        <input type="hidden" name="include_release_year" value="0" />
+        <input type="checkbox" name="include_release_year" value="on" data-search-include-year {% if form_data.include_release_year %}checked{% endif %} />
+        <span>Filter by release year</span>
+      </label>
+      <label class="search-field search-field-year">
+        Release year
+        <input type="text" name="release_year" value="{{ form_data.release_year }}" placeholder="2025" data-search-release-year />
+        <span class="helper-text">Local cached filter. It applies only when the checkbox is enabled.</span>
+      </label>
+      <label class="search-field search-field-size-min">
+        Min size (MB)
+        <input type="text" name="size_min_mb" value="{{ form_data.size_min_mb }}" placeholder="700" />
+        <span class="helper-text">Local cached filter.</span>
+      </label>
+      <label class="search-field search-field-size-max">
+        Max size (MB)
+        <input type="text" name="size_max_mb" value="{{ form_data.size_max_mb }}" placeholder="50000" />
+        <span class="helper-text">Local cached filter.</span>
+      </label>
+    </div>
+  </section>
+
+  <details class="search-section search-keyword-section full-span" open>
+    <summary class="search-section-summary">
+      <span>
+        <span class="eyebrow">Keyword filters</span>
+        <span class="search-section-title">Rule-style include/exclude checkboxes</span>
+      </span>
+      <span class="search-section-summary-meta" aria-hidden="true"></span>
+    </summary>
+    <p class="helper-text">Use these quality token checkboxes like the rule form; include/exclude for each family is aligned side by side.</p>
+    <div class="search-quality-pairs">
+      {% for group in quality_option_groups %}
+      <div class="search-quality-pair" data-search-quality-pair data-media-types="{{ group.media_types | join(',') }}">
         <fieldset data-search-quality-group="include" data-media-types="{{ group.media_types | join(',') }}">
           <legend>Include {{ group.label }}</legend>
           {% for choice in group.options %}
@@ -205,10 +221,6 @@
           </label>
           {% endfor %}
         </fieldset>
-        {% endfor %}
-      </div>
-      <div class="stack">
-        {% for group in quality_option_groups %}
         <fieldset data-search-quality-group="exclude" data-media-types="{{ group.media_types | join(',') }}">
           <legend>Exclude {{ group.label }}</legend>
           {% for choice in group.options %}
@@ -218,37 +230,51 @@
           </label>
           {% endfor %}
         </fieldset>
-        {% endfor %}
       </div>
+      {% endfor %}
+    </div>
+  </details>
+
+  <section class="search-section search-local-section full-span">
+    <div class="panel-head panel-head-tight search-section-head">
+      <div>
+        <p class="eyebrow">Local refinement</p>
+        <h3>Cached result filters</h3>
+      </div>
+      <p class="helper-text">These filters update locally without another Jackett request.</p>
+    </div>
+    <div class="search-local-grid">
+      <label class="search-field search-field-required">
+        Required keywords
+        <input type="text" name="keywords_all" value="{{ form_data.keywords_all }}" placeholder="remux, 2026" />
+        <span class="helper-text">Every result must include these terms in title or metadata text.</span>
+      </label>
+      <label class="search-field search-field-any">
+        Additional any-of keyword groups
+        <input type="text" name="keywords_any" value="{{ form_data.keywords_any }}" placeholder="uhd, 4k | hdr, hdr10" />
+        <span class="helper-text">Use `|` between groups. Checkbox include tokens are added as another any-of group.</span>
+      </label>
+      <label class="search-field search-field-not">
+        Additional excluded keywords
+        <input type="text" name="keywords_not" value="{{ form_data.keywords_not }}" placeholder="cam, ts" />
+        <span class="helper-text">Checkbox exclude tokens are merged here.</span>
+      </label>
+      <label class="search-field search-field-indexers">
+        Result indexers
+        <input type="text" name="filter_indexers" value="{{ form_data.filter_indexers }}" placeholder="rutracker, eztv" />
+        <span class="helper-text">Local cached filter by result indexer labels.</span>
+      </label>
+      <label class="search-field search-field-categories">
+        Result category IDs
+        <input type="text" name="filter_category_ids" value="{{ form_data.filter_category_ids }}" placeholder="5000, 5040" />
+        <span class="helper-text">Local cached filter by Torznab category IDs.</span>
+      </label>
     </div>
   </section>
 
-  <label class="full-span">
-    Required keywords
-    <input type="text" name="keywords_all" value="{{ form_data.keywords_all }}" placeholder="remux, 2026" />
-    <span class="helper-text">Local cached filter. Every result must include these terms in title or metadata text.</span>
-  </label>
-  <label class="full-span">
-    Additional any-of keyword groups
-    <input type="text" name="keywords_any" value="{{ form_data.keywords_any }}" placeholder="uhd, 4k | hdr, hdr10" />
-    <span class="helper-text">Local cached filter. Use `|` between groups. Checkbox include tokens are added as another any-of group.</span>
-  </label>
-  <label class="full-span">
-    Additional excluded keywords
-    <input type="text" name="keywords_not" value="{{ form_data.keywords_not }}" placeholder="cam, ts" />
-    <span class="helper-text">Local cached filter. Checkbox exclude tokens are merged here.</span>
-  </label>
-  <label class="full-span">
-    Result indexers
-    <input type="text" name="filter_indexers" value="{{ form_data.filter_indexers }}" placeholder="rutracker, eztv" />
-    <span class="helper-text">Local cached filter by result indexer labels.</span>
-  </label>
-  <label class="full-span">
-    Result category IDs
-    <input type="text" name="filter_category_ids" value="{{ form_data.filter_category_ids }}" placeholder="5000, 5040" />
-    <span class="helper-text">Local cached filter by Torznab category IDs.</span>
-  </label>
-  <button type="submit">Search Jackett</button>
+  <div class="full-span search-form-submit">
+    <button type="submit">Search Jackett</button>
+  </div>
 </form>
 
 {% if search_run %}
@@ -265,7 +291,7 @@
 {% endif %}
 
 {{ result_view_panel(search_run.primary_label) }}
-<section class="summary-strip" data-search-summary="primary">
+<section class="summary-strip search-summary" data-search-summary="primary">
   <div>
     <p class="eyebrow">{{ search_run.primary_label }}</p>
     <strong><span data-search-filtered-count="primary">{{ search_run.results|length }}</span> filtered / <span data-search-fetched-count="primary">{{ search_run.raw_results|length }}</span> fetched</strong>
@@ -291,9 +317,11 @@
   </div>
   {% if not (search_run.primary_label == "IMDb-first results" and not search_run.raw_results) %}
   <div class="search-filter-impact">
-    <p class="eyebrow">Filter impact</p>
-    <p class="helper-text" data-filter-impact-empty="primary">No local filters are active.</p>
-    <ul class="filter-impact-list" data-filter-impact-list="primary"></ul>
+    <details class="search-impact-toggle" open>
+      <summary class="search-impact-summary">Filter impact</summary>
+      <p class="helper-text" data-filter-impact-empty="primary">No local filters are active.</p>
+      <ul class="filter-impact-list" data-filter-impact-list="primary"></ul>
+    </details>
   </div>
   {% endif %}
 </section>
@@ -458,7 +486,7 @@
 
 {% if search_run.fallback_request_variants or search_run.raw_fallback_results %}
 {{ result_view_panel(search_run.fallback_label or 'Title fallback') }}
-<section class="summary-strip" data-search-summary="fallback">
+<section class="summary-strip search-summary" data-search-summary="fallback">
   <div>
     <p class="eyebrow">{{ search_run.fallback_label or 'Title fallback' }}</p>
     <strong><span data-search-filtered-count="fallback">{{ search_run.fallback_results|length }}</span> filtered / <span data-search-fetched-count="fallback">{{ search_run.raw_fallback_results|length }}</span> fetched</strong>
@@ -470,9 +498,11 @@
   </div>
   {% if search_run.raw_fallback_results %}
   <div class="search-filter-impact">
-    <p class="eyebrow">Filter impact</p>
-    <p class="helper-text" data-filter-impact-empty="fallback">No local filters are active.</p>
-    <ul class="filter-impact-list" data-filter-impact-list="fallback"></ul>
+    <details class="search-impact-toggle" open>
+      <summary class="search-impact-summary">Filter impact</summary>
+      <p class="helper-text" data-filter-impact-empty="fallback">No local filters are active.</p>
+      <ul class="filter-impact-list" data-filter-impact-list="fallback"></ul>
+    </details>
   </div>
   {% endif %}
 </section>

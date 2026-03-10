@@ -99,6 +99,14 @@
 - Mypy cleanup for the release-gating stack is now complete (`mypy app` passes), including typing fixes across `quality_filters`, `jackett`, `api` routes, `pages` routes, and supporting service modules.
 - Ruff policy now explicitly ignores FastAPI dependency-in-default warnings for route handlers (`B008` via `app/routes/*.py`) and defers bulk formatting/modernization churn (`E501`, `UP040`, `UP042`); after that policy update and safe auto-fixes, `ruff check .` now passes.
 - Added initial service and route coverage for the Jackett client, search page, and settings persistence.
+- `/search` now uses a compact panelized layout for high-density screens (`Search criteria` + `Local refinement` panels), paired include/exclude checkbox rows per quality family, and a collapsible keyword-checkbox section.
+- `/search` result summaries now render denser filter-impact content (multi-column + scrollable cards) and result-view controls now use grouped sort cards for clearer hierarchy.
+- `/search` source context now uses aligned summary cards, and each filter-impact block can be collapsed to reduce vertical noise during iterative tuning.
+- Added automated UI-feedback capture tooling for `/search` (`scripts/capture_search_ui.py` plus `scripts/capture_ui.sh` / `scripts/capture_ui.bat`) and documented setup/usage in `README.md`.
+- Screenshot capture now defaults to stable non-query `/search` pages and treats live Jackett-query screenshots as opt-in (`--include-live-search`) to avoid routine timeout churn.
+- Screenshot capture now detects an already-running local server and skips spawning a second uvicorn process, reducing disruption for multi-shell/WSL workflows.
+- Added Playwright to dev dependencies for the screenshot automation flow (`pyproject.toml`).
+- `scripts/run_dev.sh` now auto-detects repo-local interpreters and runs `python -m uvicorn`, so WSL/Linux runs no longer require a globally installed `uvicorn` binary.
 
 ## In progress
 
@@ -109,7 +117,8 @@
 - Release-process automated checks now pass in the Linux `.venv-linux` environment through `./scripts/check.sh` (`ruff`, `mypy`, and full pytest).
 - Linux targeted reruns for this slice now pass via the supported wrapper path (`./scripts/test.sh tests/test_jackett.py`: `28 passed`; `./scripts/test.sh tests/test_routes.py`: `44 passed` on 2026-03-10), replacing the earlier route-test hang blocker.
 - Phase 6 now includes a dated execution checklist with explicit owner/status/date fields in `docs/plans/phase-6-jackett-active-search.md`; checklist item `P6-06` is now completed after stable Linux wrapper-based reruns.
-- The latest phase-6 UX/request checklist (`P6-01` through `P6-07`) is now closed with Codex-owned implementation + QA evidence captured in the phase plan table.
+- The latest phase-6 UX/request checklist (`P6-01` through `P6-09`) is now closed with Codex-owned implementation + QA evidence captured in the phase plan table.
+- Linux/WSL screenshot capture still needs host browser libraries (`python -m playwright install-deps chromium` with sudo); the new capture script now fails with an explicit remediation message when those libraries are missing.
 
 ## Next actions
 
@@ -137,6 +146,7 @@
 - Manually verify `logs/search-debug.log` output for Jackett search debug summaries and debug-level drop-reason diagnostics during filter tuning sessions.
 - Manually verify `/search` card/table toggle and 3-level hierarchical sort controls while active local filters remain network-free.
 - Manually verify `/search` filter-impact diagnostics for both non-empty and empty-result states, including blocker highlighting when removing one active value restores results.
+- Run `./scripts/capture_ui.sh --start-server` (or `scripts\\capture_ui.bat --start-server`) after Playwright + browser dependencies are installed to collect repeatable `/search` desktop/mobile screenshots for UX iteration loops.
 - Manually verify `/rules/{rule_id}/search` for saved movie/series rules with `IMDb ID` and `Release year` populated and confirm the same search still works while returning more precise Jackett matches.
 - Manually verify `/rules/{rule_id}/search` for a movie or series rule with `IMDb ID` populated and confirm the page now shows an `IMDb-first results` section with strict `imdbid`-only attempts (including optional direct-indexer retries) plus a separate `Title fallback` section when the primary IMDb-constrained search returns no matches.
 - Manually verify `/rules/{rule_id}/search` for a rule that returns IMDb-first matches and confirm the page still performs and displays a separate title-fallback fetch section with fetched/filtered counts.

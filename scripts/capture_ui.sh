@@ -19,4 +19,4 @@ else
   exit 127
 fi
 
-exec "${PYTHON_EXE}" -m uvicorn app.main:create_app --factory --host "${QB_RULES_HOST:-127.0.0.1}" --port "${QB_RULES_PORT:-8000}" --reload
+exec "${PYTHON_EXE}" "${PROJECT_DIR}/scripts/capture_search_ui.py" "$@"

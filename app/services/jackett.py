@@ -772,7 +772,11 @@ def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, Any], bool]:
             "query": query,
             "media_type": _coerce_media_type(rule.media_type),
             "imdb_id": _coerce_text(rule.imdb_id) or None,
-            "release_year": normalize_release_year(_coerce_text(rule.release_year)) or None,
+            "release_year": (
+                normalize_release_year(_coerce_text(rule.release_year)) or None
+                if bool(getattr(rule, "include_release_year", False))
+                else None
+            ),
             "keywords_all": [
                 item
                 for item in _dedupe_terms(keywords_all)

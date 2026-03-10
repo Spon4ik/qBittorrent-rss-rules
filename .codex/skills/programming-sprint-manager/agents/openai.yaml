@@ -1,0 +1,4 @@
+interface:
+  display_name: "Programming Sprint Manager"
+  short_description: "Split and run small engineering sprints effectively"
+  default_prompt: "Use $programming-sprint-manager to split this work into a focused sprint and drive implementation."

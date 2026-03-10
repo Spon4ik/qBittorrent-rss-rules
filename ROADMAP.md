@@ -14,6 +14,9 @@
 - Phase 4: feed selection UX improvements (implemented, closeout validation pending)
 - Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, closeout validation pending)
 
+Phase 6 detail pointer:
+- Detailed checklist and dated execution tracker for the latest search/rules UX hardening request is tracked in `docs/plans/phase-6-jackett-active-search.md` under `Request Checklist` and `Dated execution checklist (2026-03-10 baseline)`.
+
 ### Release focus
 
 - Keep localhost-only defaults while phase-6 workflows mature

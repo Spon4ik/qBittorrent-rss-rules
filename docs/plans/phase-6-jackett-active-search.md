@@ -21,6 +21,7 @@
 - `/search` now defaults to table view and can persist default view mode + 3-level sort preferences via `AppSettings` and `/api/search/preferences`, with save actions exposed directly in the result-view options panel.
 - `/search` now renders synchronized result-view options panels above both `IMDb-first` and `Title fallback` sections so users can adjust display/sorting from either section without scrolling.
 - `/search` now aligns local keyword UX with the rule form via quality include/exclude checkbox groups and an explicit `Filter by release year` checkbox.
+- `/search` now strictly honors the `Filter by release year` toggle for both manual and rule-derived runs: unchecked form submissions no longer carry `release_year`, and checkbox state binding now targets the checkbox field instead of the hidden fallback input.
 - `/search` filter-impact diagnostics now render explicit sentence separators and clearer "sole blocker vs other active blockers" wording, preventing merged text like `20260` / `2160p1` in copied plain-text output.
 - When `IMDb-first` fetched count is `0`, the primary summary now suppresses filter-impact diagnostics and keeps only query/request context for the empty primary section.
 - Jackett result parsing now derives `year` from the title when Torznab omits year attrs, keeping release-year filtering and Year column rendering consistent for common title formats like `(2026)`.
@@ -49,7 +50,47 @@
 - A repo-local `ui-ux-designer` skill now exists under `.codex/skills/ui-ux-designer` to structure feature UX workflow, accessibility checks, and implementation-ready handoff specs during manual validation/polish passes.
 - A repo-local `project-design-documentation-engineer` skill now exists under `.codex/skills/project-design-documentation-engineer` to standardize project and design documentation updates (plans, specs, ADRs, QA docs) during phase execution and validation.
 - A repo-local `versioning-manager` skill now exists under `.codex/skills/versioning-manager` to standardize SemVer bump decisions and cross-file version synchronization during release prep.
+- A repo-local `programming-sprint-manager` skill now exists under `.codex/skills/programming-sprint-manager` to split mixed bug/feature/improvement execution into small validated slices with consistent sprint tracking and closeout notes.
 - The goal is to add an on-demand search workflow beside RSS rule authoring, not to replace RSS automation.
+
+## Request Checklist (2026-03-10 refresh)
+
+This section maps the requested UX/search improvements to implementation status so roadmap-level intent is easy to audit.
+
+1. Search page UI parity with rule-style keyword include/exclude + release-year toggle.
+   - Status: implemented.
+2. Rules/search pages use wider responsive layout to reduce vertical scrolling.
+   - Status: implemented.
+3. Default search result view is `table` and users can save default view + sort preferences.
+   - Status: implemented.
+4. Result view options panel UX redesign.
+   - Status: implemented.
+5. Duplicate result view options panel above both `IMDb-first` and `Title fallback`.
+   - Status: implemented.
+6. When `IMDb-first` fetched is `0`, show query/request context only and hide filter-impact panel.
+   - Status: implemented.
+7. Strict IMDb-first request behavior (`imdbid` input only for primary lookup); title text stays in explicit fallback flow.
+   - Status: implemented.
+8. Improve result metadata relevance (`indexer`, peers/leechers/grabs semantics, unknown handling).
+   - Status: implemented.
+9. Persist these decisions in project docs with resumable execution notes.
+   - Status: implemented; tracked in this phase plan plus `docs/plans/current-status.md`.
+10. Additional expert recommendations across UX/backend/QA/ops.
+   - Status: documented as follow-up opportunities; implementation pending prioritization.
+
+## Step-by-step implementation plan
+
+### Dated execution checklist (2026-03-10 baseline)
+
+| ID | Step | Owner | Target date | Status | Exit criteria | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| P6-01 | Lock behavior contracts for this request set. | Codex | 2026-03-10 | in_progress | Expectations are explicit in this phase plan and covered by route/service tests where feasible. | `docs/plans/phase-6-jackett-active-search.md`, `tests/test_jackett.py`, `tests/test_routes.py` |
+| P6-02 | Validate strict IMDb-first path manually. | User (manual QA) + Codex support | 2026-03-11 | pending | Primary request labels show only `imdbid` variants; no `q+imdbid` in IMDb-first requests. | Manual QA notes in `docs/plans/current-status.md` |
+| P6-03 | Validate release-year toggle behavior manually. | User (manual QA) + Codex support | 2026-03-11 | pending | Unchecked `Filter by release year` never applies year filtering for manual or rule-derived searches. | Manual QA notes in `docs/plans/current-status.md` |
+| P6-04 | Validate dual-panel result options UX behavior. | User (manual QA) + Codex support | 2026-03-11 | pending | Top panels for IMDb-first/fallback remain synchronized and save default view/sort reliably. | Manual QA notes in `docs/plans/current-status.md` |
+| P6-05 | Validate result metadata semantics and column relevance. | User (manual QA) + Codex support | 2026-03-11 | pending | Indexer labels appear when provided; unknown fallback is accurate; peers/leechers/grabs columns appear only when populated. | Manual QA notes in `docs/plans/current-status.md` |
+| P6-06 | Resolve Linux route-test environment blocker and rerun targeted route tests. | Codex | 2026-03-12 | blocked | `tests/test_routes.py` targeted reruns complete in `.venv-linux` without `TestClient` hang. | `logs/tests/*`, command output summary in `docs/plans/current-status.md` |
+| P6-07 | Final closeout for this request set. | Codex | 2026-03-12 | pending | `current-status`, phase plan status rows, and residual risks are synchronized and decision-complete. | `docs/plans/current-status.md`, this phase plan |
 
 ## Goal
 

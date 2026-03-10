@@ -253,7 +253,9 @@ function derivePattern(form, qualityPatternMap) {
   }
   const title = deriveTitle(form);
   const useRegex = Boolean(form.querySelector('input[name="use_regex"]')?.checked);
-  const includeReleaseYear = Boolean(form.querySelector('input[name="include_release_year"]')?.checked);
+  const includeReleaseYear = Boolean(
+    form.querySelector('input[type="checkbox"][name="include_release_year"]')?.checked
+  );
   const releaseYear = normalizeReleaseYear(form.querySelector('input[name="release_year"]')?.value);
   const additionalIncludes = parseAdditionalIncludes(
     form.querySelector('textarea[name="additional_includes"]')?.value
@@ -391,7 +393,7 @@ function initSearchPage(container) {
   const queryInput = form.querySelector('input[name="query"]');
   const mediaTypeInput = form.querySelector('select[name="media_type"]');
   const imdbIdInput = form.querySelector('input[name="imdb_id"]');
-  const includeReleaseYearInput = form.querySelector('input[name="include_release_year"]');
+  const includeReleaseYearInput = form.querySelector('input[type="checkbox"][name="include_release_year"]');
   const releaseYearInput = form.querySelector('input[name="release_year"]');
   const keywordsAllInput = form.querySelector('input[name="keywords_all"]');
   const keywordsAnyInput = form.querySelector('input[name="keywords_any"]');

@@ -238,6 +238,27 @@ def test_search_page_auto_enforces_imdb_and_renders_fallback_section(app_client,
     assert "Ghosts S03E01 1080p" in response.text
 
 
+def test_search_page_skips_release_year_when_toggle_is_unchecked(app_client, monkeypatch) -> None:
+    def fake_search(self, payload):
+        assert payload.query == "Ghosts"
+        assert payload.release_year is None
+        return JackettSearchRun(query_variants=["Ghosts"], results=[])
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "Ghosts",
+            "media_type": "series",
+            "release_year": "2025",
+            "include_release_year": "0",
+        },
+    )
+
+    assert response.status_code == 200
+
+
 def test_search_page_parses_pipe_delimited_any_keyword_groups(app_client, monkeypatch) -> None:
     def fake_search(self, payload):
         assert payload.query == "The Rip"
@@ -307,6 +328,7 @@ def test_search_page_from_rule_uses_structured_terms_not_raw_regex(app_client, d
         imdb_id="tt7654321",
         media_type=MediaType.MUSIC,
         quality_profile=QualityProfile.CUSTOM,
+        include_release_year=True,
         release_year="2026",
         additional_includes="2026",
         quality_include_tokens=["mp3"],
@@ -344,6 +366,36 @@ def test_search_page_from_rule_uses_structured_terms_not_raw_regex(app_client, d
     assert "Andrew Michael Blues Band 2026 mp3" in response.text
     assert "Andrew Michael Blues Band (2026) MP3" in response.text
     assert "additional_includes=2026" in response.text
+
+
+def test_search_page_from_rule_skips_release_year_when_not_enabled(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    rule = Rule(
+        rule_name="Ghosts Rule",
+        content_name="Ghosts",
+        normalized_title="Ghosts",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        include_release_year=False,
+        release_year="2025",
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        assert payload.query == "Ghosts"
+        assert payload.release_year is None
+        return JackettSearchRun(query_variants=["Ghosts"], results=[])
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get("/search", params={"rule_id": rule.id})
+
+    assert response.status_code == 200
+    assert "Derived from rule: Ghosts Rule" in response.text
 
 
 def test_search_page_falls_back_to_title_when_rule_derivation_validation_fails(

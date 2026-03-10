@@ -228,7 +228,7 @@ def _title_only_search_request_from_rule(rule: Rule) -> JackettSearchRequest | N
             query=fallback_title,
             media_type=media_type,
             imdb_id=rule.imdb_id or None,
-            release_year=rule.release_year or None,
+            release_year=(rule.release_year or None) if rule.include_release_year else None,
         )
     except ValidationError:
         return None
@@ -250,7 +250,7 @@ def _prefill_rule_search_form_data(form_data: dict[str, object], rule: Rule) -> 
     form_data["media_type"] = _rule_search_media_type(rule)
     form_data["imdb_id"] = str(rule.imdb_id or "").strip()
     form_data["release_year"] = str(rule.release_year or "").strip()
-    form_data["include_release_year"] = bool(rule.release_year)
+    form_data["include_release_year"] = bool(rule.include_release_year)
 
 
 def _unexpected_error_message(prefix: str, exc: Exception) -> str:
@@ -437,7 +437,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "query": payload_from_rule.query,
                         "media_type": payload_from_rule.media_type.value,
                         "imdb_id": payload_from_rule.imdb_id or "",
-                        "include_release_year": bool(payload_from_rule.release_year),
+                        "include_release_year": bool(source_rule.include_release_year),
                         "release_year": payload_from_rule.release_year or "",
                         "keywords_all": ", ".join(payload_from_rule.keywords_all),
                         "keywords_any": (

@@ -13,6 +13,7 @@
 - Added a repo-local `project-management` Codex skill under `.codex/skills/project-management` with reusable templates for current-status updates, active phase updates, and risk/decision logging.
 - Added a repo-local `project-design-documentation-engineer` Codex skill under `.codex/skills/project-design-documentation-engineer` with workflow guidance and templates for synchronized project plans, design specs, ADRs, QA plans, and resumable handoffs.
 - Added a repo-local `versioning-manager` Codex skill under `.codex/skills/versioning-manager` with SemVer bump guidance, cross-file version sync workflow, and release-prep verification checklists.
+- Added a repo-local `programming-sprint-manager` Codex skill under `.codex/skills/programming-sprint-manager` with a small-slice sprint execution workflow plus reusable sprint-board and slice-sizing templates for fixes, features, and improvements.
 - Built-in `At Least UHD` filter profile can now be overwritten without duplicating the preset in the profile selector.
 - Repo-local resumability instructions now live in `AGENTS.md`.
 - Phase planning docs now live under `docs/plans/`.
@@ -64,6 +65,7 @@
 - `/search` now renders fetched-versus-filtered counts for both primary and fallback sections, embeds raw result pools in page JSON, and applies local filter edits interactively in the browser without calling Jackett again.
 - `/search` now includes a card/table toggle, 3-level hierarchical local sorting controls, and per-section filter-impact diagnostics showing each active filter value's standalone keep/drop counts plus blocker highlighting when the filtered list is empty.
 - `/search` now uses rule-style quality include/exclude checkbox groups plus an explicit `Filter by release year` checkbox, so quality/year local filters align with the rule form interaction model instead of only text fields.
+- `/search` now strictly honors the `Filter by release year` toggle end-to-end: unchecked runs no longer pass `release_year` into Jackett/rule-derived payloads, and checkbox state binding now targets the actual checkbox input instead of the hidden fallback field.
 - `/search` filter-impact rows now render explicit sentence separators and clearer blocker messaging, fixing merged plain-text output like `Release year = 20260 ...` / `2160p1 ...` and clarifying when other active filters are still the reason results stay at zero.
 - Jackett search result normalization now falls back to title-derived year extraction when Torznab omits year attrs, so `release_year` local filtering and the rendered Year column stay aligned for titles like `The Rip (2026) ...`.
 - `/search` now accepts grouped any-of keyword syntax using `|` between groups (for example `uhd, 4k | hdr, hdr10`), and local filtering plus filter-impact diagnostics enforce group semantics instead of flattening all variants into one bucket.
@@ -105,15 +107,18 @@
 - Phase 6 is now in an initial implementation state with pytest coverage passing; manual browser checks are still pending.
 - Release-process automated checks now pass in the Linux `.venv-linux` environment through `./scripts/check.sh` (`ruff`, `mypy`, and full pytest).
 - Targeted service coverage for the new IMDb-only + UI slice passes in Linux `.venv-linux` (`tests/test_jackett.py`: `26 passed`); route-test execution via `fastapi.testclient.TestClient` is currently hanging in the Linux `.venv-linux` environment and needs follow-up before claiming full targeted rerun coverage there.
+- Phase 6 now includes a dated execution checklist with explicit owner/status/date fields in `docs/plans/phase-6-jackett-active-search.md`; checklist item `P6-06` is currently blocked by the Linux `TestClient` hang.
 
 ## Next actions
 
+- Use `docs/plans/phase-6-jackett-active-search.md` `Request Checklist (2026-03-10 refresh)` + `Dated execution checklist (2026-03-10 baseline)` as the source-of-truth tracker for the latest search/rules UX hardening request.
 - Use the new `ui-ux-designer` skill for remaining phase-5 and phase-6 manual browser validation/polish sessions to keep UX findings and handoff notes consistent.
 - Use the new `jackett-api-expert` skill for phase-6 Jackett iterations that touch Torznab params, capability probing, or fallback/error behavior.
 - Use the new `qa-engineer` skill for remaining phase-5 and phase-6 manual validation passes to keep findings severity-ranked and reproducible.
 - Use the new `project-management` skill during remaining phase-5/phase-6 validation sessions to keep roadmap/plan/status artifacts synchronized at closeout.
 - Use the new `project-design-documentation-engineer` skill when drafting or updating project/design artifacts so status, phase plans, specs, and decisions stay aligned.
 - Use the new `versioning-manager` skill when choosing release version bumps or synchronizing version strings across code/docs before tagging.
+- Use the new `programming-sprint-manager` skill when executing multi-slice backlog work so sprint splitting, WIP control, and closeout handoffs stay consistent.
 - Push the existing `v0.1.0` git tag and `main`, then publish release notes from `CHANGELOG.md`.
 - Manually verify `/rules/new` and `/rules/{rule_id}` for `series -> music -> audiobook -> other` switching, the warning-and-clear prompt, provider filtering, and IMDb field visibility.
 - Manually verify metadata lookup population for OMDb title search plus MusicBrainz, OpenLibrary, and Google Books lookups.

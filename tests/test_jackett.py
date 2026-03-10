@@ -1175,6 +1175,7 @@ def test_build_search_request_from_rule_uses_structured_terms_not_raw_regex() ->
         imdb_id="tt7654321",
         media_type=MediaType.MUSIC,
         quality_profile=QualityProfile.CUSTOM,
+        include_release_year=True,
         release_year="2026",
         additional_includes="2026",
         quality_include_tokens=["mp3"],
@@ -1193,6 +1194,24 @@ def test_build_search_request_from_rule_uses_structured_terms_not_raw_regex() ->
     assert "flac" in payload.keywords_not
     assert payload.keywords_any_groups == [["mp3"]]
     assert ignored_full_regex is True
+
+
+def test_build_search_request_from_rule_skips_release_year_when_not_enabled() -> None:
+    rule = Rule(
+        rule_name="Ghosts",
+        content_name="Ghosts",
+        normalized_title="Ghosts",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.HD_1080P,
+        include_release_year=False,
+        release_year="2025",
+    )
+
+    payload, ignored_full_regex = build_search_request_from_rule(rule)
+
+    assert payload.query == "Ghosts"
+    assert payload.release_year is None
+    assert ignored_full_regex is False
 
 
 def test_build_search_request_from_rule_ignores_legacy_none_override() -> None:

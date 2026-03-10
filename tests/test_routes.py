@@ -238,6 +238,74 @@ def test_search_page_auto_enforces_imdb_and_renders_fallback_section(app_client,
     assert "Ghosts S03E01 1080p" in response.text
 
 
+def test_search_page_renders_result_view_panels_for_primary_and_fallback(app_client, monkeypatch) -> None:
+    def fake_search(self, payload):
+        return JackettSearchRun(
+            query_variants=["Ghosts"],
+            request_variants=["t=tvsearch imdbid=tt11379026 cat=5000"],
+            results=[
+                JackettSearchResult(
+                    title="Ghosts S03E01 1080p",
+                    link="magnet:?xt=urn:btih:GHOSTS111",
+                )
+            ],
+            fallback_request_variants=['t=tvsearch q="Ghosts" cat=5000'],
+            fallback_results=[
+                JackettSearchResult(
+                    title="Ghosts S03E01 720p",
+                    link="magnet:?xt=urn:btih:GHOSTS222",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "Ghosts",
+            "media_type": "series",
+            "imdb_id": "tt11379026",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.text.count('data-search-controls') == 2
+    assert response.text.count('data-search-save-defaults') == 2
+
+
+def test_search_page_hides_primary_filter_impact_when_imdb_first_fetch_is_zero(app_client, monkeypatch) -> None:
+    def fake_search(self, payload):
+        return JackettSearchRun(
+            query_variants=["Ghosts"],
+            request_variants=["t=tvsearch imdbid=tt11379026 cat=5000"],
+            results=[],
+            fallback_request_variants=['t=tvsearch q="Ghosts" cat=5000'],
+            fallback_results=[
+                JackettSearchResult(
+                    title="Ghosts S03E01 1080p",
+                    link="magnet:?xt=urn:btih:GHOSTS123",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "Ghosts",
+            "media_type": "series",
+            "imdb_id": "tt11379026",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "<p class=\"eyebrow\">Query string</p>" in response.text
+    assert 'data-filter-impact-list="primary"' not in response.text
+    assert 'data-filter-impact-list="fallback"' in response.text
+
+
 def test_search_page_skips_release_year_when_toggle_is_unchecked(app_client, monkeypatch) -> None:
     def fake_search(self, payload):
         assert payload.query == "Ghosts"
@@ -257,6 +325,41 @@ def test_search_page_skips_release_year_when_toggle_is_unchecked(app_client, mon
     )
 
     assert response.status_code == 200
+
+
+def test_search_page_hides_availability_columns_when_metrics_absent(app_client, monkeypatch) -> None:
+    def fake_search(self, payload):
+        return JackettSearchRun(
+            query_variants=["Dune Part Two"],
+            raw_results=[
+                JackettSearchResult(
+                    title="Dune Part Two 2160p",
+                    link="magnet:?xt=urn:btih:DUNE123",
+                )
+            ],
+            results=[
+                JackettSearchResult(
+                    title="Dune Part Two 2160p",
+                    link="magnet:?xt=urn:btih:DUNE123",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "Dune Part Two",
+            "media_type": "movie",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "<th>Peers (all)</th>" not in response.text
+    assert "<th>Leechers</th>" not in response.text
+    assert "<th>Grabs</th>" not in response.text
+    assert "Unknown indexer" in response.text
 
 
 def test_search_page_parses_pipe_delimited_any_keyword_groups(app_client, monkeypatch) -> None:

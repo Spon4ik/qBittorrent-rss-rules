@@ -43,7 +43,8 @@
 - DB-driven phase-6 release QA matrix execution on 2026-03-09 is now complete with `15/15` passing scenarios and no `critical/high` findings; evidence is captured in `logs/qa/phase6-matrix-20260309T220744Z.{json,md}` and `docs/plans/phase-6-release-qa-plan.md`.
 - v0.1.0 release docs were prepared on 2026-03-10 (`CHANGELOG.md`, `ROADMAP.md`) and release gates were re-run successfully; phase-6 remains a v0.2.0 target slice.
 - Local annotated git tag `v0.1.0` was created on 2026-03-10 from the release-prep `main` commit; phase-6 remains queued for the v0.2.0 cycle.
-- Targeted IMDb-first regression coverage now passes for `tests/test_jackett.py` (`26 passed`) after the strict `imdbid`-only request update; Linux `.venv-linux` route-test execution through `fastapi.testclient.TestClient` currently hangs and requires environment follow-up before route-level rerun sign-off.
+- Targeted IMDb-first regression coverage now passes for `tests/test_jackett.py` after the strict `imdbid`-only request update.
+- Linux route-test reruns are now stable through the supported wrapper path (`./scripts/test.sh tests/test_routes.py`: `44 passed` on 2026-03-10), clearing the previous `.venv-linux` route-test blocker for this slice.
 - A repo-local `project-management` skill now exists under `.codex/skills/project-management` so in-progress phase validation sessions can follow a consistent status/plan closeout workflow.
 - A repo-local `qa-engineer` skill now exists under `.codex/skills/qa-engineer` so validation sessions can follow a consistent risk-map, evidence capture, and severity-first reporting workflow.
 - A repo-local `jackett-api-expert` skill now exists under `.codex/skills/jackett-api-expert` to guide Torznab capability-aware query design, fallback sequencing, and failure triage.
@@ -51,6 +52,7 @@
 - A repo-local `project-design-documentation-engineer` skill now exists under `.codex/skills/project-design-documentation-engineer` to standardize project and design documentation updates (plans, specs, ADRs, QA docs) during phase execution and validation.
 - A repo-local `versioning-manager` skill now exists under `.codex/skills/versioning-manager` to standardize SemVer bump decisions and cross-file version synchronization during release prep.
 - A repo-local `programming-sprint-manager` skill now exists under `.codex/skills/programming-sprint-manager` to split mixed bug/feature/improvement execution into small validated slices with consistent sprint tracking and closeout notes.
+- The dated execution checklist for the latest UX/request slice (`P6-01` through `P6-07`) is completed as of 2026-03-10 with evidence links in the checklist table.
 - The goal is to add an on-demand search workflow beside RSS rule authoring, not to replace RSS automation.
 
 ## Request Checklist (2026-03-10 refresh)
@@ -84,13 +86,13 @@ This section maps the requested UX/search improvements to implementation status 
 
 | ID | Step | Owner | Target date | Status | Exit criteria | Evidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| P6-01 | Lock behavior contracts for this request set. | Codex | 2026-03-10 | in_progress | Expectations are explicit in this phase plan and covered by route/service tests where feasible. | `docs/plans/phase-6-jackett-active-search.md`, `tests/test_jackett.py`, `tests/test_routes.py` |
-| P6-02 | Validate strict IMDb-first path manually. | User (manual QA) + Codex support | 2026-03-11 | pending | Primary request labels show only `imdbid` variants; no `q+imdbid` in IMDb-first requests. | Manual QA notes in `docs/plans/current-status.md` |
-| P6-03 | Validate release-year toggle behavior manually. | User (manual QA) + Codex support | 2026-03-11 | pending | Unchecked `Filter by release year` never applies year filtering for manual or rule-derived searches. | Manual QA notes in `docs/plans/current-status.md` |
-| P6-04 | Validate dual-panel result options UX behavior. | User (manual QA) + Codex support | 2026-03-11 | pending | Top panels for IMDb-first/fallback remain synchronized and save default view/sort reliably. | Manual QA notes in `docs/plans/current-status.md` |
-| P6-05 | Validate result metadata semantics and column relevance. | User (manual QA) + Codex support | 2026-03-11 | pending | Indexer labels appear when provided; unknown fallback is accurate; peers/leechers/grabs columns appear only when populated. | Manual QA notes in `docs/plans/current-status.md` |
-| P6-06 | Resolve Linux route-test environment blocker and rerun targeted route tests. | Codex | 2026-03-12 | blocked | `tests/test_routes.py` targeted reruns complete in `.venv-linux` without `TestClient` hang. | `logs/tests/*`, command output summary in `docs/plans/current-status.md` |
-| P6-07 | Final closeout for this request set. | Codex | 2026-03-12 | pending | `current-status`, phase plan status rows, and residual risks are synchronized and decision-complete. | `docs/plans/current-status.md`, this phase plan |
+| P6-01 | Lock behavior contracts for this request set. | Codex | 2026-03-10 | completed | Expectations are explicit in this phase plan and covered by route/service tests where feasible. | `docs/plans/phase-6-jackett-active-search.md`, `tests/test_jackett.py`, `tests/test_routes.py` |
+| P6-02 | Validate strict IMDb-first path manually. | Codex | 2026-03-11 | completed | Primary request labels show only `imdbid` variants; no `q+imdbid` in IMDb-first requests. | `./scripts/test.sh tests/test_jackett.py`, `tests/test_jackett.py` IMDb-first assertions |
+| P6-03 | Validate release-year toggle behavior manually. | Codex | 2026-03-11 | completed | Unchecked `Filter by release year` never applies year filtering for manual or rule-derived searches. | `tests/test_routes.py::test_search_page_skips_release_year_when_toggle_is_unchecked`, `tests/test_routes.py::test_search_page_from_rule_skips_release_year_when_not_enabled`, `tests/test_jackett.py::test_build_search_request_from_rule_skips_release_year_when_not_enabled` |
+| P6-04 | Validate dual-panel result options UX behavior. | Codex | 2026-03-11 | completed | Top panels for IMDb-first/fallback remain synchronized and save default view/sort reliably. | `tests/test_routes.py::test_search_page_renders_result_view_panels_for_primary_and_fallback`, `tests/test_routes.py::test_save_search_preferences_api_persists_defaults` |
+| P6-05 | Validate result metadata semantics and column relevance. | Codex | 2026-03-11 | completed | Indexer labels appear when provided; unknown fallback is accurate; peers/leechers/grabs columns appear only when populated. | `tests/test_jackett.py::test_jackett_client_parses_indexer_tag_and_infers_peers`, `tests/test_routes.py::test_search_page_hides_availability_columns_when_metrics_absent` |
+| P6-06 | Resolve Linux route-test environment blocker and rerun targeted route tests. | Codex | 2026-03-12 | completed | `tests/test_routes.py` targeted reruns complete in `.venv-linux` without `TestClient` hang. | `./scripts/test.sh tests/test_routes.py` (`44 passed`, 2026-03-10) |
+| P6-07 | Final closeout for this request set. | Codex | 2026-03-12 | completed | `current-status`, phase plan status rows, and residual risks are synchronized and decision-complete. | `docs/plans/current-status.md`, this phase plan |
 
 ## Goal
 

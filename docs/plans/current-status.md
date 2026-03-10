@@ -82,6 +82,7 @@
 - Saved-rule derivation now treats legacy sentinel overrides like literal `None`/`null` as empty optional text instead of converting them into required keyword filters.
 - Required/any keyword matching now treats season and episode shorthand tokens as equivalent variants (`s3` ~= `s03`, `e7` ~= `e07`, `s3e1` ~= `s03e01`) so local filtering no longer drops obvious season hits.
 - Jackett active search now appends per-run debug summaries (query/filter inputs plus raw/filtered counts) to `logs/search-debug.log` and includes local drop-reason counts at debug level to make refinement feedback loops easier.
+- Added contract tests for the latest search UX/request slice: duplicated result-view panels, IMDb-first zero-fetch filter-impact suppression, dynamic availability column visibility, and Torznab indexer/peer-grab parsing semantics.
 - Added regression coverage for title-derived release-year matching, title-query local filtering, short included/excluded token matching, and pipe-delimited any-of keyword groups in `tests/test_jackett.py` and `tests/test_routes.py`.
 - Added a DB-driven phase-6 release QA matrix plan at `docs/plans/phase-6-release-qa-plan.md` covering multilingual titles, IMDb-first localized titles, regex-derived rules, and legacy imported rule edge cases.
 - Targeted Jackett pytest coverage now passes in the project `.venv` for `tests/test_jackett.py` and `tests/test_routes.py`, including the new Torznab-parameter narrowing path and the fixed keyword-list validator.
@@ -106,8 +107,9 @@
 - Phase 4 validation and closeout are still pending as a separate follow-up even though the Phase 5 code landed.
 - Phase 6 is now in an initial implementation state with pytest coverage passing; manual browser checks are still pending.
 - Release-process automated checks now pass in the Linux `.venv-linux` environment through `./scripts/check.sh` (`ruff`, `mypy`, and full pytest).
-- Targeted service coverage for the new IMDb-only + UI slice passes in Linux `.venv-linux` (`tests/test_jackett.py`: `26 passed`); route-test execution via `fastapi.testclient.TestClient` is currently hanging in the Linux `.venv-linux` environment and needs follow-up before claiming full targeted rerun coverage there.
-- Phase 6 now includes a dated execution checklist with explicit owner/status/date fields in `docs/plans/phase-6-jackett-active-search.md`; checklist item `P6-06` is currently blocked by the Linux `TestClient` hang.
+- Linux targeted reruns for this slice now pass via the supported wrapper path (`./scripts/test.sh tests/test_jackett.py`: `28 passed`; `./scripts/test.sh tests/test_routes.py`: `44 passed` on 2026-03-10), replacing the earlier route-test hang blocker.
+- Phase 6 now includes a dated execution checklist with explicit owner/status/date fields in `docs/plans/phase-6-jackett-active-search.md`; checklist item `P6-06` is now completed after stable Linux wrapper-based reruns.
+- The latest phase-6 UX/request checklist (`P6-01` through `P6-07`) is now closed with Codex-owned implementation + QA evidence captured in the phase plan table.
 
 ## Next actions
 
@@ -137,7 +139,6 @@
 - Manually verify `/search` filter-impact diagnostics for both non-empty and empty-result states, including blocker highlighting when removing one active value restores results.
 - Manually verify `/rules/{rule_id}/search` for saved movie/series rules with `IMDb ID` and `Release year` populated and confirm the same search still works while returning more precise Jackett matches.
 - Manually verify `/rules/{rule_id}/search` for a movie or series rule with `IMDb ID` populated and confirm the page now shows an `IMDb-first results` section with strict `imdbid`-only attempts (including optional direct-indexer retries) plus a separate `Title fallback` section when the primary IMDb-constrained search returns no matches.
-- Investigate and resolve the current Linux `.venv-linux` `fastapi.testclient.TestClient` hang before rerunning the full `tests/test_routes.py` matrix for this UI slice.
 - Manually verify `/rules/{rule_id}/search` for a rule that returns IMDb-first matches and confirm the page still performs and displays a separate title-fallback fetch section with fetched/filtered counts.
 - Manually verify `/rules/{rule_id}/search` for regex-heavy legacy rules that exceed structured-term limits and confirm the title-only fallback warning renders instead of a server error.
 - Manually verify `/rules/{rule_id}/search` for regex-heavy rules that now hit reduced-keyword fallback and confirm the inherited terms remain useful.

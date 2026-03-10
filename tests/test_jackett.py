@@ -72,6 +72,49 @@ def test_jackett_client_fetches_broad_query_and_filters_locally() -> None:
     assert result.results[0].source_kind == SearchSourceKind.JACKETT_ACTIVE_SEARCH
 
 
+def test_jackett_client_parses_indexer_tag_and_infers_peers() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["t"] == "search"
+        return httpx.Response(
+            200,
+            text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>Example Show S01E01</title>
+      <guid>example-guid</guid>
+      <link>magnet:?xt=urn:btih:EXAMPLE123</link>
+      <indexer>xmltracker</indexer>
+      <torznab:attr name="seeders" value="8" />
+      <torznab:attr name="leechers" value="2" />
+      <torznab:attr name="downloads" value="16" />
+    </item>
+  </channel>
+</rss>
+""",
+        )
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="Example Show",
+            media_type="series",
+        )
+    )
+
+    assert len(result.results) == 1
+    assert result.results[0].indexer == "xmltracker"
+    assert result.results[0].seeders == 8
+    assert result.results[0].leechers == 2
+    assert result.results[0].peers == 10
+    assert result.results[0].grabs == 16
+
+
 def test_jackett_client_connection_test_calls_caps_endpoint() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/v2.0/indexers/all/results/torznab/api"

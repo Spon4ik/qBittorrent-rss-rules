@@ -2,7 +2,7 @@
 
 ## Current focus
 
-- Phase 6: Jackett active-search hardening and release closeout readiness
+- Phase 6: post-v0.2.0 follow-up hardening and scope decisions
 - Release-process automation and evidence-driven phase sign-off
 
 ## Implemented
@@ -109,10 +109,13 @@
 - `scripts/run_dev.sh` now auto-detects repo-local interpreters and runs `python -m uvicorn`, so WSL/Linux runs no longer require a globally installed `uvicorn` binary.
 - Added deterministic phase closeout browser QA automation at `scripts/closeout_browser_qa.py` with wrappers `scripts/closeout_qa.sh` and `scripts/closeout_qa.bat`, using isolated mock qBittorrent/Jackett services plus timestamped JSON/Markdown evidence artifacts.
 - Executed automated browser closeout on 2026-03-11 with `9/9` checks passing; artifacts: `logs/qa/phase-closeout-20260311T113931Z/closeout-report.{md,json}`.
+- qB connection resolution now handles mixed Windows+WSL topology: in WSL runtime, qB base URLs using `localhost`/`127.0.0.1` are rewritten to `host.docker.internal`, so Windows-hosted qBittorrent remains reachable without per-run env overrides.
+- Executed the optional live-provider smoke gate on 2026-03-11 without `QB_RULES_QB_BASE_URL` override; all `4/4` checks passed with artifacts at `logs/qa/live-provider-smoke-20260311T163136Z/result.{md,json}`.
+- Completed v0.2.0 release-prep version synchronization (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`, `ROADMAP.md`) and prepared local release tagging.
 
 ## In progress
 
-- Phase 6 remains the active implementation track for v0.2.0; core functionality and closeout automation are in place, with follow-up polish/scope decisions still open.
+- Phase 6 v0.2.0 scope is implemented and release-validated; follow-up polish/scope decisions remain open for v0.2.x.
 - Release-process automated checks continue to pass in Linux `.venv-linux` via `./scripts/check.sh` (`ruff`, `mypy`, full pytest).
 - The repo-local Windows `.venv` and Linux `.venv-linux` run full tests successfully; unactivated system `python3` still lacks project dependencies by default.
 - Linux/WSL screenshot capture still needs host browser libraries (`python -m playwright install-deps chromium` with sudo); capture tooling now fails with explicit remediation messaging.
@@ -121,7 +124,7 @@
 
 - Use `docs/plans/phase-6-jackett-active-search.md` `Request Checklist (2026-03-10 refresh)` + `Dated execution checklist (2026-03-10 baseline)` as the source-of-truth tracker.
 - Run `./scripts/closeout_qa.sh` (or `scripts\\closeout_qa.bat`) as the default Phase 4/5/6 closeout gate for future UX/search iterations.
-- Add one optional live-provider smoke pass before v0.2.0 sign-off to validate missing-config/external-error UX against real endpoints.
+- Re-run the optional live-provider smoke gate when endpoint topology or credentials change, using `logs/qa/live-provider-smoke-*` artifacts as release evidence.
 - Keep the DB-backed release matrix (`docs/plans/phase-6-release-qa-plan.md`) as the live-data regression pass before final release.
 - Decide whether the next phase-6 slice should add persistent Jackett-backed rule sources as a distinct saved source type, still separate from RSS feeds.
 

@@ -1,16 +1,16 @@
 # Roadmap
 
-## Current release target: v0.2.0
+## Current release target: v0.2.1
 
 ### In progress
 
-- Phase 6: Jackett-powered active search hardening and follow-up UX validation
+- Phase 6 follow-up: post-release hardening and optional persistence decisions for Jackett-backed search sources
 - Release closeout automation adoption and evidence-driven phase sign-off
 - Release-process polish and release automation improvements
 
 ### Current phase track
 
-- Phase 6: Jackett-backed active search workspace (initial implementation complete, follow-up validation/polish in progress)
+- Phase 6: Jackett-backed active search workspace (implemented and release-validated in v0.2.0; follow-up slices in v0.2.x)
 - Phase 4: feed selection UX improvements (implemented, automated closeout validated)
 - Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, automated closeout validated)
 
@@ -26,7 +26,14 @@ Phase 6 detail pointer:
 - Avoid undocumented qBittorrent rule fields
 - Prefer correctness and maintainability over broad feature count
 
-## Recently released: v0.1.0 (2026-03-10)
+## Recently released: v0.2.0 (2026-03-11)
+
+- Phase-6 Jackett active search shipped with IMDb-first and title-fallback split workflows
+- `/search` UX density pass shipped (wider layout, compact criteria/filter-impact composition, refined result-view controls)
+- Deterministic browser closeout automation + optional live-provider smoke evidence adopted for release gating
+- WSL qBittorrent localhost rewrite shipped for mixed Windows/WSL topology
+
+## Previously released: v0.1.0 (2026-03-10)
 
 - Local FastAPI app with SQLite storage
 - qBittorrent API sync for rule create/update/delete

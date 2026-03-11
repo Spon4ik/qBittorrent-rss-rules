@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import platform
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy.orm import Session
 
@@ -35,6 +37,35 @@ SEARCH_SORT_FIELDS = frozenset(
 )
 DEFAULT_SEARCH_RESULT_VIEW_MODE = "table"
 DEFAULT_SEARCH_SORT_CRITERIA = [{"field": "published_at", "direction": "desc"}]
+
+
+def _is_wsl_runtime() -> bool:
+    release = platform.release().casefold()
+    version = platform.version().casefold()
+    return "microsoft" in release or "wsl" in release or "microsoft" in version or "wsl" in version
+
+
+def _rewrite_localhost_url_for_wsl(base_url: str | None) -> str | None:
+    cleaned = str(base_url or "").strip()
+    if not cleaned:
+        return None
+    if not _is_wsl_runtime():
+        return cleaned
+
+    parsed = urlsplit(cleaned)
+    hostname = (parsed.hostname or "").casefold()
+    if hostname not in {"localhost", "127.0.0.1"}:
+        return cleaned
+
+    auth = ""
+    if parsed.username:
+        auth = parsed.username
+        if parsed.password:
+            auth += f":{parsed.password}"
+        auth += "@"
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    netloc = f"{auth}host.docker.internal{port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
 
 
 def normalize_search_result_view_mode(value: object | None) -> str:
@@ -227,8 +258,9 @@ class SettingsService:
     @staticmethod
     def resolve_qb_connection(settings: AppSettings | None) -> ResolvedQbConnection:
         env = get_environment_settings()
+        resolved_base_url = env.qb_base_url or (settings.qb_base_url if settings else None)
         return ResolvedQbConnection(
-            base_url=env.qb_base_url or (settings.qb_base_url if settings else None),
+            base_url=_rewrite_localhost_url_for_wsl(resolved_base_url),
             username=env.qb_username or (settings.qb_username if settings else None),
             password=env.qb_password or reveal_secret(settings.qb_password_encrypted if settings else None),
         )

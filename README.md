@@ -209,7 +209,7 @@ Use the Import page to upload an exported qBittorrent RSS rules JSON file. The i
 
 ## Known limitations
 
-- v0.1.0 is designed for single-user localhost use.
+- v0.2.0 is designed for single-user localhost use.
 - qBittorrent secrets can be saved locally only as lightweight obfuscation; environment variables are preferred.
 - Drift detection is conservative and does not auto-resolve every remote edit case.
 - Jackett active search is separate from RSS feed selection; this slice does not yet create persistent Jackett-backed rule sources automatically.
@@ -233,4 +233,5 @@ Use the Import page to upload an exported qBittorrent RSS rules JSON file. The i
 - If Jackett search fails in Docker, verify the app-side Jackett URL is reachable from the app container and use a separate qB URL when qBittorrent is on a different network path.
 - If the app starts but data is not saved, confirm `QB_RULES_DATABASE_URL` points to a writable path.
 - On WSL/Linux, do not source Windows venv paths like `C:\\...\\.venv\\Scripts\\activate`; use a Linux venv path (`source .venv-linux/bin/activate`) and run `./scripts/run_dev.sh`.
+- On WSL with qBittorrent running on Windows host, `localhost` may not resolve to the host service. The app now rewrites qB base URLs that use `localhost`/`127.0.0.1` to `host.docker.internal` automatically for WSL runtime resolution.
 - If `./scripts/capture_ui.sh` reports missing Chromium libs on WSL/Linux, run `./.venv-linux/bin/python -m playwright install-deps chromium` (this command elevates with sudo when needed).

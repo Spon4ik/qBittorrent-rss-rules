@@ -2,8 +2,8 @@
 
 ## Status
 
-- Implementation is in progress in the repo as an initial slice.
-- Phase 5 closeout automation is now green; phase 6 remains scoped for the next release target.
+- Implementation is complete in the repo for the v0.2.0 release slice.
+- Phase 5 closeout automation is green and phase 6 initial goals are release-validated; follow-up decisions move to v0.2.x.
 - The current branch now includes separate Jackett app/qB connection settings, a `/search` page, one-click rule-level search launch links, and search-to-rule handoff without mixing Jackett search into RSS feed selection.
 - Rule-derived searches now clamp overlong saved titles before validation and can still auto-run a title-only fallback when reduced keyword derivation remains invalid.
 - Rule-derived searches now also reuse saved IMDb IDs, release years, and media-type category narrowing when those fields are available, so Jackett can receive richer Torznab parameters than `q` alone.
@@ -41,8 +41,8 @@
 - `scripts/test.sh` now defaults to `--capture=sys` when no capture mode is provided and auto-detects `.venv-linux/bin/python`, so Linux/WSL wrapper runs no longer require manual `-s` or explicit activation in the common path.
 - Branch-level static quality gates now pass in Linux `.venv-linux` (`ruff check .`, `mypy app`, and full pytest via `./scripts/check.sh`).
 - DB-driven phase-6 release QA matrix execution on 2026-03-09 is now complete with `15/15` passing scenarios and no `critical/high` findings; evidence is captured in `logs/qa/phase6-matrix-20260309T220744Z.{json,md}` and `docs/plans/phase-6-release-qa-plan.md`.
-- v0.1.0 release docs were prepared on 2026-03-10 (`CHANGELOG.md`, `ROADMAP.md`) and release gates were re-run successfully; phase-6 remains a v0.2.0 target slice.
-- Local annotated git tag `v0.1.0` was created on 2026-03-10 from the release-prep `main` commit; phase-6 remains queued for the v0.2.0 cycle.
+- v0.1.0 release docs were prepared on 2026-03-10 (`CHANGELOG.md`, `ROADMAP.md`) and release gates were re-run successfully.
+- Local annotated git tag `v0.1.0` was created on 2026-03-10 from the release-prep `main` commit.
 - Targeted IMDb-first regression coverage now passes for `tests/test_jackett.py` after the strict `imdbid`-only request update.
 - Linux route-test reruns are now stable through the supported wrapper path (`./scripts/test.sh tests/test_routes.py`: `44 passed` on 2026-03-10), clearing the previous `.venv-linux` route-test blocker for this slice.
 - A repo-local `project-management` skill now exists under `.codex/skills/project-management` so in-progress phase validation sessions can follow a consistent status/plan closeout workflow.
@@ -62,6 +62,7 @@
 - Screenshot capture now skips auto-starting uvicorn when a local server is already reachable, preventing duplicate server churn during multi-shell iteration loops.
 - Added deterministic browser closeout QA automation for phases 4/5/6 (`scripts/closeout_browser_qa.py` plus `scripts/closeout_qa.sh` / `scripts/closeout_qa.bat`) with isolated mock qBittorrent/Jackett services and pass/fail artifact reports.
 - Browser closeout automation run on 2026-03-11 passed `9/9` checks with evidence at `logs/qa/phase-closeout-20260311T113931Z/closeout-report.md`.
+- Optional live-provider smoke gate run on 2026-03-11 passed `4/4` checks without `QB_RULES_QB_BASE_URL` override, confirming WSL localhost rewrite behavior against real Jackett/qB/OMDb endpoints; evidence: `logs/qa/live-provider-smoke-20260311T163136Z/result.md`.
 - `scripts/run_dev.sh` now auto-detects repo-local interpreters and launches via `python -m uvicorn`, removing the prior hard dependency on a globally installed `uvicorn` binary in WSL/Linux shells.
 - Linux/WSL screenshot runs currently require host browser libraries (`python -m playwright install-deps chromium` with sudo); when missing, the script now exits with an explicit remediation message instead of a traceback.
 - The goal is to add an on-demand search workflow beside RSS rule authoring, not to replace RSS automation.
@@ -111,6 +112,7 @@ This section maps the requested UX/search improvements to implementation status 
 | P6-08 | Deliver compact `/search` layout polish for high-density desktop use. | Codex | 2026-03-10 | completed | Search criteria layout uses explicit panel grids, include/exclude checkbox rows are paired per group, and result-view/filter-impact composition is visibly denser. | `app/templates/search.html`, `app/static/app.css`, `app/static/app.js`, `./scripts/test.sh tests/test_routes.py` (`44 passed`, 2026-03-10) |
 | P6-09 | Add automated `/search` visual feedback tooling for iterative UX polish. | Codex | 2026-03-10 | completed | Screenshot tooling exists with desktop/mobile capture support, wrappers, and documented setup/remediation steps. | `scripts/capture_search_ui.py`, `scripts/capture_ui.sh`, `scripts/capture_ui.bat`, `README.md` |
 | P6-10 | Replace manual Phase 4/5/6 browser closeout with deterministic browser QA automation. | Codex | 2026-03-11 | completed | Browser closeout checks run against isolated mock qBittorrent/Jackett services and produce reproducible evidence artifacts for release decisions. | `scripts/closeout_browser_qa.py`, `scripts/closeout_qa.sh`, `scripts/closeout_qa.bat`, `logs/qa/phase-closeout-20260311T113931Z/closeout-report.md` |
+| P6-11 | Run optional live-provider smoke gate against real external endpoints. | Codex | 2026-03-11 | completed | `/search`, metadata lookup, `/rules/new`, and qB feed refresh all return success with real configured providers and no qB URL override in WSL. | `logs/qa/live-provider-smoke-20260311T163136Z/result.{md,json}` |
 
 ## Goal
 
@@ -192,7 +194,7 @@ qBittorrent's built-in search UI is a flat text box. The current app already mod
   - structured `logs/search-debug.log` event emission
 - Current status: automated closeout run passed on 2026-03-11 (`logs/qa/phase-closeout-20260311T113931Z/closeout-report.md`).
 - Keep DB-backed phase-6 release matrix (`docs/plans/phase-6-release-qa-plan.md`) for live-data regression confidence.
-- Keep one optional live-provider smoke pass before release for missing-config and external HTTP error messaging behavior.
+- Current status: optional live-provider smoke run completed on 2026-03-11 with `4/4` pass (`logs/qa/live-provider-smoke-20260311T163136Z/result.md`); rerun after endpoint topology or credential changes.
 
 ## Dependencies
 

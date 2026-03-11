@@ -2,8 +2,8 @@
 
 ## Current focus
 
-- Phase 5: media-aware rule form and multi-provider metadata lookup validation
-- Phase 6: initial Jackett active-search implementation with explicit RSS-feed separation
+- Phase 6: Jackett active-search hardening and release closeout readiness
+- Release-process automation and evidence-driven phase sign-off
 
 ## Implemented
 
@@ -107,52 +107,22 @@
 - Screenshot capture now detects an already-running local server and skips spawning a second uvicorn process, reducing disruption for multi-shell/WSL workflows.
 - Added Playwright to dev dependencies for the screenshot automation flow (`pyproject.toml`).
 - `scripts/run_dev.sh` now auto-detects repo-local interpreters and runs `python -m uvicorn`, so WSL/Linux runs no longer require a globally installed `uvicorn` binary.
+- Added deterministic phase closeout browser QA automation at `scripts/closeout_browser_qa.py` with wrappers `scripts/closeout_qa.sh` and `scripts/closeout_qa.bat`, using isolated mock qBittorrent/Jackett services plus timestamped JSON/Markdown evidence artifacts.
+- Executed automated browser closeout on 2026-03-11 with `9/9` checks passing; artifacts: `logs/qa/phase-closeout-20260311T113931Z/closeout-report.{md,json}`.
 
 ## In progress
 
-- Phase 5 code is implemented in the current branch, and pytest now passes in the repo `.venv`; manual browser validation is still pending.
-- The repo-local Windows `.venv` and Linux `.venv-linux` now both run the full suite successfully; the unactivated system `python3` still does not include project dependencies by default.
-- Phase 4 validation and closeout are still pending as a separate follow-up even though the Phase 5 code landed.
-- Phase 6 is now in an initial implementation state with pytest coverage passing; manual browser checks are still pending.
-- Release-process automated checks now pass in the Linux `.venv-linux` environment through `./scripts/check.sh` (`ruff`, `mypy`, and full pytest).
-- Linux targeted reruns for this slice now pass via the supported wrapper path (`./scripts/test.sh tests/test_jackett.py`: `28 passed`; `./scripts/test.sh tests/test_routes.py`: `44 passed` on 2026-03-10), replacing the earlier route-test hang blocker.
-- Phase 6 now includes a dated execution checklist with explicit owner/status/date fields in `docs/plans/phase-6-jackett-active-search.md`; checklist item `P6-06` is now completed after stable Linux wrapper-based reruns.
-- The latest phase-6 UX/request checklist (`P6-01` through `P6-09`) is now closed with Codex-owned implementation + QA evidence captured in the phase plan table.
-- Linux/WSL screenshot capture still needs host browser libraries (`python -m playwright install-deps chromium` with sudo); the new capture script now fails with an explicit remediation message when those libraries are missing.
+- Phase 6 remains the active implementation track for v0.2.0; core functionality and closeout automation are in place, with follow-up polish/scope decisions still open.
+- Release-process automated checks continue to pass in Linux `.venv-linux` via `./scripts/check.sh` (`ruff`, `mypy`, full pytest).
+- The repo-local Windows `.venv` and Linux `.venv-linux` run full tests successfully; unactivated system `python3` still lacks project dependencies by default.
+- Linux/WSL screenshot capture still needs host browser libraries (`python -m playwright install-deps chromium` with sudo); capture tooling now fails with explicit remediation messaging.
 
 ## Next actions
 
-- Use `docs/plans/phase-6-jackett-active-search.md` `Request Checklist (2026-03-10 refresh)` + `Dated execution checklist (2026-03-10 baseline)` as the source-of-truth tracker for the latest search/rules UX hardening request.
-- Use the new `ui-ux-designer` skill for remaining phase-5 and phase-6 manual browser validation/polish sessions to keep UX findings and handoff notes consistent.
-- Use the new `jackett-api-expert` skill for phase-6 Jackett iterations that touch Torznab params, capability probing, or fallback/error behavior.
-- Use the new `qa-engineer` skill for remaining phase-5 and phase-6 manual validation passes to keep findings severity-ranked and reproducible.
-- Use the new `project-management` skill during remaining phase-5/phase-6 validation sessions to keep roadmap/plan/status artifacts synchronized at closeout.
-- Use the new `project-design-documentation-engineer` skill when drafting or updating project/design artifacts so status, phase plans, specs, and decisions stay aligned.
-- Use the new `versioning-manager` skill when choosing release version bumps or synchronizing version strings across code/docs before tagging.
-- Use the new `programming-sprint-manager` skill when executing multi-slice backlog work so sprint splitting, WIP control, and closeout handoffs stay consistent.
-- Push the existing `v0.1.0` git tag and `main`, then publish release notes from `CHANGELOG.md`.
-- Manually verify `/rules/new` and `/rules/{rule_id}` for `series -> music -> audiobook -> other` switching, the warning-and-clear prompt, provider filtering, and IMDb field visibility.
-- Manually verify metadata lookup population for OMDb title search plus MusicBrainz, OpenLibrary, and Google Books lookups.
-- Manually verify the new Rules-page header `Create Rule` action on desktop and mobile layouts.
-- Close out Phase 4 and Phase 5 after environment-level validation, then decide whether any remaining provider-specific UX polish should become a follow-up slice.
-- Manually verify `/search` for title-only search, optional-keyword search (`4k, 2160p`), and the `Use In New Rule` handoff.
-- Manually verify `/search` interactive local filtering over cached results for `release_year`, `size_min_mb` / `size_max_mb`, `filter_indexers`, and `filter_category_ids` without triggering a new Jackett request.
-- Manually verify `/search` grouped any-of keyword syntax (`group A | group B`) so each group behaves as an independent required any-of section in both card and table views.
-- Manually verify `/search` release-year filtering for trackers that omit Torznab year attrs but include year in the title (for example `(2026)`), and confirm filter-impact counts now match visible results.
-- Manually verify required/any keyword season shorthand (`s3`, `e7`, `s3e1`) against zero-padded title tokens (`s03`, `e07`, `s03e01`) in both primary and fallback sections.
-- Manually verify `/search` query/title alignment so unrelated fallback titles no longer appear in filtered results when they do not contain the search title terms.
-- Manually verify short included tokens (`hdr`) only match explicit tokens and no longer pass due to metadata-substring noise (for example `HDRezka`).
-- Manually verify short excluded tokens (`sd`, `ts`) only block explicit tokens and no longer hide results due to `sdr`/metadata-substring false positives.
-- Manually verify `logs/search-debug.log` output for Jackett search debug summaries and debug-level drop-reason diagnostics during filter tuning sessions.
-- Manually verify `/search` card/table toggle and 3-level hierarchical sort controls while active local filters remain network-free.
-- Manually verify `/search` filter-impact diagnostics for both non-empty and empty-result states, including blocker highlighting when removing one active value restores results.
-- Run `./scripts/capture_ui.sh --start-server` (or `scripts\\capture_ui.bat --start-server`) after Playwright + browser dependencies are installed to collect repeatable `/search` desktop/mobile screenshots for UX iteration loops.
-- Manually verify `/rules/{rule_id}/search` for saved movie/series rules with `IMDb ID` and `Release year` populated and confirm the same search still works while returning more precise Jackett matches.
-- Manually verify `/rules/{rule_id}/search` for a movie or series rule with `IMDb ID` populated and confirm the page now shows an `IMDb-first results` section with strict `imdbid`-only attempts (including optional direct-indexer retries) plus a separate `Title fallback` section when the primary IMDb-constrained search returns no matches.
-- Manually verify `/rules/{rule_id}/search` for a rule that returns IMDb-first matches and confirm the page still performs and displays a separate title-fallback fetch section with fetched/filtered counts.
-- Manually verify `/rules/{rule_id}/search` for regex-heavy legacy rules that exceed structured-term limits and confirm the title-only fallback warning renders instead of a server error.
-- Manually verify `/rules/{rule_id}/search` for regex-heavy rules that now hit reduced-keyword fallback and confirm the inherited terms remain useful.
-- Manually verify `/rules/{rule_id}/search` for imported or legacy rules with unusually long saved titles and confirm the search still runs with a clamped title-only fallback when needed.
+- Use `docs/plans/phase-6-jackett-active-search.md` `Request Checklist (2026-03-10 refresh)` + `Dated execution checklist (2026-03-10 baseline)` as the source-of-truth tracker.
+- Run `./scripts/closeout_qa.sh` (or `scripts\\closeout_qa.bat`) as the default Phase 4/5/6 closeout gate for future UX/search iterations.
+- Add one optional live-provider smoke pass before v0.2.0 sign-off to validate missing-config/external-error UX against real endpoints.
+- Keep the DB-backed release matrix (`docs/plans/phase-6-release-qa-plan.md`) as the live-data regression pass before final release.
 - Decide whether the next phase-6 slice should add persistent Jackett-backed rule sources as a distinct saved source type, still separate from RSS feeds.
 
 ## Deferred / future phases

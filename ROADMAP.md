@@ -5,14 +5,14 @@
 ### In progress
 
 - Phase 6: Jackett-powered active search hardening and follow-up UX validation
-- Phase 4 and Phase 5 manual browser validation closeout
+- Release closeout automation adoption and evidence-driven phase sign-off
 - Release-process polish and release automation improvements
 
 ### Current phase track
 
 - Phase 6: Jackett-backed active search workspace (initial implementation complete, follow-up validation/polish in progress)
-- Phase 4: feed selection UX improvements (implemented, closeout validation pending)
-- Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, closeout validation pending)
+- Phase 4: feed selection UX improvements (implemented, automated closeout validated)
+- Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, automated closeout validated)
 
 Phase 6 detail pointer:
 - Detailed checklist and dated execution tracker for the latest search/rules UX hardening request is tracked in `docs/plans/phase-6-jackett-active-search.md` under `Request Checklist` and `Dated execution checklist (2026-03-10 baseline)`.
@@ -20,7 +20,7 @@ Phase 6 detail pointer:
 ### Release focus
 
 - Keep localhost-only defaults while phase-6 workflows mature
-- Close remaining phase 4 and phase 5 validation before broadening scope
+- Keep phase-4/phase-5 closeout green via deterministic browser QA automation
 - Keep Jackett active search explicitly separate from persistent RSS feed rule sources
 - Keep the data model stable and explicit
 - Avoid undocumented qBittorrent rule fields
@@ -53,7 +53,7 @@ Phase 6 detail pointer:
 - Optional LAN-safe auth
 - Background health checks
 - Snapshot rollback
-- Browser automation tests
+- Expanded browser automation coverage (live-provider smoke + CI gating)
 - Release automation and compatibility matrix
 
 ## Explicit non-goals for v0.1.0

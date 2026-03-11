@@ -2,9 +2,10 @@
 
 ## Status
 
-- Implementation is in progress in the repo.
+- Implementation is complete in the repo and closeout-validated with automated browser QA.
 - The rule form now carries media-aware filter visibility, audio-focused filter presets, and provider-specific metadata lookup controls.
-- Remaining work is environment-level validation in a fully provisioned development setup plus any follow-up fixes from that validation.
+- Automated browser closeout now covers media switching warning/clear flows, provider visibility by media type, and IMDb field visibility behavior.
+- Remaining work is optional follow-up polish only.
 - Jackett-backed active search is explicitly deferred to phase 6 so v0.1.0 can close validation without widening scope again.
 
 ## Goal
@@ -59,8 +60,9 @@ Expand the rule form so it adapts to the selected media type, supports audio-foc
 
 - Run targeted service and route tests for quality filters, metadata lookup, and rule form rendering.
 - Run the full pytest suite through `scripts/test.sh` or `scripts/test.bat`.
-- Manually verify media switching on `/rules/new` and `/rules/{rule_id}`.
-- Manually verify provider filtering, lookup population, and the Rules page header action on desktop and mobile.
+- Run `./scripts/closeout_qa.sh` (or `scripts\\closeout_qa.bat`) for deterministic browser validation of media switching warning/clear behavior and provider visibility across media types.
+- Current status: automated closeout run passed on 2026-03-11 (`logs/qa/phase-closeout-20260311T113931Z/closeout-report.md`).
+- Keep existing route/service tests as the primary regression gate for metadata lookup payload/dispatch contract behavior.
 
 ## Dependencies
 

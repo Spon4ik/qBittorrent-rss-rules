@@ -166,6 +166,26 @@ The default run captures stable `/search` UI states without triggering live Jack
 Use `--include-live-search` only when you explicitly want a live query screenshot.
 On Linux/WSL hosts, if Chromium fails to launch, run `./.venv-linux/bin/python -m playwright install-deps chromium`.
 
+## Automated browser closeout QA
+
+Run deterministic browser closeout checks for Phase 4/5/6 with isolated mock qBittorrent + Jackett services:
+
+```bash
+./scripts/closeout_qa.sh
+```
+
+On Windows `cmd.exe`:
+
+```bat
+scripts\\closeout_qa.bat
+```
+
+Artifacts are written under `logs/qa/phase-closeout-<timestamp>/`:
+
+- `closeout-report.md` (human-readable pass/fail summary)
+- `closeout-report.json` (machine-readable details)
+- `uvicorn.log` and failure screenshots (when applicable)
+
 ## qBittorrent sync
 
 The app does not depend on qBittorrent's manual "Import RSS Rules" action. It uses the WebUI API directly:

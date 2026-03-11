@@ -2,7 +2,7 @@
 
 ## Status
 
-- Code-complete in the current branch; manual validation remains pending.
+- Code-complete in the current branch and closeout-validated with automated browser QA.
 - Initial slice implemented: rule-form bulk selection controls and create-flow remembered default feeds.
 - Follow-up slice implemented: the remember-defaults toggle is now default-on and available on both create and edit forms.
 - Final slice implemented: the rule form now uses a checkbox-based feed selector while preserving deterministic submission order.
@@ -53,7 +53,8 @@ Improve feed selection usability with bulk selection controls and remembered def
 - Run route/form tests.
 - Run full check script.
 - Use the repo-local pytest wrapper so each validation run refreshes readable artifacts under `logs/tests/`.
-- Manual verification on `/rules/new` for checkbox rendering, bulk controls, and default prefill behavior.
+- Run `./scripts/closeout_qa.sh` (or `scripts\\closeout_qa.bat`) for deterministic browser validation of feed checkbox rendering, bulk controls, and remembered-default prefill behavior.
+- Current status: automated closeout run passed on 2026-03-11 (`logs/qa/phase-closeout-20260311T113931Z/closeout-report.md`).
 
 ## Dependencies
 
@@ -71,4 +72,4 @@ Improve feed selection usability with bulk selection controls and remembered def
 - Added route tests for prefill, persistence, control visibility, and edit-mode checkbox rendering.
 - Updated route tests to send repeated form values using `httpx`-compatible dict/list payloads instead of deprecated tuple-list bodies.
 - Added repo-local pytest wrappers that always refresh `logs/tests/pytest-last.log` and `logs/tests/pytest-last.xml` for post-run debugging.
-- Remaining: decide whether defaults should be editable in `/settings`, and add manual UX verification plus full pytest coverage in a fully provisioned development environment.
+- Remaining: decide whether defaults should also be editable directly in `/settings`.

@@ -3,7 +3,7 @@
 ## Status
 
 - Implementation is in progress in the repo as an initial slice.
-- This phase is still scoped for the next release after phase 5 validation closes.
+- Phase 5 closeout automation is now green; phase 6 remains scoped for the next release target.
 - The current branch now includes separate Jackett app/qB connection settings, a `/search` page, one-click rule-level search launch links, and search-to-rule handoff without mixing Jackett search into RSS feed selection.
 - Rule-derived searches now clamp overlong saved titles before validation and can still auto-run a title-only fallback when reduced keyword derivation remains invalid.
 - Rule-derived searches now also reuse saved IMDb IDs, release years, and media-type category narrowing when those fields are available, so Jackett can receive richer Torznab parameters than `q` alone.
@@ -36,10 +36,10 @@
 - Jackett search runs now append structured debug events to `logs/search-debug.log` (search payload filters, fetched-vs-filtered counts) and emit debug-level drop-reason aggregates for local-filter tuning.
 - Added `docs/plans/phase-6-release-qa-plan.md` with a DB-backed release matrix that exercises phase-6 search behavior against representative saved rules from `data/qb_rules.db`.
 - The project `.venv` now passes targeted phase-6 pytest coverage for `tests/test_jackett.py` and `tests/test_routes.py`.
-- The full repo pytest suite now also passes in the project `.venv`; remaining validation is manual browser coverage.
+- The full repo pytest suite now also passes in the project `.venv`.
 - 2026-03-09 reruns confirm targeted (`63 passed`) and full-suite (`117 passed`) pytest coverage still pass in the Windows `.venv`, and full-suite pytest also passes in Linux `.venv-linux`.
 - `scripts/test.sh` now defaults to `--capture=sys` when no capture mode is provided and auto-detects `.venv-linux/bin/python`, so Linux/WSL wrapper runs no longer require manual `-s` or explicit activation in the common path.
-- Branch-level static quality gates now pass in Linux `.venv-linux` (`ruff check .`, `mypy app`, and full pytest via `./scripts/check.sh`), so remaining release risk is primarily manual QA coverage.
+- Branch-level static quality gates now pass in Linux `.venv-linux` (`ruff check .`, `mypy app`, and full pytest via `./scripts/check.sh`).
 - DB-driven phase-6 release QA matrix execution on 2026-03-09 is now complete with `15/15` passing scenarios and no `critical/high` findings; evidence is captured in `logs/qa/phase6-matrix-20260309T220744Z.{json,md}` and `docs/plans/phase-6-release-qa-plan.md`.
 - v0.1.0 release docs were prepared on 2026-03-10 (`CHANGELOG.md`, `ROADMAP.md`) and release gates were re-run successfully; phase-6 remains a v0.2.0 target slice.
 - Local annotated git tag `v0.1.0` was created on 2026-03-10 from the release-prep `main` commit; phase-6 remains queued for the v0.2.0 cycle.
@@ -60,6 +60,8 @@
 - Added automated UX screenshot tooling (`scripts/capture_search_ui.py`, `scripts/capture_ui.sh`, `scripts/capture_ui.bat`) and README usage docs so iterative `/search` visual review runs can be repeated quickly.
 - Screenshot capture defaults now target stable non-query `/search` states; live Jackett-query captures are opt-in via `--include-live-search` to avoid routine timeout failures during UX iteration.
 - Screenshot capture now skips auto-starting uvicorn when a local server is already reachable, preventing duplicate server churn during multi-shell iteration loops.
+- Added deterministic browser closeout QA automation for phases 4/5/6 (`scripts/closeout_browser_qa.py` plus `scripts/closeout_qa.sh` / `scripts/closeout_qa.bat`) with isolated mock qBittorrent/Jackett services and pass/fail artifact reports.
+- Browser closeout automation run on 2026-03-11 passed `9/9` checks with evidence at `logs/qa/phase-closeout-20260311T113931Z/closeout-report.md`.
 - `scripts/run_dev.sh` now auto-detects repo-local interpreters and launches via `python -m uvicorn`, removing the prior hard dependency on a globally installed `uvicorn` binary in WSL/Linux shells.
 - Linux/WSL screenshot runs currently require host browser libraries (`python -m playwright install-deps chromium` with sudo); when missing, the script now exits with an explicit remediation message instead of a traceback.
 - The goal is to add an on-demand search workflow beside RSS rule authoring, not to replace RSS automation.
@@ -108,6 +110,7 @@ This section maps the requested UX/search improvements to implementation status 
 | P6-07 | Final closeout for this request set. | Codex | 2026-03-12 | completed | `current-status`, phase plan status rows, and residual risks are synchronized and decision-complete. | `docs/plans/current-status.md`, this phase plan |
 | P6-08 | Deliver compact `/search` layout polish for high-density desktop use. | Codex | 2026-03-10 | completed | Search criteria layout uses explicit panel grids, include/exclude checkbox rows are paired per group, and result-view/filter-impact composition is visibly denser. | `app/templates/search.html`, `app/static/app.css`, `app/static/app.js`, `./scripts/test.sh tests/test_routes.py` (`44 passed`, 2026-03-10) |
 | P6-09 | Add automated `/search` visual feedback tooling for iterative UX polish. | Codex | 2026-03-10 | completed | Screenshot tooling exists with desktop/mobile capture support, wrappers, and documented setup/remediation steps. | `scripts/capture_search_ui.py`, `scripts/capture_ui.sh`, `scripts/capture_ui.bat`, `README.md` |
+| P6-10 | Replace manual Phase 4/5/6 browser closeout with deterministic browser QA automation. | Codex | 2026-03-11 | completed | Browser closeout checks run against isolated mock qBittorrent/Jackett services and produce reproducible evidence artifacts for release decisions. | `scripts/closeout_browser_qa.py`, `scripts/closeout_qa.sh`, `scripts/closeout_qa.bat`, `logs/qa/phase-closeout-20260311T113931Z/closeout-report.md` |
 
 ## Goal
 
@@ -179,29 +182,22 @@ qBittorrent's built-in search UI is a flat text box. The current app already mod
 - For Linux/WSL shells, bootstrap a native test interpreter using `docs/native-python-pytest.md` so `python3 -m pytest` is runnable without the Windows `.venv`.
 - Execute the DB-backed QA matrix in `docs/plans/phase-6-release-qa-plan.md` and record severity-ranked findings before phase-6 release sign-off.
 - Current status: completed on 2026-03-09 with `15/15` pass and no `critical/high`; see `logs/qa/phase6-matrix-20260309T220744Z.md`.
-- Manually verify `/search` for:
-  - a plain title-only fetch with local keyword refinement
-  - grouped any-of keyword refinement using `|` separators (for example `uhd, 4k | hdr, hdr10`) so each group is enforced independently
-  - local refinement for release year, size, indexer, and category filters without extra network calls
-  - release-year filtering where Torznab omits `year` attrs but the title includes a year token (for example `(2026)`)
-  - short excluded-token behavior (`sd`, `ts`) to confirm token-only blocking and no substring-driven false positives
-  - short included-token behavior (`hdr`) to confirm token-only matching and no metadata-substring false positives (for example `HDRezka`)
-  - season/episode shorthand behavior (`s3`, `e7`, `s3e1`) to confirm matches against zero-padded title tokens (`s03`, `e07`, `s03e01`)
-  - query/title alignment behavior so unrelated fallback titles do not remain in filtered results when title query terms are missing
-  - card/table view toggle and 3-level hierarchical sort behavior without extra network calls
-  - filter-impact diagnostics (`remain if alone`, `filtered out`, and blocker highlighting for empty results)
-  - `logs/search-debug.log` output for Jackett search debug summaries and drop-reason diagnostics while iterating on filters
-  - an indexer-limited search
-  - the search-to-rule handoff into `/rules/new`
-- Manually verify `/rules/{rule_id}/search` for saved movie or series rules with metadata-filled `IMDb ID` / `Release year` fields and confirm Jackett still returns results with the narrower request.
-- Manually verify `/rules/{rule_id}/search` for a movie or series rule with `IMDb ID` populated and confirm the page shows split `IMDb-first` and `Title fallback` sections where fallback fetch still runs even when IMDb-first has hits.
-- Manually verify `/rules/{rule_id}/search` for imported or legacy rules with unusually long saved titles and confirm the clamped title-only fallback still runs when structured reduction cannot.
-- Manually verify graceful errors for missing Jackett config, HTTP failures, and empty result sets.
+- Run `./scripts/closeout_qa.sh` (or `scripts\\closeout_qa.bat`) to execute deterministic browser validation for:
+  - grouped any-of keyword behavior and short-token exclusion semantics
+  - release-year toggle local filtering with no extra network requests
+  - dual result-view panel synchronization and preference save UX
+  - filter-impact rendering/collapse behavior
+  - search-to-rule handoff and `/rules/{rule_id}/search` derived-search flow
+  - non-Latin query/title local matching
+  - structured `logs/search-debug.log` event emission
+- Current status: automated closeout run passed on 2026-03-11 (`logs/qa/phase-closeout-20260311T113931Z/closeout-report.md`).
+- Keep DB-backed phase-6 release matrix (`docs/plans/phase-6-release-qa-plan.md`) for live-data regression confidence.
+- Keep one optional live-provider smoke pass before release for missing-config and external HTTP error messaging behavior.
 
 ## Dependencies
 
 - Jackett must be reachable from the local app host and expose Torznab endpoints for the configured indexers.
-- Phase 5 validation should close first so the existing rule-form contract is stable before the new search surface is added.
+- Phase 5 closeout is now automated and passing, so the existing rule-form contract is considered stable for this phase.
 - Linux/WSL validation environments need `python3-venv` and `python3-pip` available so native `python3 -m pytest` runs can be provisioned.
 
 ## Roll-forward notes

@@ -257,6 +257,7 @@ class JackettSearchResult(BaseModel):
     published_at: str | None = None
     published_label: str | None = None
     category_ids: list[str] = Field(default_factory=list)
+    category_labels: list[str] = Field(default_factory=list)
     year: str | None = None
     seeders: int | None = None
     peers: int | None = None

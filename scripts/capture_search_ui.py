@@ -13,6 +13,7 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 DEFAULT_PATHS = [
+    "/rules/new",
     "/search",
 ]
 LIVE_SEARCH_DEMO_PATH = (

@@ -21,6 +21,9 @@ from app.services.jackett import (
     build_reduced_search_request_from_rule,
     build_search_request_from_rule,
     clamp_search_query_text,
+    expand_quality_search_terms,
+    quality_pattern_map,
+    quality_search_term_map,
 )
 from app.services.metadata import (
     default_metadata_lookup_provider,
@@ -201,6 +204,19 @@ def _merge_search_terms(*term_lists: list[str]) -> list[str]:
     return merged
 
 
+def _normalize_quality_token_selection(
+    include_tokens: list[str], exclude_tokens: list[str]
+) -> tuple[list[str], list[str]]:
+    normalized_include = _merge_search_terms(include_tokens)
+    include_keys = {item.casefold() for item in normalized_include}
+    normalized_exclude = [
+        token
+        for token in _merge_search_terms(exclude_tokens)
+        if token.casefold() not in include_keys
+    ]
+    return normalized_include, normalized_exclude
+
+
 def _query_bool_values(values: list[str]) -> bool:
     return any(str(value or "").strip().casefold() in {"1", "true", "on", "yes"} for value in values)
 
@@ -251,6 +267,8 @@ def _prefill_rule_search_form_data(form_data: dict[str, object], rule: Rule) -> 
     form_data["imdb_id"] = str(rule.imdb_id or "").strip()
     form_data["release_year"] = str(rule.release_year or "").strip()
     form_data["include_release_year"] = bool(rule.include_release_year)
+    form_data["additional_includes"] = str(rule.additional_includes or "").strip()
+    form_data["must_not_contain"] = str(rule.must_not_contain or "").strip()
 
 
 def _unexpected_error_message(prefix: str, exc: Exception) -> str:
@@ -308,11 +326,27 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
     source_rule: Rule | None = None
     source_rule_id = request.query_params.get("rule_id", "").strip()
     query_params = request.query_params
+    additional_includes = query_params.get("additional_includes")
+    if additional_includes is None:
+        additional_includes = query_params.get("keywords_all", "")
+    must_not_contain = query_params.get("must_not_contain")
+    if must_not_contain is None:
+        must_not_contain = query_params.get("keywords_not", "")
     quality_include_tokens = _parse_search_filter_terms(
         ", ".join(query_params.getlist("quality_include_tokens"))
     )
     quality_exclude_tokens = _parse_search_filter_terms(
         ", ".join(query_params.getlist("quality_exclude_tokens"))
+    )
+    quality_include_tokens, quality_exclude_tokens = _normalize_quality_token_selection(
+        quality_include_tokens,
+        quality_exclude_tokens,
+    )
+    filter_indexers = _parse_search_filter_terms(
+        ", ".join(query_params.getlist("filter_indexers"))
+    )
+    filter_category_ids = _parse_search_filter_terms(
+        ", ".join(query_params.getlist("filter_category_ids"))
     )
     form_data = {
         "query": query_params.get("query", "").strip(),
@@ -327,15 +361,15 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
             )
         ),
         "release_year": query_params.get("release_year", "").strip(),
-        "keywords_all": query_params.get("keywords_all", "").strip(),
+        "additional_includes": str(additional_includes or "").strip(),
         "keywords_any": query_params.get("keywords_any", "").strip(),
-        "keywords_not": query_params.get("keywords_not", "").strip(),
+        "must_not_contain": str(must_not_contain or "").strip(),
         "quality_include_tokens": quality_include_tokens,
         "quality_exclude_tokens": quality_exclude_tokens,
         "size_min_mb": query_params.get("size_min_mb", "").strip(),
         "size_max_mb": query_params.get("size_max_mb", "").strip(),
-        "filter_indexers": query_params.get("filter_indexers", "").strip(),
-        "filter_category_ids": query_params.get("filter_category_ids", "").strip(),
+        "filter_indexers": ", ".join(filter_indexers),
+        "filter_category_ids": ", ".join(filter_category_ids),
     }
     errors: list[str] = []
     search_run: dict[str, object] | None = None
@@ -439,12 +473,9 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "imdb_id": payload_from_rule.imdb_id or "",
                         "include_release_year": bool(source_rule.include_release_year),
                         "release_year": payload_from_rule.release_year or "",
-                        "keywords_all": ", ".join(payload_from_rule.keywords_all),
-                        "keywords_any": (
-                            _format_keywords_any_groups(payload_from_rule.keywords_any_groups)
-                            or ", ".join(payload_from_rule.keywords_any)
-                        ),
-                        "keywords_not": ", ".join(payload_from_rule.keywords_not),
+                        "additional_includes": str(source_rule.additional_includes or "").strip(),
+                        "keywords_any": "",
+                        "must_not_contain": str(source_rule.must_not_contain or "").strip(),
                         "quality_include_tokens": list(source_rule.quality_include_tokens or []),
                         "quality_exclude_tokens": list(source_rule.quality_exclude_tokens or []),
                         "size_min_mb": "",
@@ -457,9 +488,15 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
     if form_data["query"] and not errors:
         if active_payload is None:
             try:
+                quality_include_tokens, quality_exclude_tokens = _normalize_quality_token_selection(
+                    cast(list[str], form_data.get("quality_include_tokens", [])),
+                    cast(list[str], form_data.get("quality_exclude_tokens", [])),
+                )
+                form_data["quality_include_tokens"] = quality_include_tokens
+                form_data["quality_exclude_tokens"] = quality_exclude_tokens
                 keywords_any_groups = _parse_keywords_any_groups(str(form_data["keywords_any"]))
-                quality_include_terms = _parse_search_filter_terms(
-                    ", ".join(cast(list[str], form_data.get("quality_include_tokens", [])))
+                quality_include_terms = expand_quality_search_terms(
+                    quality_include_tokens
                 )
                 if quality_include_terms:
                     keywords_any_groups.append(quality_include_terms)
@@ -467,9 +504,12 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                     _parse_search_filter_terms(str(form_data["keywords_any"])),
                     quality_include_terms,
                 )
+                quality_exclude_terms = expand_quality_search_terms(
+                    quality_exclude_tokens
+                )
                 merged_keywords_not = _merge_search_terms(
-                    _parse_search_filter_terms(str(form_data["keywords_not"])),
-                    cast(list[str], form_data.get("quality_exclude_tokens", [])),
+                    _parse_search_filter_terms(str(form_data["must_not_contain"])),
+                    quality_exclude_terms,
                 )
                 active_payload = JackettSearchRequest.model_validate(
                     {
@@ -480,14 +520,14 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "release_year": (
                             form_data["release_year"] if cast(bool, form_data["include_release_year"]) else ""
                         ),
-                        "keywords_all": form_data["keywords_all"],
+                        "keywords_all": form_data["additional_includes"],
                         "keywords_any": merged_keywords_any,
                         "keywords_any_groups": keywords_any_groups,
                         "keywords_not": merged_keywords_not,
                         "size_min_mb": form_data["size_min_mb"],
                         "size_max_mb": form_data["size_max_mb"],
-                        "filter_indexers": form_data["filter_indexers"],
-                        "filter_category_ids": form_data["filter_category_ids"],
+                        "filter_indexers": filter_indexers,
+                        "filter_category_ids": filter_category_ids,
                     }
                 )
             except ValidationError as exc:
@@ -497,6 +537,14 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                 active_payload = _auto_imdb_first_payload(active_payload)
                 client = JackettClient(jackett_api_url, jackett_api_key)
                 result = client.search(active_payload)
+                client.enrich_result_category_labels(
+                    [
+                        *list(result.raw_results or []),
+                        *list(result.results or []),
+                        *list(result.raw_fallback_results or []),
+                        *list(result.fallback_results or []),
+                    ]
+                )
                 rule_prefill = {
                     "rule_name": active_payload.query,
                     "content_name": active_payload.query,
@@ -612,6 +660,8 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
             "derivation_notice": derivation_notice,
             "search_run": search_run,
             "quality_option_groups": quality_option_groups(),
+            "quality_search_term_map": quality_search_term_map(),
+            "quality_pattern_map": quality_pattern_map(),
             "search_view_defaults": search_view_defaults,
             "shell_layout": "wide",
             "content_layout": "wide",

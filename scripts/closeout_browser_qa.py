@@ -846,6 +846,39 @@ def main() -> int:
                 page=page,
             )
 
+            def check_phase5_rule_pattern_preview_parity() -> None:
+                page.goto(f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms)
+                page.wait_for_selector("#pattern-preview", timeout=args.timeout_ms)
+                page.fill('input[name="normalized_title"]', "Pattern Preview Rule")
+                page.fill('textarea[name="additional_includes"]', "aaa, bbb|ccc, ddd")
+                page.fill('textarea[name="must_not_contain"]', "cam|ts")
+                page.wait_for_timeout(180)
+                preview = page.input_value("#pattern-preview")
+                _expect(
+                    "(?=.*aaa)" in preview,
+                    f"Expected required extra include term in rule preview; preview={preview!r}",
+                )
+                _expect(
+                    "(?=.*(?:bbb|ccc))" in preview,
+                    f"Expected OR group from pipe-delimited extra include term; preview={preview!r}",
+                )
+                _expect(
+                    "(?=.*ddd)" in preview,
+                    f"Expected final required extra include term in rule preview; preview={preview!r}",
+                )
+                _expect(
+                    "(?!.*(?:cam|ts))" in preview,
+                    f"Expected mustNotContain pipe alternatives in rule preview; preview={preview!r}",
+                )
+
+            run_check(
+                "P5-02",
+                "Phase 5",
+                "Rule generated-pattern preview reflects mustNotContain and pipe alternatives",
+                check_phase5_rule_pattern_preview_parity,
+                page=page,
+            )
+
             search_url = (
                 f"{app_base_url}/search?query=Young+Sherlock&media_type=series&indexer=all"
                 "&imdb_id=tt8599532&include_release_year=on&release_year=2026"
@@ -905,6 +938,14 @@ def main() -> int:
                 baseline_requests = request_count()
                 page.fill('input[name="keywords_any"]', "2160p | hdr10")
                 page.wait_for_timeout(180)
+                grouped_preview = page.input_value("#search-pattern-preview")
+                _expect(
+                    "(?=.*2160p)" in grouped_preview and "(?=.*hdr10)" in grouped_preview,
+                    (
+                        "Expected grouped any-of text to contribute include lookaheads in generated preview; "
+                        f"preview={grouped_preview!r}"
+                    ),
+                )
                 _expect(
                     search_filtered_count("primary") == 1,
                     f"Expected primary filtered count=1 after grouped any-of; got {search_filtered_count('primary')}",
@@ -914,7 +955,7 @@ def main() -> int:
                     f"Expected fallback filtered count=2 after grouped any-of; got {search_filtered_count('fallback')}",
                 )
 
-                page.fill('input[name="keywords_not"]', "ts")
+                page.fill('textarea[name="must_not_contain"]', "ts")
                 page.wait_for_timeout(180)
                 _expect(
                     search_filtered_count("fallback") == 1,
@@ -983,6 +1024,178 @@ def main() -> int:
                 page=page,
             )
 
+            def check_phase6_quality_toggle_and_multiselect_filters() -> None:
+                page.goto(search_url, wait_until="networkidle", timeout=args.timeout_ms)
+                page.wait_for_selector('[data-search-filtered-count="fallback"]', timeout=args.timeout_ms)
+                baseline_requests = request_count()
+                baseline_fallback_count = search_filtered_count("fallback")
+
+                token_slider = page.locator(
+                    '[data-search-quality-option="true"][data-quality-token="cam"] [data-quality-token-slider-control]'
+                )
+                _expect(token_slider.count() == 1, "Expected cam quality token slider on /search.")
+                pattern_preview = page.locator("#search-pattern-preview")
+                _expect(pattern_preview.count() == 1, "Expected generated pattern preview textarea on /search.")
+
+                # Regression guard: include slider must override conflicting manual excluded text terms.
+                page.fill('textarea[name="additional_includes"]', "young sherlock")
+                page.fill('textarea[name="must_not_contain"]', "cam")
+                page.wait_for_timeout(220)
+                preview_with_cam_excluded = pattern_preview.input_value()
+                _expect(
+                    "(?=.*young[\\s._-]*sherlock)" in preview_with_cam_excluded,
+                    (
+                        "Expected extra include keywords to appear in generated pattern preview; "
+                        f"preview={preview_with_cam_excluded!r}"
+                    ),
+                )
+                _expect(
+                    "(?!.*cam)" in preview_with_cam_excluded,
+                    (
+                        "Expected mustNotContain keyword cam to appear in generated pattern preview; "
+                        f"preview={preview_with_cam_excluded!r}"
+                    ),
+                )
+                _expect(
+                    search_filtered_count("fallback") == max(baseline_fallback_count - 1, 0),
+                    (
+                        "Expected manual excluded keyword cam to reduce fallback count by one "
+                        f"(baseline={baseline_fallback_count}, now={search_filtered_count('fallback')})."
+                    ),
+                )
+                token_slider.first.focus()
+                token_slider.first.press("ArrowRight")
+                page.wait_for_timeout(220)
+                preview_with_cam_include = pattern_preview.input_value()
+                _expect(
+                    preview_with_cam_include != preview_with_cam_excluded,
+                    "Expected generated pattern preview to change when cam slider toggles to Include.",
+                )
+                _expect(
+                    "(?!.*cam)" not in preview_with_cam_include,
+                    (
+                        "Expected include slider to remove conflicting cam exclusion from generated pattern preview; "
+                        f"preview={preview_with_cam_include!r}"
+                    ),
+                )
+                _expect(
+                    search_filtered_count("fallback") == 1,
+                    (
+                        "Expected cam Include slider to override conflicting excluded keyword text and keep "
+                        "the cam-matching result visible; "
+                        f"got {search_filtered_count('fallback')}."
+                    ),
+                )
+
+                page.fill('textarea[name="must_not_contain"]', "")
+                token_slider.first.press("Home")
+                page.wait_for_timeout(220)
+                preview_after_reset = pattern_preview.input_value()
+                _expect(
+                    "(?!.*cam)" not in preview_after_reset,
+                    (
+                        "Expected clearing mustNotContain + slider Off to remove cam exclusion from preview; "
+                        f"preview={preview_after_reset!r}"
+                    ),
+                )
+                _expect(
+                    search_filtered_count("fallback") == baseline_fallback_count,
+                    (
+                        "Expected clearing excluded keywords and resetting slider to Off to restore baseline "
+                        f"fallback count {baseline_fallback_count}; got {search_filtered_count('fallback')}."
+                    ),
+                )
+
+                token_slider.first.focus()
+                token_slider.first.press("End")
+                page.wait_for_timeout(220)
+                preview_with_cam_out = pattern_preview.input_value()
+                _expect(
+                    preview_with_cam_out != preview_after_reset,
+                    "Expected generated pattern preview to change when cam slider toggles to Out.",
+                )
+                _expect(
+                    "(?!.*" in preview_with_cam_out and "cam" in preview_with_cam_out,
+                    (
+                        "Expected cam Out slider to add a cam exclusion lookahead to generated preview; "
+                        f"preview={preview_with_cam_out!r}"
+                    ),
+                )
+                _expect(
+                    search_filtered_count("fallback") == max(baseline_fallback_count - 1, 0),
+                    (
+                        "Expected quality Out toggle to reduce fallback count by one "
+                        f"(baseline={baseline_fallback_count}, now={search_filtered_count('fallback')})."
+                    ),
+                )
+                token_slider.first.press("Home")
+                page.fill('textarea[name="additional_includes"]', "")
+                page.wait_for_timeout(220)
+                _expect(
+                    search_filtered_count("fallback") == baseline_fallback_count,
+                    (
+                        "Expected quality slider reset to restore fallback count "
+                        f"to {baseline_fallback_count}; got {search_filtered_count('fallback')}."
+                    ),
+                )
+
+                page.click('[data-search-multiselect-summary="indexers"]')
+                delta_indexer_option = page.locator(
+                    '[data-search-multiselect-options="indexers"] label:has-text("delta") input[type="checkbox"]'
+                )
+                _expect(delta_indexer_option.count() == 1, "Expected delta indexer option in indexer multiselect.")
+                delta_indexer_option.check()
+                page.wait_for_timeout(220)
+                _expect(
+                    search_filtered_count("fallback") == 1,
+                    f"Expected exactly one fallback row for delta indexer; got {search_filtered_count('fallback')}.",
+                )
+                delta_titles = search_visible_titles("fallback")
+                _expect(
+                    len(delta_titles) == 1 and " TS " in f" {delta_titles[0]} ",
+                    f"Expected delta indexer filter to keep TS row only; titles={delta_titles}",
+                )
+                delta_indexer_option.uncheck()
+                page.wait_for_timeout(180)
+
+                page.click('[data-search-multiselect-summary="categories"]')
+                documentary_category_option = page.locator(
+                    '[data-search-multiselect-options="categories"] label:has-text("TV/Documentary") input[type="checkbox"]'
+                )
+                _expect(
+                    documentary_category_option.count() == 1,
+                    "Expected TV/Documentary category option in category multiselect.",
+                )
+                documentary_category_option.check()
+                page.wait_for_timeout(220)
+                _expect(
+                    search_filtered_count("fallback") == 1,
+                    (
+                        "Expected category dropdown filter TV/Documentary to keep one fallback row; "
+                        f"got {search_filtered_count('fallback')}."
+                    ),
+                )
+                documentary_titles = search_visible_titles("fallback")
+                _expect(
+                    len(documentary_titles) == 1 and "Test Cut" in documentary_titles[0],
+                    f"Expected TV/Documentary filter to keep Test Cut only; titles={documentary_titles}",
+                )
+                _expect(
+                    request_count() == baseline_requests,
+                    (
+                        "Quality-token toggle and multiselect local filters should be network-free. "
+                        f"before={baseline_requests} after={request_count()}"
+                    ),
+                )
+
+            run_check(
+                "P6-04",
+                "Phase 6",
+                "Quality-tag toggles and indexer/category multiselect filters run locally without extra requests",
+                check_phase6_quality_toggle_and_multiselect_filters,
+                page=page,
+            )
+
             def check_phase6_filter_impact_and_handoff() -> None:
                 page.goto(search_url, wait_until="networkidle", timeout=args.timeout_ms)
                 page.wait_for_selector('[data-search-summary="primary"]', timeout=args.timeout_ms)
@@ -1010,7 +1223,7 @@ def main() -> int:
                 _expect(details.evaluate("node => node.open"), "Filter-impact section should expand.")
 
                 page.fill('input[name="keywords_any"]', "")
-                page.fill('input[name="keywords_not"]', "")
+                page.fill('textarea[name="must_not_contain"]', "")
                 page.wait_for_timeout(120)
                 use_link = page.locator(
                     '[data-search-row="primary"]:not([hidden]) a.button-link:has-text("Use In New Rule")'
@@ -1055,6 +1268,10 @@ def main() -> int:
                 page.click('a.button-link:has-text("Run Search")')
                 page.wait_for_url("**/search?rule_id=**", timeout=args.timeout_ms)
                 page.wait_for_selector('[data-search-summary="primary"]', timeout=args.timeout_ms)
+                _expect(
+                    page.input_value('input[name="keywords_any"]').strip() == "",
+                    "Rule-derived /search run should keep Additional any-of keyword groups blank by default.",
+                )
                 page_text = page.content()
                 _expect("Derived from rule:" in page_text, "Rule-derived search page should show derivation summary.")
                 _expect(
@@ -1063,7 +1280,7 @@ def main() -> int:
                 )
 
             run_check(
-                "P6-04",
+                "P6-05",
                 "Phase 6",
                 "Filter-impact UX, search-to-rule handoff, and rule-derived search flow",
                 check_phase6_filter_impact_and_handoff,
@@ -1086,7 +1303,7 @@ def main() -> int:
                 )
 
             run_check(
-                "P6-05",
+                "P6-06",
                 "Phase 6",
                 "Non-Latin query filtering keeps relevant localized matches",
                 check_phase6_non_latin,
@@ -1107,7 +1324,7 @@ def main() -> int:
             )
 
         run_check(
-            "P6-06",
+            "P6-07",
             "Phase 6",
             "Structured search debug log events append during automated closeout",
             check_debug_log_growth,

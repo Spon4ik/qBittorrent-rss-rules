@@ -89,6 +89,37 @@ def parse_additional_includes(value: str | None) -> list[str]:
     return items
 
 
+def parse_additional_include_groups(value: str | None) -> list[list[str]]:
+    if not (value or "").strip():
+        return []
+
+    groups: list[list[str]] = []
+    seen_groups: set[str] = set()
+    for part in EXTRA_INCLUDE_SPLIT_RE.split(value or ""):
+        candidate = part.strip()
+        if not candidate:
+            continue
+        alternatives: list[str] = []
+        seen_alternatives: set[str] = set()
+        for item in candidate.split("|"):
+            option = item.strip()
+            if not option:
+                continue
+            key = option.casefold()
+            if key in seen_alternatives:
+                continue
+            seen_alternatives.add(key)
+            alternatives.append(option)
+        if not alternatives:
+            continue
+        group_key = "||".join(option.casefold() for option in alternatives)
+        if group_key in seen_groups:
+            continue
+        seen_groups.add(group_key)
+        groups.append(alternatives)
+    return groups
+
+
 def looks_like_full_must_contain_override(value: str | None) -> bool:
     candidate = (value or "").strip()
     if not candidate:
@@ -123,6 +154,19 @@ def build_manual_must_contain_fragments(value: str | None) -> list[str]:
             fragments.append(f"(?:{item})")
             continue
         fragments.append(build_title_regex_fragment(item))
+    return fragments
+
+
+def build_keyword_group_fragments(groups: list[list[str]]) -> list[str]:
+    fragments: list[str] = []
+    for group in groups:
+        group_fragments = [build_title_regex_fragment(item) for item in group if item.strip()]
+        if not group_fragments:
+            continue
+        if len(group_fragments) == 1:
+            fragments.append(group_fragments[0])
+            continue
+        fragments.append(f"(?:{'|'.join(group_fragments)})")
     return fragments
 
 
@@ -188,8 +232,9 @@ class RuleBuilder:
         if rule.include_release_year and release_year:
             positive_fragments.append(re.escape(release_year))
 
-        for item in parse_additional_includes(rule.additional_includes):
-            positive_fragments.append(build_title_regex_fragment(item))
+        positive_fragments.extend(
+            build_keyword_group_fragments(parse_additional_include_groups(rule.additional_includes))
+        )
 
         quality_include, quality_exclude = self._resolve_quality_filters(rule)
         if quality_include:
@@ -234,7 +279,7 @@ class RuleBuilder:
         quality_include, quality_exclude = self._resolve_quality_filters(rule)
         return bool(
             (rule.include_release_year and normalize_release_year(rule.release_year))
-            or parse_additional_includes(rule.additional_includes)
+            or parse_additional_include_groups(rule.additional_includes)
             or quality_include
             or quality_exclude
             or build_manual_must_contain_fragments(rule.must_contain_override)

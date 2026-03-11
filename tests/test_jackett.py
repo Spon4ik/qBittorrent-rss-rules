@@ -69,6 +69,7 @@ def test_jackett_client_fetches_broad_query_and_filters_locally() -> None:
     assert result.results[0].size_label == "1.0 GB"
     assert result.results[0].year == "2024"
     assert result.results[0].category_ids == ["2000"]
+    assert result.results[0].category_labels == ["Movies"]
     assert result.results[0].source_kind == SearchSourceKind.JACKETT_ACTIVE_SEARCH
 
 
@@ -281,6 +282,220 @@ def test_jackett_client_applies_local_metadata_filters_to_cached_results() -> No
         "American Classic S01E01 720p",
     ]
     assert [item.title for item in result.results] == ["American Classic S01E01 1080p"]
+
+
+def test_jackett_client_can_filter_by_category_label_across_indexers() -> None:
+    seen_requests: list[tuple[str, dict[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = {key: value for key, value in request.url.params.multi_items()}
+        seen_requests.append((path, params))
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "search",
+            "q": "Classic Audio",
+            "cat": "3030",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>Classic Audio Collection RU</title>
+      <guid>audio-ru-guid</guid>
+      <link>magnet:?xt=urn:btih:AUDIO111</link>
+      <torznab:attr name="jackettindexer" value="rutracker" />
+      <torznab:attr name="category" value="101279" />
+    </item>
+    <item>
+      <title>Classic Audio Collection EN</title>
+      <guid>audio-en-guid</guid>
+      <link>magnet:?xt=urn:btih:AUDIO222</link>
+      <torznab:attr name="jackettindexer" value="booktracker" />
+      <torznab:attr name="category" value="22222" />
+    </item>
+    <item>
+      <title>Classic Audio Collection Misc</title>
+      <guid>audio-misc-guid</guid>
+      <link>magnet:?xt=urn:btih:AUDIO333</link>
+      <torznab:attr name="jackettindexer" value="booktracker" />
+      <torznab:attr name="category" value="90999" />
+    </item>
+  </channel>
+</rss>
+""",
+            )
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="rutracker">
+    <caps>
+      <categories>
+        <category id="100000" name="Audio">
+          <subcat id="101279" name="Audiobooks" />
+        </category>
+      </categories>
+    </caps>
+  </indexer>
+  <indexer id="booktracker">
+    <caps>
+      <categories>
+        <category id="22000" name="Books">
+          <subcat id="22222" name="Audiobooks" />
+          <subcat id="90999" name="Misc" />
+        </category>
+      </categories>
+    </caps>
+  </indexer>
+</indexers>
+""",
+            )
+
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="Classic Audio",
+            media_type="audiobook",
+            filter_category_ids=["audiobooks"],
+        )
+    )
+
+    assert seen_requests == [
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "search",
+                "q": "Classic Audio",
+                "cat": "3030",
+            },
+        ),
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "indexers",
+                "configured": "true",
+            },
+        ),
+    ]
+    assert [item.title for item in result.results] == [
+        "Classic Audio Collection EN",
+        "Classic Audio Collection RU",
+    ]
+    labels_by_title = {item.title: set(item.category_labels) for item in result.results}
+    assert labels_by_title["Classic Audio Collection RU"] == {"Audiobooks", "Audio/Audiobooks"}
+    assert labels_by_title["Classic Audio Collection EN"] == {"Audiobooks", "Books/Audiobooks"}
+
+
+def test_jackett_client_can_enrich_result_category_labels_without_label_filter() -> None:
+    seen_requests: list[tuple[str, dict[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = {key: value for key, value in request.url.params.multi_items()}
+        seen_requests.append((path, params))
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "search",
+            "q": "Classic Audio",
+            "cat": "3030",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>Classic Audio Collection RU</title>
+      <guid>audio-ru-guid</guid>
+      <link>magnet:?xt=urn:btih:AUDIO111</link>
+      <torznab:attr name="jackettindexer" value="rutracker" />
+      <torznab:attr name="category" value="101279" />
+    </item>
+  </channel>
+</rss>
+""",
+            )
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="rutracker">
+    <caps>
+      <categories>
+        <category id="100000" name="Audio">
+          <subcat id="101279" name="Audiobooks" />
+        </category>
+      </categories>
+    </caps>
+  </indexer>
+</indexers>
+""",
+            )
+
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="Classic Audio",
+            media_type="audiobook",
+        )
+    )
+    assert result.results[0].category_labels == []
+
+    client.enrich_result_category_labels([*result.raw_results, *result.results])
+
+    assert set(result.results[0].category_labels) == {"Audiobooks", "Audio/Audiobooks"}
+    assert seen_requests == [
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "search",
+                "q": "Classic Audio",
+                "cat": "3030",
+            },
+        ),
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "indexers",
+                "configured": "true",
+            },
+        ),
+    ]
 
 
 def test_jackett_client_matches_release_year_from_title_when_attr_missing() -> None:
@@ -1237,6 +1452,24 @@ def test_build_search_request_from_rule_uses_structured_terms_not_raw_regex() ->
     assert "flac" in payload.keywords_not
     assert payload.keywords_any_groups == [["mp3"]]
     assert ignored_full_regex is True
+
+
+def test_build_search_request_from_rule_maps_pipe_alternatives_to_any_groups() -> None:
+    rule = Rule(
+        rule_name="Pipe Terms",
+        content_name="Pipe Terms",
+        normalized_title="Pipe Terms",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.CUSTOM,
+        additional_includes="aaa, bbb|ccc, ddd|eee",
+    )
+
+    payload, ignored_full_regex = build_search_request_from_rule(rule)
+
+    assert payload.query == "Pipe Terms"
+    assert payload.keywords_all == ["aaa"]
+    assert payload.keywords_any_groups == [["bbb", "ccc"], ["ddd", "eee"]]
+    assert ignored_full_regex is False
 
 
 def test_build_search_request_from_rule_skips_release_year_when_not_enabled() -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -394,6 +395,119 @@ def test_search_page_parses_pipe_delimited_any_keyword_groups(app_client, monkey
     assert "The Rip (2026) 4K HDR10" in response.text
 
 
+def test_search_page_expands_quality_token_terms_for_search_payload(app_client, monkeypatch) -> None:
+    def fake_search(self, payload):
+        assert payload.query == "The Rip"
+        assert payload.keywords_any_groups == [["hevc", "x265", "h265"]]
+        assert payload.keywords_any == ["hevc", "x265", "h265"]
+        assert "tv sync" in payload.keywords_not
+        assert "tele sync" in payload.keywords_not
+        assert "telesync" in payload.keywords_not
+        return JackettSearchRun(
+            query_variants=["The Rip"],
+            results=[],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "The Rip",
+            "media_type": "movie",
+            "quality_include_tokens": ["hevc"],
+            "quality_exclude_tokens": ["tv_sync"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "data-quality-search-terms=" in response.text
+    assert "data-quality-pattern-map=" in response.text
+    assert 'id="search-pattern-preview"' in response.text
+    assert "Extra include keywords" in response.text
+    assert "mustNotContain" in response.text
+
+
+def test_search_page_accepts_legacy_free_text_filter_query_params(app_client, monkeypatch) -> None:
+    def fake_search(self, payload):
+        assert payload.query == "Legacy Search"
+        assert payload.keywords_all == ["remux", "2026"]
+        assert payload.keywords_not == ["cam", "ts"]
+        return JackettSearchRun(query_variants=["Legacy Search"], results=[])
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "Legacy Search",
+            "media_type": "movie",
+            "keywords_all": "remux, 2026",
+            "keywords_not": "cam, ts",
+        },
+    )
+
+    assert response.status_code == 200
+    assert 'textarea name="additional_includes"' in response.text
+    assert 'textarea name="must_not_contain"' in response.text
+
+
+def test_search_page_accepts_repeated_multiselect_filter_params(app_client, monkeypatch) -> None:
+    def fake_search(self, payload):
+        assert payload.query == "The Rip"
+        assert payload.filter_indexers == ["alpha", "beta"]
+        assert payload.filter_category_ids == ["tv hd", "audiobooks"]
+        return JackettSearchRun(query_variants=["The Rip"], results=[])
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params=[
+            ("query", "The Rip"),
+            ("media_type", "movie"),
+            ("filter_indexers", "alpha"),
+            ("filter_indexers", "beta"),
+            ("filter_category_ids", "tv hd"),
+            ("filter_category_ids", "audiobooks"),
+        ],
+    )
+
+    assert response.status_code == 200
+    assert 'data-search-multiselect="indexers"' in response.text
+    assert 'data-search-multiselect="categories"' in response.text
+
+
+def test_search_page_prefers_include_token_when_quality_token_lists_conflict(
+    app_client,
+    monkeypatch,
+) -> None:
+    def fake_search(self, payload):
+        assert payload.query == "The Rip"
+        assert payload.keywords_any_groups == [["sd"]]
+        assert payload.keywords_any == ["sd"]
+        assert "sd" not in payload.keywords_not
+        return JackettSearchRun(
+            query_variants=["The Rip"],
+            results=[],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "The Rip",
+            "media_type": "movie",
+            "quality_include_tokens": ["sd"],
+            "quality_exclude_tokens": ["sd"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "data-quality-search-terms=" in response.text
+
+
 def test_search_page_renders_search_warnings(app_client, monkeypatch) -> None:
     def fake_search(self, payload):
         return JackettSearchRun(
@@ -469,6 +583,60 @@ def test_search_page_from_rule_uses_structured_terms_not_raw_regex(app_client, d
     assert "Andrew Michael Blues Band 2026 mp3" in response.text
     assert "Andrew Michael Blues Band (2026) MP3" in response.text
     assert "additional_includes=2026" in response.text
+
+
+def test_search_page_from_rule_prefills_local_free_text_from_literal_rule_fields(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    rule = Rule(
+        rule_name="Free Text Parity",
+        content_name="Free Text Parity",
+        normalized_title="Free Text Parity",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.CUSTOM,
+        additional_includes="remux",
+        quality_include_tokens=["hevc"],
+        quality_exclude_tokens=["tv_sync"],
+        must_not_contain="cam",
+        feed_urls=["http://feed.example/parity"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        assert payload.query == "Free Text Parity"
+        assert payload.keywords_all == ["remux"]
+        assert "cam" in payload.keywords_not
+        assert "tv sync" in payload.keywords_not
+        return JackettSearchRun(query_variants=["Free Text Parity"], results=[])
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get("/search", params={"rule_id": rule.id})
+
+    assert response.status_code == 200
+    include_match = re.search(
+        r'<textarea name="additional_includes"[^>]*>(.*?)</textarea>',
+        response.text,
+        re.DOTALL,
+    )
+    exclude_match = re.search(
+        r'<textarea name="must_not_contain"[^>]*>(.*?)</textarea>',
+        response.text,
+        re.DOTALL,
+    )
+    keywords_any_match = re.search(
+        r'<input type="text" name="keywords_any" value="([^"]*)"',
+        response.text,
+    )
+    assert include_match is not None
+    assert exclude_match is not None
+    assert keywords_any_match is not None
+    assert include_match.group(1).strip() == "remux"
+    assert exclude_match.group(1).strip() == "cam"
+    assert keywords_any_match.group(1).strip() == ""
 
 
 def test_search_page_from_rule_skips_release_year_when_not_enabled(
@@ -891,8 +1059,8 @@ def test_new_rule_uses_ultra_hd_hdr_defaults(app_client) -> None:
     assert 'option value="builtin-music-lossless"' not in response.text
     assert 'id="metadata-lookup-provider"' in response.text
     assert ">OMDb (Video)</option>" in response.text
-    assert 'name="quality_include_tokens" value="ultra_hd" checked' in response.text
-    assert 'name="quality_include_tokens" value="hdr" checked' in response.text
+    assert 'data-quality-token="ultra_hd"' in response.text
+    assert 'data-quality-token="hdr"' in response.text
 
 
 def test_metadata_lookup_accepts_legacy_imdb_payload(app_client, monkeypatch) -> None:

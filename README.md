@@ -162,7 +162,7 @@ scripts\capture_ui.bat --start-server
 ```
 
 Artifacts are written under `logs/ui-feedback/<timestamp>/` with a `manifest.json` so follow-up polish passes can compare the exact captured screens.
-The default run captures stable `/search` UI states without triggering live Jackett queries.
+The default run captures stable `/rules/new` and `/search` UI states without triggering live Jackett queries.
 Use `--include-live-search` only when you explicitly want a live query screenshot.
 On Linux/WSL hosts, if Chromium fails to launch, run `./.venv-linux/bin/python -m playwright install-deps chromium`.
 

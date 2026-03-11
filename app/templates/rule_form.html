@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_quality_token_controls.html" import render_quality_token_groups %}
 {% block content %}
 <section class="panel-head">
   <div>
@@ -130,55 +131,16 @@
       <button type="button" id="filter-profile-save-new">Save As New Profile</button>
       <button type="button" id="filter-profile-overwrite">Overwrite Selected Profile</button>
     </div>
-    <section class="form-grid">
-      <div class="stack">
-        {% for group in quality_option_groups %}
-        <fieldset
-          class="stack"
-          data-quality-selector="include-{{ group.key }}"
-          data-quality-group="true"
-          data-media-types="{{ group.media_types | join(',') }}"
-        >
-          <legend>Include {{ group.label }}</legend>
-          {% for choice in group.options %}
-          <label
-            class="toggle"
-            data-quality-option="true"
-            data-media-types="{{ choice.media_types | join(',') }}"
-          >
-            <input type="checkbox" name="quality_include_tokens" value="{{ choice.value }}" {% if choice.value in form_data.quality_include_tokens %}checked{% endif %} />
-            <span>{{ choice.label }}</span>
-          </label>
-          {% endfor %}
-        </fieldset>
-        {% endfor %}
-      </div>
-      <div class="stack">
-        {% for group in quality_option_groups %}
-        <fieldset
-          class="stack"
-          data-quality-selector="exclude-{{ group.key }}"
-          data-quality-group="true"
-          data-media-types="{{ group.media_types | join(',') }}"
-        >
-          <legend>Exclude {{ group.label }}</legend>
-          {% for choice in group.options %}
-          <label
-            class="toggle"
-            data-quality-option="true"
-            data-media-types="{{ choice.media_types | join(',') }}"
-          >
-            <input type="checkbox" name="quality_exclude_tokens" value="{{ choice.value }}" {% if choice.value in form_data.quality_exclude_tokens %}checked{% endif %} />
-            <span>{{ choice.label }}</span>
-          </label>
-          {% endfor %}
-        </fieldset>
-        {% endfor %}
-      </div>
-    </section>
+    {{ render_quality_token_groups(
+      quality_option_groups,
+      form_data.quality_include_tokens,
+      form_data.quality_exclude_tokens,
+      "rule",
+    ) }}
     <label>
       Extra include keywords
       <textarea name="additional_includes" rows="3" placeholder="One per line, or comma separated.">{{ form_data.additional_includes }}</textarea>
+      <span class="helper-text">Use `|` inside one entry to create OR alternatives (for example `hd|uhd|2160p`).</span>
     </label>
     <label>
       Extra `mustContain` fragments
@@ -187,6 +149,7 @@
     <label>
       `mustNotContain`
       <textarea name="must_not_contain" rows="2">{{ form_data.must_not_contain }}</textarea>
+      <span class="helper-text">Use `|` inside one entry for OR exclusions (for example `cam|ts`).</span>
     </label>
   </section>
 

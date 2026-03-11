@@ -6,6 +6,7 @@ from app.services.rule_builder import (
     build_title_regex_fragment,
     extract_imdb_id_from_category,
     infer_media_type_from_category,
+    parse_additional_include_groups,
 )
 
 
@@ -123,6 +124,28 @@ def test_build_generated_pattern_uses_custom_quality_year_and_keywords() -> None
     assert "(?=.*remux)" in pattern
     assert "(?=.*(?:ultra[\\s._-]*hd|uhd|4k|2160p|hdr10\\+?|hdr))" in pattern
     assert pattern.endswith(r"(?!.*(?:1080p|720p|480p|sd))")
+
+
+def test_parse_additional_include_groups_supports_pipe_alternatives() -> None:
+    groups = parse_additional_include_groups("aaa, bbb|ccc, ddd|eee")
+    assert groups == [["aaa"], ["bbb", "ccc"], ["ddd", "eee"]]
+
+
+def test_build_generated_pattern_supports_pipe_alternatives_in_extra_includes() -> None:
+    builder = RuleBuilder(settings=None)
+    pattern = builder.build_generated_pattern(
+        build_rule(
+            quality_profile=QualityProfile.PLAIN,
+            use_regex=False,
+            normalized_title="Anaconda",
+            content_name="Anaconda",
+            additional_includes="aaa, bbb|ccc, ddd",
+        )
+    )
+    assert "(?=.*anaconda)" in pattern
+    assert "(?=.*aaa)" in pattern
+    assert "(?=.*(?:bbb|ccc))" in pattern
+    assert "(?=.*ddd)" in pattern
 
 
 def test_build_qb_rule_enables_regex_when_generated_conditions_are_present() -> None:

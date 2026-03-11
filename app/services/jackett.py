@@ -19,7 +19,7 @@ from app.services.quality_filters import quality_option_choices
 from app.services.rule_builder import (
     looks_like_full_must_contain_override,
     normalize_release_year,
-    parse_additional_includes,
+    parse_additional_include_groups,
     parse_manual_must_contain_additions,
 )
 
@@ -50,6 +50,7 @@ YEAR_RE = re.compile(r"\b(\d{4})\b")
 SEASON_TOKEN_RE = re.compile(r"^s0*(\d{1,2})$")
 EPISODE_TOKEN_RE = re.compile(r"^e0*(\d{1,3})$")
 SEASON_EPISODE_TOKEN_RE = re.compile(r"^s0*(\d{1,2})e0*(\d{1,3})$")
+INDEXER_KEY_STRIP_RE = re.compile(r"[\s._-]+")
 SEPARATOR_FRAGMENT_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"[\s._-]*", " "),
     (r"[\s._-]+", " "),
@@ -84,6 +85,54 @@ TORZNAB_CAPABILITY_TAG_BY_MODE = {
     "movie": "movie-search",
     "music": "music-search",
     "book": "book-search",
+}
+TORZNAB_STANDARD_CATEGORY_LABELS: dict[str, tuple[str, ...]] = {
+    "1000": ("Console",),
+    "1010": ("Console/NDS",),
+    "1020": ("Console/PSP",),
+    "1030": ("Console/Wii",),
+    "1040": ("Console/XBox",),
+    "1050": ("Console/XBox 360",),
+    "1080": ("Console/PS3",),
+    "1090": ("Console/Other",),
+    "1120": ("Console/PS Vita",),
+    "1180": ("Console/PS4",),
+    "2000": ("Movies",),
+    "2010": ("Movies/Foreign",),
+    "2020": ("Movies/Other",),
+    "2040": ("Movies/HD",),
+    "2045": ("Movies/UHD",),
+    "2060": ("Movies/3D",),
+    "2070": ("Movies/DVD",),
+    "3000": ("Audio",),
+    "3010": ("Audio/MP3",),
+    "3020": ("Audio/Video",),
+    "3030": ("Audio/Audiobook",),
+    "3040": ("Audio/Lossless",),
+    "4000": ("PC",),
+    "4030": ("PC/Mac",),
+    "4040": ("PC/Mobile-Other",),
+    "4050": ("PC/Games",),
+    "4060": ("PC/Mobile-iOS",),
+    "4070": ("PC/Mobile-Android",),
+    "5000": ("TV",),
+    "5020": ("TV/Foreign",),
+    "5030": ("TV/SD",),
+    "5040": ("TV/HD",),
+    "5045": ("TV/UHD",),
+    "5050": ("TV/Other",),
+    "5060": ("TV/Sport",),
+    "5070": ("TV/Anime",),
+    "5080": ("TV/Documentary",),
+    "6000": ("XXX",),
+    "7000": ("Books",),
+    "7010": ("Books/Mags",),
+    "7020": ("Books/EBook",),
+    "7030": ("Books/Comics",),
+    "7040": ("Books/Technical",),
+    "7050": ("Books/Other",),
+    "8000": ("Other",),
+    "8010": ("Other/Misc",),
 }
 LOGGER = logging.getLogger(__name__)
 SEARCH_DEBUG_LOG_PATH = ROOT_DIR / "logs" / "search-debug.log"
@@ -328,6 +377,7 @@ def _result_text_surface(
     imdb_id: str | None,
     year: str | None,
     category_ids: list[str],
+    category_labels: list[str],
     torznab_attrs: dict[str, str],
 ) -> str:
     parts: list[str] = [title]
@@ -338,8 +388,38 @@ def _result_text_surface(
     if year:
         parts.append(year)
     parts.extend(category_ids)
+    parts.extend(category_labels)
     parts.extend(value for value in torznab_attrs.values() if value)
     return _normalize_match_text(" ".join(parts))
+
+
+def _normalize_category_filter_token(value: str) -> str:
+    return _normalize_match_text(value)
+
+
+def _indexer_key_variants(value: str | None) -> set[str]:
+    cleaned = _coerce_text(value).casefold()
+    if not cleaned:
+        return set()
+    compact = INDEXER_KEY_STRIP_RE.sub("", cleaned)
+    if not compact:
+        return {cleaned}
+    return {cleaned, compact}
+
+
+def _dedupe_category_labels(raw_labels: list[str]) -> list[str]:
+    labels: list[str] = []
+    seen: set[str] = set()
+    for item in raw_labels:
+        candidate = _coerce_text(item)
+        if not candidate:
+            continue
+        key = _normalize_category_filter_token(candidate)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        labels.append(candidate)
+    return labels
 
 
 def clamp_search_query_text(value: object | None, *, fallback: str = "") -> str:
@@ -484,6 +564,7 @@ def _quality_search_term_map() -> dict[str, list[str]]:
     for item in quality_option_choices():
         token = str(item["value"])
         label = str(item["label"])
+        pattern = str(item.get("pattern", "")).strip()
         terms: list[str] = [token]
         label_without_parens = PARENS_RE.sub("", label).strip()
         if label_without_parens:
@@ -491,6 +572,8 @@ def _quality_search_term_map() -> dict[str, list[str]]:
         for match in PARENS_RE.findall(label):
             if match.strip():
                 terms.append(match.strip())
+        if pattern:
+            terms.extend(_regex_fragment_to_terms(pattern))
         mapping[token] = _dedupe_terms(terms)
     return mapping
 
@@ -512,6 +595,24 @@ def _quality_terms(tokens: list[str] | None) -> list[str]:
             continue
         terms.append(str(token))
     return _dedupe_terms(terms)
+
+
+def quality_search_term_map() -> dict[str, list[str]]:
+    return {token: list(terms) for token, terms in _quality_search_term_map().items()}
+
+
+def quality_pattern_map() -> dict[str, str]:
+    patterns: dict[str, str] = {}
+    for item in quality_option_choices():
+        token = _coerce_text(item.get("value"))
+        pattern = _coerce_text(item.get("pattern"))
+        if token and pattern:
+            patterns[token] = pattern
+    return patterns
+
+
+def expand_quality_search_terms(tokens: list[str] | None) -> list[str]:
+    return _quality_terms(tokens)
 
 
 def _capped_product(values: list[int], cap: int) -> int:
@@ -735,8 +836,13 @@ def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, Any], bool]:
         rule.content_name,
         rule.rule_name,
     )
-    keywords_all = parse_additional_includes(_coerce_text(rule.additional_includes))
+    keywords_all: list[str] = []
     keywords_any_groups: list[list[str]] = []
+    for group in parse_additional_include_groups(_coerce_text(rule.additional_includes)):
+        if len(group) == 1:
+            keywords_all.append(group[0])
+            continue
+        keywords_any_groups.append(group)
     keywords_not = _quality_terms(_coerce_string_list(rule.quality_exclude_tokens))
     must_contain_override = _normalize_legacy_optional_text(rule.must_contain_override)
     ignored_full_regex = looks_like_full_must_contain_override(must_contain_override)
@@ -843,6 +949,7 @@ class JackettClient:
         self.api_key = (api_key or "").strip() or None
         self.timeout = timeout if timeout is not None else get_environment_settings().request_timeout
         self.transport = transport
+        self._indexer_category_label_map: dict[str, dict[str, list[str]]] | None = None
 
     def test_connection(self) -> None:
         self._ensure_ready()
@@ -885,6 +992,10 @@ class JackettClient:
         if not request_variants and last_timeout_error is not None:
             raise last_timeout_error
         ordered_raw_results = self._ordered_results_from_merged(merged)
+        self._apply_dynamic_category_labels_if_needed(
+            payload,
+            result_sets=[ordered_raw_results],
+        )
         filtered_results = self._filter_results(
             ordered_raw_results,
             payload,
@@ -899,6 +1010,14 @@ class JackettClient:
         )
         self._log_search_run(payload, run)
         return run
+
+    def enrich_result_category_labels(self, results: list[JackettSearchResult]) -> None:
+        candidates = [result for result in results if list(result.category_ids or [])]
+        if not candidates:
+            return
+        self._configured_indexer_category_labels()
+        for result in candidates:
+            self._refresh_result_category_labels(result)
 
     @staticmethod
     def _remote_payload_for_standard_search(payload: JackettSearchRequest) -> JackettSearchRequest:
@@ -997,6 +1116,10 @@ class JackettClient:
             raise last_timeout_error
         primary_raw_results = self._ordered_results_from_merged(primary_merged)
         fallback_raw_results = self._ordered_results_from_merged(fallback_merged)
+        self._apply_dynamic_category_labels_if_needed(
+            payload,
+            result_sets=[primary_raw_results, fallback_raw_results],
+        )
         primary_filtered_results = self._filter_results(
             primary_raw_results,
             payload,
@@ -1476,6 +1599,145 @@ class JackettClient:
 
         return [base_params]
 
+    @classmethod
+    def _collect_indexer_category_labels(
+        cls,
+        node: ET.Element,
+        *,
+        parent_path: list[str] | None = None,
+        category_map: dict[str, list[str]] | None = None,
+    ) -> dict[str, list[str]]:
+        path = list(parent_path or [])
+        categories = category_map if category_map is not None else {}
+        local_tag = _local_name(node.tag)
+        next_path = path
+        if local_tag in {"category", "subcat", "subcategory"}:
+            category_id = _coerce_text(node.attrib.get("id"))
+            category_name = _coerce_text(node.attrib.get("name")) or _coerce_text(node.text)
+            if category_name:
+                next_path = [*path, category_name]
+            labels: list[str] = []
+            if category_name:
+                labels.append(category_name)
+            if len(next_path) > 1:
+                labels.append("/".join(next_path))
+            if category_id and labels:
+                categories.setdefault(category_id.casefold(), []).extend(labels)
+        for child in node:
+            cls._collect_indexer_category_labels(
+                child,
+                parent_path=next_path,
+                category_map=categories,
+            )
+        return categories
+
+    def _configured_indexer_category_labels(self) -> dict[str, dict[str, list[str]]]:
+        if self._indexer_category_label_map is not None:
+            return self._indexer_category_label_map
+
+        try:
+            root = self._request_xml(
+                self._torznab_endpoint("all"),
+                params={
+                    "t": "indexers",
+                    "apikey": self.api_key or "",
+                    "configured": "true",
+                },
+            )
+        except JackettClientError:
+            LOGGER.debug(
+                "Jackett indexer category discovery failed; proceeding with standard category labels only.",
+                exc_info=True,
+            )
+            self._indexer_category_label_map = {}
+            return self._indexer_category_label_map
+
+        discovered: dict[str, dict[str, list[str]]] = {}
+        for indexer in root.iter():
+            if _local_name(indexer.tag) != "indexer":
+                continue
+            category_labels = self._collect_indexer_category_labels(indexer)
+            if not category_labels:
+                continue
+            identity_keys: set[str] = set()
+            identity_keys.update(_indexer_key_variants(indexer.attrib.get("id")))
+            identity_keys.update(_indexer_key_variants(indexer.attrib.get("title")))
+            identity_keys.update(_indexer_key_variants(indexer.attrib.get("name")))
+            for identity_key in identity_keys:
+                target_map = discovered.setdefault(identity_key, {})
+                for category_id, labels in category_labels.items():
+                    target_map.setdefault(category_id, []).extend(labels)
+
+        self._indexer_category_label_map = {
+            indexer_key: {
+                category_id: _dedupe_category_labels(labels)
+                for category_id, labels in category_labels.items()
+            }
+            for indexer_key, category_labels in discovered.items()
+        }
+        return self._indexer_category_label_map
+
+    def _category_labels_for_result(
+        self,
+        *,
+        indexer: str | None,
+        category_ids: list[str],
+    ) -> list[str]:
+        if not category_ids:
+            return []
+
+        category_labels: list[str] = []
+        indexer_maps = self._indexer_category_label_map or {}
+        indexer_keys = _indexer_key_variants(indexer)
+
+        for raw_category_id in category_ids:
+            category_id = _coerce_text(raw_category_id)
+            if not category_id:
+                continue
+            category_key = category_id.casefold()
+            for indexer_key in indexer_keys:
+                category_labels.extend(indexer_maps.get(indexer_key, {}).get(category_key, []))
+            category_labels.extend(TORZNAB_STANDARD_CATEGORY_LABELS.get(category_id, ()))
+            if category_id.isdigit() and len(category_id) == 4:
+                parent_id = f"{(int(category_id) // 1000) * 1000}"
+                if parent_id != category_id:
+                    category_labels.extend(TORZNAB_STANDARD_CATEGORY_LABELS.get(parent_id, ()))
+
+        return _dedupe_category_labels(category_labels)
+
+    @staticmethod
+    def _payload_uses_category_label_filter(payload: JackettSearchRequest) -> bool:
+        return any(not _coerce_text(item).isdigit() for item in payload.filter_category_ids)
+
+    def _refresh_result_category_labels(self, result: JackettSearchResult) -> None:
+        category_labels = self._category_labels_for_result(
+            indexer=result.indexer,
+            category_ids=list(result.category_ids or []),
+        )
+        result.category_labels = category_labels
+        result.text_surface = _result_text_surface(
+            title=result.title,
+            indexer=result.indexer,
+            imdb_id=result.imdb_id,
+            year=result.year,
+            category_ids=list(result.category_ids or []),
+            category_labels=category_labels,
+            torznab_attrs=dict(result.torznab_attrs or {}),
+        )
+
+    def _apply_dynamic_category_labels_if_needed(
+        self,
+        payload: JackettSearchRequest,
+        *,
+        result_sets: list[list[JackettSearchResult]],
+    ) -> None:
+        if not self._payload_uses_category_label_filter(payload):
+            return
+        self._configured_indexer_category_labels()
+        for results in result_sets:
+            for result in results:
+                self._refresh_result_category_labels(result)
+
     def _parse_item(self, item: ET.Element) -> tuple[datetime | None, JackettSearchResult] | None:
         title = ""
         link = ""
@@ -1487,6 +1749,7 @@ class JackettClient:
         imdb_id: str | None = None
         indexer: str | None = None
         category_ids: list[str] = []
+        category_labels: list[str] = []
         seen_category_ids: set[str] = set()
         year: str | None = None
         seeders: int | None = None
@@ -1572,6 +1835,10 @@ class JackettClient:
             peers = seeders + leechers
 
         year = _resolved_result_year(explicit_year=year, title=title)
+        category_labels = self._category_labels_for_result(
+            indexer=indexer,
+            category_ids=category_ids,
+        )
         merge_key = _result_merge_key(
             info_hash=info_hash,
             guid=guid,
@@ -1585,6 +1852,7 @@ class JackettClient:
             imdb_id=imdb_id,
             year=year,
             category_ids=category_ids,
+            category_labels=category_labels,
             torznab_attrs=torznab_attrs,
         )
 
@@ -1604,6 +1872,7 @@ class JackettClient:
                 published_at=published_iso,
                 published_label=_format_published(published_at),
                 category_ids=category_ids,
+                category_labels=category_labels,
                 year=year,
                 seeders=seeders,
                 peers=peers,
@@ -1724,10 +1993,24 @@ class JackettClient:
             if result.indexer.casefold() not in allowed_indexers:
                 return False, "filter_indexers"
         if payload.filter_category_ids:
-            if not result.category_ids:
+            item_categories = {
+                normalized
+                for normalized in (
+                    _normalize_category_filter_token(item)
+                    for item in [*(result.category_ids or []), *(result.category_labels or [])]
+                )
+                if normalized
+            }
+            if not item_categories:
                 return False, "filter_categories_missing"
-            allowed_categories = {item.casefold() for item in payload.filter_category_ids}
-            item_categories = {item.casefold() for item in result.category_ids}
+            allowed_categories = {
+                normalized
+                for normalized in (
+                    _normalize_category_filter_token(item)
+                    for item in payload.filter_category_ids
+                )
+                if normalized
+            }
             if item_categories.isdisjoint(allowed_categories):
                 return False, "filter_categories"
         return True, None

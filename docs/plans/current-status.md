@@ -3,6 +3,7 @@
 ## Current focus
 
 - Phase 6: post-v0.2.0 follow-up hardening and scope decisions
+- Phase 6 v0.2.1 follow-up slice: unified keyword-token controls, responsive `/search` local refinement behavior, and cross-indexer category consolidation for local filtering
 - Release-process automation and evidence-driven phase sign-off
 
 ## Implemented
@@ -112,17 +113,56 @@
 - qB connection resolution now handles mixed Windows+WSL topology: in WSL runtime, qB base URLs using `localhost`/`127.0.0.1` are rewritten to `host.docker.internal`, so Windows-hosted qBittorrent remains reachable without per-run env overrides.
 - Executed the optional live-provider smoke gate on 2026-03-11 without `QB_RULES_QB_BASE_URL` override; all `4/4` checks passed with artifacts at `logs/qa/live-provider-smoke-20260311T163136Z/result.{md,json}`.
 - Completed v0.2.0 release-prep version synchronization (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`, `ROADMAP.md`) and created local annotated tag `v0.2.0` from commit `da37dc8`.
+- Replaced duplicate include/exclude quality token columns on `/rules/*` and `/search` with shared single-token 3-state controls (`Off` / `In` / `Out`), backed by a reusable template partial (`app/templates/_quality_token_controls.html`) and unified JS state wiring.
+- `/search` local refinement now treats keyword-token controls as first-class responsive filters: visible token controls sync into hidden include/exclude payload fields, and quality tokens now expand into richer search terms (token + label + pattern-derived aliases) for both server payload construction and client-side cached filtering.
+- Jackett result normalization now carries `category_labels` in addition to `category_ids`, and category local filtering now matches normalized IDs or labels; when label-based category filtering is requested, the client resolves configured indexer category maps (`t=indexers`) so equivalent semantic categories can match across indexers with different numeric IDs.
+- Added regression coverage for the v0.2.1 follow-up slice:
+  - `tests/test_routes.py::test_search_page_expands_quality_token_terms_for_search_payload`
+  - `tests/test_jackett.py::test_jackett_client_can_filter_by_category_label_across_indexers`
+- UI capture defaults now include both `/rules/new` and `/search` (desktop + mobile) so each standard capture run can be compared against rule-form and search-page UX requests in one pass.
+- Keyword-token mode controls now use a single-track 3-state slider (`Off` / `In` / `Out`) beside each token on both `/rules/*` and `/search`, with denser multi-column desktop packing to reduce whitespace.
+- `/search` now normalizes conflicting quality-token states with include-first precedence in both client-side local refinement and server payload construction, so `In` cannot remain blocked by a stale `Out` for the same token.
+- Static asset URLs now include an app-side cache-busting fingerprint based on `app.css`/`app.js` mtimes, preventing stale browser CSS/JS from masking recent UI changes during review loops.
+- `/search` quality-tag local refinement now applies rule-style quality regex patterns against cached results (same token pattern source used by rule generation), with fallback term expansion only when a regex cannot compile.
+- `/search` local refinement now exposes a rule-style `Generated pattern preview` that is built by the same centralized client-side regex builder used by `/rules/*`; quality sliders, `Extra include keywords`, grouped any-of inputs, and `mustNotContain` now all flow into one live preview string.
+- `/search` local refinement now exposes assisted multi-select dropdown checkboxes for distinct cached result indexers and translated category names, replacing free-text indexer/category filter inputs.
+- Search-page rendering now always attempts per-indexer category-label enrichment for fetched result sets so assisted category filtering can use semantic names even when the active payload did not request label-based filtering.
+- Deterministic browser closeout automation now includes a dedicated phase-6 check that verifies quality-tag slider toggles and indexer/category multiselect filtering change cached counts locally without additional Jackett requests.
+- `/search` local free-text refinement now uses the same field contract as `/rules/*` (`additional_includes`, `must_not_contain`) while preserving backward compatibility for legacy query params (`keywords_all`, `keywords_not`).
+- Shared regex generation now handles grouped any-of (`|`) include parsing inside the centralized `deriveGeneratedPattern` module, and rule-derived `/search` prefill keeps literal rule free-text values instead of token-expanded payload terms.
+- `/search` opened from `Run Search` on a rule now keeps `Additional any-of keyword groups` blank by default (while still running with structured rule payload), avoiding stale inherited text in local refinement.
+- Rule-page `mustNotContain` now affects `Generated pattern preview` again via the shared regex builder input path.
+- Free-text `|` alternatives now compile as OR groups across rule/search preview and backend rule derivation (for example `bbb|ccc` => `(?:bbb|ccc)` instead of `bbb[\s._-]*ccc` concatenation).
+- Added route regressions for this contract slice:
+  - `tests/test_routes.py::test_search_page_accepts_legacy_free_text_filter_query_params`
+  - `tests/test_routes.py::test_search_page_from_rule_prefills_local_free_text_from_literal_rule_fields`
+- Added backend regex/request regressions for free-text `|` support:
+  - `tests/test_rule_builder.py::test_parse_additional_include_groups_supports_pipe_alternatives`
+  - `tests/test_rule_builder.py::test_build_generated_pattern_supports_pipe_alternatives_in_extra_includes`
+  - `tests/test_jackett.py::test_build_search_request_from_rule_maps_pipe_alternatives_to_any_groups`
+- Validation evidence for this slice:
+  - `./scripts/test.sh tests/test_routes.py tests/test_jackett.py` (`77 passed`, 2026-03-11)
+  - `./scripts/test.sh tests/test_routes.py -k "search_page_expands_quality_token_terms_for_search_payload or search_page_prefers_include_token_when_quality_token_lists_conflict"` (`2 passed`, 2026-03-11)
+  - `source .venv-linux/bin/activate && ./scripts/check.sh` (`All checks passed`, 2026-03-11)
+  - `./scripts/closeout_qa.sh` (`10 checks`, phase-6 `7/7` pass including `P6-04` regression coverage for generated-pattern-preview sync + include-slider vs conflicting `keywords_not`, one pre-existing phase-4 `P4-01` failure remains, 2026-03-11, `logs/qa/phase-closeout-20260311T213939Z/closeout-report.md`)
+  - visual capture review: `logs/ui-feedback/20260311T214712Z/` (desktop/mobile for `/rules/new` and `/search`)
+  - `./scripts/test.sh tests/test_routes.py tests/test_jackett.py` (`79 passed`, 2026-03-11) after free-text contract + shared grouped-include builder updates
+  - `./scripts/closeout_qa.sh` (phase-6 checks `P6-01..P6-07` all pass with grouped-preview assertion and toggle/local-filter checks; one pre-existing phase-4 `P4-01` failure remains, 2026-03-11, `logs/qa/phase-closeout-20260311T223130Z/closeout-report.md`)
+  - `./scripts/test.sh tests/test_rule_builder.py tests/test_jackett.py tests/test_routes.py` (`96 passed`, 2026-03-11) after rule-preview + free-text-pipe fixes
+  - `./scripts/closeout_qa.sh` (`11 checks`; new `P5-02` rule-preview parity check passes; all phase-5/6 checks pass, one pre-existing phase-4 `P4-01` failure remains, 2026-03-11, `logs/qa/phase-closeout-20260311T231251Z/closeout-report.md`)
 
 ## In progress
 
 - Phase 6 v0.2.0 scope is implemented and release-validated; follow-up polish/scope decisions remain open for v0.2.x.
 - Release-process automated checks continue to pass in Linux `.venv-linux` via `./scripts/check.sh` (`ruff`, `mypy`, full pytest).
+- Deterministic closeout QA now includes the new phase-6 local refinement responsiveness check; a separate pre-existing phase-4 feed-checkbox expectation (`P4-01`) is currently the remaining closeout failure to resolve.
 - The repo-local Windows `.venv` and Linux `.venv-linux` run full tests successfully; unactivated system `python3` still lacks project dependencies by default.
 - Linux/WSL screenshot capture still needs host browser libraries (`python -m playwright install-deps chromium` with sudo); capture tooling now fails with explicit remediation messaging.
 
 ## Next actions
 
 - Use `docs/plans/phase-6-jackett-active-search.md` `Request Checklist (2026-03-10 refresh)` + `Dated execution checklist (2026-03-10 baseline)` as the source-of-truth tracker.
+- Resolve deterministic closeout `P4-01` feed-checkbox expectation drift so the expanded 10-check browser gate is fully green.
 - Run `./scripts/closeout_qa.sh` (or `scripts\\closeout_qa.bat`) as the default Phase 4/5/6 closeout gate for future UX/search iterations.
 - Re-run the optional live-provider smoke gate when endpoint topology or credentials change, using `logs/qa/live-provider-smoke-*` artifacts as release evidence.
 - Keep the DB-backed release matrix (`docs/plans/phase-6-release-qa-plan.md`) as the live-data regression pass before final release.

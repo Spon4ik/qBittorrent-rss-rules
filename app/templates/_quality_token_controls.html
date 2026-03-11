@@ -1,0 +1,73 @@
+{% macro render_quality_token_groups(quality_option_groups, include_tokens, exclude_tokens, context="rule") -%}
+<div class="quality-token-groups quality-token-groups--{{ context }}" data-quality-token-groups data-quality-token-context="{{ context }}">
+  {% for group in quality_option_groups %}
+  <fieldset
+    class="quality-token-group"
+    data-quality-group="true"
+    {% if context == "search" %}data-search-quality-group="true"{% endif %}
+    data-media-types="{{ group.media_types | join(',') }}"
+  >
+    <legend>{{ group.label }}</legend>
+    <div class="quality-token-grid">
+      {% for choice in group.options %}
+      {% set include_selected = choice.value in include_tokens %}
+      {% set exclude_selected = (choice.value in exclude_tokens) and (not include_selected) %}
+      {% set mode_value = "include" if include_selected else ("exclude" if exclude_selected else "off") %}
+      {% set mode_index = 1 if include_selected else (2 if exclude_selected else 0) %}
+      {% set mode_text = "Include" if include_selected else ("Exclude" if exclude_selected else "Off") %}
+      <div
+        class="quality-token-item"
+        data-quality-option="true"
+        {% if context == "search" %}data-search-quality-option="true"{% endif %}
+        data-quality-token-item="true"
+        data-quality-token="{{ choice.value }}"
+        data-media-types="{{ choice.media_types | join(',') }}"
+      >
+        <input
+          type="checkbox"
+          name="quality_include_tokens"
+          value="{{ choice.value }}"
+          class="quality-token-state-input"
+          data-quality-token-state="include"
+          hidden
+          {% if include_selected %}checked{% endif %}
+        />
+        <input
+          type="checkbox"
+          name="quality_exclude_tokens"
+          value="{{ choice.value }}"
+          class="quality-token-state-input"
+          data-quality-token-state="exclude"
+          hidden
+          {% if exclude_selected %}checked{% endif %}
+        />
+        <span class="quality-token-label">{{ choice.label }}</span>
+        <div
+          class="quality-token-slider"
+          data-quality-token-slider
+          data-quality-token-mode="{{ mode_value }}"
+        >
+          <button
+            type="button"
+            class="quality-token-slider-control"
+            data-quality-token-slider-control
+            aria-label="{{ choice.label }} mode"
+            role="slider"
+            aria-valuemin="0"
+            aria-valuemax="2"
+            aria-valuenow="{{ mode_index }}"
+            aria-valuetext="{{ mode_text }}"
+          >
+            <span class="quality-token-slider-thumb" data-quality-token-slider-thumb aria-hidden="true"></span>
+            <span class="quality-token-slider-option" data-quality-token-mode-label="off">Off</span>
+            <span class="quality-token-slider-option" data-quality-token-mode-label="include">In</span>
+            <span class="quality-token-slider-option" data-quality-token-mode-label="exclude">Out</span>
+          </button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </fieldset>
+  {% endfor %}
+</div>
+{%- endmacro %}

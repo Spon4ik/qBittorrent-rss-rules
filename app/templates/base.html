@@ -4,7 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ page_title }} | qBittorrent RSS Rule Manager</title>
-    <link rel="stylesheet" href="{{ request.url_for('static', path='app.css') }}" />
+    {% set static_asset_version = request.app.state.static_asset_version if request.app.state.static_asset_version else request.app.version %}
+    <link rel="stylesheet" href="{{ request.url_for('static', path='app.css') }}?v={{ static_asset_version }}" />
   </head>
   <body>
     <div class="page-shell{% if shell_layout == 'wide' %} page-shell--wide{% endif %}">
@@ -45,6 +46,6 @@
       </main>
     </div>
 
-    <script src="{{ request.url_for('static', path='app.js') }}" defer></script>
+    <script src="{{ request.url_for('static', path='app.js') }}?v={{ static_asset_version }}" defer></script>
   </body>
 </html>

@@ -43,6 +43,42 @@ function parseAdditionalIncludes(value) {
   return items;
 }
 
+function parseAdditionalKeywordAlternativeGroups(value) {
+  const items = Array.isArray(value)
+    ? parseAdditionalIncludes((value || []).join(","))
+    : parseAdditionalIncludes(value);
+  const groups = [];
+  const seenGroups = new Set();
+
+  for (const item of items) {
+    const alternatives = [];
+    const seenAlternatives = new Set();
+    for (const part of String(item || "").split("|")) {
+      const candidate = part.trim();
+      if (!candidate) {
+        continue;
+      }
+      const key = candidate.toLocaleLowerCase();
+      if (seenAlternatives.has(key)) {
+        continue;
+      }
+      seenAlternatives.add(key);
+      alternatives.push(candidate);
+    }
+    if (alternatives.length === 0) {
+      continue;
+    }
+    const groupKey = alternatives.map((entry) => entry.toLocaleLowerCase()).join("||");
+    if (seenGroups.has(groupKey)) {
+      continue;
+    }
+    seenGroups.add(groupKey);
+    groups.push(alternatives);
+  }
+
+  return groups;
+}
+
 function looksLikeFullMustContainOverride(value) {
   const candidate = (value || "").trim();
   if (!candidate) {
@@ -84,6 +120,61 @@ function buildManualMustContainFragments(value) {
     }
     return buildTitleRegexFragment(item);
   });
+}
+
+function parseAdditionalIncludeGroups(value) {
+  const cleaned = String(value || "").trim();
+  if (!cleaned) {
+    return [];
+  }
+  const rawSegments = cleaned.includes("|") ? cleaned.split("|") : [cleaned];
+  const groups = [];
+  const seen = new Set();
+  for (const segment of rawSegments) {
+    const terms = parseAdditionalIncludes(segment);
+    if (terms.length === 0) {
+      continue;
+    }
+    const key = terms.map((item) => item.toLocaleLowerCase()).join("||");
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    groups.push(terms);
+  }
+  return groups;
+}
+
+function normalizeAdditionalIncludeGroups(value) {
+  if (!value) {
+    return [];
+  }
+  if (typeof value === "string") {
+    return parseAdditionalIncludeGroups(value);
+  }
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const groups = [];
+  const seen = new Set();
+  for (const item of value) {
+    let terms = [];
+    if (Array.isArray(item)) {
+      terms = parseAdditionalIncludes(item.join(","));
+    } else {
+      terms = parseAdditionalIncludes(String(item || ""));
+    }
+    if (terms.length === 0) {
+      continue;
+    }
+    const key = terms.map((term) => term.toLocaleLowerCase()).join("||");
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    groups.push(terms);
+  }
+  return groups;
 }
 
 function parseJsonData(rawValue, fallback) {
@@ -174,6 +265,37 @@ function buildQualityRegex(tokens, patternMap) {
   return `(?:${patterns.join("|")})`;
 }
 
+function normalizeQualityTokenSelection(includeTokens, excludeTokens) {
+  const normalizedIncludeTokens = [];
+  const includeKeys = new Set();
+  for (const token of includeTokens || []) {
+    const candidate = String(token || "").trim();
+    const key = candidate.toLocaleLowerCase();
+    if (!candidate || includeKeys.has(key)) {
+      continue;
+    }
+    includeKeys.add(key);
+    normalizedIncludeTokens.push(candidate);
+  }
+
+  const normalizedExcludeTokens = [];
+  const excludeKeys = new Set();
+  for (const token of excludeTokens || []) {
+    const candidate = String(token || "").trim();
+    const key = candidate.toLocaleLowerCase();
+    if (!candidate || includeKeys.has(key) || excludeKeys.has(key)) {
+      continue;
+    }
+    excludeKeys.add(key);
+    normalizedExcludeTokens.push(candidate);
+  }
+
+  return {
+    includeTokens: normalizedIncludeTokens,
+    excludeTokens: normalizedExcludeTokens,
+  };
+}
+
 function bindExclusiveQualitySelections(container, includeName, excludeName, onChange) {
   container.querySelectorAll(`input[name="${includeName}"]`).forEach((input) => {
     input.addEventListener("change", () => {
@@ -198,6 +320,183 @@ function bindExclusiveQualitySelections(container, includeName, excludeName, onC
       onChange?.();
     });
   });
+}
+
+const QUALITY_TOKEN_MODES = ["off", "include", "exclude"];
+
+function normalizeQualityTokenMode(value) {
+  const normalized = String(value || "off").trim().toLocaleLowerCase();
+  return QUALITY_TOKEN_MODES.includes(normalized) ? normalized : "off";
+}
+
+function qualityTokenModeIndex(modeValue) {
+  return QUALITY_TOKEN_MODES.indexOf(normalizeQualityTokenMode(modeValue));
+}
+
+function qualityTokenModeText(modeValue) {
+  const mode = normalizeQualityTokenMode(modeValue);
+  if (mode === "include") {
+    return "Include";
+  }
+  if (mode === "exclude") {
+    return "Exclude";
+  }
+  return "Off";
+}
+
+function readQualityTokenItemElements(tokenItem) {
+  return {
+    includeStateInput: tokenItem.querySelector('input[data-quality-token-state="include"]'),
+    excludeStateInput: tokenItem.querySelector('input[data-quality-token-state="exclude"]'),
+    slider: tokenItem.querySelector("[data-quality-token-slider]"),
+    sliderControl: tokenItem.querySelector("[data-quality-token-slider-control]"),
+  };
+}
+
+function setQualityTokenSliderMode(tokenItem, modeValue, disabled = false) {
+  const { slider, sliderControl } = readQualityTokenItemElements(tokenItem);
+  if (!slider) {
+    return;
+  }
+  const normalizedMode = normalizeQualityTokenMode(modeValue);
+  slider.dataset.qualityTokenMode = normalizedMode;
+  if (sliderControl) {
+    sliderControl.disabled = disabled;
+    sliderControl.setAttribute("aria-disabled", disabled ? "true" : "false");
+    sliderControl.setAttribute("aria-valuenow", String(qualityTokenModeIndex(normalizedMode)));
+    sliderControl.setAttribute("aria-valuetext", qualityTokenModeText(normalizedMode));
+  }
+}
+
+function syncQualityTokenItemToStateInputs(tokenItem) {
+  const {
+    includeStateInput,
+    excludeStateInput,
+    slider,
+  } = readQualityTokenItemElements(tokenItem);
+  if (!includeStateInput || !excludeStateInput) {
+    return;
+  }
+  const modeValue = normalizeQualityTokenMode(slider?.dataset.qualityTokenMode || "off");
+  const disabled = Boolean(includeStateInput.disabled || excludeStateInput.disabled);
+  includeStateInput.checked = modeValue === "include";
+  excludeStateInput.checked = modeValue === "exclude";
+  if (disabled) {
+    includeStateInput.checked = false;
+    excludeStateInput.checked = false;
+  }
+}
+
+function syncQualityTokenItemFromStateInputs(tokenItem) {
+  const {
+    includeStateInput,
+    excludeStateInput,
+  } = readQualityTokenItemElements(tokenItem);
+  if (!includeStateInput || !excludeStateInput) {
+    return;
+  }
+  const disabled = Boolean(includeStateInput.disabled || excludeStateInput.disabled);
+  if (disabled) {
+    includeStateInput.checked = false;
+    excludeStateInput.checked = false;
+    setQualityTokenSliderMode(tokenItem, "off", true);
+    return;
+  }
+  if (includeStateInput.checked && excludeStateInput.checked) {
+    excludeStateInput.checked = false;
+  }
+  const includeSelected = Boolean(includeStateInput.checked);
+  const excludeSelected = Boolean(excludeStateInput.checked && !includeSelected);
+  const modeValue = includeSelected ? "include" : (excludeSelected ? "exclude" : "off");
+  setQualityTokenSliderMode(tokenItem, modeValue, false);
+}
+
+function qualityTokenModeFromPointer(event, sliderControl) {
+  const rect = sliderControl.getBoundingClientRect();
+  const width = rect.width || 1;
+  const pointerOffset = Math.min(Math.max((event.clientX || 0) - rect.left, 0), width - 1);
+  const rawIndex = Math.floor((pointerOffset / width) * QUALITY_TOKEN_MODES.length);
+  const clampedIndex = Math.min(Math.max(rawIndex, 0), QUALITY_TOKEN_MODES.length - 1);
+  return QUALITY_TOKEN_MODES[clampedIndex] || "off";
+}
+
+function qualityTokenStepMode(currentMode, step) {
+  const currentIndex = qualityTokenModeIndex(currentMode);
+  const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+  const nextIndex = (safeIndex + step + QUALITY_TOKEN_MODES.length) % QUALITY_TOKEN_MODES.length;
+  return QUALITY_TOKEN_MODES[nextIndex] || "off";
+}
+
+function initUnifiedQualityTokenControls(container, { onChange } = {}) {
+  const tokenItems = Array.from(container.querySelectorAll("[data-quality-token-item]"));
+  if (tokenItems.length === 0) {
+    return {
+      syncFromStateInputs() {},
+    };
+  }
+
+  const handleStateChange = (tokenItem) => {
+    syncQualityTokenItemToStateInputs(tokenItem);
+    onChange?.();
+  };
+
+  for (const tokenItem of tokenItems) {
+    const { sliderControl, slider } = readQualityTokenItemElements(tokenItem);
+    syncQualityTokenItemFromStateInputs(tokenItem);
+    if (!sliderControl) {
+      continue;
+    }
+    sliderControl.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (sliderControl.disabled) {
+        return;
+      }
+      const isKeyboardTriggered = event.detail === 0 || !Number.isFinite(event.clientX);
+      const currentMode = normalizeQualityTokenMode(slider?.dataset.qualityTokenMode || "off");
+      const selectedMode = isKeyboardTriggered
+        ? qualityTokenStepMode(currentMode, 1)
+        : qualityTokenModeFromPointer(event, sliderControl);
+      setQualityTokenSliderMode(tokenItem, selectedMode, false);
+      handleStateChange(tokenItem);
+    });
+    sliderControl.addEventListener("keydown", (event) => {
+      if (sliderControl.disabled) {
+        return;
+      }
+      const currentMode = normalizeQualityTokenMode(slider?.dataset.qualityTokenMode || "off");
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        setQualityTokenSliderMode(tokenItem, qualityTokenStepMode(currentMode, -1), false);
+        handleStateChange(tokenItem);
+        return;
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        setQualityTokenSliderMode(tokenItem, qualityTokenStepMode(currentMode, 1), false);
+        handleStateChange(tokenItem);
+        return;
+      }
+      if (event.key === "Home") {
+        event.preventDefault();
+        setQualityTokenSliderMode(tokenItem, "off", false);
+        handleStateChange(tokenItem);
+        return;
+      }
+      if (event.key === "End") {
+        event.preventDefault();
+        setQualityTokenSliderMode(tokenItem, "exclude", false);
+        handleStateChange(tokenItem);
+      }
+    });
+  }
+
+  return {
+    syncFromStateInputs() {
+      for (const tokenItem of tokenItems) {
+        syncQualityTokenItemFromStateInputs(tokenItem);
+      }
+    },
+  };
 }
 
 function sanitizePath(value) {
@@ -246,51 +545,83 @@ function deriveSavePath(form) {
     .replaceAll("{category}", category);
 }
 
-function derivePattern(form, qualityPatternMap) {
-  const manualMustContain = form.querySelector('textarea[name="must_contain_override"]')?.value.trim();
-  if (looksLikeFullMustContainOverride(manualMustContain)) {
-    return manualMustContain;
+function deriveGeneratedPattern({
+  title,
+  useRegex = false,
+  includeReleaseYear = false,
+  releaseYear = "",
+  additionalIncludes = "",
+  additionalExcludes = "",
+  manualMustContain = "",
+  additionalIncludeGroups = [],
+  manualMustContainFragments = [],
+  qualityIncludeTokens = [],
+  qualityExcludeTokens = [],
+  qualityPatternMap = {},
+}) {
+  const manualMustContainValue = String(manualMustContain || "").trim();
+  const fullManualOverride = looksLikeFullMustContainOverride(manualMustContainValue);
+  if (fullManualOverride) {
+    return manualMustContainValue;
   }
-  const title = deriveTitle(form);
-  const useRegex = Boolean(form.querySelector('input[name="use_regex"]')?.checked);
-  const includeReleaseYear = Boolean(
-    form.querySelector('input[type="checkbox"][name="include_release_year"]')?.checked
+
+  const normalizedSelection = normalizeQualityTokenSelection(
+    qualityIncludeTokens,
+    qualityExcludeTokens
   );
-  const releaseYear = normalizeReleaseYear(form.querySelector('input[name="release_year"]')?.value);
-  const additionalIncludes = parseAdditionalIncludes(
-    form.querySelector('textarea[name="additional_includes"]')?.value
+  const qualityInclude = buildQualityRegex(normalizedSelection.includeTokens, qualityPatternMap);
+  const qualityExclude = buildQualityRegex(normalizedSelection.excludeTokens, qualityPatternMap);
+  const includeKeywordGroups = parseAdditionalKeywordAlternativeGroups(additionalIncludes);
+  const excludeKeywordGroups = parseAdditionalKeywordAlternativeGroups(additionalExcludes);
+  const includeGroupFragments = buildOptionalKeywordGroupRegexFragments(
+    normalizeAdditionalIncludeGroups(additionalIncludeGroups)
   );
-  const manualMustContainFragments = buildManualMustContainFragments(manualMustContain);
-  const qualityIncludeTokens = getCheckedValues(form, "quality_include_tokens");
-  const qualityExcludeTokens = getCheckedValues(form, "quality_exclude_tokens").filter(
-    (token) => !qualityIncludeTokens.includes(token)
-  );
-  const qualityInclude = buildQualityRegex(qualityIncludeTokens, qualityPatternMap);
-  const qualityExclude = buildQualityRegex(qualityExcludeTokens, qualityPatternMap);
+  const manualFragments = [
+    ...buildManualMustContainFragments(manualMustContainValue),
+    ...includeGroupFragments,
+    ...((manualMustContainFragments || [])
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)),
+  ];
+  const normalizedTitle = String(title || "").trim();
+  const titleFragment = normalizedTitle ? buildTitleRegexFragment(normalizedTitle) : "";
+  const normalizedYear = normalizeReleaseYear(releaseYear);
 
   const hasGeneratedConditions = Boolean(
-    (includeReleaseYear && releaseYear)
-      || additionalIncludes.length
-      || manualMustContainFragments.length
+    (includeReleaseYear && normalizedYear)
+      || includeKeywordGroups.length
+      || excludeKeywordGroups.length
+      || manualFragments.length
       || qualityInclude
       || qualityExclude
   );
   if (!useRegex && !hasGeneratedConditions) {
-    return title;
+    return normalizedTitle;
   }
 
-  const positiveFragments = [buildTitleRegexFragment(title)];
-  if (includeReleaseYear && releaseYear) {
-    positiveFragments.push(escapeRegex(releaseYear));
+  const positiveFragments = [];
+  if (titleFragment) {
+    positiveFragments.push(titleFragment);
   }
-  for (const item of additionalIncludes) {
-    positiveFragments.push(buildTitleRegexFragment(item));
+  if (includeReleaseYear && normalizedYear) {
+    positiveFragments.push(escapeRegex(normalizedYear));
+  }
+  for (const fragment of buildOptionalKeywordGroupRegexFragments(includeKeywordGroups)) {
+    positiveFragments.push(fragment);
   }
   if (qualityInclude) {
     positiveFragments.push(qualityInclude);
   }
-  for (const fragment of manualMustContainFragments) {
+  for (const fragment of manualFragments) {
     positiveFragments.push(fragment);
+  }
+
+  const negativeFragments = [];
+  if (qualityExclude) {
+    negativeFragments.push(qualityExclude);
+  }
+  for (const fragment of buildOptionalKeywordGroupRegexFragments(excludeKeywordGroups)) {
+    negativeFragments.push(fragment);
   }
 
   let pattern = "(?i)";
@@ -300,10 +631,56 @@ function derivePattern(form, qualityPatternMap) {
     }
     pattern += `(?=.*${fragment})`;
   }
-  if (qualityExclude) {
-    pattern += `(?!.*${qualityExclude})`;
+  for (const fragment of negativeFragments) {
+    if (!fragment) {
+      continue;
+    }
+    pattern += `(?!.*${fragment})`;
+  }
+
+  if (pattern === "(?i)" && !normalizedTitle) {
+    return "";
   }
   return pattern;
+}
+
+function buildOptionalKeywordGroupRegexFragments(keywordGroups) {
+  const fragments = [];
+  for (const group of keywordGroups || []) {
+    const groupFragments = group
+      .map((item) => buildTitleRegexFragment(item))
+      .filter(Boolean);
+    if (groupFragments.length === 0) {
+      continue;
+    }
+    if (groupFragments.length === 1) {
+      fragments.push(groupFragments[0]);
+      continue;
+    }
+    fragments.push(`(?:${groupFragments.join("|")})`);
+  }
+  return fragments;
+}
+
+function derivePattern(form, qualityPatternMap) {
+  const manualMustContain = form.querySelector('textarea[name="must_contain_override"]')?.value.trim();
+  if (looksLikeFullMustContainOverride(manualMustContain)) {
+    return manualMustContain;
+  }
+  return deriveGeneratedPattern({
+    title: deriveTitle(form),
+    useRegex: Boolean(form.querySelector('input[name="use_regex"]')?.checked),
+    includeReleaseYear: Boolean(
+      form.querySelector('input[type="checkbox"][name="include_release_year"]')?.checked
+    ),
+    releaseYear: form.querySelector('input[name="release_year"]')?.value || "",
+    additionalIncludes: form.querySelector('textarea[name="additional_includes"]')?.value || "",
+    additionalExcludes: form.querySelector('textarea[name="must_not_contain"]')?.value || "",
+    manualMustContain,
+    qualityIncludeTokens: getCheckedValues(form, "quality_include_tokens"),
+    qualityExcludeTokens: getCheckedValues(form, "quality_exclude_tokens"),
+    qualityPatternMap,
+  });
 }
 
 const SEARCH_WORD_CHAR_RE = (() => {
@@ -340,6 +717,10 @@ function parseSearchFilterList(value) {
     items.push(candidate);
   }
   return items;
+}
+
+function normalizeCategoryFilterValue(value) {
+  return normalizeSearchText(value || "");
 }
 
 function parseSearchAnyKeywordGroups(value) {
@@ -395,15 +776,24 @@ function initSearchPage(container) {
   const imdbIdInput = form.querySelector('input[name="imdb_id"]');
   const includeReleaseYearInput = form.querySelector('input[type="checkbox"][name="include_release_year"]');
   const releaseYearInput = form.querySelector('input[name="release_year"]');
-  const keywordsAllInput = form.querySelector('input[name="keywords_all"]');
+  const keywordsAllInput = form.querySelector('textarea[name="additional_includes"], input[name="keywords_all"]');
   const keywordsAnyInput = form.querySelector('input[name="keywords_any"]');
-  const keywordsNotInput = form.querySelector('input[name="keywords_not"]');
+  const keywordsNotInput = form.querySelector('textarea[name="must_not_contain"], input[name="keywords_not"]');
+  const searchPatternPreview = form.querySelector("#search-pattern-preview");
   const sizeMinInput = form.querySelector('input[name="size_min_mb"]');
   const sizeMaxInput = form.querySelector('input[name="size_max_mb"]');
   const filterIndexersInput = form.querySelector('input[name="filter_indexers"]');
   const filterCategoryIdsInput = form.querySelector('input[name="filter_category_ids"]');
-  const includeKeywordInputs = Array.from(form.querySelectorAll('input[name="quality_include_tokens"]'));
-  const excludeKeywordInputs = Array.from(form.querySelectorAll('input[name="quality_exclude_tokens"]'));
+  const indexerMultiSelectOptions = form.querySelector('[data-search-multiselect-options="indexers"]');
+  const indexerMultiSelectSummary = form.querySelector('[data-search-multiselect-summary="indexers"]');
+  const indexerMultiSelectSelectAll = form.querySelector('[data-search-multiselect-select-all="indexers"]');
+  const indexerMultiSelectClear = form.querySelector('[data-search-multiselect-clear="indexers"]');
+  const categoryMultiSelectOptions = form.querySelector('[data-search-multiselect-options="categories"]');
+  const categoryMultiSelectSummary = form.querySelector('[data-search-multiselect-summary="categories"]');
+  const categoryMultiSelectSelectAll = form.querySelector('[data-search-multiselect-select-all="categories"]');
+  const categoryMultiSelectClear = form.querySelector('[data-search-multiselect-clear="categories"]');
+  const qualitySearchTermMap = parseJsonData(container.dataset.qualitySearchTerms || "{}", {});
+  const qualityPatternMap = parseJsonData(container.dataset.qualityPatternMap || "{}", {});
   const controlSets = Array.from(container.querySelectorAll("[data-search-controls]")).map((controlContainer) => ({
     controlContainer,
     viewModeSelect: controlContainer.querySelector("[data-search-view-mode]"),
@@ -501,6 +891,10 @@ function initSearchPage(container) {
     keywordsAll: [],
     keywordsAnyGroups: [],
     keywordsNot: [],
+    qualityIncludeTokens: [],
+    qualityExcludeTokens: [],
+    qualityIncludeRegex: null,
+    qualityExcludeRegex: null,
     sizeMinMb: null,
     sizeMaxMb: null,
     indexers: [],
@@ -527,6 +921,74 @@ function initSearchPage(container) {
     return merged;
   };
 
+  const qualitySearchTermsForTokens = (tokens) => {
+    const termLists = [];
+    for (const token of tokens || []) {
+      const candidate = String(token || "").trim();
+      if (!candidate) {
+        continue;
+      }
+      const mappedTerms = qualitySearchTermMap[candidate];
+      if (Array.isArray(mappedTerms) && mappedTerms.length > 0) {
+        termLists.push(
+          mappedTerms
+            .map((item) => String(item || "").trim())
+            .filter((item) => item.length > 0)
+        );
+        continue;
+      }
+      termLists.push([candidate]);
+    }
+    return mergeUniqueTerms(...termLists);
+  };
+
+  const resolveSearchTokenKeywordState = () => {
+    const normalizedSelection = normalizeQualityTokenSelection(
+      mergeUniqueTerms(getCheckedValues(form, "quality_include_tokens")),
+      mergeUniqueTerms(getCheckedValues(form, "quality_exclude_tokens"))
+    );
+    const includeKeywordTokens = normalizedSelection.includeTokens;
+    const excludeKeywordTokens = normalizedSelection.excludeTokens;
+    const includeKeywordPattern = buildQualityRegex(includeKeywordTokens, qualityPatternMap);
+    const excludeKeywordPattern = buildQualityRegex(excludeKeywordTokens, qualityPatternMap);
+    const includeKeywordRegex = compileQualityRegex(includeKeywordPattern);
+    const excludeKeywordRegex = compileQualityRegex(excludeKeywordPattern);
+    const includeKeywordResolvedTerms = qualitySearchTermsForTokens(includeKeywordTokens);
+    const includeKeywordTerms = includeKeywordRegex ? [] : includeKeywordResolvedTerms;
+    const excludeKeywordTerms = excludeKeywordRegex ? [] : qualitySearchTermsForTokens(excludeKeywordTokens);
+    const includeKeywordConflictKeys = new Set(
+      includeKeywordResolvedTerms
+        .map((item) => normalizeSearchText(item))
+        .filter(Boolean)
+    );
+    const manualKeywordsNot = mergeUniqueTerms(
+      ...parseAdditionalKeywordAlternativeGroups(keywordsNotInput?.value || "")
+    ).filter(
+      (item) => !includeKeywordConflictKeys.has(normalizeSearchText(item))
+    );
+    return {
+      includeKeywordTokens,
+      excludeKeywordTokens,
+      includeKeywordRegex,
+      excludeKeywordRegex,
+      includeKeywordTerms,
+      excludeKeywordTerms,
+      manualKeywordsNot,
+    };
+  };
+
+  const compileQualityRegex = (pattern) => {
+    const cleaned = String(pattern || "").trim();
+    if (!cleaned) {
+      return null;
+    }
+    try {
+      return new RegExp(cleaned, "iu");
+    } catch {
+      return null;
+    }
+  };
+
   const cloneFilters = (filters) => ({
     query: filters.query,
     imdbId: filters.imdbId,
@@ -534,6 +996,10 @@ function initSearchPage(container) {
     keywordsAll: [...filters.keywordsAll],
     keywordsAnyGroups: filters.keywordsAnyGroups.map((group) => [...group]),
     keywordsNot: [...filters.keywordsNot],
+    qualityIncludeTokens: [...(filters.qualityIncludeTokens || [])],
+    qualityExcludeTokens: [...(filters.qualityExcludeTokens || [])],
+    qualityIncludeRegex: filters.qualityIncludeRegex || null,
+    qualityExcludeRegex: filters.qualityExcludeRegex || null,
     sizeMinMb: filters.sizeMinMb,
     sizeMaxMb: filters.sizeMaxMb,
     indexers: [...filters.indexers],
@@ -599,37 +1065,63 @@ function initSearchPage(container) {
       const groupScope = (groupElement.dataset.mediaTypes || "").split(",");
       const groupVisible = mediaTypeMatchesScope(mediaType, groupScope);
       groupElement.hidden = !groupVisible;
-      groupElement.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-        if (!groupVisible && input.checked) {
-          input.checked = false;
-        }
-        input.disabled = !groupVisible;
-      });
     });
     form.querySelectorAll("[data-search-quality-option]").forEach((optionElement) => {
       const optionScope = (optionElement.dataset.mediaTypes || "").split(",");
       const optionVisible = mediaTypeMatchesScope(mediaType, optionScope);
       optionElement.hidden = !optionVisible;
-      optionElement.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+      optionElement.querySelectorAll('input[name="quality_include_tokens"], input[name="quality_exclude_tokens"]').forEach((input) => {
         if (!optionVisible && input.checked) {
           input.checked = false;
         }
         input.disabled = !optionVisible;
       });
+      if (!optionVisible) {
+        setQualityTokenSliderMode(optionElement, "off", true);
+      }
     });
-    form.querySelectorAll("[data-search-quality-pair]").forEach((pairElement) => {
-      const pairScope = (pairElement.dataset.mediaTypes || "").split(",");
-      pairElement.hidden = !mediaTypeMatchesScope(mediaType, pairScope);
+    qualityTokenControls.syncFromStateInputs();
+  };
+
+  const getSearchPatternPreviewValue = () => {
+    const tokenState = resolveSearchTokenKeywordState();
+    const anyKeywordGroups = parseSearchAnyKeywordGroups(keywordsAnyInput?.value || "");
+    if (tokenState.includeKeywordTerms.length > 0) {
+      anyKeywordGroups.push(tokenState.includeKeywordTerms);
+    }
+    return deriveGeneratedPattern({
+      title: queryInput?.value || "",
+      useRegex: true,
+      includeReleaseYear: Boolean(includeReleaseYearInput?.checked),
+      releaseYear: releaseYearInput?.value || "",
+      additionalIncludes: keywordsAllInput?.value || "",
+      additionalExcludes: tokenState.manualKeywordsNot,
+      additionalIncludeGroups: anyKeywordGroups,
+      qualityIncludeTokens: tokenState.includeKeywordTokens,
+      qualityExcludeTokens: tokenState.excludeKeywordTokens,
+      qualityPatternMap,
     });
+  };
+
+  const refreshSearchPatternPreview = () => {
+    if (!searchPatternPreview) {
+      return;
+    }
+    searchPatternPreview.value = getSearchPatternPreviewValue();
   };
 
   const getActiveFilters = () => ({
     ...(() => {
-      const includeKeywordTerms = getCheckedValues(form, "quality_include_tokens");
-      const excludeKeywordTerms = getCheckedValues(form, "quality_exclude_tokens");
+      const tokenState = resolveSearchTokenKeywordState();
+      const includeKeywordGroups = parseAdditionalKeywordAlternativeGroups(keywordsAllInput?.value || "");
+      const requiredIncludeKeywords = includeKeywordGroups
+        .filter((group) => group.length === 1)
+        .map((group) => group[0]);
+      const includeAnyGroups = includeKeywordGroups.filter((group) => group.length > 1);
       const keywordsAnyGroups = parseSearchAnyKeywordGroups(keywordsAnyInput?.value || "");
-      if (includeKeywordTerms.length > 0) {
-        keywordsAnyGroups.push(includeKeywordTerms);
+      keywordsAnyGroups.unshift(...includeAnyGroups);
+      if (tokenState.includeKeywordTerms.length > 0) {
+        keywordsAnyGroups.push(tokenState.includeKeywordTerms);
       }
       return {
         query: searchQuery,
@@ -637,18 +1129,24 @@ function initSearchPage(container) {
         releaseYear: includeReleaseYearInput?.checked
           ? normalizeReleaseYear(releaseYearInput?.value || "")
           : "",
-        keywordsAll: parseSearchFilterList(keywordsAllInput?.value || ""),
+        keywordsAll: requiredIncludeKeywords,
         keywordsAnyGroups,
         keywordsNot: mergeUniqueTerms(
-          parseSearchFilterList(keywordsNotInput?.value || ""),
-          excludeKeywordTerms
+          tokenState.manualKeywordsNot,
+          tokenState.excludeKeywordTerms
         ),
+        qualityIncludeTokens: tokenState.includeKeywordTokens,
+        qualityExcludeTokens: tokenState.excludeKeywordTokens,
+        qualityIncludeRegex: tokenState.includeKeywordRegex,
+        qualityExcludeRegex: tokenState.excludeKeywordRegex,
       };
     })(),
     sizeMinMb: parseSearchMb(sizeMinInput?.value || ""),
     sizeMaxMb: parseSearchMb(sizeMaxInput?.value || ""),
     indexers: parseSearchFilterList(filterIndexersInput?.value || "").map((item) => item.toLocaleLowerCase()),
-    categories: parseSearchFilterList(filterCategoryIdsInput?.value || "").map((item) => item.toLocaleLowerCase()),
+    categories: parseSearchFilterList(filterCategoryIdsInput?.value || "")
+      .map((item) => normalizeCategoryFilterValue(item))
+      .filter(Boolean),
   });
 
   const buildFilterValues = (filters) => {
@@ -670,7 +1168,7 @@ function initSearchPage(container) {
     for (const keyword of filters.keywordsAll) {
       values.push({
         kind: "keywords_all",
-        label: `Required keyword: ${keyword}`,
+        label: `Extra include keyword: ${keyword}`,
         value: keyword,
         matchKey: normalizeSearchText(keyword),
       });
@@ -688,9 +1186,25 @@ function initSearchPage(container) {
     for (const keyword of filters.keywordsNot) {
       values.push({
         kind: "keywords_not",
-        label: `Excluded keyword: ${keyword}`,
+        label: `mustNotContain: ${keyword}`,
         value: keyword,
         matchKey: normalizeSearchText(keyword),
+      });
+    }
+    for (const token of filters.qualityIncludeTokens || []) {
+      values.push({
+        kind: "quality_include_token",
+        label: `Tag include: ${token}`,
+        value: token,
+        matchKey: normalizeSearchText(token),
+      });
+    }
+    for (const token of filters.qualityExcludeTokens || []) {
+      values.push({
+        kind: "quality_exclude_token",
+        label: `Tag exclude: ${token}`,
+        value: token,
+        matchKey: normalizeSearchText(token),
       });
     }
     if (filters.sizeMinMb !== null) {
@@ -736,6 +1250,12 @@ function initSearchPage(container) {
       filters.keywordsAnyGroups = [[...filterValue.value]];
     } else if (filterValue.kind === "keywords_not") {
       filters.keywordsNot = [filterValue.value];
+    } else if (filterValue.kind === "quality_include_token") {
+      filters.qualityIncludeTokens = [filterValue.value];
+      filters.qualityIncludeRegex = compileQualityRegex(buildQualityRegex(filters.qualityIncludeTokens, qualityPatternMap));
+    } else if (filterValue.kind === "quality_exclude_token") {
+      filters.qualityExcludeTokens = [filterValue.value];
+      filters.qualityExcludeRegex = compileQualityRegex(buildQualityRegex(filters.qualityExcludeTokens, qualityPatternMap));
     } else if (filterValue.kind === "size_min_mb") {
       filters.sizeMinMb = filterValue.value;
     } else if (filterValue.kind === "size_max_mb") {
@@ -762,6 +1282,16 @@ function initSearchPage(container) {
       );
     } else if (filterValue.kind === "keywords_not") {
       next.keywordsNot = next.keywordsNot.filter((item) => normalizeSearchText(item) !== filterValue.matchKey);
+    } else if (filterValue.kind === "quality_include_token") {
+      next.qualityIncludeTokens = next.qualityIncludeTokens.filter(
+        (item) => normalizeSearchText(item) !== filterValue.matchKey
+      );
+      next.qualityIncludeRegex = compileQualityRegex(buildQualityRegex(next.qualityIncludeTokens, qualityPatternMap));
+    } else if (filterValue.kind === "quality_exclude_token") {
+      next.qualityExcludeTokens = next.qualityExcludeTokens.filter(
+        (item) => normalizeSearchText(item) !== filterValue.matchKey
+      );
+      next.qualityExcludeRegex = compileQualityRegex(buildQualityRegex(next.qualityExcludeTokens, qualityPatternMap));
     } else if (filterValue.kind === "size_min_mb") {
       next.sizeMinMb = null;
     } else if (filterValue.kind === "size_max_mb") {
@@ -896,6 +1426,13 @@ function initSearchPage(container) {
       }
     }
 
+    if (filters.qualityIncludeRegex && !filters.qualityIncludeRegex.test(entry.regexSurface)) {
+      return false;
+    }
+    if (filters.qualityExcludeRegex && filters.qualityExcludeRegex.test(entry.regexSurface)) {
+      return false;
+    }
+
     if (filters.releaseYear) {
       if (!entry.year || entry.year !== filters.releaseYear) {
         return false;
@@ -922,7 +1459,10 @@ function initSearchPage(container) {
     }
 
     if (filters.categories.length > 0) {
-      if (entry.categories.length === 0 || !entry.categories.some((item) => filters.categories.includes(item))) {
+      if (
+        entry.categoryValues.length === 0
+        || !entry.categoryValues.some((item) => filters.categories.includes(item))
+      ) {
         return false;
       }
     }
@@ -1010,7 +1550,9 @@ function initSearchPage(container) {
         title: String(card.dataset.title || "").trim(),
         titleSurface: normalizeSearchText(card.dataset.title || ""),
         textSurface: normalizeSearchText(card.dataset.textSurface || ""),
+        regexSurface: String(card.dataset.textSurface || card.dataset.title || "").trim(),
         imdbId: normalizeSearchImdbId(card.dataset.imdbId || ""),
+        indexerRaw: String(card.dataset.indexer || "").trim(),
         indexer: String(card.dataset.indexer || "").trim().toLocaleLowerCase(),
         sizeBytes: parseOptionalNumber(card.dataset.sizeBytes),
         publishedAtMs: parseIsoDateMs(card.dataset.publishedAt),
@@ -1019,7 +1561,14 @@ function initSearchPage(container) {
         peers: parseOptionalNumber(card.dataset.peers),
         leechers: parseOptionalNumber(card.dataset.leechers),
         grabs: parseOptionalNumber(card.dataset.grabs),
-        categories: parseSearchFilterList(card.dataset.categoryIds || "").map((item) => item.toLocaleLowerCase()),
+        categoryIds: parseSearchFilterList(card.dataset.categoryIds || ""),
+        categoryLabels: parseSearchFilterList(card.dataset.categoryLabels || ""),
+        categoryValues: mergeUniqueTerms(
+          parseSearchFilterList(card.dataset.categoryIds || ""),
+          parseSearchFilterList(card.dataset.categoryLabels || "")
+        )
+          .map((item) => normalizeCategoryFilterValue(item))
+          .filter(Boolean),
       }));
 
       return [
@@ -1038,6 +1587,194 @@ function initSearchPage(container) {
       ];
     })
   );
+
+  const parseStoredMultiselectValues = (input, normalizeValue) => {
+    const values = [];
+    const seen = new Set();
+    for (const rawValue of parseSearchFilterList(input?.value || "")) {
+      const key = normalizeValue(rawValue);
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      values.push({
+        value: String(rawValue || "").trim(),
+        key,
+      });
+    }
+    return values;
+  };
+
+  const allEntries = sections.flatMap((section) => sectionState[section]?.entries || []);
+  let applyLocalFilters = () => {};
+  const buildDistinctIndexerOptions = () => {
+    const options = [];
+    const seen = new Set();
+    for (const entry of allEntries) {
+      const label = String(entry.indexerRaw || "").trim();
+      const key = label.toLocaleLowerCase();
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      options.push({ value: label, label, key });
+    }
+    return options.sort((left, right) => left.label.localeCompare(right.label, undefined, { sensitivity: "base" }));
+  };
+  const buildDistinctCategoryOptions = () => {
+    const options = [];
+    const seen = new Set();
+    for (const entry of allEntries) {
+      const labels = (entry.categoryLabels && entry.categoryLabels.length > 0)
+        ? entry.categoryLabels
+        : entry.categoryIds;
+      for (const labelValue of labels || []) {
+        const label = String(labelValue || "").trim();
+        const key = normalizeCategoryFilterValue(label);
+        if (!key || seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        options.push({ value: label, label, key });
+      }
+    }
+    return options.sort((left, right) => left.label.localeCompare(right.label, undefined, { sensitivity: "base" }));
+  };
+
+  const initSearchMultiselect = ({
+    storageInput,
+    optionsContainer,
+    summaryElement,
+    selectAllButton,
+    clearButton,
+    allLabel,
+    emptyLabel,
+    normalizeValue,
+    options,
+  }) => {
+    if (!storageInput || !optionsContainer || !summaryElement) {
+      return;
+    }
+
+    const selectedMap = new Map(parseStoredMultiselectValues(storageInput, normalizeValue).map((item) => [item.key, item.value]));
+    for (const option of options) {
+      if (!selectedMap.has(option.key)) {
+        continue;
+      }
+      selectedMap.set(option.key, option.value);
+    }
+    for (const [key, value] of selectedMap.entries()) {
+      if (options.some((item) => item.key === key)) {
+        continue;
+      }
+      options.push({
+        key,
+        value,
+        label: `${value} (typed)`,
+      });
+    }
+
+    if (options.length === 0) {
+      optionsContainer.innerHTML = "";
+      const emptyElement = document.createElement("p");
+      emptyElement.className = "search-multiselect-empty";
+      emptyElement.textContent = emptyLabel;
+      optionsContainer.appendChild(emptyElement);
+      const existingValues = parseStoredMultiselectValues(storageInput, normalizeValue);
+      summaryElement.textContent = existingValues.length > 0
+        ? existingValues.map((item) => item.value).join(", ")
+        : allLabel;
+      if (selectAllButton) {
+        selectAllButton.disabled = true;
+      }
+      if (clearButton) {
+        clearButton.disabled = true;
+      }
+      return;
+    }
+
+    const syncFromUi = () => {
+      const selected = Array.from(optionsContainer.querySelectorAll('input[type="checkbox"]:checked')).map((input) => ({
+        value: String(input.value || "").trim(),
+        key: String(input.dataset.searchFilterKey || ""),
+      }));
+      storageInput.value = selected.map((item) => item.value).join(", ");
+      if (selected.length === 0) {
+        summaryElement.textContent = allLabel;
+      } else if (selected.length <= 2) {
+        summaryElement.textContent = selected.map((item) => item.value).join(", ");
+      } else {
+        summaryElement.textContent = `${selected.length} selected`;
+      }
+      applyLocalFilters();
+    };
+
+    optionsContainer.innerHTML = "";
+    const selectedKeys = new Set(selectedMap.keys());
+    for (const option of options) {
+      const optionLabel = document.createElement("label");
+      optionLabel.className = "search-multiselect-option";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = option.value;
+      checkbox.dataset.searchFilterKey = option.key;
+      checkbox.checked = selectedKeys.has(option.key);
+      checkbox.addEventListener("change", syncFromUi);
+
+      const text = document.createElement("span");
+      text.textContent = option.label;
+      optionLabel.append(checkbox, text);
+      optionsContainer.appendChild(optionLabel);
+    }
+
+    if (selectAllButton) {
+      selectAllButton.disabled = false;
+      selectAllButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+          input.checked = true;
+        });
+        syncFromUi();
+      });
+    }
+    if (clearButton) {
+      clearButton.disabled = false;
+      clearButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+          input.checked = false;
+        });
+        syncFromUi();
+      });
+    }
+
+    syncFromUi();
+  };
+
+  initSearchMultiselect({
+    storageInput: filterIndexersInput,
+    optionsContainer: indexerMultiSelectOptions,
+    summaryElement: indexerMultiSelectSummary,
+    selectAllButton: indexerMultiSelectSelectAll,
+    clearButton: indexerMultiSelectClear,
+    allLabel: "All indexers",
+    emptyLabel: "Run a search to populate indexers.",
+    normalizeValue: (value) => String(value || "").trim().toLocaleLowerCase(),
+    options: buildDistinctIndexerOptions(),
+  });
+
+  initSearchMultiselect({
+    storageInput: filterCategoryIdsInput,
+    optionsContainer: categoryMultiSelectOptions,
+    summaryElement: categoryMultiSelectSummary,
+    selectAllButton: categoryMultiSelectSelectAll,
+    clearButton: categoryMultiSelectClear,
+    allLabel: "All categories",
+    emptyLabel: "Run a search to populate categories.",
+    normalizeValue: normalizeCategoryFilterValue,
+    options: buildDistinctCategoryOptions(),
+  });
 
   const applyViewMode = () => {
     const tableMode = controlState.viewMode === "table";
@@ -1167,7 +1904,8 @@ function initSearchPage(container) {
     renderFilterImpact(section, filters, visibleCount);
   };
 
-  const applyLocalFilters = () => {
+  applyLocalFilters = () => {
+    refreshSearchPatternPreview();
     const filters = getActiveFilters();
     const sortCriteria = getSortCriteria();
     applyViewMode();
@@ -1186,13 +1924,16 @@ function initSearchPage(container) {
     filterIndexersInput,
     filterCategoryIdsInput,
     mediaTypeInput,
-    ...includeKeywordInputs,
-    ...excludeKeywordInputs,
   ].filter(Boolean);
 
   for (const input of localFilterInputs) {
     input.addEventListener("input", applyLocalFilters);
     input.addEventListener("change", applyLocalFilters);
+  }
+
+  if (queryInput) {
+    queryInput.addEventListener("input", refreshSearchPatternPreview);
+    queryInput.addEventListener("change", refreshSearchPatternPreview);
   }
 
   if (mediaTypeInput) {
@@ -1208,7 +1949,7 @@ function initSearchPage(container) {
     });
   }
 
-  bindExclusiveQualitySelections(form, "quality_include_tokens", "quality_exclude_tokens", applyLocalFilters);
+  const qualityTokenControls = initUnifiedQualityTokenControls(form, { onChange: applyLocalFilters });
 
   for (const controlSet of controlSets) {
     const syncFromControlSet = () => {
@@ -1455,6 +2196,7 @@ function initRuleForm(form) {
     const excludeTokens = (profile.exclude_tokens || []).filter((token) => !includeSet.has(token));
     setCheckedValues(form, "quality_include_tokens", includeTokens);
     setCheckedValues(form, "quality_exclude_tokens", excludeTokens);
+    qualityTokenControls.syncFromStateInputs();
     if (filterProfileSelect) {
       filterProfileSelect.value = profileKey;
     }
@@ -1578,11 +2320,19 @@ function initRuleForm(form) {
         input.checked = false;
       }
     });
+    qualityTokenControls.syncFromStateInputs();
   };
 
   const applyQualityVisibility = (mediaType) => {
     form.querySelectorAll("[data-quality-option]").forEach((optionLabel) => {
-      optionLabel.hidden = !mediaTypeMatchesScope(mediaType, parseElementMediaTypes(optionLabel));
+      const optionVisible = mediaTypeMatchesScope(mediaType, parseElementMediaTypes(optionLabel));
+      optionLabel.hidden = !optionVisible;
+      optionLabel.querySelectorAll('input[name="quality_include_tokens"], input[name="quality_exclude_tokens"]').forEach((input) => {
+        input.disabled = !optionVisible;
+      });
+      if (!optionVisible) {
+        setQualityTokenSliderMode(optionLabel, "off", true);
+      }
     });
 
     form.querySelectorAll("[data-quality-group]").forEach((group) => {
@@ -1590,6 +2340,7 @@ function initRuleForm(form) {
       const visibleOptions = Array.from(group.querySelectorAll("[data-quality-option]")).some((option) => !option.hidden);
       group.hidden = !groupMatches || !visibleOptions;
     });
+    qualityTokenControls.syncFromStateInputs();
   };
 
   const applyMediaTypeVisibility = (mediaType) => {
@@ -1665,9 +2416,11 @@ function initRuleForm(form) {
     releaseYearTouched = true;
   });
 
-  bindExclusiveQualitySelections(form, "quality_include_tokens", "quality_exclude_tokens", () => {
-    syncQualityProfileValue();
-    refreshDerivedFields();
+  const qualityTokenControls = initUnifiedQualityTokenControls(form, {
+    onChange: () => {
+      syncQualityProfileValue();
+      refreshDerivedFields();
+    },
   });
   mediaField?.addEventListener("change", () => {
     handleMediaTypeSelectionChange(mediaField.value);

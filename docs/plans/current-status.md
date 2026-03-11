@@ -111,7 +111,7 @@
 - Executed automated browser closeout on 2026-03-11 with `9/9` checks passing; artifacts: `logs/qa/phase-closeout-20260311T113931Z/closeout-report.{md,json}`.
 - qB connection resolution now handles mixed Windows+WSL topology: in WSL runtime, qB base URLs using `localhost`/`127.0.0.1` are rewritten to `host.docker.internal`, so Windows-hosted qBittorrent remains reachable without per-run env overrides.
 - Executed the optional live-provider smoke gate on 2026-03-11 without `QB_RULES_QB_BASE_URL` override; all `4/4` checks passed with artifacts at `logs/qa/live-provider-smoke-20260311T163136Z/result.{md,json}`.
-- Completed v0.2.0 release-prep version synchronization (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`, `ROADMAP.md`) and prepared local release tagging.
+- Completed v0.2.0 release-prep version synchronization (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`, `ROADMAP.md`) and created local annotated tag `v0.2.0` from commit `da37dc8`.
 
 ## In progress
 

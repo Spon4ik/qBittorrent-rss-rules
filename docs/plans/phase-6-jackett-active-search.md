@@ -65,6 +65,7 @@
 - Optional live-provider smoke gate run on 2026-03-11 passed `4/4` checks without `QB_RULES_QB_BASE_URL` override, confirming WSL localhost rewrite behavior against real Jackett/qB/OMDb endpoints; evidence: `logs/qa/live-provider-smoke-20260311T163136Z/result.md`.
 - `scripts/run_dev.sh` now auto-detects repo-local interpreters and launches via `python -m uvicorn`, removing the prior hard dependency on a globally installed `uvicorn` binary in WSL/Linux shells.
 - Linux/WSL screenshot runs currently require host browser libraries (`python -m playwright install-deps chromium` with sudo); when missing, the script now exits with an explicit remediation message instead of a traceback.
+- Local annotated git tag `v0.2.0` was created on 2026-03-11 from commit `da37dc8` after release gates and live-provider smoke evidence passed.
 - The goal is to add an on-demand search workflow beside RSS rule authoring, not to replace RSS automation.
 
 ## Request Checklist (2026-03-10 refresh)

@@ -701,20 +701,62 @@ td {
 }
 
 .search-multiselect-option {
-  display: flex;
-  gap: 0.5rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.55rem;
   align-items: center;
-  padding: 0.18rem 0.12rem;
+  padding: 0.28rem 0.35rem;
+  border-radius: 8px;
+}
+
+.search-multiselect-option:hover {
+  background: rgba(19, 37, 40, 0.05);
 }
 
 .search-multiselect-option input {
   margin: 0;
 }
 
+.search-multiselect-option-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.search-multiselect-option-count {
+  justify-self: end;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: rgba(19, 37, 40, 0.1);
+  border-radius: 999px;
+  padding: 0.08rem 0.4rem;
+}
+
+.search-multiselect-option--inactive {
+  opacity: 0.68;
+}
+
+.search-multiselect-option--inactive .search-multiselect-option-count {
+  color: var(--danger);
+  background: rgba(141, 47, 47, 0.12);
+}
+
 .search-multiselect-empty {
   margin: 0;
   color: var(--muted);
   font-size: 0.86rem;
+}
+
+.search-category-scope-status {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.search-category-scope-status.warning {
+  color: var(--danger);
 }
 
 .search-section-head .helper-text {
@@ -885,6 +927,19 @@ td {
 
 .search-form-submit button {
   min-width: 12rem;
+}
+
+.search-queue-options-grid {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: start;
+}
+
+[data-result-queue-options] .helper-text[data-result-queue-status] {
+  flex: 1 1 100%;
+  margin-top: 0.25rem;
+  font-weight: 600;
 }
 
 .filter-impact-list {

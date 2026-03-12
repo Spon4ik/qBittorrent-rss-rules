@@ -162,6 +162,8 @@ class SettingsService:
                 quality_profile_rules=deepcopy(DEFAULT_QUALITY_PROFILE_RULES),
                 saved_quality_profiles={},
                 default_quality_profile=QualityProfile.UHD_2160P_HDR,
+                default_sequential_download=True,
+                default_first_last_piece_prio=True,
                 search_result_view_mode=DEFAULT_SEARCH_RESULT_VIEW_MODE,
                 search_sort_criteria=[dict(item) for item in DEFAULT_SEARCH_SORT_CRITERIA],
             )
@@ -205,6 +207,20 @@ class SettingsService:
         if normalized_default_feeds != (settings.default_feed_urls or []):
             settings.default_feed_urls = normalized_default_feeds
             changed = True
+        default_sequential_value = getattr(settings, "default_sequential_download", True)
+        normalized_default_sequential = (
+            True if default_sequential_value is None else bool(default_sequential_value)
+        )
+        if normalized_default_sequential != default_sequential_value:
+            settings.default_sequential_download = normalized_default_sequential
+            changed = True
+        default_first_last_value = getattr(settings, "default_first_last_piece_prio", True)
+        normalized_default_first_last = (
+            True if default_first_last_value is None else bool(default_first_last_value)
+        )
+        if normalized_default_first_last != default_first_last_value:
+            settings.default_first_last_piece_prio = normalized_default_first_last
+            changed = True
         normalized_view_mode = normalize_search_result_view_mode(
             getattr(settings, "search_result_view_mode", DEFAULT_SEARCH_RESULT_VIEW_MODE)
         )
@@ -234,6 +250,8 @@ class SettingsService:
         settings.movie_category_template = payload.movie_category_template
         settings.save_path_template = payload.save_path_template
         settings.default_add_paused = payload.default_add_paused
+        settings.default_sequential_download = payload.default_sequential_download
+        settings.default_first_last_piece_prio = payload.default_first_last_piece_prio
         settings.default_enabled = payload.default_enabled
         settings.quality_profile_rules = {
             QualityProfile.HD_1080P.value: {
@@ -302,6 +320,8 @@ class SettingsService:
             "movie_category_template": settings.movie_category_template,
             "save_path_template": settings.save_path_template,
             "default_add_paused": settings.default_add_paused,
+            "default_sequential_download": bool(getattr(settings, "default_sequential_download", True)),
+            "default_first_last_piece_prio": bool(getattr(settings, "default_first_last_piece_prio", True)),
             "default_enabled": settings.default_enabled,
             "profile_1080p_include_tokens": profile_rules[QualityProfile.HD_1080P.value]["include_tokens"],
             "profile_1080p_exclude_tokens": profile_rules[QualityProfile.HD_1080P.value]["exclude_tokens"],

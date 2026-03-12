@@ -85,6 +85,8 @@ class Rule(Base):
     use_regex: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     must_contain_override: Mapped[str | None] = mapped_column(Text, nullable=True)
     must_not_contain: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    start_season: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    start_episode: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     episode_filter: Mapped[str] = mapped_column(Text, nullable=False, default="")
     ignore_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     add_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -139,6 +141,16 @@ class AppSettings(Base):
     )
     save_path_template: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     default_add_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    default_sequential_download: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+    default_first_last_piece_prio: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
     default_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     quality_profile_rules: Mapped[dict[str, dict[str, list[str]]]] = mapped_column(
         JSON,
@@ -191,3 +203,18 @@ class ImportBatch(Base):
     imported_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     skipped_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class IndexerCategoryCatalog(Base):
+    __tablename__ = "indexer_category_catalog"
+
+    indexer: Mapped[str] = mapped_column(String(255), primary_key=True)
+    category_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    category_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="result_attr")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+    )

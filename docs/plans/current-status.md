@@ -2,12 +2,100 @@
 
 ## Current focus
 
-- Phase 6: post-v0.2.0 follow-up hardening and scope decisions
-- Phase 6 v0.2.1 follow-up slice: unified keyword-token controls, responsive `/search` local refinement behavior, and cross-indexer category consolidation for local filtering
+- Phase 7 implementation: category-catalog persistence + catalog-join resolution + category UX explainability are complete (`P7-01`..`P7-04`)
+- Phase 7 active slices: cached-result responsiveness hardening (`P7-05`) and ghost-category regression completion (`P7-06`)
+- Phase 7 follow-up slice: inline rule-page search workspace + queue-to-qB action flow (`P7-08`)
+- Phase 7 extension execution is active for feed-aware inline search, generated-pattern local recompute, queue-pause semantics, and inline table/sort parity (`P7-09`..`P7-13`)
+- Phase 7 follow-up fix/feature slice landed for Torznab feed-parser hardening + episode-progress floor fields (`P7-14`)
+- Phase 7 follow-up fix slice landed for persisted queue option defaults plus affected-feed live scope enforcement (`P7-15`)
 - Release-process automation and evidence-driven phase sign-off
 
 ## Implemented
 
+- Added phase-7 implementation plan `docs/plans/phase-7-cached-refinement-and-category-catalog.md` (2026-03-12) with explicit scope boundaries, category-catalog data-model decisions, detailed dated checklist (`P7-01..P7-07`), and multi-skill delegation across `ui-ux-designer`, `jackett-api-expert`, `programming-sprint-manager`, `qa-engineer`, and `project-management`.
+- Extended phase-7 plan on 2026-03-12 with a detailed resumable execution slice (`P7-09`..`P7-13`) covering:
+  - feed-aware inline search scope derived from rule `feed_urls`,
+  - generated-pattern-driven local recompute on cached inline results,
+  - strict queue `add_paused` semantics,
+  - table-first + multi-level sort parity for inline rule-page results.
+- Implemented the first `P7-09..P7-12` execution pass on 2026-03-12:
+  - feed-aware rule search scope now derives Jackett indexer slugs from rule `feed_urls` and applies single/multi-indexer scoping with explicit unparseable-feed warnings (`app/routes/pages.py`).
+  - inline rule-page rendering now uses `/search` parity result-view controls and table/card containers with shared sortable data attributes (`app/templates/rule_form.html`).
+  - inline local filtering now computes generated-pattern matching from live rule-form state (not only from preview textarea timing), so pattern-driving edits apply immediately to cached results (`app/static/app.js`).
+  - queue option payload keeps explicit `add_paused` booleans in shared queue handlers for inline/search surfaces (`app/static/app.js`, existing queue API route tests).
+- Added/updated regressions for this pass:
+  - `tests/test_routes.py::test_edit_rule_inline_search_scopes_single_jackett_feed_indexer`
+  - `tests/test_routes.py::test_edit_rule_inline_search_scopes_multiple_jackett_feed_indexers`
+  - `tests/test_routes.py::test_edit_rule_inline_search_warns_when_feed_scope_not_derivable`
+  - `tests/test_routes.py::test_edit_rule_page_can_render_inline_search_results` (table/sort markup assertions)
+  - `tests/test_routes.py::test_search_page_from_rule_uses_structured_terms_not_raw_regex` (feed-scope assertion for `/search?rule_id=...`)
+- Validation evidence for this pass on 2026-03-12:
+  - `./.venv-linux/bin/ruff check app/routes/pages.py tests/test_routes.py` (`All checks passed`)
+  - `./scripts/test.sh tests/test_routes.py -k "run_rule_search_route_redirects_to_inline_rule_page or inline_search or queue_search_result_api or search_page_from_rule_uses_structured_terms_not_raw_regex"` (`9 passed`, `49 deselected`)
+- Implemented `P7-14` on 2026-03-12:
+  - feed scope parsing now supports both Jackett Torznab URL path variants (`.../torznab` and `.../torznab/api`) so affected-feed filtering is not skipped due endpoint shape.
+  - rule model/form now includes `Start season` and `Start episode` (paired validation) to express episode-progress floor filtering.
+  - backend/frontend generated regex builders now include floor-aware season/episode matching for direct and range variants (for example `S03E07`, `S03E01-07`) and later seasons.
+- Added regressions for `P7-14`:
+  - `tests/test_routes.py::test_edit_rule_inline_search_scopes_single_jackett_feed_indexer` now uses `.../torznab/` URL form.
+  - `tests/test_routes.py::test_create_rule_persists_locally_even_without_qb_config` asserts new persisted floor fields.
+  - `tests/test_routes.py::test_create_rule_rejects_incomplete_episode_progress_floor`.
+  - `tests/test_rule_builder.py::test_build_generated_pattern_supports_start_season_episode_floor`.
+- Validation evidence for `P7-14` on 2026-03-12:
+  - `./.venv-linux/bin/ruff check app/routes/pages.py app/routes/api.py app/services/rule_builder.py app/schemas.py app/models.py app/db.py tests/test_rule_builder.py tests/test_routes.py` (`All checks passed`)
+  - `./scripts/test.sh tests/test_rule_builder.py tests/test_routes.py -k "start_season or floor or inline_search_scopes_single_jackett_feed_indexer or create_rule_persists_locally_even_without_qb_config or create_rule_rejects_incomplete_episode_progress_floor"` (`4 passed`, `72 deselected`)
+- Implemented `P7-15` on 2026-03-12:
+  - queue options `Sequential download` + `First and last pieces first` are now persisted in `AppSettings` and pre-checked by default in `/search` and inline rule-page queue panels.
+  - `Save defaults` on search result panels now persists queue defaults together with view/sort defaults via `/api/search/preferences`.
+  - inline `Run Search Here` now carries current checked affected feeds from the form (even unsaved) into run-time feed scoping, and inline cached local filtering now also enforces checked affected-feed scope.
+- Added regressions for `P7-15`:
+  - `tests/test_routes.py::test_run_rule_search_route_preserves_feed_url_overrides`
+  - `tests/test_routes.py::test_edit_rule_inline_search_uses_feed_url_override_scope`
+  - extended `tests/test_routes.py::test_save_search_preferences_api_persists_defaults`
+  - extended `tests/test_routes.py::test_save_settings_persists_profile_management_tokens`
+- Validation evidence for `P7-15` on 2026-03-12:
+  - `./.venv-linux/bin/ruff check app/models.py app/db.py app/services/settings_service.py app/routes/api.py app/routes/pages.py app/schemas.py tests/test_routes.py alembic/versions/0001_initial_schema.py alembic/versions/0003_search_queue_defaults.py` (`All checks passed`)
+  - `./scripts/test.sh tests/test_routes.py -k "run_rule_search_route_redirects_to_inline_rule_page or run_rule_search_route_preserves_feed_url_overrides or edit_rule_inline_search_scopes_single_jackett_feed_indexer or edit_rule_inline_search_uses_feed_url_override_scope or save_search_preferences_api_persists_defaults or save_settings_persists_profile_management_tokens or queue_search_result_api_uses_rule_defaults or queue_search_result_api_uses_settings_default_pause_when_no_rule"` (`8 passed`, `53 deselected`)
+- Added persistent category-catalog storage for phase 7 via `IndexerCategoryCatalog` (`app/models.py`) and migration `alembic/versions/0002_indexer_category_catalog.py` keyed by `(indexer, category_id)` with label source + update timestamp.
+- Added `app/services/category_catalog.py` with indexer/category normalization helpers, write paths (`sync_category_catalog_from_results`, `sync_category_catalog_from_indexer_map`), and read path (`resolve_category_labels`) for catalog-joined label resolution.
+- `/search` route now persists and reuses category catalog mappings during search runs (`app/routes/pages.py`): after each run it syncs result/category-map data into DB and re-resolves result labels from catalog keys before rendering.
+- Added phase-7 regression tests:
+  - `tests/test_category_catalog.py` (catalog write/read + source-priority behavior)
+  - `tests/test_routes.py::test_search_page_persists_indexer_category_catalog_entries`
+- `/search` local category multiselect now rebuilds options from cached entries that match all current non-category filters, shows per-option count badges, and marks stale selections as inactive instead of surfacing unrelated categories.
+- `/search` category filtering now surfaces a dynamic scope-status note that explains whether selected categories still match the current non-category filters or are stale blockers.
+- Updated `/search` category helper copy and multiselect styling to improve readability on desktop/mobile (`app/templates/search.html`, `app/static/app.css`, `app/static/app.js`).
+- Added phase-7 regression coverage for category-key collision and ambiguous result-label handling:
+  - `tests/test_category_catalog.py::test_category_catalog_resolve_respects_indexer_scope_for_same_category_id`
+  - `tests/test_category_catalog.py::test_category_catalog_uses_category_id_fallback_for_ambiguous_result_labels`
+  - `tests/test_routes.py::test_search_page_resolves_colliding_category_ids_per_indexer`
+- Category placeholder normalization now canonicalizes legacy labels such as `Unknown (#100119)` to deterministic fallback labels (`Category #100119`) and prefers non-placeholder labels when available (`app/services/category_catalog.py`, `app/routes/pages.py`).
+- Saved-rule `Run Search` now redirects to `/rules/{id}?run_search=1#inline-search-results` and renders primary/fallback Jackett results directly under the edit form instead of forcing a separate `/search` workspace (`app/routes/pages.py`, `app/templates/rule_form.html`).
+- Added queue-to-qB action support for search results:
+  - API: `POST /api/search/queue` applies optional rule defaults (category/save path/add paused) and queue options (`sequentialDownload`, `firstLastPiecePrio`) (`app/routes/api.py`, `app/services/qbittorrent.py`, `app/schemas.py`).
+  - UI: queue option controls + queue action buttons now exist on both `/search` and rule-inline result cards/tables with shared JS status handling (`app/templates/search.html`, `app/templates/rule_form.html`, `app/static/app.js`, `app/static/app.css`).
+- Added targeted regressions for this slice:
+  - `tests/test_routes.py::test_run_rule_search_route_redirects_to_inline_rule_page`
+  - `tests/test_routes.py::test_edit_rule_page_can_render_inline_search_results`
+  - `tests/test_routes.py::test_queue_search_result_api_requires_configured_qb`
+  - `tests/test_routes.py::test_queue_search_result_api_uses_rule_defaults`
+  - `tests/test_routes.py::test_queue_search_result_api_uses_settings_default_pause_when_no_rule`
+- Validation evidence for this slice on 2026-03-12:
+  - `./.venv-linux/bin/ruff check app/routes/pages.py app/services/category_catalog.py tests/test_routes.py` (`All checks passed`)
+  - `./scripts/test.sh tests/test_routes.py -k "run_rule_search_route_redirects_to_inline_rule_page or rule_pages_expose_run_search_actions or inline_search_results or queue_search_result_api"` (`6 passed`, `49 deselected`)
+- `./scripts/test.sh tests/test_category_catalog.py tests/test_routes.py -k "category_catalog or run_rule_search_route_redirects_to_inline_rule_page or rule_pages_expose_run_search_actions or inline_search_results or queue_search_result_api"` (`12 passed`, `49 deselected`)
+- Updated deterministic browser closeout fixtures/checks to keep phase-6 multiselect QA aligned with indexer-scoped category-label resolution (`scripts/closeout_browser_qa.py` indexer category maps + Documentary label matcher fallback).
+- Validation evidence for the phase-7 persistence slice on 2026-03-12:
+  - `./scripts/test.sh tests/test_category_catalog.py tests/test_routes.py -k "category_catalog or search_page_persists_indexer_category_catalog_entries"` (`4 passed`, `49 deselected`)
+  - `./scripts/test.sh tests/test_routes.py -k "search_page_prefills_new_rule_from_active_search or search_page_embeds_raw_cache_payload_for_local_refinement or search_page_accepts_repeated_multiselect_filter_params or search_page_persists_indexer_category_catalog_entries"` (`4 passed`, `46 deselected`)
+  - `./scripts/test.sh tests/test_routes.py -k "search_page_embeds_raw_cache_payload_for_local_refinement or search_page_accepts_repeated_multiselect_filter_params or search_page_persists_indexer_category_catalog_entries or search_page_expands_quality_token_terms_for_search_payload"` (`4 passed`, `46 deselected`)
+  - `./scripts/test.sh tests/test_category_catalog.py tests/test_jackett.py -k "can_filter_by_category_label_across_indexers or can_enrich_result_category_labels_without_label_filter or category_catalog"` (`5 passed`, `29 deselected`)
+  - `./scripts/test.sh tests/test_category_catalog.py tests/test_routes.py -k "category_catalog or persists_indexer_category_catalog_entries or resolves_colliding_category_ids_per_indexer or embeds_raw_cache_payload_for_local_refinement"` (`8 passed`, `48 deselected`)
+  - `./.venv-linux/bin/ruff check app/services/category_catalog.py app/routes/pages.py app/services/jackett.py tests/test_category_catalog.py tests/test_routes.py` (`All checks passed`)
+  - `./.venv-linux/bin/ruff check tests/test_category_catalog.py tests/test_routes.py app/routes/pages.py app/services/category_catalog.py app/services/jackett.py` (`All checks passed`)
+  - `./.venv-linux/bin/ruff check scripts/closeout_browser_qa.py` (`All checks passed`)
+  - `./scripts/closeout_qa.sh` (`10/11` checks pass; all phase-5/phase-6 checks pass including `P6-04`; pre-existing phase-4 `P4-01` feed-checkbox failure remains; artifacts at `logs/qa/phase-closeout-20260312T004852Z/closeout-report.{md,json}`)
+  - `./.venv-linux/bin/mypy app/services/category_catalog.py app/routes/pages.py` (`Success: no issues found in 2 source files`)
 - Added a repo-local `ui-ux-designer` Codex skill under `.codex/skills/ui-ux-designer` with reusable UX workflow guidance plus handoff/checklist templates for implementation-ready UI design outputs.
 - Added a repo-local `jackett-api-expert` Codex skill under `.codex/skills/jackett-api-expert` with capability-aware Torznab query strategy and fallback/triage references.
 - Added a repo-local `qa-engineer` Codex skill under `.codex/skills/qa-engineer` with a risk-based QA workflow plus reusable test-plan and bug-report templates.
@@ -153,7 +241,12 @@
 
 ## In progress
 
-- Phase 6 v0.2.0 scope is implemented and release-validated; follow-up polish/scope decisions remain open for v0.2.x.
+- Phase 7 `P7-05`/`P7-06` are in progress: local-filter no-network evidence is green for existing phase-6 QA checks, while the explicit reported ghost-category (`shrinking` + `Cartoons`) scenario is still not automated in browser QA.
+- Phase 7 `P7-08` is in progress: backend + template + JS wiring for inline rule-page search and queue actions is implemented and route-tested; browser closeout evidence is pending.
+- Phase 7 `P7-09` is completed in code/tests; `P7-10`/`P7-11`/`P7-12` have implementation landed and need deterministic browser QA confirmation; `P7-13` closeout remains pending.
+- Phase 7 `P7-14` is completed in code/tests; optional browser QA assertions for new episode-progress floor behavior are still pending.
+- Phase 7 `P7-15` is completed in code/tests; optional browser QA is pending for the unsaved-affected-feeds inline run path plus persisted queue default UI behavior.
+- Phase 6 v0.2.0 scope is implemented and release-validated; remaining non-critical persistence decisions stay deferred.
 - Release-process automated checks continue to pass in Linux `.venv-linux` via `./scripts/check.sh` (`ruff`, `mypy`, full pytest).
 - Deterministic closeout QA now includes the new phase-6 local refinement responsiveness check; a separate pre-existing phase-4 feed-checkbox expectation (`P4-01`) is currently the remaining closeout failure to resolve.
 - The repo-local Windows `.venv` and Linux `.venv-linux` run full tests successfully; unactivated system `python3` still lacks project dependencies by default.
@@ -161,15 +254,25 @@
 
 ## Next actions
 
-- Use `docs/plans/phase-6-jackett-active-search.md` `Request Checklist (2026-03-10 refresh)` + `Dated execution checklist (2026-03-10 baseline)` as the source-of-truth tracker.
+- Use `docs/plans/phase-7-cached-refinement-and-category-catalog.md` `Dated execution checklist (2026-03-12 baseline)` as the active source-of-truth tracker.
+- Execute explicit regression for the reported mismatch case (`shrinking` + `Cartoons`-style category option) against the scoped-option + scope-status path and encode it in automated browser QA.
+- Run deterministic browser validation for inline generated-pattern local recompute (no-network) and table/sort parity behavior to close `P7-10`/`P7-12`.
+- Add deterministic browser assertion that queue `Add paused` checkbox state is reflected in queue action payload/outcome messaging to close `P7-11`.
+- Add deterministic browser assertion for `Start season` + `Start episode` generated-pattern behavior (including range forms like `S03E01-07`) to keep `P7-14` evidence at parity with other phase-7 UX slices.
+- Add deterministic browser assertion that `Run Search Here` with unsaved affected-feed checkbox changes excludes unchecked feeds in inline results to close the `P7-15` UX bug report loop.
+- Add deterministic browser assertion that queue default save/reload keeps `Sequential download` and `First and last pieces first` checked state across search sessions (`P7-15`).
+- Add browser closeout assertions for rule-page inline result rendering and queue-action feedback states (success/failure) so `P7-08` has deterministic UI evidence.
+- Extend deterministic closeout coverage with an assertion for the category scope-status note (stale vs matching selected categories) so `P7-05` has direct diagnostics coverage beyond count changes.
+- Capture refreshed desktop/mobile `/search` screenshots reflecting the new category count-badge and status-note states and attach to phase closeout evidence.
 - Resolve deterministic closeout `P4-01` feed-checkbox expectation drift so the expanded 10-check browser gate is fully green.
-- Run `./scripts/closeout_qa.sh` (or `scripts\\closeout_qa.bat`) as the default Phase 4/5/6 closeout gate for future UX/search iterations.
+- Run `./scripts/closeout_qa.sh` (or `scripts\\closeout_qa.bat`) as the default Phase 4/5/6/7 closeout gate for future UX/search iterations.
 - Re-run the optional live-provider smoke gate when endpoint topology or credentials change, using `logs/qa/live-provider-smoke-*` artifacts as release evidence.
-- Keep the DB-backed release matrix (`docs/plans/phase-6-release-qa-plan.md`) as the live-data regression pass before final release.
-- Decide whether the next phase-6 slice should add persistent Jackett-backed rule sources as a distinct saved source type, still separate from RSS feeds.
+- Keep the DB-backed release matrix (`docs/plans/phase-6-release-qa-plan.md`) as a regression baseline until a phase-7-specific matrix is added.
+- Keep persistent Jackett-backed rule-source decisions deferred from this phase; maintain explicit separation from RSS feeds.
 
 ## Deferred / future phases
 
-- Phase 6 planning now lives in `docs/plans/phase-6-jackett-active-search.md`; the initial slice is in the repo, with deeper persistence work still deferred.
+- Phase 6 planning lives in `docs/plans/phase-6-jackett-active-search.md`; implemented scope is in the repo and deeper persistence work remains deferred.
+- Phase 7 planning now lives in `docs/plans/phase-7-cached-refinement-and-category-catalog.md`; execution begins with responsiveness and category-integrity slices before any broader search-source persistence decisions.
 - Follow-up: decide whether remembered feed defaults should also be editable from `/settings`
 - Follow-up: decide whether provider-specific lookup hints or richer search result pickers are needed beyond the current first-match flow

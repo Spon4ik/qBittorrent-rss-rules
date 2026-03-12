@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from app.models import AppSettings, MediaType, QualityProfile, Rule
 from app.services.rule_builder import (
     RuleBuilder,
@@ -207,6 +209,30 @@ def test_build_generated_pattern_allows_empty_quality_selection() -> None:
         )
     )
     assert pattern == "Anaconda"
+
+
+def test_build_generated_pattern_supports_start_season_episode_floor() -> None:
+    builder = RuleBuilder(settings=None)
+    pattern = builder.build_generated_pattern(
+        build_rule(
+            quality_profile=QualityProfile.PLAIN,
+            use_regex=True,
+            normalized_title="Shrinking",
+            content_name="Shrinking",
+            start_season=3,
+            start_episode=7,
+        )
+    )
+    compiled = re.compile(pattern)
+
+    assert compiled.search("Shrinking S03E07 1080p")
+    assert compiled.search("Shrinking S3E7 1080p")
+    assert compiled.search("Shrinking S03E01-07 1080p")
+    assert compiled.search("Shrinking S03E1-7 1080p")
+    assert compiled.search("Shrinking S04E01 1080p")
+    assert not compiled.search("Shrinking S03E06 1080p")
+    assert not compiled.search("Shrinking S03E01-06 1080p")
+    assert not compiled.search("Shrinking S02E99 1080p")
 
 
 def test_build_title_regex_fragment_normalizes_case_and_separators() -> None:

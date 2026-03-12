@@ -398,13 +398,20 @@ def _normalize_category_filter_token(value: str) -> str:
 
 
 def _indexer_key_variants(value: str | None) -> set[str]:
-    cleaned = _coerce_text(value).casefold()
-    if not cleaned:
+    raw = _coerce_text(value).casefold()
+    if not raw:
         return set()
+    cleaned = raw[4:] if raw.startswith("www.") else raw
     compact = INDEXER_KEY_STRIP_RE.sub("", cleaned)
-    if not compact:
-        return {cleaned}
-    return {cleaned, compact}
+    variants = {item for item in (cleaned, compact) if item}
+    if "." in cleaned:
+        host_without_tld = cleaned.rsplit(".", 1)[0].strip()
+        if host_without_tld:
+            variants.add(host_without_tld)
+            compact_host = INDEXER_KEY_STRIP_RE.sub("", host_without_tld)
+            if compact_host:
+                variants.add(compact_host)
+    return variants
 
 
 def _dedupe_category_labels(raw_labels: list[str]) -> list[str]:
@@ -1018,6 +1025,16 @@ class JackettClient:
         self._configured_indexer_category_labels()
         for result in candidates:
             self._refresh_result_category_labels(result)
+
+    def configured_indexer_category_labels(self) -> dict[str, dict[str, list[str]]]:
+        discovered = self._configured_indexer_category_labels()
+        return {
+            indexer_key: {
+                category_id: list(labels)
+                for category_id, labels in category_labels.items()
+            }
+            for indexer_key, category_labels in discovered.items()
+        }
 
     @staticmethod
     def _remote_payload_for_standard_search(payload: JackettSearchRequest) -> JackettSearchRequest:

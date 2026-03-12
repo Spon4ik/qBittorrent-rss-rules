@@ -10,7 +10,7 @@
       <p class="helper-text">Apply one shared view/sort state from either panel, then save it as your default.</p>
     </div>
     <div class="search-controls-actions">
-      <button type="button" class="button-link muted" data-search-save-defaults>Save as default view</button>
+      <button type="button" class="button-link muted" data-search-save-defaults>Save defaults</button>
       <p class="helper-text" data-search-default-status aria-live="polite"></p>
     </div>
   </div>
@@ -277,7 +277,8 @@
             <div class="search-multiselect-options" data-search-multiselect-options="categories"></div>
           </div>
         </details>
-        <span class="helper-text">Distinct category names translated from result category IDs per indexer dictionary.</span>
+        <span class="helper-text">Category options are scoped to cached results that still match your other active filters; counts show matching items before category filtering.</span>
+        <span class="helper-text search-category-scope-status" data-search-category-scope-status hidden></span>
       </label>
     </div>
   </section>
@@ -299,6 +300,29 @@
   {% endfor %}
 </section>
 {% endif %}
+
+<section class="summary-strip" data-result-queue-options>
+  <div>
+    <p class="eyebrow">Queue to qBittorrent</p>
+    <strong>Use current queue options for all result actions</strong>
+    <p class="helper-text">When opened from a rule, queue actions use that rule category/save path defaults.</p>
+  </div>
+  <div class="search-queue-options-grid">
+    <label class="toggle">
+      <input type="checkbox" data-result-queue-option="paused" {% if queue_defaults.add_paused %}checked{% endif %} />
+      <span>Add paused</span>
+    </label>
+    <label class="toggle">
+      <input type="checkbox" data-result-queue-option="sequential" {% if queue_defaults.sequential_download %}checked{% endif %} />
+      <span>Sequential download</span>
+    </label>
+    <label class="toggle">
+      <input type="checkbox" data-result-queue-option="first_last_piece_prio" {% if queue_defaults.first_last_piece_prio %}checked{% endif %} />
+      <span>First and last pieces first</span>
+    </label>
+  </div>
+  <p class="helper-text" data-result-queue-status aria-live="polite"></p>
+</section>
 
 {{ result_view_panel(search_run.primary_label) }}
 <section class="summary-strip search-summary" data-search-summary="primary">
@@ -414,6 +438,15 @@
     </dl>
     <div class="card-actions">
       <a class="button-link" href="{{ item.new_rule_href }}">Use In New Rule</a>
+      <button
+        type="button"
+        class="button-link"
+        data-result-queue-button
+        data-result-link="{{ item.link }}"
+        data-result-rule-id="{{ queue_defaults.rule_id }}"
+      >
+        Queue
+      </button>
       <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open Result</a>
       {% if item.details_url %}
       <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
@@ -495,6 +528,15 @@
         <td>
           <div class="search-row-actions">
             <a class="button-link" href="{{ item.new_rule_href }}">Use In New Rule</a>
+            <button
+              type="button"
+              class="button-link"
+              data-result-queue-button
+              data-result-link="{{ item.link }}"
+              data-result-rule-id="{{ queue_defaults.rule_id }}"
+            >
+              Queue
+            </button>
             <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open</a>
             {% if item.details_url %}
             <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
@@ -604,6 +646,15 @@
       </dl>
       <div class="card-actions">
         <a class="button-link" href="{{ item.new_rule_href }}">Use In New Rule</a>
+        <button
+          type="button"
+          class="button-link"
+          data-result-queue-button
+          data-result-link="{{ item.link }}"
+          data-result-rule-id="{{ queue_defaults.rule_id }}"
+        >
+          Queue
+        </button>
         <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open Result</a>
         {% if item.details_url %}
         <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
@@ -685,6 +736,15 @@
           <td>
             <div class="search-row-actions">
               <a class="button-link" href="{{ item.new_rule_href }}">Use In New Rule</a>
+              <button
+                type="button"
+                class="button-link"
+                data-result-queue-button
+                data-result-link="{{ item.link }}"
+                data-result-rule-id="{{ queue_defaults.rule_id }}"
+              >
+                Queue
+              </button>
               <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open</a>
               {% if item.details_url %}
               <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>

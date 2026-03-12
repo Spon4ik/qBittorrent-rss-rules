@@ -117,6 +117,33 @@ class QbittorrentClient:
             expect_json=False,
         )
 
+    def add_torrent_url(
+        self,
+        *,
+        link: str,
+        category: str = "",
+        save_path: str = "",
+        paused: bool = True,
+        sequential_download: bool = False,
+        first_last_piece_prio: bool = False,
+    ) -> None:
+        payload: dict[str, str] = {
+            "urls": link,
+            "paused": "true" if paused else "false",
+            "sequentialDownload": "true" if sequential_download else "false",
+            "firstLastPiecePrio": "true" if first_last_piece_prio else "false",
+        }
+        if category.strip():
+            payload["category"] = category.strip()
+        if save_path.strip():
+            payload["savepath"] = save_path.strip()
+        self._request(
+            "POST",
+            "/api/v2/torrents/add",
+            data=payload,
+            expect_json=False,
+        )
+
     def _request(
         self,
         method: str,

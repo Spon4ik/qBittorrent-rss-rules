@@ -311,6 +311,8 @@ class SearchViewPreferencesPayload(BaseModel):
 
     view_mode: str = "table"
     sort_criteria: list[SearchSortPreference] = Field(default_factory=list)
+    default_sequential_download: bool | None = None
+    default_first_last_piece_prio: bool | None = None
 
     @field_validator("view_mode")
     @classmethod
@@ -335,6 +337,16 @@ class SearchViewPreferencesPayload(BaseModel):
         return self
 
 
+class SearchQueueRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    link: str = Field(min_length=1)
+    rule_id: str | None = None
+    add_paused: bool | None = None
+    sequential_download: bool = False
+    first_last_piece_prio: bool = False
+
+
 class RuleFormPayload(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -352,6 +364,8 @@ class RuleFormPayload(BaseModel):
     use_regex: bool = False
     must_contain_override: str | None = None
     must_not_contain: str = ""
+    start_season: int | None = Field(default=None, ge=1, le=99)
+    start_episode: int | None = Field(default=None, ge=1, le=99)
     episode_filter: str = ""
     ignore_days: int = Field(default=0, ge=0)
     add_paused: bool = True
@@ -402,6 +416,12 @@ class RuleFormPayload(BaseModel):
         ]
         return self
 
+    @model_validator(mode="after")
+    def validate_episode_progress_floor(self) -> RuleFormPayload:
+        if (self.start_season is None) ^ (self.start_episode is None):
+            raise ValueError("Set both Start Season and Start Episode, or leave both empty.")
+        return self
+
     @field_validator("feed_urls")
     @classmethod
     def dedupe_feeds(cls, value: list[str]) -> list[str]:
@@ -433,6 +453,8 @@ class SettingsFormPayload(BaseModel):
     movie_category_template: str = "Movies/{title} [imdbid-{imdb_id}]"
     save_path_template: str = ""
     default_add_paused: bool = True
+    default_sequential_download: bool = True
+    default_first_last_piece_prio: bool = True
     default_enabled: bool = True
     profile_1080p_include_tokens: list[str] = Field(default_factory=list)
     profile_1080p_exclude_tokens: list[str] = Field(default_factory=list)

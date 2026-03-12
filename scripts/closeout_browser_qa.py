@@ -352,23 +352,32 @@ def build_qb_handler(state: MockQbState) -> type[BaseHTTPRequestHandler]:
 
 
 def _torznab_indexers_xml() -> str:
-    return (
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<indexers>"
-        "<indexer id=\"alpha\">"
-        "<caps>"
-        "<tv-search available=\"yes\" supportedParams=\"q,imdbid\" />"
-        "<movie-search available=\"yes\" supportedParams=\"q,imdbid\" />"
-        "</caps>"
-        "</indexer>"
-        "<indexer id=\"beta\">"
-        "<caps>"
-        "<tv-search available=\"yes\" supportedParams=\"q,imdbid\" />"
-        "<movie-search available=\"yes\" supportedParams=\"q,imdbid\" />"
-        "</caps>"
-        "</indexer>"
-        "</indexers>"
+    category_tree = (
+        "<categories>"
+        "<category id=\"5000\" name=\"TV\">"
+        "<subcat id=\"5040\" name=\"HD\" />"
+        "<subcat id=\"5050\" name=\"UHD\" />"
+        "<subcat id=\"5070\" name=\"CAM\" />"
+        "<subcat id=\"5080\" name=\"Documentary\" />"
+        "</category>"
+        "<category id=\"3000\" name=\"Audio\">"
+        "<subcat id=\"3030\" name=\"Audiobook\" />"
+        "</category>"
+        "</categories>"
     )
+    indexer_blocks: list[str] = []
+    for indexer_id in ("alpha", "beta", "gamma", "hdrezka", "delta", "epsilon", "zeta", "theta", "books"):
+        indexer_blocks.append(
+            f"<indexer id=\"{indexer_id}\">"
+            "<caps>"
+            "<tv-search available=\"yes\" supportedParams=\"q,imdbid\" />"
+            "<movie-search available=\"yes\" supportedParams=\"q,imdbid\" />"
+            "<book-search available=\"yes\" supportedParams=\"q\" />"
+            f"{category_tree}"
+            "</caps>"
+            "</indexer>"
+        )
+    return f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><indexers>{''.join(indexer_blocks)}</indexers>"
 
 
 def _torznab_caps_xml() -> str:
@@ -1162,23 +1171,27 @@ def main() -> int:
                 documentary_category_option = page.locator(
                     '[data-search-multiselect-options="categories"] label:has-text("TV/Documentary") input[type="checkbox"]'
                 )
+                if documentary_category_option.count() == 0:
+                    documentary_category_option = page.locator(
+                        '[data-search-multiselect-options="categories"] label:has-text("Documentary") input[type="checkbox"]'
+                    )
                 _expect(
-                    documentary_category_option.count() == 1,
-                    "Expected TV/Documentary category option in category multiselect.",
+                    documentary_category_option.count() >= 1,
+                    "Expected a Documentary category option in category multiselect.",
                 )
-                documentary_category_option.check()
+                documentary_category_option.first.check()
                 page.wait_for_timeout(220)
                 _expect(
                     search_filtered_count("fallback") == 1,
                     (
-                        "Expected category dropdown filter TV/Documentary to keep one fallback row; "
+                        "Expected category dropdown Documentary filter to keep one fallback row; "
                         f"got {search_filtered_count('fallback')}."
                     ),
                 )
                 documentary_titles = search_visible_titles("fallback")
                 _expect(
                     len(documentary_titles) == 1 and "Test Cut" in documentary_titles[0],
-                    f"Expected TV/Documentary filter to keep Test Cut only; titles={documentary_titles}",
+                    f"Expected Documentary filter to keep Test Cut only; titles={documentary_titles}",
                 )
                 _expect(
                     request_count() == baseline_requests,

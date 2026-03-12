@@ -4,6 +4,7 @@
 
 - Implementation is complete in the repo for the v0.2.0 release slice.
 - Phase 5 closeout automation is green and phase 6 initial goals are release-validated; follow-up decisions move to v0.2.x.
+- As of 2026-03-12, the next-version cached-refinement/category-integrity work is tracked in `docs/plans/phase-7-cached-refinement-and-category-catalog.md` instead of extending phase-6 scope.
 - The current branch now includes separate Jackett app/qB connection settings, a `/search` page, one-click rule-level search launch links, and search-to-rule handoff without mixing Jackett search into RSS feed selection.
 - Rule-derived searches now clamp overlong saved titles before validation and can still auto-run a title-only fallback when reduced keyword derivation remains invalid.
 - Rule-derived searches now also reuse saved IMDb IDs, release years, and media-type category narrowing when those fields are available, so Jackett can receive richer Torznab parameters than `q` alone.

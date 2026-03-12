@@ -67,6 +67,8 @@ def _ensure_rule_columns() -> None:
         "additional_includes": "TEXT NOT NULL DEFAULT ''",
         "quality_include_tokens": "JSON NOT NULL DEFAULT '[]'",
         "quality_exclude_tokens": "JSON NOT NULL DEFAULT '[]'",
+        "start_season": "INTEGER",
+        "start_episode": "INTEGER",
     }
     expected_settings_columns = {
         "jackett_api_url": "VARCHAR(255)",
@@ -75,6 +77,8 @@ def _ensure_rule_columns() -> None:
         "quality_profile_rules": "JSON NOT NULL DEFAULT '{}'",
         "saved_quality_profiles": "JSON NOT NULL DEFAULT '{}'",
         "default_feed_urls": "JSON NOT NULL DEFAULT '[]'",
+        "default_sequential_download": "BOOLEAN NOT NULL DEFAULT 1",
+        "default_first_last_piece_prio": "BOOLEAN NOT NULL DEFAULT 1",
         "search_result_view_mode": "VARCHAR(16) NOT NULL DEFAULT 'table'",
         "search_sort_criteria": "JSON NOT NULL DEFAULT '[]'",
     }

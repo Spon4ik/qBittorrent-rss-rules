@@ -7,7 +7,15 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from app.models import AppSettings, MediaType, QualityProfile, Rule, SyncStatus
+from app.config import obfuscate_secret
+from app.models import (
+    AppSettings,
+    IndexerCategoryCatalog,
+    MediaType,
+    QualityProfile,
+    Rule,
+    SyncStatus,
+)
 from app.schemas import (
     JackettSearchRequest,
     JackettSearchResult,
@@ -52,7 +60,7 @@ def test_rules_page_header_includes_create_rule_button(app_client) -> None:
     assert '>Create Rule</a>' in response.text
 
 
-def test_run_rule_search_route_redirects_to_search(app_client, db_session) -> None:
+def test_run_rule_search_route_redirects_to_inline_rule_page(app_client, db_session) -> None:
     rule = Rule(
         rule_name="Rule Search Redirect",
         content_name="Rule Search Redirect",
@@ -67,7 +75,40 @@ def test_run_rule_search_route_redirects_to_search(app_client, db_session) -> No
     response = app_client.get(f"/rules/{rule.id}/search", follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == f"/search?rule_id={rule.id}"
+    assert response.headers["location"] == f"/rules/{rule.id}?run_search=1#inline-search-results"
+
+
+def test_run_rule_search_route_preserves_feed_url_overrides(app_client, db_session) -> None:
+    rule = Rule(
+        rule_name="Rule Search Redirect With Feeds",
+        content_name="Rule Search Redirect With Feeds",
+        normalized_title="Rule Search Redirect With Feeds",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/redirect"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    response = app_client.get(
+        f"/rules/{rule.id}/search",
+        params=[
+            ("feed_scope_override", "1"),
+            ("feed_urls", "http://jackett:9117/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc"),
+            ("feed_urls", "http://jackett:9117/api/v2.0/indexers/kinozal/results/torznab/api?apikey=abc"),
+        ],
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        f"/rules/{rule.id}"
+        "?run_search=1"
+        "&feed_scope_override=1"
+        "&feed_urls=http%3A%2F%2Fjackett%3A9117%2Fapi%2Fv2.0%2Findexers%2Frutracker%2Fresults%2Ftorznab%2Fapi%3Fapikey%3Dabc"
+        "&feed_urls=http%3A%2F%2Fjackett%3A9117%2Fapi%2Fv2.0%2Findexers%2Fkinozal%2Fresults%2Ftorznab%2Fapi%3Fapikey%3Dabc"
+        "#inline-search-results"
+    )
 
 
 def test_search_page_renders_jackett_as_separate_source(app_client) -> None:
@@ -160,6 +201,124 @@ def test_search_page_embeds_raw_cache_payload_for_local_refinement(app_client, m
     assert 'data-filter-impact-list="primary"' in response.text
     assert 'data-search-filtered-count="primary"' in response.text
     assert 'data-search-fetched-count="primary"' in response.text
+    assert "data-search-category-scope-status" in response.text
+
+
+def test_search_page_persists_indexer_category_catalog_entries(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    def fake_search(self, payload):
+        return JackettSearchRun(
+            query_variants=["Classic Audio"],
+            raw_results=[
+                JackettSearchResult(
+                    title="Classic Audio Collection",
+                    link="magnet:?xt=urn:btih:AUDIO111",
+                    indexer="rutracker",
+                    category_ids=["101279"],
+                    category_labels=["Audiobooks"],
+                )
+            ],
+            results=[
+                JackettSearchResult(
+                    title="Classic Audio Collection",
+                    link="magnet:?xt=urn:btih:AUDIO111",
+                    indexer="rutracker",
+                    category_ids=["101279"],
+                    category_labels=["Audiobooks"],
+                )
+            ],
+        )
+
+    def fake_configured_indexer_labels(self):
+        return {"rutracker": {"101279": ["Audiobooks", "Audio/Audiobooks"]}}
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", fake_configured_indexer_labels)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "Classic Audio",
+            "media_type": "audiobook",
+        },
+    )
+
+    assert response.status_code == 200
+    row = db_session.get(IndexerCategoryCatalog, ("rutracker", "101279"))
+    assert row is not None
+    assert row.category_name == "Audiobooks"
+    assert row.source == "indexer_caps"
+
+
+def test_search_page_resolves_colliding_category_ids_per_indexer(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    def fake_search(self, payload):
+        return JackettSearchRun(
+            query_variants=["Classic"],
+            raw_results=[
+                JackettSearchResult(
+                    title="Classic RU",
+                    link="magnet:?xt=urn:btih:RU001",
+                    indexer="rutracker",
+                    category_ids=["5000"],
+                    category_labels=[],
+                ),
+                JackettSearchResult(
+                    title="Classic EN",
+                    link="magnet:?xt=urn:btih:EN001",
+                    indexer="booktracker",
+                    category_ids=["5000"],
+                    category_labels=[],
+                ),
+            ],
+            results=[
+                JackettSearchResult(
+                    title="Classic RU",
+                    link="magnet:?xt=urn:btih:RU001",
+                    indexer="rutracker",
+                    category_ids=["5000"],
+                    category_labels=[],
+                ),
+                JackettSearchResult(
+                    title="Classic EN",
+                    link="magnet:?xt=urn:btih:EN001",
+                    indexer="booktracker",
+                    category_ids=["5000"],
+                    category_labels=[],
+                ),
+            ],
+        )
+
+    def fake_configured_indexer_labels(self):
+        return {
+            "rutracker": {"5000": ["TV"]},
+            "booktracker": {"5000": ["Books"]},
+        }
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", fake_configured_indexer_labels)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "Classic",
+            "media_type": "series",
+        },
+    )
+
+    assert response.status_code == 200
+    rutracker_row = db_session.get(IndexerCategoryCatalog, ("rutracker", "5000"))
+    booktracker_row = db_session.get(IndexerCategoryCatalog, ("booktracker", "5000"))
+    assert rutracker_row is not None
+    assert booktracker_row is not None
+    assert rutracker_row.category_name == "TV"
+    assert booktracker_row.category_name == "Books"
 
 
 def test_search_page_uses_saved_result_view_defaults(app_client, db_session, monkeypatch) -> None:
@@ -551,13 +710,17 @@ def test_search_page_from_rule_uses_structured_terms_not_raw_regex(app_client, d
         quality_include_tokens=["mp3"],
         quality_exclude_tokens=["flac"],
         must_contain_override=r"(?i)(?=.*andrew[\s._-]*michael)(?=.*mp3)",
-        feed_urls=["http://feed.example/music"],
+        feed_urls=[
+            "http://jackett:9117/api/v2.0/indexers/musictracker/results/torznab/api?apikey=abc&t=search&cat=3000"
+        ],
     )
     db_session.add(rule)
     db_session.commit()
 
     def fake_search(self, payload):
         assert payload.query == "Andrew Michael Blues Band"
+        assert payload.indexer == "musictracker"
+        assert payload.filter_indexers == ["musictracker"]
         assert payload.imdb_id == "tt7654321"
         assert payload.release_year == "2026"
         assert payload.keywords_all == ["2026"]
@@ -866,7 +1029,235 @@ def test_rule_pages_expose_run_search_actions(app_client, db_session) -> None:
     assert ">Run Search</a>" in index_response.text
     assert edit_response.status_code == 200
     assert f'/rules/{rule.id}/search' in edit_response.text
-    assert ">Run Search</a>" in edit_response.text
+    assert ">Run Search Here</a>" in edit_response.text
+    assert ">Advanced Search Workspace</a>" in edit_response.text
+
+
+def test_edit_rule_page_can_render_inline_search_results(app_client, db_session, monkeypatch) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett:9117",
+        jackett_api_key_encrypted=obfuscate_secret("api-key"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Shrinking Inline Search",
+        content_name="Shrinking",
+        normalized_title="Shrinking",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/inline"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        return JackettSearchRun(
+            request_variants=['t=search q="Shrinking"'],
+            results=[
+                JackettSearchResult(
+                    title="Shrinking S01E01",
+                    link="https://example.com/shrinking.torrent",
+                    indexer="example-indexer",
+                    category_ids=["5000"],
+                    category_labels=["TV"],
+                )
+            ],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "enrich_result_category_labels", lambda self, results: None)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", lambda self: {})
+
+    response = app_client.get(f"/rules/{rule.id}", params={"run_search": "1"})
+
+    assert response.status_code == 200
+    assert 'id="inline-search-results"' in response.text
+    assert "Results on this page" in response.text
+    assert "Shrinking S01E01" in response.text
+    assert "Queue via Rule" in response.text
+    assert 'data-search-table-wrap="primary"' in response.text
+    assert 'data-search-sort-field="1"' in response.text
+    assert 'data-search-view-mode' in response.text
+
+
+def test_edit_rule_inline_search_scopes_single_jackett_feed_indexer(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett:9117",
+        jackett_api_key_encrypted=obfuscate_secret("api-key"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Single Feed Scope",
+        content_name="Single Feed Scope",
+        normalized_title="Single Feed Scope",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=[
+            "http://jackett:9117/api/v2.0/indexers/rutracker/results/torznab/?apikey=abc&t=tvsearch&cat=5000"
+        ],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        assert payload.indexer == "rutracker"
+        assert payload.filter_indexers == ["rutracker"]
+        return JackettSearchRun(
+            request_variants=['t=tvsearch indexer="rutracker" q="Single Feed Scope"'],
+            results=[],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "enrich_result_category_labels", lambda self, results: None)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", lambda self: {})
+
+    response = app_client.get(f"/rules/{rule.id}", params={"run_search": "1"})
+
+    assert response.status_code == 200
+    assert "Search scoped to affected feed indexer: rutracker." in response.text
+
+
+def test_edit_rule_inline_search_uses_feed_url_override_scope(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett:9117",
+        jackett_api_key_encrypted=obfuscate_secret("api-key"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Override Feed Scope",
+        content_name="Override Feed Scope",
+        normalized_title="Override Feed Scope",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=[
+            "http://jackett:9117/api/v2.0/indexers/thepiratebay/results/torznab/api?apikey=abc&t=tvsearch&cat=5000",
+            "http://jackett:9117/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc&t=tvsearch&cat=5000",
+        ],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        assert payload.indexer == "rutracker"
+        assert payload.filter_indexers == ["rutracker"]
+        return JackettSearchRun(
+            request_variants=['t=tvsearch indexer="rutracker" q="Override Feed Scope"'],
+            results=[],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "enrich_result_category_labels", lambda self, results: None)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", lambda self: {})
+
+    response = app_client.get(
+        f"/rules/{rule.id}",
+        params=[
+            ("run_search", "1"),
+            ("feed_scope_override", "1"),
+            (
+                "feed_urls",
+                "http://jackett:9117/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc&t=tvsearch&cat=5000",
+            ),
+        ],
+    )
+
+    assert response.status_code == 200
+    assert "Inline search used current affected-feed selection from the form (not yet saved)." in response.text
+    assert "Search scoped to affected feed indexer: rutracker." in response.text
+
+
+def test_edit_rule_inline_search_scopes_multiple_jackett_feed_indexers(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett:9117",
+        jackett_api_key_encrypted=obfuscate_secret("api-key"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Multi Feed Scope",
+        content_name="Multi Feed Scope",
+        normalized_title="Multi Feed Scope",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=[
+            "http://jackett:9117/api/v2.0/indexers/alpha/results/torznab/api?apikey=abc&t=tvsearch&cat=5000",
+            "http://jackett:9117/api/v2.0/indexers/beta/results/torznab/api?apikey=abc&t=tvsearch&cat=5000",
+        ],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        assert payload.indexer == "all"
+        assert payload.filter_indexers == ["alpha", "beta"]
+        return JackettSearchRun(
+            request_variants=['t=tvsearch indexer="all" q="Multi Feed Scope"'],
+            results=[],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "enrich_result_category_labels", lambda self, results: None)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", lambda self: {})
+
+    response = app_client.get(f"/rules/{rule.id}", params={"run_search": "1"})
+
+    assert response.status_code == 200
+    assert "Search scoped to affected feed indexers: alpha, beta." in response.text
+
+
+def test_edit_rule_inline_search_warns_when_feed_scope_not_derivable(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett:9117",
+        jackett_api_key_encrypted=obfuscate_secret("api-key"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Unparseable Feed Scope",
+        content_name="Unparseable Feed Scope",
+        normalized_title="Unparseable Feed Scope",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/not-jackett"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        assert payload.indexer == "all"
+        assert payload.filter_indexers == []
+        return JackettSearchRun(
+            request_variants=['t=tvsearch indexer="all" q="Unparseable Feed Scope"'],
+            results=[],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "enrich_result_category_labels", lambda self, results: None)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", lambda self: {})
+
+    response = app_client.get(f"/rules/{rule.id}", params={"run_search": "1"})
+
+    assert response.status_code == 200
+    assert "Affected feeds could not be mapped to Jackett indexers; using default indexer scope." in response.text
 
 
 def test_jackett_search_api_returns_results(app_client, monkeypatch) -> None:
@@ -895,6 +1286,143 @@ def test_jackett_search_api_returns_results(app_client, monkeypatch) -> None:
     assert payload["results"][0]["title"] == "The Expanse S01"
 
 
+def test_queue_search_result_api_requires_configured_qb(app_client) -> None:
+    response = app_client.post(
+        "/api/search/queue",
+        json={"link": "https://example.com/result.torrent"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "qBittorrent connection is not configured."
+
+
+def test_queue_search_result_api_uses_rule_defaults(app_client, db_session, monkeypatch) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        default_add_paused=True,
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Queue Rule Defaults",
+        content_name="Queue Rule Defaults",
+        normalized_title="Queue Rule Defaults",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/queue-rule"],
+        assigned_category="Series/Shrinking [imdbid-tt15153834]",
+        save_path="/data/shrinking",
+        add_paused=False,
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    captured: dict[str, object] = {}
+
+    def fake_add_torrent_url(
+        self,
+        *,
+        link: str,
+        category: str = "",
+        save_path: str = "",
+        paused: bool = True,
+        sequential_download: bool = False,
+        first_last_piece_prio: bool = False,
+    ) -> None:
+        captured.update(
+            {
+                "link": link,
+                "category": category,
+                "save_path": save_path,
+                "paused": paused,
+                "sequential_download": sequential_download,
+                "first_last_piece_prio": first_last_piece_prio,
+            }
+        )
+
+    monkeypatch.setattr("app.routes.api.QbittorrentClient.add_torrent_url", fake_add_torrent_url)
+
+    response = app_client.post(
+        "/api/search/queue",
+        json={
+            "link": "https://example.com/shrinking.torrent",
+            "rule_id": rule.id,
+            "sequential_download": True,
+            "first_last_piece_prio": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "queued"
+    assert payload["category"] == "Series/Shrinking [imdbid-tt15153834]"
+    assert payload["save_path"] == "/data/shrinking"
+    assert payload["add_paused"] is False
+    assert payload["sequential_download"] is True
+    assert payload["first_last_piece_prio"] is True
+    assert captured == {
+        "link": "https://example.com/shrinking.torrent",
+        "category": "Series/Shrinking [imdbid-tt15153834]",
+        "save_path": "/data/shrinking",
+        "paused": False,
+        "sequential_download": True,
+        "first_last_piece_prio": True,
+    }
+
+
+def test_queue_search_result_api_uses_settings_default_pause_when_no_rule(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        default_add_paused=False,
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    captured: dict[str, object] = {}
+
+    def fake_add_torrent_url(
+        self,
+        *,
+        link: str,
+        category: str = "",
+        save_path: str = "",
+        paused: bool = True,
+        sequential_download: bool = False,
+        first_last_piece_prio: bool = False,
+    ) -> None:
+        captured.update(
+            {
+                "link": link,
+                "category": category,
+                "save_path": save_path,
+                "paused": paused,
+                "sequential_download": sequential_download,
+                "first_last_piece_prio": first_last_piece_prio,
+            }
+        )
+
+    monkeypatch.setattr("app.routes.api.QbittorrentClient.add_torrent_url", fake_add_torrent_url)
+
+    response = app_client.post(
+        "/api/search/queue",
+        json={"link": "https://example.com/no-rule.torrent"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["category"] == ""
+    assert payload["save_path"] == ""
+    assert payload["add_paused"] is False
+    assert captured["paused"] is False
+
+
 def test_save_search_preferences_api_persists_defaults(app_client, db_session) -> None:
     response = app_client.post(
         "/api/search/preferences",
@@ -904,6 +1432,8 @@ def test_save_search_preferences_api_persists_defaults(app_client, db_session) -
                 {"field": "seeders", "direction": "desc"},
                 {"field": "title", "direction": "asc"},
             ],
+            "default_sequential_download": True,
+            "default_first_last_piece_prio": True,
         },
     )
 
@@ -913,6 +1443,8 @@ def test_save_search_preferences_api_persists_defaults(app_client, db_session) -
         {"field": "seeders", "direction": "desc"},
         {"field": "title", "direction": "asc"},
     ]
+    assert response.json()["default_sequential_download"] is True
+    assert response.json()["default_first_last_piece_prio"] is True
     settings = db_session.get(AppSettings, "default")
     assert settings is not None
     assert settings.search_result_view_mode == "cards"
@@ -920,6 +1452,8 @@ def test_save_search_preferences_api_persists_defaults(app_client, db_session) -
         {"field": "seeders", "direction": "desc"},
         {"field": "title", "direction": "asc"},
     ]
+    assert settings.default_sequential_download is True
+    assert settings.default_first_last_piece_prio is True
 
 
 def test_taxonomy_page_renders_editor(app_client) -> None:
@@ -1145,6 +1679,8 @@ def test_create_rule_persists_locally_even_without_qb_config(app_client, db_sess
             "additional_includes": "remux",
             "quality_include_tokens": ["2160p", "4k"],
             "quality_exclude_tokens": ["1080p", "720p"],
+            "start_season": "3",
+            "start_episode": "7",
             "enabled": "on",
             "add_paused": "on",
             "feed_urls": ["http://feed.example/alpha"],
@@ -1160,7 +1696,27 @@ def test_create_rule_persists_locally_even_without_qb_config(app_client, db_sess
     assert rule.additional_includes == "remux"
     assert rule.quality_include_tokens == ["2160p", "4k"]
     assert rule.quality_exclude_tokens == ["1080p", "720p"]
+    assert rule.start_season == 3
+    assert rule.start_episode == 7
     assert rule.last_sync_status == SyncStatus.ERROR
+
+
+def test_create_rule_rejects_incomplete_episode_progress_floor(app_client) -> None:
+    response = app_client.post(
+        "/api/rules",
+        data={
+            "rule_name": "Rule Floor Validation",
+            "content_name": "Rule Floor Validation",
+            "normalized_title": "Rule Floor Validation",
+            "media_type": "series",
+            "quality_profile": "plain",
+            "start_season": "3",
+            "feed_urls": ["http://feed.example/alpha"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Set both Start Season and Start Episode, or leave both empty." in response.text
 
 
 def test_import_preview_renders_summary_table(app_client) -> None:
@@ -1191,6 +1747,8 @@ def test_save_settings_persists_profile_management_tokens(app_client, db_session
             "save_path_template": "",
             "default_enabled": "on",
             "default_add_paused": "on",
+            "default_sequential_download": "on",
+            "default_first_last_piece_prio": "on",
             "default_quality_profile": "2160p_hdr",
             "profile_1080p_include_tokens": ["full_hd", "1080p"],
             "profile_1080p_exclude_tokens": ["360p"],
@@ -1207,6 +1765,8 @@ def test_save_settings_persists_profile_management_tokens(app_client, db_session
     assert settings.jackett_qb_url == "http://docker-host:9117"
     assert settings.jackett_api_key_encrypted is not None
     assert settings.default_quality_profile.value == "2160p_hdr"
+    assert settings.default_sequential_download is True
+    assert settings.default_first_last_piece_prio is True
     assert settings.quality_profile_rules["1080p"]["include_tokens"] == ["full_hd", "1080p"]
     assert settings.quality_profile_rules["1080p"]["exclude_tokens"] == ["360p"]
     assert settings.quality_profile_rules["2160p_hdr"]["include_tokens"] == ["ultra_hd", "2160p"]

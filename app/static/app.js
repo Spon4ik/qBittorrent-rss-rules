@@ -545,6 +545,70 @@ function deriveSavePath(form) {
     .replaceAll("{category}", category);
 }
 
+function normalizeBoundedPositiveInt(value, { min = 1, max = 99 } = {}) {
+  const cleaned = String(value ?? "").trim();
+  if (!cleaned) {
+    return null;
+  }
+  const numeric = Number(cleaned);
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+  const normalized = Math.floor(numeric);
+  if (normalized < min || normalized > max) {
+    return null;
+  }
+  return normalized;
+}
+
+function buildMinNumericPattern1To99(value) {
+  const boundedValue = Math.min(99, Math.max(1, Number(value) || 1));
+  if (boundedValue === 99) {
+    return "0*99";
+  }
+  if (boundedValue <= 9) {
+    return `(?:0*[${boundedValue}-9]|0*[1-9]\\d)`;
+  }
+  const tens = Math.floor(boundedValue / 10);
+  const ones = boundedValue % 10;
+  const parts = [];
+  if (ones === 0) {
+    parts.push(`0*${tens}\\d`);
+  } else if (ones === 9) {
+    parts.push(`0*${tens}9`);
+  } else {
+    parts.push(`0*${tens}[${ones}-9]`);
+  }
+  if (tens < 9) {
+    parts.push(`0*[${tens + 1}-9]\\d`);
+  }
+  if (parts.length === 1) {
+    return parts[0];
+  }
+  return `(?:${parts.join("|")})`;
+}
+
+function buildEpisodeProgressRegexFragment(startSeasonValue, startEpisodeValue) {
+  const startSeason = normalizeBoundedPositiveInt(startSeasonValue, { min: 1, max: 99 });
+  const startEpisode = normalizeBoundedPositiveInt(startEpisodeValue, { min: 1, max: 99 });
+  if (startSeason === null || startEpisode === null) {
+    return "";
+  }
+  const separators = "[\\s._-]*";
+  const seasonExact = `0*${startSeason}`;
+  const episodeAny = "0*[1-9]\\d?";
+  const episodeGe = buildMinNumericPattern1To99(startEpisode);
+  const fragments = [
+    `s${seasonExact}${separators}e${episodeGe}`,
+    `s${seasonExact}${separators}e${episodeAny}${separators}-${separators}(?:e)?${episodeGe}`,
+  ];
+  if (startSeason < 99) {
+    const seasonAfter = buildMinNumericPattern1To99(startSeason + 1);
+    fragments.unshift(`s${seasonAfter}${separators}e${episodeAny}`);
+  }
+  return `(?:${fragments.join("|")})`;
+}
+
 function deriveGeneratedPattern({
   title,
   useRegex = false,
@@ -558,6 +622,8 @@ function deriveGeneratedPattern({
   qualityIncludeTokens = [],
   qualityExcludeTokens = [],
   qualityPatternMap = {},
+  startSeason = "",
+  startEpisode = "",
 }) {
   const manualMustContainValue = String(manualMustContain || "").trim();
   const fullManualOverride = looksLikeFullMustContainOverride(manualMustContainValue);
@@ -583,6 +649,7 @@ function deriveGeneratedPattern({
       .map((item) => String(item || "").trim())
       .filter(Boolean)),
   ];
+  const episodeProgressFragment = buildEpisodeProgressRegexFragment(startSeason, startEpisode);
   const normalizedTitle = String(title || "").trim();
   const titleFragment = normalizedTitle ? buildTitleRegexFragment(normalizedTitle) : "";
   const normalizedYear = normalizeReleaseYear(releaseYear);
@@ -594,6 +661,7 @@ function deriveGeneratedPattern({
       || manualFragments.length
       || qualityInclude
       || qualityExclude
+      || episodeProgressFragment
   );
   if (!useRegex && !hasGeneratedConditions) {
     return normalizedTitle;
@@ -608,6 +676,9 @@ function deriveGeneratedPattern({
   }
   for (const fragment of buildOptionalKeywordGroupRegexFragments(includeKeywordGroups)) {
     positiveFragments.push(fragment);
+  }
+  if (episodeProgressFragment) {
+    positiveFragments.push(episodeProgressFragment);
   }
   if (qualityInclude) {
     positiveFragments.push(qualityInclude);
@@ -677,6 +748,8 @@ function derivePattern(form, qualityPatternMap) {
     additionalIncludes: form.querySelector('textarea[name="additional_includes"]')?.value || "",
     additionalExcludes: form.querySelector('textarea[name="must_not_contain"]')?.value || "",
     manualMustContain,
+    startSeason: form.querySelector('input[name="start_season"]')?.value || "",
+    startEpisode: form.querySelector('input[name="start_episode"]')?.value || "",
     qualityIncludeTokens: getCheckedValues(form, "quality_include_tokens"),
     qualityExcludeTokens: getCheckedValues(form, "quality_exclude_tokens"),
     qualityPatternMap,
@@ -717,6 +790,36 @@ function parseSearchFilterList(value) {
     items.push(candidate);
   }
   return items;
+}
+
+const FEED_INDEXER_PATH_RE = /\/api\/v2\.0\/indexers\/([^/]+)\/results\/torznab(?:\/api)?\/?$/iu;
+
+function feedUrlToIndexerSlug(feedUrl) {
+  const cleaned = String(feedUrl || "").trim();
+  if (!cleaned) {
+    return "";
+  }
+  let pathname = "";
+  try {
+    pathname = new URL(cleaned, window.location.origin).pathname || "";
+  } catch {
+    pathname = cleaned.split("?")[0] || "";
+  }
+  const match = pathname.match(FEED_INDEXER_PATH_RE);
+  if (!match) {
+    return "";
+  }
+  let decoded = "";
+  try {
+    decoded = decodeURIComponent(match[1] || "");
+  } catch {
+    decoded = match[1] || "";
+  }
+  const slug = decoded.trim().toLocaleLowerCase();
+  if (!slug || slug === "all") {
+    return "";
+  }
+  return slug;
 }
 
 function normalizeCategoryFilterValue(value) {
@@ -771,7 +874,9 @@ function initSearchPage(container) {
     return;
   }
 
-  const queryInput = form.querySelector('input[name="query"]');
+  const queryInput = form.querySelector('input[name="query"]')
+    || form.querySelector('input[name="normalized_title"]')
+    || form.querySelector('input[name="content_name"]');
   const mediaTypeInput = form.querySelector('select[name="media_type"]');
   const imdbIdInput = form.querySelector('input[name="imdb_id"]');
   const includeReleaseYearInput = form.querySelector('input[type="checkbox"][name="include_release_year"]');
@@ -779,9 +884,13 @@ function initSearchPage(container) {
   const keywordsAllInput = form.querySelector('textarea[name="additional_includes"], input[name="keywords_all"]');
   const keywordsAnyInput = form.querySelector('input[name="keywords_any"]');
   const keywordsNotInput = form.querySelector('textarea[name="must_not_contain"], input[name="keywords_not"]');
+  const mustContainOverrideInput = form.querySelector('textarea[name="must_contain_override"]');
   const searchPatternPreview = form.querySelector("#search-pattern-preview");
+  const generatedPatternInput = form.querySelector("#search-pattern-preview, #pattern-preview");
   const sizeMinInput = form.querySelector('input[name="size_min_mb"]');
   const sizeMaxInput = form.querySelector('input[name="size_max_mb"]');
+  const startSeasonInput = form.querySelector('input[name="start_season"]');
+  const startEpisodeInput = form.querySelector('input[name="start_episode"]');
   const filterIndexersInput = form.querySelector('input[name="filter_indexers"]');
   const filterCategoryIdsInput = form.querySelector('input[name="filter_category_ids"]');
   const indexerMultiSelectOptions = form.querySelector('[data-search-multiselect-options="indexers"]');
@@ -792,6 +901,25 @@ function initSearchPage(container) {
   const categoryMultiSelectSummary = form.querySelector('[data-search-multiselect-summary="categories"]');
   const categoryMultiSelectSelectAll = form.querySelector('[data-search-multiselect-select-all="categories"]');
   const categoryMultiSelectClear = form.querySelector('[data-search-multiselect-clear="categories"]');
+  const categoryScopeStatusElement = form.querySelector("[data-search-category-scope-status]");
+  const getFeedUrlInputs = () => Array.from(form.querySelectorAll('input[name="feed_urls"]'));
+  const hasFeedSelectionConstraint = () => getFeedUrlInputs().length > 0;
+  const getSelectedFeedIndexerSlugs = () => {
+    const selected = [];
+    const seen = new Set();
+    for (const input of getFeedUrlInputs()) {
+      if (!input.checked) {
+        continue;
+      }
+      const slug = feedUrlToIndexerSlug(input.value);
+      if (!slug || seen.has(slug)) {
+        continue;
+      }
+      seen.add(slug);
+      selected.push(slug);
+    }
+    return selected;
+  };
   const qualitySearchTermMap = parseJsonData(container.dataset.qualitySearchTerms || "{}", {});
   const qualityPatternMap = parseJsonData(container.dataset.qualityPatternMap || "{}", {});
   const controlSets = Array.from(container.querySelectorAll("[data-search-controls]")).map((controlContainer) => ({
@@ -810,9 +938,9 @@ function initSearchPage(container) {
   const allSortDirectionInputs = controlSets.flatMap((set) => set.sortDirectionInputs);
   const saveDefaultsButtons = controlSets.map((set) => set.saveDefaultsButton).filter(Boolean);
   const saveDefaultsStatuses = controlSets.map((set) => set.saveDefaultsStatus).filter(Boolean);
-  const searchQueryLabel = String(container.dataset.searchQuery || queryInput?.value || "").trim();
-  const searchQuery = normalizeSearchText(searchQueryLabel);
-  const searchImdbId = normalizeSearchImdbId(imdbIdInput?.value || "");
+  const getSearchQueryLabel = () => String(queryInput?.value || container.dataset.searchQuery || "").trim();
+  const getSearchQuery = () => normalizeSearchText(getSearchQueryLabel());
+  const getSearchImdbId = () => normalizeSearchImdbId(imdbIdInput?.value || "");
   const DEFAULT_SORT_FIELD = "published_at";
   const SORT_FIELDS = new Set([
     "published_at",
@@ -886,7 +1014,7 @@ function initSearchPage(container) {
 
   const emptyFilters = () => ({
     query: "",
-    imdbId: searchImdbId,
+    imdbId: getSearchImdbId(),
     releaseYear: "",
     keywordsAll: [],
     keywordsAnyGroups: [],
@@ -895,8 +1023,10 @@ function initSearchPage(container) {
     qualityExcludeTokens: [],
     qualityIncludeRegex: null,
     qualityExcludeRegex: null,
+    generatedPatternRegex: null,
     sizeMinMb: null,
     sizeMaxMb: null,
+    feedScopeBlocksAll: false,
     indexers: [],
     categories: [],
   });
@@ -989,6 +1119,28 @@ function initSearchPage(container) {
     }
   };
 
+  const compileGeneratedPatternRegex = (pattern) => {
+    const cleaned = String(pattern || "").trim();
+    if (!cleaned) {
+      return null;
+    }
+    let source = cleaned;
+    let flags = "u";
+    if (source.startsWith("(?i)")) {
+      source = source.slice(4);
+      flags = "iu";
+    }
+    try {
+      return new RegExp(source, flags);
+    } catch {
+      try {
+        return new RegExp(escapeRegex(source), "iu");
+      } catch {
+        return null;
+      }
+    }
+  };
+
   const cloneFilters = (filters) => ({
     query: filters.query,
     imdbId: filters.imdbId,
@@ -1000,8 +1152,10 @@ function initSearchPage(container) {
     qualityExcludeTokens: [...(filters.qualityExcludeTokens || [])],
     qualityIncludeRegex: filters.qualityIncludeRegex || null,
     qualityExcludeRegex: filters.qualityExcludeRegex || null,
+    generatedPatternRegex: filters.generatedPatternRegex || null,
     sizeMinMb: filters.sizeMinMb,
     sizeMaxMb: filters.sizeMaxMb,
+    feedScopeBlocksAll: Boolean(filters.feedScopeBlocksAll),
     indexers: [...filters.indexers],
     categories: [...filters.categories],
   });
@@ -1051,6 +1205,22 @@ function initSearchPage(container) {
     }
   };
 
+  const readQueueDefaultsForSave = () => {
+    const optionsContainer = container.querySelector("[data-result-queue-options]");
+    if (!optionsContainer) {
+      return {
+        default_sequential_download: null,
+        default_first_last_piece_prio: null,
+      };
+    }
+    const sequentialInput = optionsContainer.querySelector('[data-result-queue-option="sequential"]');
+    const firstLastInput = optionsContainer.querySelector('[data-result-queue-option="first_last_piece_prio"]');
+    return {
+      default_sequential_download: sequentialInput ? Boolean(sequentialInput.checked) : null,
+      default_first_last_piece_prio: firstLastInput ? Boolean(firstLastInput.checked) : null,
+    };
+  };
+
   const syncReleaseYearFieldState = () => {
     if (!releaseYearInput) {
       return;
@@ -1097,6 +1267,8 @@ function initSearchPage(container) {
       additionalIncludes: keywordsAllInput?.value || "",
       additionalExcludes: tokenState.manualKeywordsNot,
       additionalIncludeGroups: anyKeywordGroups,
+      startSeason: startSeasonInput?.value || "",
+      startEpisode: startEpisodeInput?.value || "",
       qualityIncludeTokens: tokenState.includeKeywordTokens,
       qualityExcludeTokens: tokenState.excludeKeywordTokens,
       qualityPatternMap,
@@ -1110,51 +1282,78 @@ function initSearchPage(container) {
     searchPatternPreview.value = getSearchPatternPreviewValue();
   };
 
-  const getActiveFilters = () => ({
-    ...(() => {
-      const tokenState = resolveSearchTokenKeywordState();
-      const includeKeywordGroups = parseAdditionalKeywordAlternativeGroups(keywordsAllInput?.value || "");
-      const requiredIncludeKeywords = includeKeywordGroups
-        .filter((group) => group.length === 1)
-        .map((group) => group[0]);
-      const includeAnyGroups = includeKeywordGroups.filter((group) => group.length > 1);
-      const keywordsAnyGroups = parseSearchAnyKeywordGroups(keywordsAnyInput?.value || "");
-      keywordsAnyGroups.unshift(...includeAnyGroups);
-      if (tokenState.includeKeywordTerms.length > 0) {
-        keywordsAnyGroups.push(tokenState.includeKeywordTerms);
+  const getGeneratedPatternForFilters = () => {
+    if (searchPatternPreview) {
+      return String(searchPatternPreview.value || "").trim();
+    }
+    if (generatedPatternInput?.id === "pattern-preview") {
+      return String(derivePattern(form, qualityPatternMap) || "").trim();
+    }
+    return String(generatedPatternInput?.value || "").trim();
+  };
+
+  const getActiveFilters = () => {
+    const tokenState = resolveSearchTokenKeywordState();
+    const includeKeywordGroups = parseAdditionalKeywordAlternativeGroups(keywordsAllInput?.value || "");
+    const requiredIncludeKeywords = includeKeywordGroups
+      .filter((group) => group.length === 1)
+      .map((group) => group[0]);
+    const includeAnyGroups = includeKeywordGroups.filter((group) => group.length > 1);
+    const keywordsAnyGroups = parseSearchAnyKeywordGroups(keywordsAnyInput?.value || "");
+    keywordsAnyGroups.unshift(...includeAnyGroups);
+    if (tokenState.includeKeywordTerms.length > 0) {
+      keywordsAnyGroups.push(tokenState.includeKeywordTerms);
+    }
+
+    let feedScopeBlocksAll = false;
+    let selectedIndexers = parseSearchFilterList(filterIndexersInput?.value || "")
+      .map((item) => item.toLocaleLowerCase());
+    if (hasFeedSelectionConstraint()) {
+      const selectedFeedIndexers = getSelectedFeedIndexerSlugs();
+      if (selectedFeedIndexers.length === 0) {
+        feedScopeBlocksAll = true;
+        selectedIndexers = [];
+      } else if (selectedIndexers.length === 0) {
+        selectedIndexers = selectedFeedIndexers;
+      } else {
+        selectedIndexers = selectedIndexers.filter((item) => selectedFeedIndexers.includes(item));
       }
-      return {
-        query: searchQuery,
-        imdbId: searchImdbId,
-        releaseYear: includeReleaseYearInput?.checked
-          ? normalizeReleaseYear(releaseYearInput?.value || "")
-          : "",
-        keywordsAll: requiredIncludeKeywords,
-        keywordsAnyGroups,
-        keywordsNot: mergeUniqueTerms(
-          tokenState.manualKeywordsNot,
-          tokenState.excludeKeywordTerms
-        ),
-        qualityIncludeTokens: tokenState.includeKeywordTokens,
-        qualityExcludeTokens: tokenState.excludeKeywordTokens,
-        qualityIncludeRegex: tokenState.includeKeywordRegex,
-        qualityExcludeRegex: tokenState.excludeKeywordRegex,
-      };
-    })(),
-    sizeMinMb: parseSearchMb(sizeMinInput?.value || ""),
-    sizeMaxMb: parseSearchMb(sizeMaxInput?.value || ""),
-    indexers: parseSearchFilterList(filterIndexersInput?.value || "").map((item) => item.toLocaleLowerCase()),
-    categories: parseSearchFilterList(filterCategoryIdsInput?.value || "")
-      .map((item) => normalizeCategoryFilterValue(item))
-      .filter(Boolean),
-  });
+    }
+
+    return {
+      query: getSearchQuery(),
+      imdbId: getSearchImdbId(),
+      releaseYear: includeReleaseYearInput?.checked
+        ? normalizeReleaseYear(releaseYearInput?.value || "")
+        : "",
+      keywordsAll: requiredIncludeKeywords,
+      keywordsAnyGroups,
+      keywordsNot: mergeUniqueTerms(
+        tokenState.manualKeywordsNot,
+        tokenState.excludeKeywordTerms
+      ),
+      qualityIncludeTokens: tokenState.includeKeywordTokens,
+      qualityExcludeTokens: tokenState.excludeKeywordTokens,
+      qualityIncludeRegex: tokenState.includeKeywordRegex,
+      qualityExcludeRegex: tokenState.excludeKeywordRegex,
+      generatedPatternRegex: compileGeneratedPatternRegex(getGeneratedPatternForFilters()),
+      sizeMinMb: parseSearchMb(sizeMinInput?.value || ""),
+      sizeMaxMb: parseSearchMb(sizeMaxInput?.value || ""),
+      feedScopeBlocksAll,
+      indexers: selectedIndexers,
+      categories: parseSearchFilterList(filterCategoryIdsInput?.value || "")
+        .map((item) => normalizeCategoryFilterValue(item))
+        .filter(Boolean),
+    };
+  };
 
   const buildFilterValues = (filters) => {
     const values = [];
     if (filters.query) {
+      const activeQueryLabel = getSearchQueryLabel();
       values.push({
         kind: "query",
-        label: `Title query: ${searchQueryLabel || filters.query}`,
+        label: `Title query: ${activeQueryLabel || filters.query}`,
         value: filters.query,
       });
     }
@@ -1221,6 +1420,13 @@ function initSearchPage(container) {
         value: filters.sizeMaxMb,
       });
     }
+    if (filters.feedScopeBlocksAll) {
+      values.push({
+        kind: "feed_scope_none",
+        label: "Affected feeds: none selected",
+        value: true,
+      });
+    }
     for (const indexer of filters.indexers) {
       values.push({
         kind: "filter_indexer",
@@ -1260,6 +1466,8 @@ function initSearchPage(container) {
       filters.sizeMinMb = filterValue.value;
     } else if (filterValue.kind === "size_max_mb") {
       filters.sizeMaxMb = filterValue.value;
+    } else if (filterValue.kind === "feed_scope_none") {
+      filters.feedScopeBlocksAll = true;
     } else if (filterValue.kind === "filter_indexer") {
       filters.indexers = [filterValue.value];
     } else if (filterValue.kind === "filter_category") {
@@ -1296,6 +1504,8 @@ function initSearchPage(container) {
       next.sizeMinMb = null;
     } else if (filterValue.kind === "size_max_mb") {
       next.sizeMaxMb = null;
+    } else if (filterValue.kind === "feed_scope_none") {
+      next.feedScopeBlocksAll = false;
     } else if (filterValue.kind === "filter_indexer") {
       next.indexers = next.indexers.filter((item) => item !== filterValue.value);
     } else if (filterValue.kind === "filter_category") {
@@ -1407,6 +1617,9 @@ function initSearchPage(container) {
     if (!matchesQuery(entry.titleSurface, filters.query, entry.imdbId, filters.imdbId)) {
       return false;
     }
+    if (filters.feedScopeBlocksAll) {
+      return false;
+    }
 
     for (const keyword of filters.keywordsAll) {
       if (!containsTerm(entry.textSurface, keyword)) {
@@ -1430,6 +1643,9 @@ function initSearchPage(container) {
       return false;
     }
     if (filters.qualityExcludeRegex && filters.qualityExcludeRegex.test(entry.regexSurface)) {
+      return false;
+    }
+    if (filters.generatedPatternRegex && !filters.generatedPatternRegex.test(entry.regexSurface)) {
       return false;
     }
 
@@ -1607,6 +1823,9 @@ function initSearchPage(container) {
 
   const allEntries = sections.flatMap((section) => sectionState[section]?.entries || []);
   let applyLocalFilters = () => {};
+  const noOpMultiselectController = {
+    refreshOptions: () => {},
+  };
   const buildDistinctIndexerOptions = () => {
     const options = [];
     const seen = new Set();
@@ -1640,6 +1859,83 @@ function initSearchPage(container) {
     }
     return options.sort((left, right) => left.label.localeCompare(right.label, undefined, { sensitivity: "base" }));
   };
+  const buildCategoryOptionsForFilters = (filtersWithoutCategories) => {
+    const optionsByKey = new Map();
+    for (const entry of allEntries) {
+      if (!entryMatchesFilters(entry, filtersWithoutCategories)) {
+        continue;
+      }
+      const labels = (entry.categoryLabels && entry.categoryLabels.length > 0)
+        ? entry.categoryLabels
+        : entry.categoryIds;
+      for (const rawLabel of labels || []) {
+        const label = String(rawLabel || "").trim();
+        const key = normalizeCategoryFilterValue(label);
+        if (!label || !key) {
+          continue;
+        }
+        const existing = optionsByKey.get(key);
+        if (existing) {
+          existing.count += 1;
+          continue;
+        }
+        optionsByKey.set(key, {
+          value: label,
+          label,
+          key,
+          count: 1,
+        });
+      }
+    }
+    return Array.from(optionsByKey.values())
+      .sort((left, right) => left.label.localeCompare(right.label, undefined, { sensitivity: "base" }));
+  };
+  const updateCategoryScopeStatus = (filtersWithoutCategories, categoryOptions) => {
+    if (!categoryScopeStatusElement) {
+      return;
+    }
+    const selectedCategories = parseStoredMultiselectValues(filterCategoryIdsInput, normalizeCategoryFilterValue);
+    if (selectedCategories.length === 0) {
+      categoryScopeStatusElement.textContent = "";
+      categoryScopeStatusElement.hidden = true;
+      categoryScopeStatusElement.classList.remove("warning");
+      return;
+    }
+
+    const categoryOptionByKey = new Map(categoryOptions.map((option) => [option.key, option]));
+    const staleSelections = selectedCategories.filter((item) => {
+      const option = categoryOptionByKey.get(item.key);
+      return !option || option.count <= 0;
+    });
+    if (staleSelections.length > 0) {
+      const staleLabels = staleSelections.map((item) => item.value).join(", ");
+      categoryScopeStatusElement.textContent = (
+        `Selected categories currently have no cached matches with other active filters: ${staleLabels}.`
+      );
+      categoryScopeStatusElement.hidden = false;
+      categoryScopeStatusElement.classList.add("warning");
+      return;
+    }
+
+    const selectedKeys = new Set(selectedCategories.map((item) => item.key));
+    let matchingBeforeCategoryCount = 0;
+    for (const entry of allEntries) {
+      if (!entryMatchesFilters(entry, filtersWithoutCategories)) {
+        continue;
+      }
+      if ((entry.categoryValues || []).some((item) => selectedKeys.has(item))) {
+        matchingBeforeCategoryCount += 1;
+      }
+    }
+    const categoryLabel = selectedCategories.length === 1 ? "category" : "categories";
+    const resultLabel = matchingBeforeCategoryCount === 1 ? "result" : "results";
+    categoryScopeStatusElement.textContent = (
+      `${selectedCategories.length} ${categoryLabel} selected; `
+      + `${matchingBeforeCategoryCount} cached ${resultLabel} match before category-only narrowing.`
+    );
+    categoryScopeStatusElement.hidden = false;
+    categoryScopeStatusElement.classList.remove("warning");
+  };
 
   const initSearchMultiselect = ({
     storageInput,
@@ -1651,108 +1947,142 @@ function initSearchPage(container) {
     emptyLabel,
     normalizeValue,
     options,
+    onSelectionChange = () => {},
+    renderOption = (option) => option.label,
   }) => {
     if (!storageInput || !optionsContainer || !summaryElement) {
-      return;
+      return noOpMultiselectController;
     }
+    let currentOptions = Array.isArray(options) ? [...options] : [];
 
-    const selectedMap = new Map(parseStoredMultiselectValues(storageInput, normalizeValue).map((item) => [item.key, item.value]));
-    for (const option of options) {
-      if (!selectedMap.has(option.key)) {
-        continue;
-      }
-      selectedMap.set(option.key, option.value);
-    }
-    for (const [key, value] of selectedMap.entries()) {
-      if (options.some((item) => item.key === key)) {
-        continue;
-      }
-      options.push({
-        key,
-        value,
-        label: `${value} (typed)`,
-      });
-    }
+    const readSelectedFromStorage = () => (
+      new Map(parseStoredMultiselectValues(storageInput, normalizeValue).map((item) => [item.key, item.value]))
+    );
 
-    if (options.length === 0) {
-      optionsContainer.innerHTML = "";
-      const emptyElement = document.createElement("p");
-      emptyElement.className = "search-multiselect-empty";
-      emptyElement.textContent = emptyLabel;
-      optionsContainer.appendChild(emptyElement);
-      const existingValues = parseStoredMultiselectValues(storageInput, normalizeValue);
-      summaryElement.textContent = existingValues.length > 0
-        ? existingValues.map((item) => item.value).join(", ")
-        : allLabel;
-      if (selectAllButton) {
-        selectAllButton.disabled = true;
+    const updateSummary = (selected) => {
+      if (selected.length === 0) {
+        summaryElement.textContent = allLabel;
+        return;
       }
-      if (clearButton) {
-        clearButton.disabled = true;
+      if (selected.length <= 2) {
+        summaryElement.textContent = selected.map((item) => item.value).join(", ");
+        return;
       }
-      return;
-    }
+      summaryElement.textContent = `${selected.length} selected`;
+    };
 
-    const syncFromUi = () => {
+    const syncFromUi = ({ notify } = { notify: false }) => {
       const selected = Array.from(optionsContainer.querySelectorAll('input[type="checkbox"]:checked')).map((input) => ({
         value: String(input.value || "").trim(),
         key: String(input.dataset.searchFilterKey || ""),
       }));
       storageInput.value = selected.map((item) => item.value).join(", ");
-      if (selected.length === 0) {
-        summaryElement.textContent = allLabel;
-      } else if (selected.length <= 2) {
-        summaryElement.textContent = selected.map((item) => item.value).join(", ");
-      } else {
-        summaryElement.textContent = `${selected.length} selected`;
+      updateSummary(selected);
+      if (notify) {
+        onSelectionChange();
       }
-      applyLocalFilters();
     };
 
-    optionsContainer.innerHTML = "";
-    const selectedKeys = new Set(selectedMap.keys());
-    for (const option of options) {
-      const optionLabel = document.createElement("label");
-      optionLabel.className = "search-multiselect-option";
+    const render = () => {
+      const selectedMap = readSelectedFromStorage();
+      const optionsToRender = currentOptions.map((option) => ({ ...option, inactive: false }));
+      for (const [key, value] of selectedMap.entries()) {
+        if (optionsToRender.some((item) => item.key === key)) {
+          continue;
+        }
+        optionsToRender.push({
+          key,
+          value,
+          label: `${value}`,
+          count: 0,
+          inactive: true,
+        });
+      }
 
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.value = option.value;
-      checkbox.dataset.searchFilterKey = option.key;
-      checkbox.checked = selectedKeys.has(option.key);
-      checkbox.addEventListener("change", syncFromUi);
+      if (optionsToRender.length === 0) {
+        optionsContainer.innerHTML = "";
+        const emptyElement = document.createElement("p");
+        emptyElement.className = "search-multiselect-empty";
+        emptyElement.textContent = emptyLabel;
+        optionsContainer.appendChild(emptyElement);
+        updateSummary(parseStoredMultiselectValues(storageInput, normalizeValue));
+        if (selectAllButton) {
+          selectAllButton.disabled = true;
+        }
+        if (clearButton) {
+          clearButton.disabled = true;
+        }
+        return;
+      }
 
-      const text = document.createElement("span");
-      text.textContent = option.label;
-      optionLabel.append(checkbox, text);
-      optionsContainer.appendChild(optionLabel);
-    }
+      optionsContainer.innerHTML = "";
+      const selectedKeys = new Set(selectedMap.keys());
+      for (const option of optionsToRender) {
+        const optionLabel = document.createElement("label");
+        optionLabel.className = "search-multiselect-option";
+        if (option.inactive) {
+          optionLabel.classList.add("search-multiselect-option--inactive");
+        }
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = option.value;
+        checkbox.dataset.searchFilterKey = option.key;
+        checkbox.checked = selectedKeys.has(option.key);
+        checkbox.addEventListener("change", () => syncFromUi({ notify: true }));
+
+        const renderedOption = renderOption(option);
+        if (Array.isArray(renderedOption)) {
+          optionLabel.append(checkbox, ...renderedOption);
+        } else if (renderedOption instanceof Node) {
+          optionLabel.append(checkbox, renderedOption);
+        } else {
+          const text = document.createElement("span");
+          text.className = "search-multiselect-option-text";
+          text.textContent = String(renderedOption ?? option.label);
+          optionLabel.append(checkbox, text);
+        }
+        optionsContainer.appendChild(optionLabel);
+      }
+
+      if (selectAllButton) {
+        selectAllButton.disabled = false;
+      }
+      if (clearButton) {
+        clearButton.disabled = false;
+      }
+      syncFromUi({ notify: false });
+    };
 
     if (selectAllButton) {
-      selectAllButton.disabled = false;
       selectAllButton.addEventListener("click", (event) => {
         event.preventDefault();
         optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((input) => {
           input.checked = true;
         });
-        syncFromUi();
+        syncFromUi({ notify: true });
       });
     }
     if (clearButton) {
-      clearButton.disabled = false;
       clearButton.addEventListener("click", (event) => {
         event.preventDefault();
         optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((input) => {
           input.checked = false;
         });
-        syncFromUi();
+        syncFromUi({ notify: true });
       });
     }
 
-    syncFromUi();
+    render();
+    return {
+      refreshOptions(nextOptions) {
+        currentOptions = Array.isArray(nextOptions) ? [...nextOptions] : [];
+        render();
+      },
+    };
   };
 
-  initSearchMultiselect({
+  const indexerMultiselectController = initSearchMultiselect({
     storageInput: filterIndexersInput,
     optionsContainer: indexerMultiSelectOptions,
     summaryElement: indexerMultiSelectSummary,
@@ -1762,9 +2092,10 @@ function initSearchPage(container) {
     emptyLabel: "Run a search to populate indexers.",
     normalizeValue: (value) => String(value || "").trim().toLocaleLowerCase(),
     options: buildDistinctIndexerOptions(),
+    onSelectionChange: () => applyLocalFilters(),
   });
 
-  initSearchMultiselect({
+  const categoryMultiselectController = initSearchMultiselect({
     storageInput: filterCategoryIdsInput,
     optionsContainer: categoryMultiSelectOptions,
     summaryElement: categoryMultiSelectSummary,
@@ -1774,6 +2105,19 @@ function initSearchPage(container) {
     emptyLabel: "Run a search to populate categories.",
     normalizeValue: normalizeCategoryFilterValue,
     options: buildDistinctCategoryOptions(),
+    onSelectionChange: () => applyLocalFilters(),
+    renderOption: (option) => {
+      const text = document.createElement("span");
+      text.className = "search-multiselect-option-text";
+      text.textContent = option.label;
+      if (typeof option.count !== "number") {
+        return text;
+      }
+      const countBadge = document.createElement("span");
+      countBadge.className = "search-multiselect-option-count";
+      countBadge.textContent = option.inactive ? "inactive" : String(option.count);
+      return [text, countBadge];
+    },
   });
 
   const applyViewMode = () => {
@@ -1906,7 +2250,14 @@ function initSearchPage(container) {
 
   applyLocalFilters = () => {
     refreshSearchPatternPreview();
-    const filters = getActiveFilters();
+    let filters = getActiveFilters();
+    const filtersWithoutCategories = cloneFilters(filters);
+    filtersWithoutCategories.categories = [];
+    const scopedCategoryOptions = buildCategoryOptionsForFilters(filtersWithoutCategories);
+    categoryMultiselectController.refreshOptions(scopedCategoryOptions);
+    updateCategoryScopeStatus(filtersWithoutCategories, scopedCategoryOptions);
+    indexerMultiselectController.refreshOptions(buildDistinctIndexerOptions());
+    filters = getActiveFilters();
     const sortCriteria = getSortCriteria();
     applyViewMode();
     applyFiltersForSection("primary", filters, sortCriteria);
@@ -1919,6 +2270,10 @@ function initSearchPage(container) {
     keywordsAllInput,
     keywordsAnyInput,
     keywordsNotInput,
+    mustContainOverrideInput,
+    generatedPatternInput,
+    startSeasonInput,
+    startEpisodeInput,
     sizeMinInput,
     sizeMaxInput,
     filterIndexersInput,
@@ -1931,9 +2286,23 @@ function initSearchPage(container) {
     input.addEventListener("change", applyLocalFilters);
   }
 
+  form.querySelector("#feed-options")?.addEventListener("change", (event) => {
+    if (!(event.target instanceof HTMLInputElement)) {
+      return;
+    }
+    if (event.target.name !== "feed_urls") {
+      return;
+    }
+    applyLocalFilters();
+  });
+
   if (queryInput) {
-    queryInput.addEventListener("input", refreshSearchPatternPreview);
-    queryInput.addEventListener("change", refreshSearchPatternPreview);
+    const refreshAndApplyLocalFilters = () => {
+      refreshSearchPatternPreview();
+      applyLocalFilters();
+    };
+    queryInput.addEventListener("input", refreshAndApplyLocalFilters);
+    queryInput.addEventListener("change", refreshAndApplyLocalFilters);
   }
 
   if (mediaTypeInput) {
@@ -1980,6 +2349,7 @@ function initSearchPage(container) {
             body: JSON.stringify({
               view_mode: controlState.viewMode,
               sort_criteria: controlState.sortCriteria,
+              ...readQueueDefaultsForSave(),
             }),
           });
           const payload = await response.json();
@@ -1987,7 +2357,7 @@ function initSearchPage(container) {
             const errorMessage = String(payload?.error || "Could not save search view defaults.");
             throw new Error(errorMessage);
           }
-          setSaveDefaultStatus("Saved. New searches will use this view and sort order.");
+          setSaveDefaultStatus("Saved. New searches will use this view, sort order, and queue options.");
         } catch (error) {
           const message = error instanceof Error ? error.message : "Could not save search view defaults.";
           setSaveDefaultStatus(message, true);
@@ -2004,6 +2374,114 @@ function initSearchPage(container) {
   syncReleaseYearFieldState();
   syncControlSets();
   applyLocalFilters();
+}
+
+function initResultQueueActions(root = document) {
+  const queueButtons = Array.from(root.querySelectorAll("[data-result-queue-button]"));
+  if (queueButtons.length === 0) {
+    return;
+  }
+
+  const queueOptionContainers = Array.from(root.querySelectorAll("[data-result-queue-options]"));
+  const statusElements = Array.from(root.querySelectorAll("[data-result-queue-status]"));
+
+  const resolveQueueOptionContainer = (button) => {
+    const localScope = button.closest("[data-search-page], #inline-search-results");
+    if (localScope) {
+      const scopedContainer = localScope.querySelector("[data-result-queue-options]");
+      if (scopedContainer) {
+        return scopedContainer;
+      }
+    }
+    return queueOptionContainers[0] || null;
+  };
+
+  const resolveStatusTargets = (button) => {
+    const container = resolveQueueOptionContainer(button);
+    if (container) {
+      const scopedStatus = Array.from(container.querySelectorAll("[data-result-queue-status]"));
+      if (scopedStatus.length > 0) {
+        return scopedStatus;
+      }
+    }
+    return statusElements;
+  };
+
+  const setQueueStatus = (button, message, isError = false) => {
+    for (const statusElement of resolveStatusTargets(button)) {
+      statusElement.textContent = message;
+      statusElement.style.color = isError ? "var(--danger)" : "";
+    }
+  };
+
+  const readQueueOptions = (button) => {
+    const optionsContainer = resolveQueueOptionContainer(button);
+    const pausedInput = optionsContainer?.querySelector('[data-result-queue-option="paused"]');
+    const sequentialInput = optionsContainer?.querySelector('[data-result-queue-option="sequential"]');
+    const firstLastInput = optionsContainer?.querySelector('[data-result-queue-option="first_last_piece_prio"]');
+    return {
+      addPaused: pausedInput ? Boolean(pausedInput.checked) : true,
+      sequentialDownload: Boolean(sequentialInput?.checked),
+      firstLastPiecePrio: Boolean(firstLastInput?.checked),
+    };
+  };
+
+  for (const button of queueButtons) {
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      const resultLink = String(button.dataset.resultLink || "").trim();
+      if (!resultLink) {
+        setQueueStatus(button, "Could not queue: missing result link.", true);
+        return;
+      }
+      const ruleId = String(button.dataset.resultRuleId || "").trim();
+      const queueOptions = readQueueOptions(button);
+      const originalLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = "Queueing...";
+      setQueueStatus(button, "Queueing result in qBittorrent...");
+
+      try {
+        const response = await fetch("/api/search/queue", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            link: resultLink,
+            rule_id: ruleId || null,
+            add_paused: queueOptions.addPaused,
+            sequential_download: queueOptions.sequentialDownload,
+            first_last_piece_prio: queueOptions.firstLastPiecePrio,
+          }),
+        });
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch {
+          payload = {};
+        }
+        if (!response.ok) {
+          const errorMessage = String(payload?.error || "Could not queue this result.");
+          throw new Error(errorMessage);
+        }
+        const queueSummary = [
+          "Queued in qBittorrent.",
+          payload?.category ? `Category: ${payload.category}.` : "",
+          payload?.save_path ? `Save path: ${payload.save_path}.` : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        setQueueStatus(button, queueSummary);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not queue this result.";
+        setQueueStatus(button, message, true);
+      } finally {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }
+    });
+  }
 }
 
 function initRuleForm(form) {
@@ -2039,6 +2517,7 @@ function initRuleForm(form) {
   const overwriteProfileButton = form.querySelector("#filter-profile-overwrite");
   const releaseYearInput = form.querySelector('input[name="release_year"]');
   const imdbFieldWrapper = form.querySelector("[data-imdb-field]");
+  const runSearchHereLink = document.querySelector("[data-run-search-here]");
 
   let categoryTouched = Boolean(categoryInput?.value.trim());
   let savePathTouched = Boolean(savePathInput?.value.trim());
@@ -2576,6 +3055,23 @@ function initRuleForm(form) {
     renderFeedOptions(mergedFeeds, selectedUrls);
   });
 
+  runSearchHereLink?.addEventListener("click", (event) => {
+    event.preventDefault();
+    const href = runSearchHereLink.getAttribute("href") || "";
+    if (!href) {
+      return;
+    }
+    const url = new URL(href, window.location.origin);
+    url.searchParams.set("feed_scope_override", "1");
+    for (const input of getFeedCheckboxes()) {
+      if (!input.checked) {
+        continue;
+      }
+      url.searchParams.append("feed_urls", input.value);
+    }
+    window.location.href = `${url.pathname}${url.search}${url.hash}`;
+  });
+
   applyMediaTypeVisibility(currentMediaType);
   syncQualityProfileValue();
   refreshDerivedFields();
@@ -2595,6 +3091,8 @@ function initSettingsForm(form) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  initResultQueueActions(document);
+
   const searchPage = document.querySelector("[data-search-page]");
   if (searchPage) {
     initSearchPage(searchPage);

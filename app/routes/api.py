@@ -26,6 +26,7 @@ from app.schemas import (
     JackettSearchRequest,
     MetadataLookupRequest,
     RuleFormPayload,
+    SearchQueueRequest,
     SearchViewPreferencesPayload,
     SettingsFormPayload,
 )
@@ -91,6 +92,8 @@ def _raw_rule_form_data(form: Any) -> dict[str, Any]:
         "use_regex": _bool_from_form(form, "use_regex"),
         "must_contain_override": form.get("must_contain_override") or None,
         "must_not_contain": form.get("must_not_contain", ""),
+        "start_season": form.get("start_season") or None,
+        "start_episode": form.get("start_episode") or None,
         "episode_filter": form.get("episode_filter", ""),
         "ignore_days": form.get("ignore_days", 0),
         "add_paused": _bool_from_form(form, "add_paused"),
@@ -128,6 +131,8 @@ def _raw_settings_form_data(form: Any) -> dict[str, Any]:
         ),
         "save_path_template": form.get("save_path_template", ""),
         "default_add_paused": _bool_from_form(form, "default_add_paused"),
+        "default_sequential_download": _bool_from_form(form, "default_sequential_download"),
+        "default_first_last_piece_prio": _bool_from_form(form, "default_first_last_piece_prio"),
         "default_enabled": _bool_from_form(form, "default_enabled"),
         "profile_1080p_include_tokens": form.getlist("profile_1080p_include_tokens"),
         "profile_1080p_exclude_tokens": form.getlist("profile_1080p_exclude_tokens"),
@@ -328,6 +333,8 @@ def _apply_rule_payload_to_model(
     rule.use_regex = payload.use_regex
     rule.must_contain_override = payload.must_contain_override
     rule.must_not_contain = payload.must_not_contain
+    rule.start_season = payload.start_season
+    rule.start_episode = payload.start_episode
     rule.episode_filter = payload.episode_filter
     rule.ignore_days = payload.ignore_days
     rule.add_paused = payload.add_paused
@@ -360,6 +367,8 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
         movie_category_template=settings.movie_category_template,
         save_path_template=settings.save_path_template,
         default_add_paused=settings.default_add_paused,
+        default_sequential_download=bool(getattr(settings, "default_sequential_download", True)),
+        default_first_last_piece_prio=bool(getattr(settings, "default_first_last_piece_prio", True)),
         default_enabled=settings.default_enabled,
         quality_profile_rules=settings.quality_profile_rules,
         saved_quality_profiles=settings.saved_quality_profiles,
@@ -400,6 +409,56 @@ def jackett_search(
     return JSONResponse(result.model_dump(mode="json"))
 
 
+@router.post("/search/queue")
+def queue_search_result(
+    payload: SearchQueueRequest,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    settings = SettingsService.get_or_create(session)
+    connection = SettingsService.resolve_qb_connection(settings)
+    if not connection.is_configured:
+        return JSONResponse({"error": "qBittorrent connection is not configured."}, status_code=400)
+
+    category = ""
+    save_path = ""
+    add_paused = payload.add_paused
+    if payload.rule_id:
+        rule = session.get(Rule, payload.rule_id)
+        if rule is None:
+            return JSONResponse({"error": "Rule not found for queue defaults."}, status_code=404)
+        builder = RuleBuilder(settings)
+        category = builder.render_category(rule)
+        save_path = builder.render_save_path(rule)
+        if add_paused is None:
+            add_paused = rule.add_paused
+    if add_paused is None:
+        add_paused = settings.default_add_paused
+
+    try:
+        with QbittorrentClient(connection.base_url, connection.username, connection.password) as client:
+            client.add_torrent_url(
+                link=payload.link,
+                category=category,
+                save_path=save_path,
+                paused=add_paused,
+                sequential_download=payload.sequential_download,
+                first_last_piece_prio=payload.first_last_piece_prio,
+            )
+    except QbittorrentClientError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return JSONResponse(
+        {
+            "status": "queued",
+            "category": category,
+            "save_path": save_path,
+            "add_paused": add_paused,
+            "sequential_download": payload.sequential_download,
+            "first_last_piece_prio": payload.first_last_piece_prio,
+        }
+    )
+
+
 @router.post("/search/preferences")
 def save_search_preferences(
     payload: SearchViewPreferencesPayload,
@@ -408,12 +467,18 @@ def save_search_preferences(
     settings = SettingsService.get_or_create(session)
     settings.search_result_view_mode = payload.view_mode
     settings.search_sort_criteria = [item.model_dump(mode="json") for item in payload.sort_criteria]
+    if payload.default_sequential_download is not None:
+        settings.default_sequential_download = payload.default_sequential_download
+    if payload.default_first_last_piece_prio is not None:
+        settings.default_first_last_piece_prio = payload.default_first_last_piece_prio
     session.add(settings)
     session.commit()
     return JSONResponse(
         {
             "view_mode": settings.search_result_view_mode,
             "sort_criteria": list(settings.search_sort_criteria or []),
+            "default_sequential_download": bool(getattr(settings, "default_sequential_download", True)),
+            "default_first_last_piece_prio": bool(getattr(settings, "default_first_last_piece_prio", True)),
         }
     )
 

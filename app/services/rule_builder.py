@@ -170,6 +170,50 @@ def build_keyword_group_fragments(groups: list[list[str]]) -> list[str]:
     return fragments
 
 
+def _build_min_numeric_pattern_1_to_99(value: int) -> str:
+    bounded_value = max(1, min(99, int(value)))
+    if bounded_value == 99:
+        return "0*99"
+    if bounded_value <= 9:
+        return rf"(?:0*[{bounded_value}-9]|0*[1-9]\d)"
+
+    tens, ones = divmod(bounded_value, 10)
+    parts: list[str] = []
+    if ones == 0:
+        parts.append(rf"0*{tens}\d")
+    elif ones == 9:
+        parts.append(rf"0*{tens}9")
+    else:
+        parts.append(rf"0*{tens}[{ones}-9]")
+
+    if tens < 9:
+        parts.append(rf"0*[{tens + 1}-9]\d")
+    if len(parts) == 1:
+        return parts[0]
+    return f"(?:{'|'.join(parts)})"
+
+
+def build_episode_progress_fragment(start_season: int | None, start_episode: int | None) -> str:
+    if start_season is None or start_episode is None:
+        return ""
+
+    season_value = max(1, min(99, int(start_season)))
+    episode_value = max(1, min(99, int(start_episode)))
+    season_exact = rf"0*{season_value}"
+    episode_any = r"0*[1-9]\d?"
+    episode_ge = _build_min_numeric_pattern_1_to_99(episode_value)
+    separators = r"[\s._-]*"
+
+    fragments = [
+        rf"s{season_exact}{separators}e{episode_ge}",
+        rf"s{season_exact}{separators}e{episode_any}{separators}-{separators}(?:e)?{episode_ge}",
+    ]
+    if season_value < 99:
+        season_after = _build_min_numeric_pattern_1_to_99(season_value + 1)
+        fragments.insert(0, rf"s{season_after}{separators}e{episode_any}")
+    return f"(?:{'|'.join(fragments)})"
+
+
 @dataclass(slots=True)
 class RuleBuilder:
     settings: AppSettings | None
@@ -235,6 +279,9 @@ class RuleBuilder:
         positive_fragments.extend(
             build_keyword_group_fragments(parse_additional_include_groups(rule.additional_includes))
         )
+        episode_progress_fragment = build_episode_progress_fragment(rule.start_season, rule.start_episode)
+        if episode_progress_fragment:
+            positive_fragments.append(episode_progress_fragment)
 
         quality_include, quality_exclude = self._resolve_quality_filters(rule)
         if quality_include:
@@ -280,6 +327,7 @@ class RuleBuilder:
         return bool(
             (rule.include_release_year and normalize_release_year(rule.release_year))
             or parse_additional_include_groups(rule.additional_includes)
+            or build_episode_progress_fragment(rule.start_season, rule.start_episode)
             or quality_include
             or quality_exclude
             or build_manual_must_contain_fragments(rule.must_contain_override)

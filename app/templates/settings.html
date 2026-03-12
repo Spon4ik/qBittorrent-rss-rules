@@ -81,6 +81,22 @@
       <input type="checkbox" name="default_add_paused" {% if form_data.default_add_paused %}checked{% endif %} />
       <span>Default add paused</span>
     </label>
+    <label class="toggle">
+      <input
+        type="checkbox"
+        name="default_sequential_download"
+        {% if form_data.default_sequential_download %}checked{% endif %}
+      />
+      <span>Default sequential download</span>
+    </label>
+    <label class="toggle">
+      <input
+        type="checkbox"
+        name="default_first_last_piece_prio"
+        {% if form_data.default_first_last_piece_prio %}checked{% endif %}
+      />
+      <span>Default first/last pieces first</span>
+    </label>
     <label>
       Default quality profile
       <select name="default_quality_profile">

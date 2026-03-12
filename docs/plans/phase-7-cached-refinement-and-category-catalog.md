@@ -10,6 +10,7 @@
 - Follow-up request handling is active: feed-scope parser hardening for Torznab URL variants and episode-progress floor filtering fields are implemented with targeted regressions (`P7-14`).
 - Follow-up regression fix is completed: scoped multi-indexer runs now use aggregate-first remote fetch with scoped per-indexer fallback, so inline-search no longer hard-fails on aggregate timeout (`P7-16`).
 - Follow-up regression fix is completed: quality include tokens now enforce AND-across-quality-groups semantics (for example `4K` + `HDR`) across backend payloads, generated regex, and local cached filtering (`P7-17`).
+- Follow-up regression fix is completed: inline generated-pattern local filtering now evaluates raw result titles, preserving season/episode range separators for floor matching (for example `S27E01-05`) (`P7-18`).
 - Added persistent category-catalog foundations in this branch (`IndexerCategoryCatalog` model + Alembic migration + catalog service write/read helpers + `/search` persistence wiring).
 - `/search` category options now refresh from cached results scoped by current non-category filters, with per-option count badges, explicit inactive-state labeling for stale selections, and a dynamic status note that explains category-only narrowing vs stale selections.
 
@@ -191,6 +192,7 @@ This extension remains in phase 7 because it is a cached-refinement UX contract 
 | P7-15 | Persist queue defaults for `Sequential download` + `First and last pieces first`, and enforce affected-feed filtering from current rule-form selection in inline results/search runs. | Codex | 2026-03-21 | completed | Queue option defaults are saved and reloaded for search/inline queue panels; inline `Run Search Here` and cached local filtering honor current checked `Affected feeds` (including unsaved form state). | `app/models.py` + `app/services/settings_service.py` + `app/routes/api.py` + `app/routes/pages.py` + `app/static/app.js` + templates + migration `0003`; route regressions in `tests/test_routes.py` |
 | P7-16 | Fix scoped inline-search timeout regression by hardening multi-indexer remote execution and IMDb title-fallback resilience. | Codex | 2026-03-12 | completed | Standard search now prefers one aggregate request and only falls back to scoped per-indexer requests on aggregate failure/timeouts; IMDb title-fallback now keeps scoped indexers and applies the same aggregate-first fallback strategy, preserving warning diagnostics without dropping all results. | `app/services/jackett.py`, `tests/test_jackett.py::{test_jackett_client_scopes_standard_remote_fetch_to_filter_indexers,test_jackett_client_falls_back_to_all_when_filter_indexer_is_not_slug,test_jackett_client_scoped_standard_search_continues_after_indexer_timeout,test_jackett_client_imdb_title_fallback_uses_scoped_indexers_after_all_timeout}` |
 | P7-17 | Enforce strict include semantics across quality groups so HDR filtering excludes SDR-only matches. | Codex | 2026-03-12 | completed | Quality include selections are OR-within-group and AND-across-groups in rule-derived payloads, generated regex preview/rule regex, and local cached refinement on `/search` and inline rule page. | `app/services/quality_filters.py`, `app/services/rule_builder.py`, `app/services/jackett.py`, `app/routes/pages.py`, `app/static/app.js`, `app/templates/_quality_token_controls.html`, tests in `tests/test_quality_filters.py`, `tests/test_rule_builder.py`, `tests/test_jackett.py`, `tests/test_routes.py` |
+| P7-18 | Fix inline generated-pattern local filtering so episode floor range variants are not dropped by normalized text surfaces. | Codex | 2026-03-13 | completed | Inline cached filtering evaluates generated regex against raw result titles, so range forms like `S27E01-05` remain matchable alongside direct `S27E05`/later seasons. | `app/static/app.js` (`regexSurface` now uses raw `data-title`); regression `tests/test_routes.py::test_inline_local_generated_pattern_uses_raw_title_surface` |
 
 ## Slice implementation plan (P7-09..P7-13)
 
@@ -227,6 +229,7 @@ Tests:
 
 Progress (2026-03-12):
 - In progress: inline local filtering now derives generated-pattern regex from live rule-form state (`derivePattern`) during filter evaluation, avoiding preview-update timing lag.
+- Completed (2026-03-13): generated-pattern matching now evaluates raw title text for inline cached entries, so season/episode range separators (`SxxE01-05`) are preserved instead of being stripped by normalized local text surfaces.
 - Remaining: deterministic browser evidence that rule-form edits update cached inline results immediately without remote Jackett calls.
 
 Files:
@@ -333,6 +336,17 @@ Validation evidence:
 - `./.venv-linux/bin/ruff check app/models.py app/db.py app/services/settings_service.py app/routes/api.py app/routes/pages.py app/schemas.py tests/test_routes.py alembic/versions/0001_initial_schema.py alembic/versions/0003_search_queue_defaults.py` (`All checks passed`, 2026-03-12)
 - `./scripts/test.sh tests/test_routes.py -k "run_rule_search_route_redirects_to_inline_rule_page or run_rule_search_route_preserves_feed_url_overrides or edit_rule_inline_search_scopes_single_jackett_feed_indexer or edit_rule_inline_search_uses_feed_url_override_scope or save_search_preferences_api_persists_defaults or save_settings_persists_profile_management_tokens or queue_search_result_api_uses_rule_defaults or queue_search_result_api_uses_settings_default_pause_when_no_rule"` (`8 passed`, `53 deselected`, 2026-03-12)
 
+### P7-18 Inline generated-pattern title-surface parity
+
+Progress (2026-03-13):
+- Completed: inline local generated-pattern filtering now evaluates raw `title` text instead of normalized `text_surface`, preserving range separators required for episode floor regex matching (`SxxE01-05` / `SxxE1-5`).
+- Completed: added a regression contract test to prevent reintroducing normalized-surface-only generated regex evaluation in inline cached filtering.
+
+Validation evidence:
+- `./.venv-linux/bin/ruff check tests/test_routes.py` (`All checks passed`, 2026-03-13)
+- `./scripts/test.sh tests/test_routes.py -k "inline_local_generated_pattern_uses_raw_title_surface or edit_rule_page_can_render_inline_search_results or run_rule_search_route_redirects_to_inline_rule_page"` (`3 passed`, `60 deselected`, 2026-03-13)
+- `./scripts/test.sh tests/test_rule_builder.py -k "start_season or floor"` (`1 passed`, `17 deselected`, 2026-03-13)
+
 ## Validation checklist
 
 - Run targeted tests first:
@@ -351,6 +365,9 @@ Validation evidence:
   - `./scripts/test.sh tests/test_category_catalog.py tests/test_routes.py -k "category_catalog or run_rule_search_route_redirects_to_inline_rule_page or rule_pages_expose_run_search_actions or inline_search_results or queue_search_result_api"` (`12 passed`, `49 deselected`)
   - `./.venv-linux/bin/ruff check app/routes/pages.py app/services/category_catalog.py tests/test_routes.py` (`All checks passed`)
   - `./scripts/closeout_qa.sh` (`10/11` checks pass; phase-5/phase-6 checks all pass including updated category multiselect path, one pre-existing phase-4 `P4-01` failure remains, 2026-03-12, `logs/qa/phase-closeout-20260312T004852Z/closeout-report.md`)
+  - `./.venv-linux/bin/ruff check tests/test_routes.py` (`All checks passed`, 2026-03-13)
+  - `./scripts/test.sh tests/test_routes.py -k "inline_local_generated_pattern_uses_raw_title_surface or edit_rule_page_can_render_inline_search_results or run_rule_search_route_redirects_to_inline_rule_page"` (`3 passed`, `60 deselected`, 2026-03-13)
+  - `./scripts/test.sh tests/test_rule_builder.py -k "start_season or floor"` (`1 passed`, `17 deselected`, 2026-03-13)
 - Run full quality gates:
   - `./scripts/check.sh`
 - Run deterministic browser closeout:

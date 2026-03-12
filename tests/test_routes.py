@@ -60,6 +60,16 @@ def test_rules_page_header_includes_create_rule_button(app_client) -> None:
     assert '>Create Rule</a>' in response.text
 
 
+def test_inline_local_generated_pattern_uses_raw_title_surface() -> None:
+    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+    app_js_source = app_js_path.read_text(encoding="utf-8")
+
+    assert (
+        'regexSurface: String(card.dataset.title || card.dataset.textSurface || "").trim(),'
+        in app_js_source
+    )
+
+
 def test_run_rule_search_route_redirects_to_inline_rule_page(app_client, db_session) -> None:
     rule = Rule(
         rule_name="Rule Search Redirect",

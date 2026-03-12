@@ -10,6 +10,7 @@
 - Phase 7 follow-up fix slice landed for persisted queue option defaults plus affected-feed live scope enforcement (`P7-15`)
 - Phase 7 regression-fix slice landed for resilient scoped search execution (aggregate-first + scoped fallback) across derived affected-feed indexers, including IMDb title-fallback hardening (`P7-16`)
 - Phase 7 regression-fix slice landed for strict quality-group include semantics (`P7-17`) so HDR filtering no longer passes SDR-only 4K rows
+- Phase 7 regression-fix slice landed for inline generated-pattern title-surface matching (`P7-18`), preserving episode-floor range variants like `S27E01-05` during cached local refinement
 - Release-process automation and evidence-driven phase sign-off
 
 ## Implemented
@@ -84,6 +85,15 @@
 - Validation evidence for `P7-17` on 2026-03-12:
   - `./.venv-linux/bin/ruff check app/services/quality_filters.py app/services/rule_builder.py app/services/jackett.py app/routes/pages.py tests/test_quality_filters.py tests/test_rule_builder.py tests/test_jackett.py tests/test_routes.py` (`All checks passed`)
   - `./scripts/test.sh tests/test_quality_filters.py tests/test_rule_builder.py tests/test_jackett.py tests/test_routes.py` (`144 passed`)
+- Implemented `P7-18` on 2026-03-13:
+  - inline cached generated-pattern filtering now evaluates raw result title text (instead of normalized `text_surface`) so season/episode range separators are preserved for episode-floor matching.
+  - this restores expected inclusion for same-season range packs such as `S27E01-05`/`S27E1-5` while keeping later-season matching behavior.
+- Added regression for `P7-18`:
+  - `tests/test_routes.py::test_inline_local_generated_pattern_uses_raw_title_surface`.
+- Validation evidence for `P7-18` on 2026-03-13:
+  - `./.venv-linux/bin/ruff check tests/test_routes.py` (`All checks passed`)
+  - `./scripts/test.sh tests/test_routes.py -k "inline_local_generated_pattern_uses_raw_title_surface or edit_rule_page_can_render_inline_search_results or run_rule_search_route_redirects_to_inline_rule_page"` (`3 passed`, `60 deselected`)
+  - `./scripts/test.sh tests/test_rule_builder.py -k "start_season or floor"` (`1 passed`, `17 deselected`)
 - Added persistent category-catalog storage for phase 7 via `IndexerCategoryCatalog` (`app/models.py`) and migration `alembic/versions/0002_indexer_category_catalog.py` keyed by `(indexer, category_id)` with label source + update timestamp.
 - Added `app/services/category_catalog.py` with indexer/category normalization helpers, write paths (`sync_category_catalog_from_results`, `sync_category_catalog_from_indexer_map`), and read path (`resolve_category_labels`) for catalog-joined label resolution.
 - `/search` route now persists and reuses category catalog mappings during search runs (`app/routes/pages.py`): after each run it syncs result/category-map data into DB and re-resolves result labels from catalog keys before rendering.

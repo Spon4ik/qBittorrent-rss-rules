@@ -1841,7 +1841,9 @@ function initSearchPage(container) {
         title: String(card.dataset.title || "").trim(),
         titleSurface: normalizeSearchText(card.dataset.title || ""),
         textSurface: normalizeSearchText(card.dataset.textSurface || ""),
-        regexSurface: String(card.dataset.textSurface || card.dataset.title || "").trim(),
+        // Generated-pattern regex should evaluate against the raw title text so
+        // season/episode range separators like "S03E01-07" are preserved.
+        regexSurface: String(card.dataset.title || card.dataset.textSurface || "").trim(),
         imdbId: normalizeSearchImdbId(card.dataset.imdbId || ""),
         indexerRaw: String(card.dataset.indexer || "").trim(),
         indexer: String(card.dataset.indexer || "").trim().toLocaleLowerCase(),

@@ -124,7 +124,8 @@ def test_build_generated_pattern_uses_custom_quality_year_and_keywords() -> None
     assert "(?=.*2024)" in pattern
     assert r"(?=.*director[\s._-]*s[\s._-]*cut)" in pattern
     assert "(?=.*remux)" in pattern
-    assert "(?=.*(?:ultra[\\s._-]*hd|uhd|4k|2160p|hdr10\\+?|hdr))" in pattern
+    assert "(?=.*(?:ultra[\\s._-]*hd|uhd|4k|2160p))" in pattern
+    assert "(?=.*(?:hdr10\\+?|hdr))" in pattern
     assert pattern.endswith(r"(?!.*(?:1080p|720p|480p|sd))")
 
 
@@ -233,6 +234,23 @@ def test_build_generated_pattern_supports_start_season_episode_floor() -> None:
     assert not compiled.search("Shrinking S03E06 1080p")
     assert not compiled.search("Shrinking S03E01-06 1080p")
     assert not compiled.search("Shrinking S02E99 1080p")
+
+
+def test_build_generated_pattern_requires_all_selected_quality_groups() -> None:
+    builder = RuleBuilder(settings=None)
+    pattern = builder.build_generated_pattern(
+        build_rule(
+            quality_profile=QualityProfile.CUSTOM,
+            use_regex=True,
+            normalized_title="3 Body Problem",
+            content_name="3 Body Problem",
+            quality_include_tokens=["4k", "hdr"],
+        )
+    )
+    compiled = re.compile(pattern)
+
+    assert compiled.search("3 Body Problem S01 4K HDR WEBDL")
+    assert not compiled.search("3 Body Problem S01 4K SDR WEBDL")
 
 
 def test_build_title_regex_fragment_normalizes_case_and_separators() -> None:

@@ -21,6 +21,7 @@
         {% if context == "search" %}data-search-quality-option="true"{% endif %}
         data-quality-token-item="true"
         data-quality-token="{{ choice.value }}"
+        data-quality-group-key="{{ group.key }}"
         data-media-types="{{ choice.media_types | join(',') }}"
       >
         <input

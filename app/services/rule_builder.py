@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from app.models import AppSettings, MediaType, Rule
 from app.services.quality_filters import (
+    grouped_tokens_to_regex,
     normalize_quality_tokens,
     tokens_to_regex,
 )
@@ -283,9 +284,9 @@ class RuleBuilder:
         if episode_progress_fragment:
             positive_fragments.append(episode_progress_fragment)
 
-        quality_include, quality_exclude = self._resolve_quality_filters(rule)
-        if quality_include:
-            positive_fragments.append(quality_include)
+        quality_include_fragments, quality_exclude = self._resolve_quality_filters(rule)
+        if quality_include_fragments:
+            positive_fragments.extend(quality_include_fragments)
         positive_fragments.extend(build_manual_must_contain_fragments(rule.must_contain_override))
 
         pattern = "(?i)"
@@ -323,19 +324,19 @@ class RuleBuilder:
     def _has_generated_regex_conditions(self, rule: Rule) -> bool:
         if looks_like_full_must_contain_override(rule.must_contain_override):
             return True
-        quality_include, quality_exclude = self._resolve_quality_filters(rule)
+        quality_include_fragments, quality_exclude = self._resolve_quality_filters(rule)
         return bool(
             (rule.include_release_year and normalize_release_year(rule.release_year))
             or parse_additional_include_groups(rule.additional_includes)
             or build_episode_progress_fragment(rule.start_season, rule.start_episode)
-            or quality_include
+            or quality_include_fragments
             or quality_exclude
             or build_manual_must_contain_fragments(rule.must_contain_override)
         )
 
-    def _resolve_quality_filters(self, rule: Rule) -> tuple[str, str]:
+    def _resolve_quality_filters(self, rule: Rule) -> tuple[list[str], str]:
         include_tokens = normalize_quality_tokens(rule.quality_include_tokens)
         exclude_tokens = normalize_quality_tokens(rule.quality_exclude_tokens)
         include_set = set(include_tokens)
         exclude_tokens = [token for token in exclude_tokens if token not in include_set]
-        return tokens_to_regex(include_tokens), tokens_to_regex(exclude_tokens)
+        return grouped_tokens_to_regex(include_tokens), tokens_to_regex(exclude_tokens)

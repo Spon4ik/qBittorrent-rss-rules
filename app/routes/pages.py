@@ -26,6 +26,7 @@ from app.services.jackett import (
     build_reduced_search_request_from_rule,
     build_search_request_from_rule,
     clamp_search_query_text,
+    expand_grouped_quality_search_terms,
     expand_quality_search_terms,
     quality_pattern_map,
     quality_search_term_map,
@@ -717,11 +718,12 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                 form_data["quality_include_tokens"] = quality_include_tokens
                 form_data["quality_exclude_tokens"] = quality_exclude_tokens
                 keywords_any_groups = _parse_keywords_any_groups(str(form_data["keywords_any"]))
-                quality_include_terms = expand_quality_search_terms(
+                quality_include_term_groups = expand_grouped_quality_search_terms(
                     quality_include_tokens
                 )
-                if quality_include_terms:
-                    keywords_any_groups.append(quality_include_terms)
+                for group in quality_include_term_groups:
+                    keywords_any_groups.append(group)
+                quality_include_terms = [term for group in quality_include_term_groups for term in group]
                 merged_keywords_any = _merge_search_terms(
                     _parse_search_filter_terms(str(form_data["keywords_any"])),
                     quality_include_terms,

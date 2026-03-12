@@ -8,6 +8,8 @@
 - Phase 7 extension execution is active for feed-aware inline search, generated-pattern local recompute, queue-pause semantics, and inline table/sort parity (`P7-09`..`P7-13`)
 - Phase 7 follow-up fix/feature slice landed for Torznab feed-parser hardening + episode-progress floor fields (`P7-14`)
 - Phase 7 follow-up fix slice landed for persisted queue option defaults plus affected-feed live scope enforcement (`P7-15`)
+- Phase 7 regression-fix slice landed for resilient scoped search execution (aggregate-first + scoped fallback) across derived affected-feed indexers, including IMDb title-fallback hardening (`P7-16`)
+- Phase 7 regression-fix slice landed for strict quality-group include semantics (`P7-17`) so HDR filtering no longer passes SDR-only 4K rows
 - Release-process automation and evidence-driven phase sign-off
 
 ## Implemented
@@ -56,6 +58,32 @@
 - Validation evidence for `P7-15` on 2026-03-12:
   - `./.venv-linux/bin/ruff check app/models.py app/db.py app/services/settings_service.py app/routes/api.py app/routes/pages.py app/schemas.py tests/test_routes.py alembic/versions/0001_initial_schema.py alembic/versions/0003_search_queue_defaults.py` (`All checks passed`)
   - `./scripts/test.sh tests/test_routes.py -k "run_rule_search_route_redirects_to_inline_rule_page or run_rule_search_route_preserves_feed_url_overrides or edit_rule_inline_search_scopes_single_jackett_feed_indexer or edit_rule_inline_search_uses_feed_url_override_scope or save_search_preferences_api_persists_defaults or save_settings_persists_profile_management_tokens or queue_search_result_api_uses_rule_defaults or queue_search_result_api_uses_settings_default_pause_when_no_rule"` (`8 passed`, `53 deselected`)
+- Implemented `P7-16` on 2026-03-12:
+  - `JackettClient.search()` now uses aggregate-first strategy for scoped multi-indexer standard searches, then falls back to per-indexer scoped requests only when aggregate attempts fail/time out.
+  - scoped remote execution tolerates per-indexer timeout/400 failures during fallback sweeps, preserving partial results and warning messages.
+  - IMDb-first title fallback now keeps scoped indexers and uses the same aggregate-first -> scoped fallback strategy, fixing the `t=search q="..."` timeout-only end state when aggregate fallback fails.
+  - safety fallback remains: if filter indexers are not Torznab-safe slug tokens, remote search falls back to aggregate `all`.
+- Added regressions for `P7-16`:
+  - `tests/test_jackett.py::test_jackett_client_scopes_standard_remote_fetch_to_filter_indexers`
+  - `tests/test_jackett.py::test_jackett_client_falls_back_to_all_when_filter_indexer_is_not_slug`
+  - `tests/test_jackett.py::test_jackett_client_scoped_standard_search_continues_after_indexer_timeout`
+  - `tests/test_jackett.py::test_jackett_client_imdb_title_fallback_uses_scoped_indexers_after_all_timeout`
+- Validation evidence for `P7-16` on 2026-03-12:
+  - `./.venv-linux/bin/ruff check app/services/jackett.py tests/test_jackett.py` (`All checks passed`)
+  - `./scripts/test.sh tests/test_jackett.py -k "scopes_standard_remote_fetch_to_filter_indexers or falls_back_to_all_when_filter_indexer_is_not_slug or scoped_standard_search_continues_after_indexer_timeout or imdb_title_fallback_uses_scoped_indexers_after_all_timeout or uses_title_fallback_when_strict_imdb_match_is_empty or reports_timeout_for_single_broad_variant"` (`6 passed`, `29 deselected`)
+  - `./scripts/test.sh tests/test_routes.py -k "run_rule_search_route_preserves_feed_url_overrides or edit_rule_inline_search_uses_feed_url_override_scope or edit_rule_inline_search_scopes_multiple_jackett_feed_indexers"` (`3 passed`, `58 deselected`)
+- Implemented `P7-17` on 2026-03-12:
+  - quality include tokens are now grouped by taxonomy group (for example `resolution`, `definition`) and emitted as separate include groups in search payload construction for both rule-derived and `/search` form runs (`app/services/jackett.py`, `app/routes/pages.py`).
+  - generated regex now emits one positive lookahead per selected quality group, so `4K + HDR` requires both groups instead of allowing `4K` alone to satisfy the include clause (`app/services/rule_builder.py`, `app/services/quality_filters.py`).
+  - local cached refinement now applies the same grouped-quality semantics in the browser by building include regex constraints per token group on `/search` and inline rule pages (`app/static/app.js`, `app/templates/_quality_token_controls.html`).
+- Added regressions for `P7-17`:
+  - `tests/test_quality_filters.py::{test_grouped_quality_tokens_preserve_quality_group_boundaries,test_grouped_tokens_to_regex_builds_one_fragment_per_quality_group}`
+  - `tests/test_rule_builder.py::test_build_generated_pattern_requires_all_selected_quality_groups`
+  - `tests/test_jackett.py::test_build_search_request_from_rule_groups_quality_terms_by_taxonomy_group`
+  - `tests/test_routes.py::test_search_page_groups_quality_include_tokens_by_quality_group`
+- Validation evidence for `P7-17` on 2026-03-12:
+  - `./.venv-linux/bin/ruff check app/services/quality_filters.py app/services/rule_builder.py app/services/jackett.py app/routes/pages.py tests/test_quality_filters.py tests/test_rule_builder.py tests/test_jackett.py tests/test_routes.py` (`All checks passed`)
+  - `./scripts/test.sh tests/test_quality_filters.py tests/test_rule_builder.py tests/test_jackett.py tests/test_routes.py` (`144 passed`)
 - Added persistent category-catalog storage for phase 7 via `IndexerCategoryCatalog` (`app/models.py`) and migration `alembic/versions/0002_indexer_category_catalog.py` keyed by `(indexer, category_id)` with label source + update timestamp.
 - Added `app/services/category_catalog.py` with indexer/category normalization helpers, write paths (`sync_category_catalog_from_results`, `sync_category_catalog_from_indexer_map`), and read path (`resolve_category_labels`) for catalog-joined label resolution.
 - `/search` route now persists and reuses category catalog mappings during search runs (`app/routes/pages.py`): after each run it syncs result/category-map data into DB and re-resolves result labels from catalog keys before rendering.
@@ -246,6 +274,7 @@
 - Phase 7 `P7-09` is completed in code/tests; `P7-10`/`P7-11`/`P7-12` have implementation landed and need deterministic browser QA confirmation; `P7-13` closeout remains pending.
 - Phase 7 `P7-14` is completed in code/tests; optional browser QA assertions for new episode-progress floor behavior are still pending.
 - Phase 7 `P7-15` is completed in code/tests; optional browser QA is pending for the unsaved-affected-feeds inline run path plus persisted queue default UI behavior.
+- Phase 7 `P7-16` is completed in code/tests; deterministic browser evidence is still pending for a multi-indexer scoped run where one indexer times out and partial results stay visible.
 - Phase 6 v0.2.0 scope is implemented and release-validated; remaining non-critical persistence decisions stay deferred.
 - Release-process automated checks continue to pass in Linux `.venv-linux` via `./scripts/check.sh` (`ruff`, `mypy`, full pytest).
 - Deterministic closeout QA now includes the new phase-6 local refinement responsiveness check; a separate pre-existing phase-4 feed-checkbox expectation (`P4-01`) is currently the remaining closeout failure to resolve.
@@ -261,6 +290,7 @@
 - Add deterministic browser assertion for `Start season` + `Start episode` generated-pattern behavior (including range forms like `S03E01-07`) to keep `P7-14` evidence at parity with other phase-7 UX slices.
 - Add deterministic browser assertion that `Run Search Here` with unsaved affected-feed checkbox changes excludes unchecked feeds in inline results to close the `P7-15` UX bug report loop.
 - Add deterministic browser assertion that queue default save/reload keeps `Sequential download` and `First and last pieces first` checked state across search sessions (`P7-15`).
+- Add deterministic browser assertion for `P7-16`: scoped affected-feed run with multiple indexers should keep visible partial results when one scoped indexer times out, while warning text remains explicit.
 - Add browser closeout assertions for rule-page inline result rendering and queue-action feedback states (success/failure) so `P7-08` has deterministic UI evidence.
 - Extend deterministic closeout coverage with an assertion for the category scope-status note (stale vs matching selected categories) so `P7-05` has direct diagnostics coverage beyond count changes.
 - Capture refreshed desktop/mobile `/search` screenshots reflecting the new category count-badge and status-note states and attach to phase closeout evidence.

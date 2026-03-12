@@ -18,6 +18,8 @@ from app.services.quality_filters import (
     available_filter_profile_choices_for_media_type,
     detect_matching_filter_profile_key,
     expand_quality_tokens,
+    grouped_quality_tokens,
+    grouped_tokens_to_regex,
     infer_filter_profile_media_types,
     normalize_quality_tokens,
     normalize_saved_quality_profiles,
@@ -138,6 +140,17 @@ def test_tokens_to_regex_preserves_current_patterns() -> None:
     assert tokens_to_regex(["tv_sync", "ts"]) == (
         r"(?:tv[\s._-]*sync|tele[\s._-]*sync|telesync|(?:hd)?ts)"
     )
+
+
+def test_grouped_quality_tokens_preserve_quality_group_boundaries() -> None:
+    assert grouped_quality_tokens(["2160p", "4k", "hdr"]) == [["2160p", "4k"], ["hdr"]]
+
+
+def test_grouped_tokens_to_regex_builds_one_fragment_per_quality_group() -> None:
+    assert grouped_tokens_to_regex(["2160p", "4k", "hdr"]) == [
+        r"(?:2160p|4k)",
+        r"(?:hdr10\+?|hdr)",
+    ]
 
 
 def test_quality_taxonomy_rejects_unsupported_version(tmp_path, monkeypatch) -> None:

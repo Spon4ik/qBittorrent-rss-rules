@@ -199,6 +199,22 @@ function buildQualityPatternMap(options) {
   return patternMap;
 }
 
+function buildQualityTokenGroupMapFromElements(container) {
+  const tokenGroupMap = {};
+  if (!container) {
+    return tokenGroupMap;
+  }
+  for (const tokenItem of container.querySelectorAll("[data-quality-token-item]")) {
+    const token = String(tokenItem.dataset.qualityToken || "").trim();
+    const groupKey = String(tokenItem.dataset.qualityGroupKey || "").trim();
+    if (!token || !groupKey || tokenGroupMap[token]) {
+      continue;
+    }
+    tokenGroupMap[token] = groupKey;
+  }
+  return tokenGroupMap;
+}
+
 function buildFilterProfileMap(profiles) {
   const profileMap = {};
   for (const profile of profiles || []) {
@@ -246,10 +262,43 @@ function orderedValuesMatch(left, right) {
   return (left || []).every((value, index) => value === (right || [])[index]);
 }
 
+function buildQualityRegexGroups(tokens, patternMap, tokenGroupMap = {}) {
+  const groups = [];
+  const indexByGroupKey = new Map();
+  const fallbackGroupKey = "__ungrouped__";
+
+  for (const token of tokens || []) {
+    const pattern = patternMap[token];
+    if (!pattern) {
+      continue;
+    }
+    const rawGroupKey = tokenGroupMap[token];
+    const groupKey = rawGroupKey && String(rawGroupKey).trim()
+      ? String(rawGroupKey).trim()
+      : fallbackGroupKey;
+    let groupIndex = indexByGroupKey.get(groupKey);
+    if (groupIndex === undefined) {
+      groupIndex = groups.length;
+      groups.push({ seenPatterns: new Set(), patterns: [] });
+      indexByGroupKey.set(groupKey, groupIndex);
+    }
+    const group = groups[groupIndex];
+    if (group.seenPatterns.has(pattern)) {
+      continue;
+    }
+    group.seenPatterns.add(pattern);
+    group.patterns.push(pattern);
+  }
+
+  return groups
+    .map((group) => group.patterns)
+    .filter((patterns) => patterns.length > 0)
+    .map((patterns) => `(?:${patterns.join("|")})`);
+}
+
 function buildQualityRegex(tokens, patternMap) {
   const patterns = [];
   const seenPatterns = new Set();
-
   for (const token of tokens || []) {
     const pattern = patternMap[token];
     if (!pattern || seenPatterns.has(pattern)) {
@@ -258,11 +307,21 @@ function buildQualityRegex(tokens, patternMap) {
     seenPatterns.add(pattern);
     patterns.push(pattern);
   }
-
   if (patterns.length === 0) {
     return "";
   }
   return `(?:${patterns.join("|")})`;
+}
+
+function buildQualityIncludeRegex(tokens, patternMap, tokenGroupMap = {}) {
+  const regexGroups = buildQualityRegexGroups(tokens, patternMap, tokenGroupMap);
+  if (regexGroups.length === 0) {
+    return "";
+  }
+  if (regexGroups.length === 1) {
+    return regexGroups[0];
+  }
+  return regexGroups.map((group) => `(?=.*${group})`).join("");
 }
 
 function normalizeQualityTokenSelection(includeTokens, excludeTokens) {
@@ -622,6 +681,7 @@ function deriveGeneratedPattern({
   qualityIncludeTokens = [],
   qualityExcludeTokens = [],
   qualityPatternMap = {},
+  qualityTokenGroupMap = {},
   startSeason = "",
   startEpisode = "",
 }) {
@@ -635,7 +695,11 @@ function deriveGeneratedPattern({
     qualityIncludeTokens,
     qualityExcludeTokens
   );
-  const qualityInclude = buildQualityRegex(normalizedSelection.includeTokens, qualityPatternMap);
+  const qualityIncludeGroups = buildQualityRegexGroups(
+    normalizedSelection.includeTokens,
+    qualityPatternMap,
+    qualityTokenGroupMap
+  );
   const qualityExclude = buildQualityRegex(normalizedSelection.excludeTokens, qualityPatternMap);
   const includeKeywordGroups = parseAdditionalKeywordAlternativeGroups(additionalIncludes);
   const excludeKeywordGroups = parseAdditionalKeywordAlternativeGroups(additionalExcludes);
@@ -659,7 +723,7 @@ function deriveGeneratedPattern({
       || includeKeywordGroups.length
       || excludeKeywordGroups.length
       || manualFragments.length
-      || qualityInclude
+      || qualityIncludeGroups.length > 0
       || qualityExclude
       || episodeProgressFragment
   );
@@ -680,8 +744,8 @@ function deriveGeneratedPattern({
   if (episodeProgressFragment) {
     positiveFragments.push(episodeProgressFragment);
   }
-  if (qualityInclude) {
-    positiveFragments.push(qualityInclude);
+  for (const fragment of qualityIncludeGroups) {
+    positiveFragments.push(fragment);
   }
   for (const fragment of manualFragments) {
     positiveFragments.push(fragment);
@@ -733,7 +797,7 @@ function buildOptionalKeywordGroupRegexFragments(keywordGroups) {
   return fragments;
 }
 
-function derivePattern(form, qualityPatternMap) {
+function derivePattern(form, qualityPatternMap, qualityTokenGroupMap = {}) {
   const manualMustContain = form.querySelector('textarea[name="must_contain_override"]')?.value.trim();
   if (looksLikeFullMustContainOverride(manualMustContain)) {
     return manualMustContain;
@@ -753,6 +817,7 @@ function derivePattern(form, qualityPatternMap) {
     qualityIncludeTokens: getCheckedValues(form, "quality_include_tokens"),
     qualityExcludeTokens: getCheckedValues(form, "quality_exclude_tokens"),
     qualityPatternMap,
+    qualityTokenGroupMap,
   });
 }
 
@@ -922,6 +987,7 @@ function initSearchPage(container) {
   };
   const qualitySearchTermMap = parseJsonData(container.dataset.qualitySearchTerms || "{}", {});
   const qualityPatternMap = parseJsonData(container.dataset.qualityPatternMap || "{}", {});
+  const qualityTokenGroupMap = buildQualityTokenGroupMapFromElements(form);
   const controlSets = Array.from(container.querySelectorAll("[data-search-controls]")).map((controlContainer) => ({
     controlContainer,
     viewModeSelect: controlContainer.querySelector("[data-search-view-mode]"),
@@ -1079,7 +1145,11 @@ function initSearchPage(container) {
     );
     const includeKeywordTokens = normalizedSelection.includeTokens;
     const excludeKeywordTokens = normalizedSelection.excludeTokens;
-    const includeKeywordPattern = buildQualityRegex(includeKeywordTokens, qualityPatternMap);
+    const includeKeywordPattern = buildQualityIncludeRegex(
+      includeKeywordTokens,
+      qualityPatternMap,
+      qualityTokenGroupMap
+    );
     const excludeKeywordPattern = buildQualityRegex(excludeKeywordTokens, qualityPatternMap);
     const includeKeywordRegex = compileQualityRegex(includeKeywordPattern);
     const excludeKeywordRegex = compileQualityRegex(excludeKeywordPattern);
@@ -1272,6 +1342,7 @@ function initSearchPage(container) {
       qualityIncludeTokens: tokenState.includeKeywordTokens,
       qualityExcludeTokens: tokenState.excludeKeywordTokens,
       qualityPatternMap,
+      qualityTokenGroupMap,
     });
   };
 
@@ -1287,7 +1358,7 @@ function initSearchPage(container) {
       return String(searchPatternPreview.value || "").trim();
     }
     if (generatedPatternInput?.id === "pattern-preview") {
-      return String(derivePattern(form, qualityPatternMap) || "").trim();
+      return String(derivePattern(form, qualityPatternMap, qualityTokenGroupMap) || "").trim();
     }
     return String(generatedPatternInput?.value || "").trim();
   };
@@ -1458,7 +1529,9 @@ function initSearchPage(container) {
       filters.keywordsNot = [filterValue.value];
     } else if (filterValue.kind === "quality_include_token") {
       filters.qualityIncludeTokens = [filterValue.value];
-      filters.qualityIncludeRegex = compileQualityRegex(buildQualityRegex(filters.qualityIncludeTokens, qualityPatternMap));
+      filters.qualityIncludeRegex = compileQualityRegex(
+        buildQualityIncludeRegex(filters.qualityIncludeTokens, qualityPatternMap, qualityTokenGroupMap)
+      );
     } else if (filterValue.kind === "quality_exclude_token") {
       filters.qualityExcludeTokens = [filterValue.value];
       filters.qualityExcludeRegex = compileQualityRegex(buildQualityRegex(filters.qualityExcludeTokens, qualityPatternMap));
@@ -1494,7 +1567,9 @@ function initSearchPage(container) {
       next.qualityIncludeTokens = next.qualityIncludeTokens.filter(
         (item) => normalizeSearchText(item) !== filterValue.matchKey
       );
-      next.qualityIncludeRegex = compileQualityRegex(buildQualityRegex(next.qualityIncludeTokens, qualityPatternMap));
+      next.qualityIncludeRegex = compileQualityRegex(
+        buildQualityIncludeRegex(next.qualityIncludeTokens, qualityPatternMap, qualityTokenGroupMap)
+      );
     } else if (filterValue.kind === "quality_exclude_token") {
       next.qualityExcludeTokens = next.qualityExcludeTokens.filter(
         (item) => normalizeSearchText(item) !== filterValue.matchKey
@@ -2487,6 +2562,7 @@ function initResultQueueActions(root = document) {
 function initRuleForm(form) {
   const qualityOptions = parseJsonData(form.dataset.qualityOptions, []);
   const qualityPatternMap = buildQualityPatternMap(qualityOptions);
+  const qualityTokenGroupMap = buildQualityTokenGroupMapFromElements(form);
   const qualityMediaTypeMap = Object.fromEntries(
     qualityOptions.filter((option) => option?.value).map((option) => [
       option.value,
@@ -2881,7 +2957,7 @@ function initRuleForm(form) {
       savePathInput.value = deriveSavePath(form);
     }
     if (patternPreview) {
-      patternPreview.value = derivePattern(form, qualityPatternMap);
+      patternPreview.value = derivePattern(form, qualityPatternMap, qualityTokenGroupMap);
     }
   };
 

@@ -587,6 +587,30 @@ def test_search_page_expands_quality_token_terms_for_search_payload(app_client, 
     assert "mustNotContain" in response.text
 
 
+def test_search_page_groups_quality_include_tokens_by_quality_group(app_client, monkeypatch) -> None:
+    def fake_search(self, payload):
+        assert payload.query == "3 Body Problem"
+        assert payload.keywords_any_groups == [["4k"], ["hdr", "hdr10"]]
+        assert payload.keywords_any == ["4k", "hdr", "hdr10"]
+        return JackettSearchRun(
+            query_variants=["3 Body Problem"],
+            results=[],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "3 Body Problem",
+            "media_type": "series",
+            "quality_include_tokens": ["4k", "hdr"],
+        },
+    )
+
+    assert response.status_code == 200
+
+
 def test_search_page_accepts_legacy_free_text_filter_query_params(app_client, monkeypatch) -> None:
     def fake_search(self, payload):
         assert payload.query == "Legacy Search"

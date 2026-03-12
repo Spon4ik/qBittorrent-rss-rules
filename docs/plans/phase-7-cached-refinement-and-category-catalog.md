@@ -8,6 +8,8 @@
 - Follow-up UX integration slice `P7-08` is in progress: saved-rule `Run Search` now renders inline results on `/rules/{id}` with queue-to-qB actions, but browser closeout evidence and full QA-gate reruns are pending.
 - Extension slice execution is active: `P7-09` is completed in code/tests; `P7-10`/`P7-11`/`P7-12` implementation is landed and awaiting deterministic browser QA evidence; `P7-13` closeout remains pending.
 - Follow-up request handling is active: feed-scope parser hardening for Torznab URL variants and episode-progress floor filtering fields are implemented with targeted regressions (`P7-14`).
+- Follow-up regression fix is completed: scoped multi-indexer runs now use aggregate-first remote fetch with scoped per-indexer fallback, so inline-search no longer hard-fails on aggregate timeout (`P7-16`).
+- Follow-up regression fix is completed: quality include tokens now enforce AND-across-quality-groups semantics (for example `4K` + `HDR`) across backend payloads, generated regex, and local cached filtering (`P7-17`).
 - Added persistent category-catalog foundations in this branch (`IndexerCategoryCatalog` model + Alembic migration + catalog service write/read helpers + `/search` persistence wiring).
 - `/search` category options now refresh from cached results scoped by current non-category filters, with per-option count badges, explicit inactive-state labeling for stale selections, and a dynamic status note that explains category-only narrowing vs stale selections.
 
@@ -82,7 +84,8 @@ This extension remains in phase 7 because it is a cached-refinement UX contract 
 5. Feed-aware rule-search contract
    - Rule-page inline search must derive Jackett indexer scope from selected `feed_urls` when those URLs are Jackett Torznab endpoints.
    - For one derived indexer: run remote request with that indexer slug.
-   - For multiple derived indexers: keep remote `indexer=all` fetch but enforce local `filter_indexers` to derived set so rendered results only reflect affected feeds.
+   - For multiple derived indexers: run one aggregate request first (`indexer=all`) and fall back to per-indexer scoped requests only when aggregate attempts fail/time out.
+   - Keep local `filter_indexers` enforcement on cached results as a second guardrail.
    - For non-Jackett/unparseable feed URLs: keep current fallback behavior and show a warning that feed scoping could not be derived.
 
 6. Inline parity contract
@@ -186,6 +189,8 @@ This extension remains in phase 7 because it is a cached-refinement UX contract 
 | P7-13 | QA closeout for extension slice (feed scope + inline recompute + queue + table/sort parity). | Codex | 2026-03-20 | pending | Targeted tests + deterministic closeout checks pass (or documented non-phase blocker) with dated artifacts. | Planned evidence in `logs/tests/` + `logs/qa/phase-closeout-*` |
 | P7-14 | Fix feed-scope Torznab URL variant parsing and add episode-progress floor fields (`Start season`, `Start episode`) with regex parity in backend/frontend. | Codex | 2026-03-21 | completed | Excluded feed indexers no longer leak due URL-shape parsing misses; new floor fields persist and generate regex matching `SxxExx` and `SxxExx-yy` variants at/after the configured point. | `app/routes/pages.py` Torznab parser update; `app/models.py` + `app/schemas.py` + `app/routes/api.py` + `app/services/rule_builder.py` + `app/static/app.js` + `app/templates/rule_form.html`; tests in `tests/test_routes.py` and `tests/test_rule_builder.py` |
 | P7-15 | Persist queue defaults for `Sequential download` + `First and last pieces first`, and enforce affected-feed filtering from current rule-form selection in inline results/search runs. | Codex | 2026-03-21 | completed | Queue option defaults are saved and reloaded for search/inline queue panels; inline `Run Search Here` and cached local filtering honor current checked `Affected feeds` (including unsaved form state). | `app/models.py` + `app/services/settings_service.py` + `app/routes/api.py` + `app/routes/pages.py` + `app/static/app.js` + templates + migration `0003`; route regressions in `tests/test_routes.py` |
+| P7-16 | Fix scoped inline-search timeout regression by hardening multi-indexer remote execution and IMDb title-fallback resilience. | Codex | 2026-03-12 | completed | Standard search now prefers one aggregate request and only falls back to scoped per-indexer requests on aggregate failure/timeouts; IMDb title-fallback now keeps scoped indexers and applies the same aggregate-first fallback strategy, preserving warning diagnostics without dropping all results. | `app/services/jackett.py`, `tests/test_jackett.py::{test_jackett_client_scopes_standard_remote_fetch_to_filter_indexers,test_jackett_client_falls_back_to_all_when_filter_indexer_is_not_slug,test_jackett_client_scoped_standard_search_continues_after_indexer_timeout,test_jackett_client_imdb_title_fallback_uses_scoped_indexers_after_all_timeout}` |
+| P7-17 | Enforce strict include semantics across quality groups so HDR filtering excludes SDR-only matches. | Codex | 2026-03-12 | completed | Quality include selections are OR-within-group and AND-across-groups in rule-derived payloads, generated regex preview/rule regex, and local cached refinement on `/search` and inline rule page. | `app/services/quality_filters.py`, `app/services/rule_builder.py`, `app/services/jackett.py`, `app/routes/pages.py`, `app/static/app.js`, `app/templates/_quality_token_controls.html`, tests in `tests/test_quality_filters.py`, `tests/test_rule_builder.py`, `tests/test_jackett.py`, `tests/test_routes.py` |
 
 ## Slice implementation plan (P7-09..P7-13)
 
@@ -205,7 +210,7 @@ Implementation:
 - Derive `rule_feed_indexers` from `Rule.feed_urls` when running inline rule search.
 - Apply behavior:
   - one indexer -> `payload.indexer = slug`
-  - many indexers -> keep remote `indexer=all`, inject local `filter_indexers` with derived set
+  - many indexers -> keep `payload.filter_indexers` scoped; attempt one aggregate `indexer=all` request first, then fall back to per-indexer scoped calls only on aggregate timeout/failure
   - none derivable -> keep current behavior + inline warning
 - Expose derived indexer context in inline-search summary for diagnostics.
 

@@ -978,6 +978,23 @@ def canonicalize_quality_tokens(raw_tokens: object | None) -> list[str]:
     )
 
 
+def quality_token_group_map() -> dict[str, str]:
+    return {str(item["value"]): str(item["group"]) for item in quality_option_choices()}
+
+
+def grouped_quality_tokens(raw_tokens: object | None) -> list[list[str]]:
+    token_group_map = quality_token_group_map()
+    grouped: dict[str, list[str]] = {}
+    ordered_groups: list[str] = []
+    for token in normalize_quality_tokens(raw_tokens):
+        group_key = token_group_map.get(token, "__ungrouped__")
+        if group_key not in grouped:
+            grouped[group_key] = []
+            ordered_groups.append(group_key)
+        grouped[group_key].append(token)
+    return [grouped[group_key] for group_key in ordered_groups if grouped[group_key]]
+
+
 def tokens_to_regex(tokens: object | None) -> str:
     option_patterns = _quality_option_patterns()
     ordered_patterns: list[str] = []
@@ -991,6 +1008,15 @@ def tokens_to_regex(tokens: object | None) -> str:
     if not ordered_patterns:
         return ""
     return f"(?:{'|'.join(ordered_patterns)})"
+
+
+def grouped_tokens_to_regex(tokens: object | None) -> list[str]:
+    fragments: list[str] = []
+    for group_tokens in grouped_quality_tokens(tokens):
+        fragment = tokens_to_regex(group_tokens)
+        if fragment:
+            fragments.append(fragment)
+    return fragments
 
 
 def normalize_profile_rules(raw_value: Any) -> dict[str, dict[str, list[str]]]:

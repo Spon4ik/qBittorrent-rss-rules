@@ -14,8 +14,13 @@ import httpx
 
 from app.config import ROOT_DIR, get_environment_settings
 from app.models import MediaType, Rule
-from app.schemas import JackettSearchRequest, JackettSearchResult, JackettSearchRun
-from app.services.quality_filters import quality_option_choices
+from app.schemas import (
+    SEARCH_INDEXER_RE,
+    JackettSearchRequest,
+    JackettSearchResult,
+    JackettSearchRun,
+)
+from app.services.quality_filters import quality_option_choices, quality_token_group_map
 from app.services.rule_builder import (
     looks_like_full_must_contain_override,
     normalize_release_year,
@@ -604,6 +609,29 @@ def _quality_terms(tokens: list[str] | None) -> list[str]:
     return _dedupe_terms(terms)
 
 
+def _group_quality_terms(tokens: list[str] | None) -> list[list[str]]:
+    normalized_tokens = [str(token).strip() for token in (tokens or []) if str(token).strip()]
+    if not normalized_tokens:
+        return []
+
+    token_groups = quality_token_group_map()
+    grouped_terms: dict[str, list[str]] = {}
+    ordered_group_keys: list[str] = []
+    for token in normalized_tokens:
+        group_key = token_groups.get(token, "__ungrouped__")
+        if group_key not in grouped_terms:
+            grouped_terms[group_key] = []
+            ordered_group_keys.append(group_key)
+        grouped_terms[group_key].extend(_quality_terms([token]))
+
+    deduped_groups: list[list[str]] = []
+    for group_key in ordered_group_keys:
+        deduped = _dedupe_terms(grouped_terms[group_key])
+        if deduped:
+            deduped_groups.append(deduped)
+    return deduped_groups
+
+
 def quality_search_term_map() -> dict[str, list[str]]:
     return {token: list(terms) for token, terms in _quality_search_term_map().items()}
 
@@ -620,6 +648,10 @@ def quality_pattern_map() -> dict[str, str]:
 
 def expand_quality_search_terms(tokens: list[str] | None) -> list[str]:
     return _quality_terms(tokens)
+
+
+def expand_grouped_quality_search_terms(tokens: list[str] | None) -> list[list[str]]:
+    return _group_quality_terms(tokens)
 
 
 def _capped_product(values: list[int], cap: int) -> int:
@@ -862,9 +894,9 @@ def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, Any], bool]:
         keywords_any_groups.extend(regex_any_groups)
         keywords_not.extend(regex_not)
 
-    quality_any = _quality_terms(_coerce_string_list(rule.quality_include_tokens))
-    if quality_any:
-        keywords_any_groups.append(quality_any)
+    quality_any_groups = _group_quality_terms(_coerce_string_list(rule.quality_include_tokens))
+    if quality_any_groups:
+        keywords_any_groups.extend(quality_any_groups)
 
     normalized_groups = _dedupe_term_groups(keywords_any_groups)
     flattened_any: list[str] = []
@@ -971,6 +1003,7 @@ class JackettClient:
             return self._search_imdb_first(payload)
 
         remote_payload = self._remote_payload_for_standard_search(payload)
+        remote_indexer_groups = self._remote_indexer_groups_for_standard_search(payload)
         query_variants = self._build_query_variants(remote_payload)
         request_variants: list[str] = []
         seen_request_variants: set[str] = set()
@@ -978,26 +1011,41 @@ class JackettClient:
         seen_warning_messages: set[str] = set()
         merged: dict[str, tuple[datetime | None, JackettSearchResult]] = {}
         last_timeout_error: JackettTimeoutError | None = None
+        last_http_error: JackettHTTPError | None = None
         for variant in query_variants:
             request_params = self._search_params_for_variant(remote_payload, variant)
             fallback_params = self._fallback_search_params_for_variant(remote_payload, variant, request_params)
-            try:
-                variant_results, successful_params, _, timeout_messages = self._search_variant(
-                    remote_payload.indexer,
-                    request_params,
-                    fallback_params=fallback_params,
-                )
-            except JackettTimeoutError as exc:
-                last_timeout_error = exc
-                self._add_warning(warning_messages, seen_warning_messages, str(exc))
-                continue
-            self._add_request_label(request_variants, seen_request_variants, successful_params)
-            for message in timeout_messages:
-                self._add_warning(warning_messages, seen_warning_messages, message)
-            self._merge_results(merged, variant_results)
+            for indexer_group in remote_indexer_groups:
+                group_had_success = False
+                for indexer in indexer_group:
+                    try:
+                        variant_results, successful_params, _, timeout_messages = self._search_variant(
+                            indexer,
+                            request_params,
+                            fallback_params=fallback_params,
+                        )
+                    except JackettTimeoutError as exc:
+                        last_timeout_error = exc
+                        self._add_warning(warning_messages, seen_warning_messages, str(exc))
+                        continue
+                    except JackettHTTPError as exc:
+                        if len(remote_indexer_groups) == 1 and len(indexer_group) == 1:
+                            raise
+                        last_http_error = exc
+                        self._add_warning(warning_messages, seen_warning_messages, str(exc))
+                        continue
+                    group_had_success = True
+                    self._add_request_label(request_variants, seen_request_variants, successful_params)
+                    for message in timeout_messages:
+                        self._add_warning(warning_messages, seen_warning_messages, message)
+                    self._merge_results(merged, variant_results)
+                if group_had_success:
+                    break
 
         if not request_variants and last_timeout_error is not None:
             raise last_timeout_error
+        if not request_variants and last_http_error is not None:
+            raise last_http_error
         ordered_raw_results = self._ordered_results_from_merged(merged)
         self._apply_dynamic_category_labels_if_needed(
             payload,
@@ -1049,10 +1097,45 @@ class JackettClient:
                 "keywords_not": [],
                 "size_min_mb": None,
                 "size_max_mb": None,
-                "filter_indexers": [],
                 "filter_category_ids": [],
             }
         )
+
+    @staticmethod
+    def _remote_indexers_for_standard_search(payload: JackettSearchRequest) -> list[str]:
+        if payload.indexer and payload.indexer != "all":
+            return [payload.indexer]
+
+        scoped_indexers: list[str] = []
+        seen_indexers: set[str] = set()
+        for raw_indexer in payload.filter_indexers:
+            candidate = str(raw_indexer or "").strip().casefold()
+            if not candidate:
+                continue
+            if candidate == "all":
+                return ["all"]
+            if not SEARCH_INDEXER_RE.match(candidate):
+                return ["all"]
+            if candidate in seen_indexers:
+                continue
+            seen_indexers.add(candidate)
+            scoped_indexers.append(candidate)
+
+        return scoped_indexers or ["all"]
+
+    @classmethod
+    def _remote_indexer_groups_for_standard_search(
+        cls,
+        payload: JackettSearchRequest,
+    ) -> list[list[str]]:
+        if payload.indexer and payload.indexer != "all":
+            return [[payload.indexer]]
+
+        scoped_indexers = cls._remote_indexers_for_standard_search(payload)
+        if scoped_indexers == ["all"]:
+            return [["all"]]
+
+        return [["all"], scoped_indexers]
 
     def _build_query_variants(self, payload: JackettSearchRequest) -> list[str]:
         query = payload.query.strip()
@@ -1501,7 +1584,6 @@ class JackettClient:
                 "keywords_not": [],
                 "size_min_mb": None,
                 "size_max_mb": None,
-                "filter_indexers": [],
                 "filter_category_ids": [],
             }
         )
@@ -1513,39 +1595,51 @@ class JackettClient:
         request_variants: list[dict[str, object]] = []
         fallback_results: list[tuple[datetime | None, JackettSearchResult]] = []
         warning_messages: list[str] = []
+        remote_indexer_groups = self._remote_indexer_groups_for_standard_search(fallback_payload)
 
         for query in query_variants:
-            try:
-                params = self._search_params_for_variant(fallback_payload, query)
-                forced_mode = TORZNAB_MODE_BY_MEDIA_TYPE.get(payload.media_type)
-                if forced_mode:
-                    params["t"] = forced_mode
-                fallback_params = self._fallback_search_params_for_variant(
-                    fallback_payload,
-                    query,
-                    params,
-                )
-                parsed_results, successful_params, _, timeout_messages = self._search_variant(
-                    fallback_payload.indexer,
-                    params,
-                    fallback_params=fallback_params,
-                )
-            except JackettTimeoutError as exc:
-                warning_messages.append(str(exc))
-                continue
-            except JackettHTTPError as exc:
-                if exc.status_code != 400:
-                    raise
-                continue
-            request_variants.append(successful_params)
-            warning_messages.extend(timeout_messages)
-
-            fallback_results.extend(
-                item
-                for item in parsed_results
-                if self._merge_key(item[1]) not in seen_merge_keys
+            params = self._search_params_for_variant(fallback_payload, query)
+            forced_mode = TORZNAB_MODE_BY_MEDIA_TYPE.get(payload.media_type)
+            if forced_mode:
+                params["t"] = forced_mode
+            fallback_params = self._fallback_search_params_for_variant(
+                fallback_payload,
+                query,
+                params,
             )
-            seen_merge_keys.update(self._merge_key(item[1]) for item in parsed_results)
+
+            query_had_success = False
+            for indexer_group in remote_indexer_groups:
+                group_had_success = False
+                for indexer in indexer_group:
+                    try:
+                        parsed_results, successful_params, _, timeout_messages = self._search_variant(
+                            indexer,
+                            params,
+                            fallback_params=fallback_params,
+                        )
+                    except JackettTimeoutError as exc:
+                        warning_messages.append(str(exc))
+                        continue
+                    except JackettHTTPError as exc:
+                        if exc.status_code != 400:
+                            raise
+                        warning_messages.append(str(exc))
+                        continue
+                    group_had_success = True
+                    query_had_success = True
+                    request_variants.append(successful_params)
+                    warning_messages.extend(timeout_messages)
+                    fallback_results.extend(
+                        item
+                        for item in parsed_results
+                        if self._merge_key(item[1]) not in seen_merge_keys
+                    )
+                    seen_merge_keys.update(self._merge_key(item[1]) for item in parsed_results)
+                if group_had_success:
+                    break
+            if not query_had_success:
+                continue
 
         return fallback_results, request_variants, warning_messages
 

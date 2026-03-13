@@ -99,7 +99,7 @@ The app saves locally first. If qBittorrent sync fails, the user does not lose t
 ## Security posture
 
 - The app binds to `127.0.0.1` by default.
-- v0.2.0 has no separate application login.
+- v0.3.0 has no separate application login.
 - Environment variables override saved secrets and are the preferred secret source.
 - Saved secrets are only lightly obfuscated for convenience, not strongly encrypted.
-- The app is intentionally scoped to a trusted local machine in v0.2.0.
+- The app is intentionally scoped to a trusted local machine in v0.3.0.

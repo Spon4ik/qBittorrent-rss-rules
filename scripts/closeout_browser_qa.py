@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import sqlite3
 import subprocess
@@ -35,6 +36,7 @@ class CheckResult:
 class MockQbState:
     feeds_payload: dict[str, Any]
     rules: dict[str, dict[str, Any]]
+    torrent_add_calls: list[dict[str, str]]
 
 
 @dataclass(slots=True)
@@ -42,9 +44,9 @@ class MockJackettState:
     request_count: int = 0
 
 
-FEED_ALPHA = "https://example.test/rss/alpha.xml"
-FEED_BETA = "https://example.test/rss/beta.xml"
-FEED_GAMMA = "https://example.test/rss/gamma.xml"
+FEED_ALPHA = "https://jackett.test/api/v2.0/indexers/alpha/results/torznab/api"
+FEED_BETA = "https://jackett.test/api/v2.0/indexers/beta/results/torznab/api"
+FEED_GAMMA = "https://jackett.test/api/v2.0/indexers/gamma/results/torznab/api"
 DEFAULT_FEEDS = [FEED_ALPHA, FEED_BETA]
 
 
@@ -248,7 +250,7 @@ NON_LATIN_ITEMS = [
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run deterministic browser-closeout QA for phases 4/5/6 using "
+            "Run deterministic browser-closeout QA for phases 4/5/6/7 using "
             "isolated mock qBittorrent + Jackett services."
         )
     )
@@ -344,6 +346,10 @@ def build_qb_handler(state: MockQbState) -> type[BaseHTTPRequestHandler]:
                 rule_name = (form.get("ruleName") or [""])[0]
                 if rule_name and rule_name in state.rules:
                     del state.rules[rule_name]
+                self._write_text("", status=200)
+                return
+            if parsed.path == "/api/v2/torrents/add":
+                state.torrent_add_calls.append({key: values[-1] if values else "" for key, values in form.items()})
                 self._write_text("", status=200)
                 return
             self._write_json({"error": f"Unhandled POST path: {parsed.path}"}, status=404)
@@ -580,7 +586,9 @@ def main() -> int:
     qb_port = find_free_port()
     jackett_port = find_free_port()
     app_base_url = f"http://{args.app_host}:{app_port}"
-    qb_base_url = f"http://127.0.0.1:{qb_port}"
+    # Use `localhost.` (trailing dot) so WSL localhost rewrite logic does not
+    # rewrite this deterministic local mock URL to host.docker.internal.
+    qb_base_url = f"http://localhost.:{qb_port}"
     jackett_base_url = f"http://127.0.0.1:{jackett_port}"
 
     qb_state = MockQbState(
@@ -592,6 +600,7 @@ def main() -> int:
             }
         },
         rules={},
+        torrent_add_calls=[],
     )
     jackett_state = MockJackettState(request_count=0)
 
@@ -709,6 +718,22 @@ def main() -> int:
             def request_count() -> int:
                 return len(app_requests)
 
+            phase7_context: dict[str, str] = {}
+
+            def wait_for_torrent_add_calls(expected_count: int) -> None:
+                timeout_at = time.monotonic() + (args.timeout_ms / 1000)
+                while time.monotonic() < timeout_at:
+                    if len(qb_state.torrent_add_calls) >= expected_count:
+                        return
+                    page.wait_for_timeout(80)
+                _expect(
+                    False,
+                    (
+                        "Timed out waiting for qB torrent add call count to reach "
+                        f"{expected_count}; saw {len(qb_state.torrent_add_calls)}."
+                    ),
+                )
+
             def checked_feed_values() -> list[str]:
                 return page.eval_on_selector_all(
                     '#feed-options input[name="feed_urls"]:checked',
@@ -725,6 +750,10 @@ def main() -> int:
                 raw = page.text_content(f'[data-search-filtered-count="{section}"]') or "0"
                 return int(raw.strip() or "0")
 
+            def search_fetched_count(section: str) -> int:
+                raw = page.text_content(f'[data-search-fetched-count="{section}"]') or "0"
+                return int(raw.strip() or "0")
+
             def search_visible_titles(section: str) -> list[str]:
                 return page.evaluate(
                     """
@@ -736,6 +765,35 @@ def main() -> int:
                     """,
                     section,
                 )
+
+            def reset_inline_local_filters_for_visibility() -> None:
+                if page.locator('textarea[name="must_not_contain"]').count() == 1:
+                    page.fill('textarea[name="must_not_contain"]', "")
+                if page.locator('textarea[name="additional_includes"]').count() == 1:
+                    page.fill('textarea[name="additional_includes"]', "")
+                include_release_year = page.locator('input[name="include_release_year"]')
+                if include_release_year.count() == 1 and include_release_year.is_checked():
+                    include_release_year.uncheck()
+                page.evaluate(
+                    """
+                    () => {
+                      const inputs = document.querySelectorAll(
+                        'input[name="quality_include_tokens"], input[name="quality_exclude_tokens"]'
+                      );
+                      for (const input of inputs) {
+                        if (!(input instanceof HTMLInputElement)) {
+                          continue;
+                        }
+                        if (!input.checked) {
+                          continue;
+                        }
+                        input.checked = false;
+                        input.dispatchEvent(new Event("change", { bubbles: true }));
+                      }
+                    }
+                    """
+                )
+                page.wait_for_timeout(260)
 
             run_check(
                 "P4-01",
@@ -1193,6 +1251,25 @@ def main() -> int:
                     len(documentary_titles) == 1 and "Test Cut" in documentary_titles[0],
                     f"Expected Documentary filter to keep Test Cut only; titles={documentary_titles}",
                 )
+                page.fill('input[name="keywords_any"]', "cam")
+                page.wait_for_timeout(220)
+                category_scope_status = page.text_content('[data-search-category-scope-status]') or ""
+                _expect(
+                    "currently have no cached matches" in category_scope_status,
+                    (
+                        "Expected stale category scope warning when selected category has no matches "
+                        f"under other filters; status={category_scope_status!r}."
+                    ),
+                )
+                _expect(
+                    search_filtered_count("fallback") == 0,
+                    (
+                        "Expected stale category + keyword combination to yield zero fallback rows; "
+                        f"got {search_filtered_count('fallback')}."
+                    ),
+                )
+                page.fill('input[name="keywords_any"]', "")
+                page.wait_for_timeout(220)
                 _expect(
                     request_count() == baseline_requests,
                     (
@@ -1263,6 +1340,10 @@ def main() -> int:
                     page.input_value('input[name="release_year"]').strip() == "2026",
                     "Handoff should prefill release year.",
                 )
+                # Keep downstream inline-search assertions deterministic by clearing
+                # prefilled exclusions from handoff query state.
+                page.fill('textarea[name="must_not_contain"]', "")
+                page.fill('textarea[name="additional_includes"]', "")
                 feed_checked = page.eval_on_selector_all(
                     '#feed-options input[name="feed_urls"]:checked',
                     "els => els.length",
@@ -1278,25 +1359,241 @@ def main() -> int:
                 page.wait_for_url("**/rules/**", timeout=args.timeout_ms)
                 current_url = page.url
                 _expect("/rules/" in current_url, f"Expected redirect to created rule page, got {current_url}")
-                page.click('a.button-link:has-text("Run Search")')
-                page.wait_for_url("**/search?rule_id=**", timeout=args.timeout_ms)
-                page.wait_for_selector('[data-search-summary="primary"]', timeout=args.timeout_ms)
-                _expect(
-                    page.input_value('input[name="keywords_any"]').strip() == "",
-                    "Rule-derived /search run should keep Additional any-of keyword groups blank by default.",
+                run_search_here = page.locator('a.button-link:has-text("Run Search Here")').first
+                _expect(run_search_here.count() == 1, "Expected Run Search Here action on the rule page.")
+                run_search_here.click()
+                page.wait_for_url(
+                    re.compile(r".*/rules/[^/?#]+\?.*run_search=1.*"),
+                    timeout=args.timeout_ms,
+                )
+                page.wait_for_selector(
+                    '#inline-search-results [data-search-summary="primary"]',
+                    timeout=args.timeout_ms,
                 )
                 page_text = page.content()
-                _expect("Derived from rule:" in page_text, "Rule-derived search page should show derivation summary.")
+                _expect(
+                    "Results on this page" in page_text,
+                    "Rule-derived run should render inline results on the rule page.",
+                )
                 _expect(
                     "IMDb-first results" in page_text,
                     "Rule-derived movie/series search should use IMDb-first labeling.",
                 )
+                advanced_link = page.locator(
+                    '#inline-search-results a.button-link:has-text("Open Advanced Search Workspace")'
+                ).first
+                _expect(
+                    advanced_link.count() == 1,
+                    "Inline results section should expose Advanced Search workspace link.",
+                )
+                advanced_href = advanced_link.get_attribute("href") or ""
+                _expect(
+                    advanced_href.startswith("/search?rule_id="),
+                    f"Unexpected advanced workspace href: {advanced_href}",
+                )
+                phase7_context["inline_rule_url"] = page.url
 
             run_check(
                 "P6-05",
                 "Phase 6",
                 "Filter-impact UX, search-to-rule handoff, and rule-derived search flow",
                 check_phase6_filter_impact_and_handoff,
+                page=page,
+            )
+
+            def check_phase7_inline_pattern_local_recompute() -> None:
+                inline_rule_url = phase7_context.get("inline_rule_url")
+                _expect(
+                    bool(inline_rule_url),
+                    "Missing inline rule URL context from P6-05 handoff check.",
+                )
+                page.goto(str(inline_rule_url), wait_until="networkidle", timeout=args.timeout_ms)
+                page.wait_for_selector(
+                    '#inline-search-results [data-search-summary="primary"]',
+                    timeout=args.timeout_ms,
+                )
+                reset_inline_local_filters_for_visibility()
+                baseline_requests = request_count()
+                active_section = "primary" if search_filtered_count("primary") > 0 else "fallback"
+                baseline_primary = search_filtered_count(active_section)
+                _expect(
+                    baseline_primary >= 1,
+                    (
+                        "Expected inline results before generated-pattern recompute check; "
+                        f"section={active_section} count={baseline_primary}; "
+                        f"fetched_primary={search_fetched_count('primary')} "
+                        f"fetched_fallback={search_fetched_count('fallback')}."
+                    ),
+                )
+                page.fill('textarea[name="must_not_contain"]', "young sherlock")
+                page.wait_for_timeout(260)
+                _expect(
+                    search_filtered_count(active_section) < baseline_primary,
+                    (
+                        "Expected generated-pattern mustNotContain edit to locally reduce visible inline rows; "
+                        f"section={active_section} baseline={baseline_primary} now={search_filtered_count(active_section)}."
+                    ),
+                )
+                _expect(
+                    request_count() == baseline_requests,
+                    (
+                        "Inline generated-pattern recompute should be network-free. "
+                        f"before={baseline_requests} after={request_count()}"
+                    ),
+                )
+                page.fill('textarea[name="must_not_contain"]', "")
+                page.wait_for_timeout(240)
+                _expect(
+                    search_filtered_count(active_section) >= 1,
+                    "Expected inline results to return after clearing generated-pattern exclusion.",
+                )
+
+            run_check(
+                "P7-10",
+                "Phase 7",
+                "Inline generated-pattern edits recompute cached results without remote requests",
+                check_phase7_inline_pattern_local_recompute,
+                page=page,
+            )
+
+            def check_phase7_inline_queue_paused_semantics() -> None:
+                inline_rule_url = phase7_context.get("inline_rule_url")
+                _expect(
+                    bool(inline_rule_url),
+                    "Missing inline rule URL context from P6-05 handoff check.",
+                )
+                page.goto(str(inline_rule_url), wait_until="networkidle", timeout=args.timeout_ms)
+                page.wait_for_selector(
+                    '#inline-search-results [data-search-summary="primary"]',
+                    timeout=args.timeout_ms,
+                )
+                reset_inline_local_filters_for_visibility()
+                queue_buttons = page.locator(
+                    "#inline-search-results "
+                    '[data-search-row="primary"]:not([hidden]) [data-result-queue-button], '
+                    "#inline-search-results "
+                    '[data-search-row="fallback"]:not([hidden]) [data-result-queue-button]'
+                )
+                _expect(
+                    queue_buttons.count() >= 1,
+                    (
+                        "Expected a visible inline queue button. "
+                        f"fetched_primary={search_fetched_count('primary')} "
+                        f"fetched_fallback={search_fetched_count('fallback')} "
+                        f"filtered_primary={search_filtered_count('primary')} "
+                        f"filtered_fallback={search_filtered_count('fallback')}"
+                    ),
+                )
+                queue_button = queue_buttons.first
+                paused_toggle = page.locator(
+                    '#inline-search-results input[data-result-queue-option="paused"]'
+                ).first
+                _expect(paused_toggle.count() == 1, "Expected inline Add paused toggle.")
+
+                if paused_toggle.is_checked():
+                    paused_toggle.uncheck()
+                add_call_start = len(qb_state.torrent_add_calls)
+                queue_button.click()
+                wait_for_torrent_add_calls(add_call_start + 1)
+                latest_unpaused = qb_state.torrent_add_calls[-1]
+                _expect(
+                    latest_unpaused.get("paused") == "false" and latest_unpaused.get("stopped") == "false",
+                    (
+                        "Expected unchecked Add paused to send paused=false and stopped=false; "
+                        f"payload={latest_unpaused}"
+                    ),
+                )
+
+                paused_toggle.check()
+                add_call_start = len(qb_state.torrent_add_calls)
+                queue_button.click()
+                wait_for_torrent_add_calls(add_call_start + 1)
+                latest_paused = qb_state.torrent_add_calls[-1]
+                _expect(
+                    latest_paused.get("paused") == "true" and latest_paused.get("stopped") == "true",
+                    (
+                        "Expected checked Add paused to send paused=true and stopped=true; "
+                        f"payload={latest_paused}"
+                    ),
+                )
+
+            run_check(
+                "P7-11",
+                "Phase 7",
+                "Inline queue actions propagate Add paused semantics to qB payload flags",
+                check_phase7_inline_queue_paused_semantics,
+                page=page,
+            )
+
+            def check_phase7_inline_table_sort_parity() -> None:
+                inline_rule_url = phase7_context.get("inline_rule_url")
+                _expect(
+                    bool(inline_rule_url),
+                    "Missing inline rule URL context from P6-05 handoff check.",
+                )
+                page.goto(str(inline_rule_url), wait_until="networkidle", timeout=args.timeout_ms)
+                page.wait_for_selector(
+                    '#inline-search-results [data-search-summary="primary"]',
+                    timeout=args.timeout_ms,
+                )
+                reset_inline_local_filters_for_visibility()
+                primary_titles = search_visible_titles("primary")
+                fallback_titles = search_visible_titles("fallback")
+                section = "primary" if primary_titles else "fallback"
+                section_titles = primary_titles if section == "primary" else fallback_titles
+                _expect(
+                    len(section_titles) >= 1,
+                    (
+                        "Expected at least one visible inline row for sort parity check; "
+                        f"primary={primary_titles}, fallback={fallback_titles}."
+                    ),
+                )
+
+                table_wrap = page.locator(f'#inline-search-results [data-search-table-wrap="{section}"]').first
+                _expect(table_wrap.count() == 1, f"Expected inline {section} table wrapper.")
+                _expect(
+                    not table_wrap.evaluate("node => node.hidden"),
+                    "Inline results should default to table view.",
+                )
+                card_wrap = page.locator(f'#inline-search-results [data-search-results="{section}"]').first
+                _expect(
+                    card_wrap.evaluate("node => node.hidden"),
+                    "Inline card view should be hidden when table view is defaulted.",
+                )
+
+                sort_controls = page.locator("#inline-search-results [data-search-controls]").first
+                _expect(sort_controls.count() == 1, "Expected inline sort controls.")
+                baseline_requests = request_count()
+                sort_controls.locator('[data-search-sort-field="1"]').select_option("title")
+                sort_controls.locator('[data-search-sort-dir="1"]').select_option("asc")
+                page.wait_for_timeout(220)
+                asc_titles = search_visible_titles(section)
+                if len(asc_titles) >= 2:
+                    _expect(
+                        asc_titles == sorted(asc_titles, key=str.casefold),
+                        f"Expected inline {section} titles sorted ascending by title; titles={asc_titles}.",
+                    )
+                sort_controls.locator('[data-search-sort-dir="1"]').select_option("desc")
+                page.wait_for_timeout(220)
+                desc_titles = search_visible_titles(section)
+                if len(desc_titles) >= 2:
+                    _expect(
+                        desc_titles == sorted(desc_titles, key=str.casefold, reverse=True),
+                        f"Expected inline {section} titles sorted descending by title; titles={desc_titles}.",
+                    )
+                _expect(
+                    request_count() == baseline_requests,
+                    (
+                        "Inline sort/view toggles should be local-only. "
+                        f"before={baseline_requests} after={request_count()}"
+                    ),
+                )
+
+            run_check(
+                "P7-12",
+                "Phase 7",
+                "Inline rule-page results default to table view and keep local sort parity",
+                check_phase7_inline_table_sort_parity,
                 page=page,
             )
 
@@ -1380,7 +1677,7 @@ def main() -> int:
     report_json_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     headline = (
-        f"# Phase 4/5/6 Browser Closeout QA ({run_stamp})\n\n"
+        f"# Phase 4/5/6/7 Browser Closeout QA ({run_stamp})\n\n"
         f"- Total checks: **{len(checks)}**\n"
         f"- Passed: **{passed}**\n"
         f"- Failed: **{len(failures)}**\n"

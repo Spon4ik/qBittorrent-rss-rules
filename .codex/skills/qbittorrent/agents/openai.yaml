@@ -1,0 +1,4 @@
+interface:
+  display_name: "qBittorrent Expert"
+  short_description: "Implement and debug qBittorrent WebUI integration."
+  default_prompt: "Use $qbittorrent to implement or troubleshoot qBittorrent RSS sync and queue workflows."

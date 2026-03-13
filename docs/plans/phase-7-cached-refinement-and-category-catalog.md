@@ -4,13 +4,15 @@
 
 - Planning baseline created on 2026-03-12.
 - This phase is intentionally separated from phase 6 to avoid widening the v0.2.0 release slice after closeout.
-- Implementation is active: `P7-01`..`P7-04` are complete; `P7-05` and `P7-06` are in progress.
-- Follow-up UX integration slice `P7-08` is in progress: saved-rule `Run Search` now renders inline results on `/rules/{id}` with queue-to-qB actions, but browser closeout evidence and full QA-gate reruns are pending.
-- Extension slice execution is active: `P7-09` is completed in code/tests; `P7-10`/`P7-11`/`P7-12` implementation is landed and awaiting deterministic browser QA evidence; `P7-13` closeout remains pending.
+- Implementation closeout is complete: `P7-01`..`P7-13` are now completed with deterministic browser evidence and release-gate reruns.
+- Follow-up UX integration slice `P7-08` is completed with deterministic browser assertions on inline saved-rule run flow and advanced workspace handoff link behavior.
+- Extension slice execution is completed: `P7-09`..`P7-12` are validated in deterministic browser QA, and `P7-13` closeout is complete.
+- Queue pause compatibility hardening is now implemented in `P7-11`: queue add calls send both `paused` and `stopped` to keep `Add paused` behavior consistent across qBittorrent WebUI API versions.
 - Follow-up request handling is active: feed-scope parser hardening for Torznab URL variants and episode-progress floor filtering fields are implemented with targeted regressions (`P7-14`).
 - Follow-up regression fix is completed: scoped multi-indexer runs now use aggregate-first remote fetch with scoped per-indexer fallback, so inline-search no longer hard-fails on aggregate timeout (`P7-16`).
 - Follow-up regression fix is completed: quality include tokens now enforce AND-across-quality-groups semantics (for example `4K` + `HDR`) across backend payloads, generated regex, and local cached filtering (`P7-17`).
 - Follow-up regression fix is completed: inline generated-pattern local filtering now evaluates raw result titles, preserving season/episode range separators for floor matching (for example `S27E01-05`) (`P7-18`).
+- Added repo-local `qbittorrent` skill (`.codex/skills/qbittorrent`, 2026-03-13) to standardize qB WebUI integration workflows and regression validation while phase-7 queue/feed slices continue.
 - Added persistent category-catalog foundations in this branch (`IndexerCategoryCatalog` model + Alembic migration + catalog service write/read helpers + `/search` persistence wiring).
 - `/search` category options now refresh from cached results scoped by current non-category filters, with per-option count badges, explicit inactive-state labeling for stale selections, and a dynamic status note that explains category-only narrowing vs stale selections.
 
@@ -179,15 +181,15 @@ This extension remains in phase 7 because it is a cached-refinement UX contract 
 | P7-02 | Introduce normalized category catalog persistence model and migration. | Codex | 2026-03-14 | completed | DB has `indexer_category_catalog` with unique `(indexer, category_id)` and service write/read paths tested. | `app/models.py`, `alembic/versions/0002_indexer_category_catalog.py`, `app/services/category_catalog.py`, `tests/test_category_catalog.py` |
 | P7-03 | Implement catalog enrichment + join-based category resolution in search normalization. | Codex | 2026-03-15 | completed | Search normalization emits category labels via catalog join and deterministic unknown fallback. | `app/routes/pages.py` catalog sync/resolve wiring, `tests/test_routes.py::test_search_page_persists_indexer_category_catalog_entries`, `tests/test_category_catalog.py` |
 | P7-04 | Rework `Result categories` UI for readability and explainability. | Codex | 2026-03-16 | completed | Multi-select UI with counts and clearer labels ships on `/search` desktop/mobile breakpoints. | `app/static/app.js` scoped options + count badges + scope-status diagnostics, `app/static/app.css` multiselect readability styles, `app/templates/search.html` helper text + status target |
-| P7-05 | Guarantee immediate cached-result recomputation for all local filter controls. | Codex | 2026-03-16 | in_progress | Changing any local control updates rendered results without remote fetch. | `scripts/closeout_browser_qa.py` phase-6 local-filter checks remain network-free after category-scope UI changes (`P6-02`/`P6-03`/`P6-04` pass in `logs/qa/phase-closeout-20260312T004852Z/closeout-report.md`) |
-| P7-06 | Add regression tests for ghost-category mismatch and mixed-indexer category collisions. | Codex | 2026-03-17 | in_progress | New regression tests fail on old behavior and pass on new implementation. | Added collision + ambiguous-label regressions in `tests/test_category_catalog.py` and route-level collision persistence in `tests/test_routes.py`; remaining ghost-category end-to-end case still pending |
-| P7-07 | Run full quality gates and closeout docs sync. | Codex | 2026-03-17 | pending | `./scripts/check.sh` and `./scripts/closeout_qa.sh` pass (or documented known non-phase blocker); roadmap/status/phase docs synchronized. | test logs + updated docs |
-| P7-08 | Keep saved-rule search inline on `/rules/{id}` and add queue-to-qB actions with rule defaults. | Codex | 2026-03-18 | in_progress | `Run Search` keeps the user on the rule page, inline results render primary/fallback sets, and queue actions post to `/api/search/queue` with visible success/failure status. | `app/routes/pages.py` inline-search path, `app/routes/api.py` queue endpoint, `app/static/app.js` queue action handler, `tests/test_routes.py` inline-search + queue API tests |
+| P7-05 | Guarantee immediate cached-result recomputation for all local filter controls. | Codex | 2026-03-16 | completed | Changing any local control updates rendered results without remote fetch. | Deterministic browser closeout confirms local-only updates for grouped keywords, release-year toggle, quality/indexer/category filters, and stale-category scope diagnostics (`P6-02`/`P6-03`/`P6-04`) in `logs/qa/phase-closeout-20260313T002114Z/closeout-report.md`. |
+| P7-06 | Add regression tests for ghost-category mismatch and mixed-indexer category collisions. | Codex | 2026-03-17 | completed | New regression tests fail on old behavior and pass on new implementation. | Collision + ambiguous-label regressions in `tests/test_category_catalog.py`/`tests/test_routes.py` plus deterministic browser stale-category scope-status assertion in `scripts/closeout_browser_qa.py` (`P6-04`, `logs/qa/phase-closeout-20260313T002114Z/closeout-report.md`). |
+| P7-07 | Run full quality gates and closeout docs sync. | Codex | 2026-03-17 | completed | `./scripts/check.sh` and `./scripts/closeout_qa.sh` pass (or documented known non-phase blocker); roadmap/status/phase docs synchronized. | `source .venv-linux/bin/activate && ./scripts/check.sh` (`All checks passed`) and `./scripts/closeout_qa.sh` (`14/14` checks pass; `logs/qa/phase-closeout-20260313T002114Z/closeout-report.{md,json}`). |
+| P7-08 | Keep saved-rule search inline on `/rules/{id}` and add queue-to-qB actions with rule defaults. | Codex | 2026-03-18 | completed | `Run Search` keeps the user on the rule page, inline results render primary/fallback sets, and queue actions post to `/api/search/queue` with visible success/failure status. | `app/routes/pages.py` inline-search path, `app/routes/api.py` queue endpoint, `app/static/app.js` queue action handler, `tests/test_routes.py` inline-search + queue API tests, deterministic browser closeout `P6-05` in `logs/qa/phase-closeout-20260313T002114Z/closeout-report.md`. |
 | P7-09 | Add feed-aware search scoping from rule `feed_urls` to inline-search payload construction. | Codex | 2026-03-18 | completed | Inline `Run Search Here` restricts results to rule-affected feed/indexer scope where derivable, with explicit fallback warning when not derivable. | `app/routes/pages.py` feed URL parser + scope wiring; `tests/test_routes.py::{test_edit_rule_inline_search_scopes_single_jackett_feed_indexer,test_edit_rule_inline_search_scopes_multiple_jackett_feed_indexers,test_edit_rule_inline_search_warns_when_feed_scope_not_derivable,test_search_page_from_rule_uses_structured_terms_not_raw_regex}` |
-| P7-10 | Wire generated-pattern-driven local recompute for inline cached results. | Codex | 2026-03-19 | in_progress | Changing rule form fields that affect `Generated pattern preview` immediately updates inline filtered counts/results without Jackett requests. | `app/static/app.js` now compiles inline generated pattern from live rule-form state via `getGeneratedPatternForFilters`; deterministic browser no-network evidence still pending |
-| P7-11 | Enforce queue `Add paused` semantics end-to-end on inline and `/search` results. | Codex | 2026-03-19 | in_progress | Queue action payload always carries explicit `add_paused` checkbox state and backend behavior reflects the chosen value. | Shared queue JS posts explicit `add_paused` + existing API coverage in `tests/test_routes.py::test_queue_search_result_api_*`; deterministic browser payload assertion still pending |
-| P7-12 | Make inline results table-first with `/search` sorting parity. | Codex | 2026-03-20 | in_progress | Inline results default to table mode and apply the same multi-level sorting fields/directions as `/search`. | `app/templates/rule_form.html` now renders `/search`-parity `data-search-controls` + card/table containers; route render assertion added in `tests/test_routes.py::test_edit_rule_page_can_render_inline_search_results`; browser sorting evidence pending |
-| P7-13 | QA closeout for extension slice (feed scope + inline recompute + queue + table/sort parity). | Codex | 2026-03-20 | pending | Targeted tests + deterministic closeout checks pass (or documented non-phase blocker) with dated artifacts. | Planned evidence in `logs/tests/` + `logs/qa/phase-closeout-*` |
+| P7-10 | Wire generated-pattern-driven local recompute for inline cached results. | Codex | 2026-03-19 | completed | Changing rule form fields that affect `Generated pattern preview` immediately updates inline filtered counts/results without Jackett requests. | `app/static/app.js` generated-pattern wiring + deterministic browser assertion `P7-10` (no-network inline recompute) in `logs/qa/phase-closeout-20260313T002114Z/closeout-report.md`. |
+| P7-11 | Enforce queue `Add paused` semantics end-to-end on inline and `/search` results. | Codex | 2026-03-19 | completed | Queue action payload always carries explicit `add_paused` checkbox state and backend behavior reflects the chosen value. | Shared queue JS posts explicit `add_paused`; qB queue add posts both `paused` + `stopped` in `app/services/qbittorrent.py`; regressions in `tests/test_routes.py::test_queue_search_result_api_*` + `tests/test_qbittorrent_client.py::test_add_torrent_url_sends_paused_and_stopped_for_compatibility`; deterministic browser assertion `P7-11` in `logs/qa/phase-closeout-20260313T002114Z/closeout-report.md`. |
+| P7-12 | Make inline results table-first with `/search` sorting parity. | Codex | 2026-03-20 | completed | Inline results default to table mode and apply the same multi-level sorting fields/directions as `/search`. | `app/templates/rule_form.html` `/search`-parity controls + route render assertion (`tests/test_routes.py::test_edit_rule_page_can_render_inline_search_results`) + deterministic browser assertion `P7-12` in `logs/qa/phase-closeout-20260313T002114Z/closeout-report.md`. |
+| P7-13 | QA closeout for extension slice (feed scope + inline recompute + queue + table/sort parity). | Codex | 2026-03-20 | completed | Targeted tests + deterministic closeout checks pass (or documented non-phase blocker) with dated artifacts. | `source .venv-linux/bin/activate && ./scripts/check.sh` (`All checks passed`) + `./scripts/closeout_qa.sh` (`14/14` checks pass) with artifacts at `logs/qa/phase-closeout-20260313T002114Z/closeout-report.{md,json}`. |
 | P7-14 | Fix feed-scope Torznab URL variant parsing and add episode-progress floor fields (`Start season`, `Start episode`) with regex parity in backend/frontend. | Codex | 2026-03-21 | completed | Excluded feed indexers no longer leak due URL-shape parsing misses; new floor fields persist and generate regex matching `SxxExx` and `SxxExx-yy` variants at/after the configured point. | `app/routes/pages.py` Torznab parser update; `app/models.py` + `app/schemas.py` + `app/routes/api.py` + `app/services/rule_builder.py` + `app/static/app.js` + `app/templates/rule_form.html`; tests in `tests/test_routes.py` and `tests/test_rule_builder.py` |
 | P7-15 | Persist queue defaults for `Sequential download` + `First and last pieces first`, and enforce affected-feed filtering from current rule-form selection in inline results/search runs. | Codex | 2026-03-21 | completed | Queue option defaults are saved and reloaded for search/inline queue panels; inline `Run Search Here` and cached local filtering honor current checked `Affected feeds` (including unsaved form state). | `app/models.py` + `app/services/settings_service.py` + `app/routes/api.py` + `app/routes/pages.py` + `app/static/app.js` + templates + migration `0003`; route regressions in `tests/test_routes.py` |
 | P7-16 | Fix scoped inline-search timeout regression by hardening multi-indexer remote execution and IMDb title-fallback resilience. | Codex | 2026-03-12 | completed | Standard search now prefers one aggregate request and only falls back to scoped per-indexer requests on aggregate failure/timeouts; IMDb title-fallback now keeps scoped indexers and applies the same aggregate-first fallback strategy, preserving warning diagnostics without dropping all results. | `app/services/jackett.py`, `tests/test_jackett.py::{test_jackett_client_scopes_standard_remote_fetch_to_filter_indexers,test_jackett_client_falls_back_to_all_when_filter_indexer_is_not_slug,test_jackett_client_scoped_standard_search_continues_after_indexer_timeout,test_jackett_client_imdb_title_fallback_uses_scoped_indexers_after_all_timeout}` |
@@ -228,9 +230,9 @@ Tests:
 ### P7-10 Generated-pattern local recompute
 
 Progress (2026-03-12):
-- In progress: inline local filtering now derives generated-pattern regex from live rule-form state (`derivePattern`) during filter evaluation, avoiding preview-update timing lag.
-- Completed (2026-03-13): generated-pattern matching now evaluates raw title text for inline cached entries, so season/episode range separators (`SxxE01-05`) are preserved instead of being stripped by normalized local text surfaces.
-- Remaining: deterministic browser evidence that rule-form edits update cached inline results immediately without remote Jackett calls.
+- Completed: inline local filtering derives generated-pattern regex from live rule-form state (`derivePattern`) during filter evaluation, avoiding preview-update timing lag.
+- Completed (2026-03-13): generated-pattern matching evaluates raw title text for inline cached entries, so season/episode range separators (`SxxE01-05`) are preserved instead of being stripped by normalized local text surfaces.
+- Completed (2026-03-13): deterministic browser evidence now verifies rule-form edits update cached inline results without remote Jackett requests (`P7-10`, `logs/qa/phase-closeout-20260313T002114Z/closeout-report.md`).
 
 Files:
 - `app/templates/rule_form.html`
@@ -253,17 +255,21 @@ Tests/QA:
 
 ### P7-11 Queue `Add paused` semantics
 
-Progress (2026-03-12):
-- In progress: shared queue JS always sends explicit `add_paused` boolean from current checkbox state; backend queue API tests for pause defaults remain passing.
-- Remaining: deterministic browser assertion that toggling `Add paused` changes queue behavior/message in inline and `/search` flows.
+Progress (2026-03-13):
+- Completed: shared queue JS sends explicit `add_paused` boolean from current checkbox state, and qB queue add sends both `paused` and `stopped` flags for cross-version WebUI API compatibility.
+- Completed: added service-level regression coverage for add payload compatibility flags plus existing queue API defaults coverage.
+- Completed: deterministic browser assertion now verifies toggling `Add paused` updates qB payload flags for inline queue actions (`P7-11`, `logs/qa/phase-closeout-20260313T002114Z/closeout-report.md`).
 
 Files:
 - `app/static/app.js`
+- `app/services/qbittorrent.py`
 - `tests/test_routes.py`
+- `tests/test_qbittorrent_client.py`
 - optional closeout check updates in `scripts/closeout_browser_qa.py`
 
 Implementation:
 - Keep explicit `add_paused` in queue payload from checkbox state for both `/search` and inline rule views.
+- Send `stopped` alongside `paused` in qB `/api/v2/torrents/add` payloads to preserve add-paused semantics on newer qB versions while keeping old-version compatibility.
 - Add UI status text confirming resolved paused behavior returned by API.
 
 Done criteria:
@@ -277,8 +283,8 @@ Tests:
 ### P7-12 Table-first + sort parity
 
 Progress (2026-03-12):
-- In progress: inline rule-page result sections now render `/search`-parity result-view controls + table/card data attributes with table default.
-- Remaining: deterministic browser evidence for sort-order behavior across at least two sort-field combinations.
+- Completed: inline rule-page result sections render `/search`-parity result-view controls + table/card data attributes with table default.
+- Completed: deterministic browser evidence now verifies inline table-default behavior and local sort control parity for scoped inline result sets (`P7-12`, `logs/qa/phase-closeout-20260313T002114Z/closeout-report.md`).
 
 Files:
 - `app/templates/rule_form.html`
@@ -313,6 +319,7 @@ Artifact expectations:
 Closeout docs:
 - update `docs/plans/current-status.md` (implemented/in-progress/next)
 - update this phase doc statuses/evidence for `P7-09..P7-13`
+- record final deterministic artifact set at `logs/qa/phase-closeout-20260313T002114Z/closeout-report.{md,json}`
 
 ### P7-14 Feed parser hardening + episode-progress floor
 
@@ -365,6 +372,8 @@ Validation evidence:
   - `./scripts/test.sh tests/test_category_catalog.py tests/test_routes.py -k "category_catalog or run_rule_search_route_redirects_to_inline_rule_page or rule_pages_expose_run_search_actions or inline_search_results or queue_search_result_api"` (`12 passed`, `49 deselected`)
   - `./.venv-linux/bin/ruff check app/routes/pages.py app/services/category_catalog.py tests/test_routes.py` (`All checks passed`)
   - `./scripts/closeout_qa.sh` (`10/11` checks pass; phase-5/phase-6 checks all pass including updated category multiselect path, one pre-existing phase-4 `P4-01` failure remains, 2026-03-12, `logs/qa/phase-closeout-20260312T004852Z/closeout-report.md`)
+  - `source .venv-linux/bin/activate && ./scripts/check.sh` (`All checks passed`, 2026-03-13)
+  - `./scripts/closeout_qa.sh` (`14/14` checks pass with phase-7 checks `P7-10`/`P7-11`/`P7-12` and stale-category scope assertion in `P6-04`, 2026-03-13, `logs/qa/phase-closeout-20260313T002114Z/closeout-report.md`)
   - `./.venv-linux/bin/ruff check tests/test_routes.py` (`All checks passed`, 2026-03-13)
   - `./scripts/test.sh tests/test_routes.py -k "inline_local_generated_pattern_uses_raw_title_surface or edit_rule_page_can_render_inline_search_results or run_rule_search_route_redirects_to_inline_rule_page"` (`3 passed`, `60 deselected`, 2026-03-13)
   - `./scripts/test.sh tests/test_rule_builder.py -k "start_season or floor"` (`1 passed`, `17 deselected`, 2026-03-13)

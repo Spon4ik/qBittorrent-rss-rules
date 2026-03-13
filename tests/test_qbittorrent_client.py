@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import parse_qs
+
 import httpx
 import pytest
 
@@ -59,3 +61,41 @@ def test_create_category_ignores_conflict_for_existing_category() -> None:
     )
 
     client.create_category("Series/Pluribus [imdbid-tt0000000]")
+
+
+def test_add_torrent_url_sends_paused_and_stopped_for_compatibility() -> None:
+    captured_body: dict[str, list[str]] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_body
+        if request.url.path == "/api/v2/auth/login":
+            return httpx.Response(200, text="Ok.")
+        if request.url.path == "/api/v2/torrents/add":
+            captured_body = parse_qs(request.content.decode())
+            return httpx.Response(200, text="Ok.")
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    client = QbittorrentClient(
+        "http://127.0.0.1:8080",
+        "admin",
+        "adminadmin",
+        transport=transport,
+    )
+
+    client.add_torrent_url(
+        link="https://example.com/queued.torrent",
+        category="Series/Shrinking [imdbid-tt15153834]",
+        save_path="/data/shrinking",
+        paused=True,
+        sequential_download=True,
+        first_last_piece_prio=True,
+    )
+
+    assert captured_body["urls"] == ["https://example.com/queued.torrent"]
+    assert captured_body["paused"] == ["true"]
+    assert captured_body["stopped"] == ["true"]
+    assert captured_body["sequentialDownload"] == ["true"]
+    assert captured_body["firstLastPiecePrio"] == ["true"]
+    assert captured_body["category"] == ["Series/Shrinking [imdbid-tt15153834]"]
+    assert captured_body["savepath"] == ["/data/shrinking"]

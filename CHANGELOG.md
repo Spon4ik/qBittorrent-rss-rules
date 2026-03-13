@@ -8,6 +8,14 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.3.0] - 2026-03-13
+
+- Released the phase-7 cached-refinement + category-catalog slice, including persisted indexer/category mapping and scoped category multiselect diagnostics on `/search`.
+- Shipped rule-page inline search as the default saved-rule run flow with feed-aware scoping, queue-to-qB actions, and `/search`-parity table/sort controls.
+- Added episode-progress floor filtering (`Start season` + `Start episode`) and grouped quality include semantics so multi-group selections (for example `4K` + `HDR`) apply deterministically across backend and local refinement.
+- Hardened qB add-paused compatibility by posting both `paused` and `stopped` flags for queue add actions across WebUI API versions.
+- Expanded deterministic browser closeout coverage with phase-7 inline checks (pattern local recompute, queue paused semantics, and table/sort parity) and stale-category scope-status regression assertions.
+
 ## [0.2.0] - 2026-03-11
 
 - Released the phase-6 Jackett active-search workflow as the v0.2.0 feature slice, including IMDb-first plus title-fallback result sections and richer local refinement controls.

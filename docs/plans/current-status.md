@@ -2,19 +2,19 @@
 
 ## Current focus
 
-- Phase 7 implementation: category-catalog persistence + catalog-join resolution + category UX explainability are complete (`P7-01`..`P7-04`)
-- Phase 7 active slices: cached-result responsiveness hardening (`P7-05`) and ghost-category regression completion (`P7-06`)
-- Phase 7 follow-up slice: inline rule-page search workspace + queue-to-qB action flow (`P7-08`)
-- Phase 7 extension execution is active for feed-aware inline search, generated-pattern local recompute, queue-pause semantics, and inline table/sort parity (`P7-09`..`P7-13`)
-- Phase 7 follow-up fix/feature slice landed for Torznab feed-parser hardening + episode-progress floor fields (`P7-14`)
-- Phase 7 follow-up fix slice landed for persisted queue option defaults plus affected-feed live scope enforcement (`P7-15`)
-- Phase 7 regression-fix slice landed for resilient scoped search execution (aggregate-first + scoped fallback) across derived affected-feed indexers, including IMDb title-fallback hardening (`P7-16`)
-- Phase 7 regression-fix slice landed for strict quality-group include semantics (`P7-17`) so HDR filtering no longer passes SDR-only 4K rows
-- Phase 7 regression-fix slice landed for inline generated-pattern title-surface matching (`P7-18`), preserving episode-floor range variants like `S27E01-05` during cached local refinement
-- Release-process automation and evidence-driven phase sign-off
+- Phase 7 execution and closeout are complete (`P7-01`..`P7-18`), including category-catalog integrity, inline rule-page search parity, queue semantics hardening, and grouped-quality / episode-floor regressions.
+- Deterministic browser closeout QA now includes phase-7 inline checks (`P7-10`/`P7-11`/`P7-12`) plus stale-category scope-status coverage (`P7-06`) with all checks passing.
+- v0.3.0 release-prep sync is active (version fields, changelog, roadmap, and phase/status handoff updates).
 
 ## Implemented
 
+- Expanded deterministic browser closeout automation on 2026-03-13 to phase-7 inline scope:
+  - mock qB feed fixtures now use Jackett-style Torznab feed URLs so inline feed-scope derivation is test-realistic (`alpha`/`beta`/`gamma` slugs) and WSL localhost rewrite does not break mock qB connectivity (`localhost.` mock URL path in script env).
+  - `P6-05` browser flow now validates current inline `Run Search Here` behavior (`/rules/{id}?run_search=1`) instead of legacy `/search?rule_id=...` navigation.
+  - added phase-7 browser checks for generated-pattern local recompute (`P7-10`), queue paused payload propagation (`P7-11`), and inline table/sort parity (`P7-12`) plus stale-category scope warning coverage inside multiselect local filtering (`P7-06` evidence).
+  - latest deterministic closeout evidence: `./scripts/closeout_qa.sh` (`14/14` checks pass) with artifacts at `logs/qa/phase-closeout-20260313T002114Z/closeout-report.{md,json}`.
+- Re-ran release gate wrappers on 2026-03-13 in Linux `.venv-linux`: `source .venv-linux/bin/activate && ./scripts/check.sh` (`All checks passed`).
+- Added repo-local Codex skill `.codex/skills/qbittorrent` on 2026-03-13 with qB WebUI workflow guardrails (connection resolution, local-first sync semantics, endpoint payload compatibility, and focused regression checklist), plus `references/qbittorrent-contracts.md` and validated metadata (`agents/openai.yaml`) via skill-creator tooling.
 - Added phase-7 implementation plan `docs/plans/phase-7-cached-refinement-and-category-catalog.md` (2026-03-12) with explicit scope boundaries, category-catalog data-model decisions, detailed dated checklist (`P7-01..P7-07`), and multi-skill delegation across `ui-ux-designer`, `jackett-api-expert`, `programming-sprint-manager`, `qa-engineer`, and `project-management`.
 - Extended phase-7 plan on 2026-03-12 with a detailed resumable execution slice (`P7-09`..`P7-13`) covering:
   - feed-aware inline search scope derived from rule `feed_urls`,
@@ -94,6 +94,14 @@
   - `./.venv-linux/bin/ruff check tests/test_routes.py` (`All checks passed`)
   - `./scripts/test.sh tests/test_routes.py -k "inline_local_generated_pattern_uses_raw_title_surface or edit_rule_page_can_render_inline_search_results or run_rule_search_route_redirects_to_inline_rule_page"` (`3 passed`, `60 deselected`)
   - `./scripts/test.sh tests/test_rule_builder.py -k "start_season or floor"` (`1 passed`, `17 deselected`)
+- Implemented `P7-11` compatibility hardening on 2026-03-13:
+  - qB queue add requests now send both `paused` and `stopped` flags to keep `Add paused` behavior working across older and newer qBittorrent WebUI API builds (`app/services/qbittorrent.py`).
+- Added regression for `P7-11` compatibility hardening:
+  - `tests/test_qbittorrent_client.py::test_add_torrent_url_sends_paused_and_stopped_for_compatibility`.
+- Validation evidence for `P7-11` compatibility hardening on 2026-03-13:
+  - `./.venv-linux/bin/ruff check app/services/qbittorrent.py tests/test_qbittorrent_client.py` (`All checks passed`)
+  - `./scripts/test.sh tests/test_qbittorrent_client.py -k "add_torrent_url_sends_paused_and_stopped_for_compatibility or create_category_ignores_conflict_for_existing_category or login_rejects_bad_credentials"` (`3 passed`, `1 deselected`)
+  - `./scripts/test.sh tests/test_routes.py -k "queue_search_result_api"` (`3 passed`, `60 deselected`)
 - Added persistent category-catalog storage for phase 7 via `IndexerCategoryCatalog` (`app/models.py`) and migration `alembic/versions/0002_indexer_category_catalog.py` keyed by `(indexer, category_id)` with label source + update timestamp.
 - Added `app/services/category_catalog.py` with indexer/category normalization helpers, write paths (`sync_category_catalog_from_results`, `sync_category_catalog_from_indexer_map`), and read path (`resolve_category_labels`) for catalog-joined label resolution.
 - `/search` route now persists and reuses category catalog mappings during search runs (`app/routes/pages.py`): after each run it syncs result/category-map data into DB and re-resolves result labels from catalog keys before rendering.
@@ -279,36 +287,17 @@
 
 ## In progress
 
-- Phase 7 `P7-05`/`P7-06` are in progress: local-filter no-network evidence is green for existing phase-6 QA checks, while the explicit reported ghost-category (`shrinking` + `Cartoons`) scenario is still not automated in browser QA.
-- Phase 7 `P7-08` is in progress: backend + template + JS wiring for inline rule-page search and queue actions is implemented and route-tested; browser closeout evidence is pending.
-- Phase 7 `P7-09` is completed in code/tests; `P7-10`/`P7-11`/`P7-12` have implementation landed and need deterministic browser QA confirmation; `P7-13` closeout remains pending.
-- Phase 7 `P7-14` is completed in code/tests; optional browser QA assertions for new episode-progress floor behavior are still pending.
-- Phase 7 `P7-15` is completed in code/tests; optional browser QA is pending for the unsaved-affected-feeds inline run path plus persisted queue default UI behavior.
-- Phase 7 `P7-16` is completed in code/tests; deterministic browser evidence is still pending for a multi-indexer scoped run where one indexer times out and partial results stay visible.
-- Phase 6 v0.2.0 scope is implemented and release-validated; remaining non-critical persistence decisions stay deferred.
-- Release-process automated checks continue to pass in Linux `.venv-linux` via `./scripts/check.sh` (`ruff`, `mypy`, full pytest).
-- Deterministic closeout QA now includes the new phase-6 local refinement responsiveness check; a separate pre-existing phase-4 feed-checkbox expectation (`P4-01`) is currently the remaining closeout failure to resolve.
-- The repo-local Windows `.venv` and Linux `.venv-linux` run full tests successfully; unactivated system `python3` still lacks project dependencies by default.
-- Linux/WSL screenshot capture still needs host browser libraries (`python -m playwright install-deps chromium` with sudo); capture tooling now fails with explicit remediation messaging.
+- v0.3.0 release-prep synchronization is in progress across version touchpoints, changelog, roadmap, and phase/status docs.
+- Local release gates are green in Linux `.venv-linux` (`./scripts/check.sh`) and deterministic browser closeout is fully green (`./scripts/closeout_qa.sh`, `14/14` checks).
+- Optional live-provider smoke evidence is pending only when endpoint topology/credentials change for the final publish environment.
+- Post-release v0.3.1 polish backlog remains for additional deterministic checks around episode-floor range variants (`P7-14`), unsaved affected-feed toggles + queue-default persistence UX (`P7-15`), and scoped timeout partial-result coverage (`P7-16`).
 
 ## Next actions
 
-- Use `docs/plans/phase-7-cached-refinement-and-category-catalog.md` `Dated execution checklist (2026-03-12 baseline)` as the active source-of-truth tracker.
-- Execute explicit regression for the reported mismatch case (`shrinking` + `Cartoons`-style category option) against the scoped-option + scope-status path and encode it in automated browser QA.
-- Run deterministic browser validation for inline generated-pattern local recompute (no-network) and table/sort parity behavior to close `P7-10`/`P7-12`.
-- Add deterministic browser assertion that queue `Add paused` checkbox state is reflected in queue action payload/outcome messaging to close `P7-11`.
-- Add deterministic browser assertion for `Start season` + `Start episode` generated-pattern behavior (including range forms like `S03E01-07`) to keep `P7-14` evidence at parity with other phase-7 UX slices.
-- Add deterministic browser assertion that `Run Search Here` with unsaved affected-feed checkbox changes excludes unchecked feeds in inline results to close the `P7-15` UX bug report loop.
-- Add deterministic browser assertion that queue default save/reload keeps `Sequential download` and `First and last pieces first` checked state across search sessions (`P7-15`).
-- Add deterministic browser assertion for `P7-16`: scoped affected-feed run with multiple indexers should keep visible partial results when one scoped indexer times out, while warning text remains explicit.
-- Add browser closeout assertions for rule-page inline result rendering and queue-action feedback states (success/failure) so `P7-08` has deterministic UI evidence.
-- Extend deterministic closeout coverage with an assertion for the category scope-status note (stale vs matching selected categories) so `P7-05` has direct diagnostics coverage beyond count changes.
-- Capture refreshed desktop/mobile `/search` screenshots reflecting the new category count-badge and status-note states and attach to phase closeout evidence.
-- Resolve deterministic closeout `P4-01` feed-checkbox expectation drift so the expanded 10-check browser gate is fully green.
-- Run `./scripts/closeout_qa.sh` (or `scripts\\closeout_qa.bat`) as the default Phase 4/5/6/7 closeout gate for future UX/search iterations.
-- Re-run the optional live-provider smoke gate when endpoint topology or credentials change, using `logs/qa/live-provider-smoke-*` artifacts as release evidence.
-- Keep the DB-backed release matrix (`docs/plans/phase-6-release-qa-plan.md`) as a regression baseline until a phase-7-specific matrix is added.
-- Keep persistent Jackett-backed rule-source decisions deferred from this phase; maintain explicit separation from RSS feeds.
+- Finalize v0.3.0 release cut by completing version/doc sync and creating the local annotated `v0.3.0` tag from the release-ready commit.
+- Re-run optional live-provider smoke for the publish environment if credentials or endpoint topology changed since the latest smoke artifact.
+- Keep `./scripts/closeout_qa.sh` as the default deterministic browser release gate (now including phase-7 inline checks).
+- Start v0.3.1 planning with targeted closeout additions for `P7-14`/`P7-15`/`P7-16` and a phase-7-specific DB-backed QA matrix extension.
 
 ## Deferred / future phases
 

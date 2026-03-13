@@ -1,16 +1,15 @@
 # Roadmap
 
-## Current release target: v0.3.0
+## Current release target: v0.3.1
 
 ### In progress
 
-- Phase 7: cached-refinement responsiveness and category-catalog integrity for `/search`
-- Release closeout automation adoption and evidence-driven phase sign-off
+- Phase-7 post-release polish and regression automation hardening
 - Release-process polish and release automation improvements
 
 ### Current phase track
 
-- Phase 7: cached-refinement responsiveness and category-catalog integrity (`docs/plans/phase-7-cached-refinement-and-category-catalog.md`)
+- Phase 7: cached-refinement responsiveness and category-catalog integrity (implemented and release-validated in v0.3.0; follow-up polish tracked in `docs/plans/phase-7-cached-refinement-and-category-catalog.md`)
 - Phase 6: Jackett-backed active search workspace (implemented and release-validated in v0.2.0; follow-up polish completed, deeper persistence still deferred)
 - Phase 4: feed selection UX improvements (implemented, automated closeout validated)
 - Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, automated closeout validated)
@@ -31,14 +30,21 @@ Phase 6 detail pointer:
 - Avoid undocumented qBittorrent rule fields
 - Prefer correctness and maintainability over broad feature count
 
-## Recently released: v0.2.0 (2026-03-11)
+## Recently released: v0.3.0 (2026-03-13)
+
+- Phase-7 cached-refinement/category-catalog slice shipped, including persisted indexer category mapping and scoped category option diagnostics.
+- Saved-rule `Run Search` now renders inline rule-page results with feed-aware scope handling, queue actions, and table-first sort/view parity.
+- Rule model and generated-pattern behavior now include episode-progress floor fields plus stricter grouped quality include semantics.
+- Deterministic browser closeout automation now covers phase-7 inline local recompute, queue paused semantics, table/sort parity, and stale-category scope warnings.
+
+## Previously released: v0.2.0 (2026-03-11)
 
 - Phase-6 Jackett active search shipped with IMDb-first and title-fallback split workflows
 - `/search` UX density pass shipped (wider layout, compact criteria/filter-impact composition, refined result-view controls)
 - Deterministic browser closeout automation + optional live-provider smoke evidence adopted for release gating
 - WSL qBittorrent localhost rewrite shipped for mixed Windows/WSL topology
 
-## Previously released: v0.1.0 (2026-03-10)
+## Earlier release: v0.1.0 (2026-03-10)
 
 - Local FastAPI app with SQLite storage
 - qBittorrent API sync for rule create/update/delete

@@ -130,6 +130,9 @@ class QbittorrentClient:
         payload: dict[str, str] = {
             "urls": link,
             "paused": "true" if paused else "false",
+            # qBittorrent switched add-torrent pause semantics to `stopped`
+            # in newer WebUI API builds; keep `paused` for older versions.
+            "stopped": "true" if paused else "false",
             "sequentialDownload": "true" if sequential_download else "false",
             "firstLastPiecePrio": "true" if first_last_piece_prio else "false",
         }

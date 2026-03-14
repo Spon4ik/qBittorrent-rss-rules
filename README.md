@@ -209,7 +209,7 @@ Use the Import page to upload an exported qBittorrent RSS rules JSON file. The i
 
 ## Known limitations
 
-- v0.3.0 is designed for single-user localhost use.
+- v0.4.0 is designed for single-user localhost use.
 - qBittorrent secrets can be saved locally only as lightweight obfuscation; environment variables are preferred.
 - Drift detection is conservative and does not auto-resolve every remote edit case.
 - Jackett active search is separate from RSS feed selection; this slice does not yet create persistent Jackett-backed rule sources automatically.

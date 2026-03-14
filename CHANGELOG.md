@@ -8,6 +8,14 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.4.0] - 2026-03-15
+
+- Released the phase-8 persistent rule-search snapshot workflow: saved rules now replay centralized DB-backed unified results by default and support explicit snapshot refresh.
+- Unified IMDb-first and title-fallback rows into one result table with source-key attribution, compact empty states, and no standalone filter-impact panel.
+- Shipped rule-page workspace modernization with a sticky split layout, denser queue controls, active local-filter chips, and interactive header-driven sorting.
+- Added inline affected-feed dual behavior: feed selection continues to define RSS listener scope and now also narrows inline result visibility immediately by indexer.
+- Restored inline consolidated category filtering controls and compacted result controls to a table-only workflow with `Save sort as default`.
+
 ## [0.3.0] - 2026-03-13
 
 - Released the phase-7 cached-refinement + category-catalog slice, including persisted indexer/category mapping and scoped category multiselect diagnostics on `/search`.

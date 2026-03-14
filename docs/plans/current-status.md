@@ -2,12 +2,17 @@
 
 ## Current focus
 
-- Phase 8 execution for `v0.4.0` now has `P8-01`..`P8-09` completed (snapshot persistence/replay/refresh, unified IMDb/title tables, compact sticky rule workspace, active-filter chips, header-driven sorting, compact queue UX, and deterministic browser closeout coverage updates).
-- Phase 7 execution and closeout remain complete (`P7-01`..`P7-18`) and continue as regression baseline while phase-8 docs/release sync is finalized.
-- Current focus is `P8-10` closeout synchronization (phase/status alignment + release-target evidence consolidation).
+- `v0.4.0` release synchronization is complete (version fields, changelog, roadmap release handoff, and full release-gate validation).
+- Phase 8 is closed and release-validated (`P8-01`..`P8-10`) as the delivered `v0.4.0` slice.
+- Current focus is phase-9 planning/execution kickoff for rules main-page release operations (`table-first defaults`, poster presentation, on-demand/scheduled Jackett runs, release-availability sorting).
 
 ## Implemented
 
+- Completed `v0.4.0` release closeout on 2026-03-15:
+  - synchronized version touchpoints to `0.4.0` (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`) and transitioned roadmap target to `v0.5.0` with phase-9 scope (`ROADMAP.md`).
+  - captured phase-9 active plan baseline in `docs/plans/phase-9-rules-main-page-release-ops.md` and switched plan index pointer to phase 9 (`docs/plans/README.md`).
+  - recorded next-version requested scope for main-page table-default + poster behavior, on-demand/scheduled Jackett rule runs, and release-availability sorting.
+  - validated release gate in project environment: `source .venv-linux/bin/activate && ./scripts/check.sh` (`All checks passed`).
 - Implemented phase-8 snapshot persistence foundations on 2026-03-14:
   - added DB model `RuleSearchSnapshot` and migration `alembic/versions/0004_rule_search_snapshots.py` for one refreshable snapshot per rule.
   - added snapshot service `app/services/rule_search_snapshots.py` for inline payload serialization, save/load, and replay hydration.

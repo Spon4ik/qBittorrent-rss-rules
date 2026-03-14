@@ -2,12 +2,102 @@
 
 ## Current focus
 
-- Phase 7 execution and closeout are complete (`P7-01`..`P7-18`), including category-catalog integrity, inline rule-page search parity, queue semantics hardening, and grouped-quality / episode-floor regressions.
-- Deterministic browser closeout QA now includes phase-7 inline checks (`P7-10`/`P7-11`/`P7-12`) plus stale-category scope-status coverage (`P7-06`) with all checks passing.
-- v0.3.0 release-prep sync is active (version fields, changelog, roadmap, and phase/status handoff updates).
+- Phase 8 execution for `v0.4.0` now has `P8-01`..`P8-09` completed (snapshot persistence/replay/refresh, unified IMDb/title tables, compact sticky rule workspace, active-filter chips, header-driven sorting, compact queue UX, and deterministic browser closeout coverage updates).
+- Phase 7 execution and closeout remain complete (`P7-01`..`P7-18`) and continue as regression baseline while phase-8 docs/release sync is finalized.
+- Current focus is `P8-10` closeout synchronization (phase/status alignment + release-target evidence consolidation).
 
 ## Implemented
 
+- Implemented phase-8 snapshot persistence foundations on 2026-03-14:
+  - added DB model `RuleSearchSnapshot` and migration `alembic/versions/0004_rule_search_snapshots.py` for one refreshable snapshot per rule.
+  - added snapshot service `app/services/rule_search_snapshots.py` for inline payload serialization, save/load, and replay hydration.
+  - updated rule-page inline search flow in `app/routes/pages.py` to replay saved snapshots on `run_search=1`, refresh on `refresh_snapshot=1`, and persist fresh Jackett runs back to snapshot storage.
+  - added refresh action UI link on the rule page (`app/templates/rule_form.html`).
+  - added route regressions for snapshot replay/refresh and refresh-flag redirect propagation in `tests/test_routes.py`.
+- Implemented phase-8 unified rendering slice (`P8-04`) on 2026-03-14:
+  - unified IMDb-first + title-fallback rows into one `combined` card/table surface on `/search` and rule-inline results (`app/templates/search.html`, `app/templates/rule_form.html`), with query-source labels per row.
+  - removed standalone `Filter impact` panels from unified results flow and replaced old split-section empty states with concise unified context messaging.
+  - extended snapshot payload contract in `app/services/rule_search_snapshots.py` with deterministic cross-source dedup (`unified_raw_results`), source breakdown metadata, and replay-time compatibility hydration for older saved snapshots.
+  - switched local frontend filtering in `app/static/app.js` from hardcoded `primary`/`fallback` assumptions to dynamic section discovery, preserving local sort/filter behavior for the new `combined` section.
+  - updated route/test expectations in `tests/test_routes.py` for unified sections and filter-impact removal regressions.
+- Implemented phase-8 workspace IA + compaction slice (`P8-05`, partial `P8-06`) on 2026-03-14:
+  - redesigned edit-rule page into a split workspace with sticky criteria rail and adjacent results panel (`app/templates/rule_form.html`, `app/static/app.css`), while preserving current `Run Search Here` and inline filtering behavior.
+  - added responsive fallback so narrow viewports collapse to one-column flow and disable sticky rail behavior (`app/static/app.css` media queries).
+  - compacted criteria authoring with collapsible rail sections (`Core Identity`, `Matching And Quality`, `Destination And Feeds`, `Advanced`) and denser control spacing.
+  - compacted inline queue controls by keeping `Add paused` inline and moving secondary toggles into an expandable `Advanced queue options` disclosure.
+  - updated route regression assertions to lock the new workspace shell contract (`tests/test_routes.py::test_edit_rule_page_can_render_inline_search_results`).
+- Completed phase-8 interaction + persistence completion slice (`P8-06`..`P8-09`) on 2026-03-14:
+  - added active local-filter chips and one-click `Clear local filters` actions in the unified result-view panel for `/search` and inline rule results (`app/templates/search.html`, `app/templates/rule_form.html`, `app/static/app.css`, `app/static/app.js`).
+  - replaced dropdown sort wiring with interactive header-click sorting (asc/desc toggle + Shift+click multi-sort) for unified tables on both `/search` and inline rule results (`app/static/app.js`, table-header markup in `app/templates/search.html` + `app/templates/rule_form.html`).
+  - hardened inline rule-result loading so run paths always persist and replay through `RuleSearchSnapshot`, and feed-scope override is only treated as override when current feed selection differs from saved rule feeds (`app/routes/pages.py`, `app/static/app.js`, `tests/test_routes.py`).
+  - removed remaining client-side filter-impact rendering paths and kept concise unified empty-state context messaging (`app/static/app.js`, `app/static/app.css`).
+  - updated deterministic browser closeout automation for unified `combined` sections and header-sort interactions, then revalidated browser closeout end-to-end (`scripts/closeout_browser_qa.py`, `scripts/closeout_qa.sh`).
+- Implemented phase-8 Jackett category-narrowing compatibility fix on 2026-03-14:
+  - scoped indexer searches now avoid blindly forcing media-root `cat` values (`2000`/`5000`/etc.) when indexer category support is not known, so request variants stay indexer-safe for feed-scoped runs (`app/services/jackett.py`).
+  - direct indexer IMDb-enforced fallback requests now use the same scoped-category safety gate, preventing hardcoded category assumptions during aggregate-to-direct retries.
+  - added regression `tests/test_jackett.py::test_jackett_client_omits_default_media_cat_for_scoped_movie_indexers_without_caps_map` and updated scoped-search expectations.
+- Implemented phase-8 regex/filtering/workspace consistency fixes on 2026-03-14:
+  - episode-progress regex generation now supports whole-season packs and season-word forms (`S01`, `Season 01`, `Season: 1`) in both backend and frontend builders (`app/services/rule_builder.py`, `app/static/app.js`).
+  - edit-rule page now auto-replays saved rule snapshots by default when present (without requiring `run_search=1`), and `Clear Results` now explicitly disables snapshot replay for that navigation (`app/routes/pages.py`, `app/templates/rule_form.html`).
+  - local `Clear local filters` now resets regex and episode-floor inputs too, and active-filter chips now include removable chips for regex fragments and episode-floor state (`app/static/app.js`).
+  - removed redundant/inconsistent queue count text on inline rule results so queue panel messaging no longer conflicts with unified filtered/fetched metrics (`app/templates/rule_form.html`).
+- Implemented phase-8 local-filter baseline + source-breakdown consistency fixes on 2026-03-14:
+  - local filtering now treats remote search title/IMDb criteria as fetch scope only, so `Clear local filters` truly restores all fetched rows while still supporting manual regex fragments and episode-floor local filtering (`app/static/app.js`).
+  - unified-source breakdown lines now recalculate `filtered` counts from currently visible `combined` rows and use `query_source_key` row metadata for deterministic per-source attribution (`app/static/app.js`, `app/templates/rule_form.html`).
+  - deterministic browser closeout assertions were updated so phase-6 quality-toggle checks track explicit include-phrase baselines under the new local-filter contract (`scripts/closeout_browser_qa.py`).
+- Implemented phase-8 DB-driven local-filter indexer-scope fix on 2026-03-14:
+  - direct `rule_search_snapshots` inspection for rule `a39a2ad3-de32-4a68-8d9b-284aa88f2b74` confirmed persisted per-rule unified results (`inline_search.unified_raw_results=539`) while reproducing the stale-clear behavior in browser.
+  - local filtering no longer auto-derives indexer constraints from selected `feed_urls`; indexer narrowing now applies only when users explicitly set local indexer filters (`app/static/app.js`).
+  - removed leftover feed-derived helper code path from `app/static/app.js` so future maintenance does not accidentally re-couple feed scope to local filter state.
+  - tightened static regression coverage in `tests/test_routes.py::test_inline_feed_scope_indexer_matching_uses_key_variants` to lock the decoupled local-filter contract.
+- Implemented phase-8 inline-rule workspace compaction + feed/category refinements on 2026-03-14:
+  - `Affected feeds` now scopes inline result visibility immediately in the unified table (indexer column), while still remaining the saved RSS listener scope for the rule (`app/static/app.js`).
+  - feed `Select all`/`Clear all` actions now dispatch change events so local filtering updates instantly without extra clicks (`app/static/app.js`).
+  - restored inline-result local filter controls for `Indexer scope` and `Media category` so consolidated category data is available again on the rule page (`app/templates/rule_form.html`, `app/static/app.js`).
+  - compacted result controls to table-only workflow by removing the cards/table selector and keeping a smaller `Save sort as default` action near header-sort guidance (`app/templates/rule_form.html`, `app/templates/search.html`, `app/static/app.css`, `app/static/app.js`).
+  - reduced initial rule-page scroll load by collapsing `Matching And Quality` by default while keeping `Core Identity` and `Destination And Feeds` accessible (`app/templates/rule_form.html`).
+- Validation evidence for this slice (2026-03-14):
+  - `./scripts/test.sh tests/test_routes.py` (`70 passed`).
+  - Browser repro (Playwright) on `http://127.0.0.1:8000/rules/a39a2ad3-de32-4a68-8d9b-284aa88f2b74`:
+    - table-only result controls confirmed (`data-search-view-mode` absent, `Save sort as default` action present),
+    - category multiselect restored (`123` scoped options after local-clear in this snapshot),
+    - affected-feed immediate scope confirmed (`313/539` baseline with selected feeds, `0/539` after `Clear all` feeds, `7/539` after selecting single `bigfangroup` feed; visible indexer `BigFANGroup`).
+  - `./scripts/test.sh tests/test_routes.py -k "inline_feed_scope_indexer_matching_uses_key_variants or inline_local_generated_pattern_uses_raw_title_surface or edit_rule_page_can_render_inline_search_results"` (`3 passed`, `67 deselected`).
+  - `./scripts/test.sh tests/test_routes.py` (`70 passed`).
+  - Browser repro (Playwright) on `http://127.0.0.1:8000/rules/a39a2ad3-de32-4a68-8d9b-284aa88f2b74`: before clear `0/539`, after `Clear local filters` `539/539`, active local-filter chips empty.
+  - `./.venv-linux/bin/ruff check tests/test_routes.py app/routes/pages.py app/services/rule_search_snapshots.py app/services/rule_builder.py app/services/jackett.py scripts/closeout_browser_qa.py` (`All checks passed`).
+  - `./.venv-linux/bin/mypy app/routes/pages.py app/services/rule_search_snapshots.py app/services/rule_builder.py` (`Success: no issues found in 3 source files`).
+  - `./scripts/test.sh tests/test_routes.py -k "inline_local_generated_pattern_uses_raw_title_surface or inline_clear_local_filters_resets_regex_and_episode_floor_inputs or edit_rule_page_can_render_inline_search_results or search_page_auto_enforces_imdb_and_renders_unified_results_table or search_page_renders_single_result_view_panel_for_unified_results"` (`5 passed`, `64 deselected`).
+  - `./scripts/test.sh tests/test_routes.py` (`69 passed`).
+  - `./scripts/closeout_qa.sh` (`All browser closeout checks passed`; artifacts at `logs/qa/phase-closeout-20260314T165253Z/closeout-report.{md,json}`).
+  - `./.venv-linux/bin/ruff check app/routes/pages.py app/services/rule_builder.py app/services/jackett.py tests/test_routes.py tests/test_rule_builder.py tests/test_jackett.py` (`All checks passed`).
+  - `./.venv-linux/bin/mypy app/services/rule_builder.py app/routes/pages.py` (`Success: no issues found in 2 source files`).
+  - `./scripts/test.sh tests/test_rule_builder.py` (`18 passed`).
+  - `./scripts/test.sh tests/test_jackett.py` (`37 passed`).
+  - `./scripts/test.sh tests/test_routes.py` (`69 passed`).
+  - `./scripts/closeout_qa.sh` (`All browser closeout checks passed`; artifacts at `logs/qa/phase-closeout-20260314T161529Z/closeout-report.{md,json}`).
+  - `./.venv-linux/bin/ruff check app/services/jackett.py tests/test_jackett.py` (`All checks passed`).
+  - `./.venv-linux/bin/mypy app/services/jackett.py` (`Success: no issues found in 1 source file`).
+  - `./scripts/test.sh tests/test_jackett.py` (`37 passed`).
+  - `./scripts/test.sh tests/test_routes.py -k "inline_search_scopes_single_jackett_feed_indexer or inline_search_scopes_multiple_jackett_feed_indexers or inline_search_uses_feed_url_override_scope or inline_search_warns_when_feed_scope_not_derivable or search_page_from_rule_uses_structured_terms_not_raw_regex or search_page_auto_enforces_imdb_and_renders_unified_results_table"` (`6 passed`, `61 deselected`).
+  - `./.venv-linux/bin/ruff check app/routes/pages.py tests/test_routes.py scripts/closeout_browser_qa.py` (`All checks passed`).
+  - `./scripts/test.sh tests/test_routes.py -k "run_rule_search_route_redirects_to_inline_rule_page or run_rule_search_route_preserves_feed_url_overrides or run_rule_search_route_preserves_refresh_snapshot_flag or search_page_embeds_raw_cache_payload_for_local_refinement or edit_rule_page_can_render_inline_search_results or edit_rule_inline_search_replays_saved_snapshot_without_jackett_call or edit_rule_inline_search_ignores_feed_override_when_selection_matches_rule or edit_rule_inline_search_refreshes_and_persists_snapshot or edit_rule_inline_search_uses_feed_url_override_scope"` (`9 passed`, `58 deselected`).
+  - `./scripts/test.sh tests/test_routes.py` (`67 passed`).
+  - `./scripts/closeout_qa.sh` (`14/14` checks pass; artifacts at `logs/qa/phase-closeout-20260314T141253Z/closeout-report.{md,json}`).
+  - `./.venv-linux/bin/ruff check app/models.py app/routes/pages.py app/services/rule_search_snapshots.py tests/test_routes.py alembic/versions/0004_rule_search_snapshots.py` (`All checks passed`).
+  - `./scripts/test.sh tests/test_routes.py -k "run_rule_search_route_preserves_refresh_snapshot_flag or edit_rule_inline_search_replays_saved_snapshot_without_jackett_call or edit_rule_inline_search_refreshes_and_persists_snapshot or edit_rule_page_can_render_inline_search_results or rule_pages_expose_run_search_actions"` (`5 passed`, `61 deselected`).
+  - `./scripts/test.sh tests/test_routes.py -k "run_rule_search_route_redirects_to_inline_rule_page or run_rule_search_route_preserves_feed_url_overrides or edit_rule_inline_search_scopes_single_jackett_feed_indexer or edit_rule_inline_search_uses_feed_url_override_scope or edit_rule_inline_search_scopes_multiple_jackett_feed_indexers or edit_rule_inline_search_warns_when_feed_scope_not_derivable"` (`6 passed`, `60 deselected`).
+  - `./scripts/test.sh tests/test_routes.py` (`66 passed`).
+  - `./.venv-linux/bin/ruff check app/services/rule_search_snapshots.py app/routes/pages.py tests/test_routes.py` (`All checks passed`).
+  - `./.venv-linux/bin/mypy app/services/rule_search_snapshots.py app/routes/pages.py` (`Success: no issues found in 2 source files`).
+  - `./scripts/test.sh tests/test_routes.py -k "search_page_embeds_raw_cache_payload_for_local_refinement or search_page_auto_enforces_imdb_and_renders_unified_results_table or search_page_renders_single_result_view_panel_for_unified_results or search_page_unified_results_do_not_render_filter_impact_panels or edit_rule_page_can_render_inline_search_results or edit_rule_inline_search_replays_saved_snapshot_without_jackett_call or edit_rule_inline_search_refreshes_and_persists_snapshot"` (`7 passed`, `59 deselected`).
+  - `./.venv-linux/bin/ruff check app/routes/pages.py app/services/rule_search_snapshots.py tests/test_routes.py` (`All checks passed`).
+  - `./scripts/test.sh tests/test_routes.py -k "edit_rule_page_can_render_inline_search_results or edit_rule_inline_search_replays_saved_snapshot_without_jackett_call or edit_rule_inline_search_refreshes_and_persists_snapshot or rule_pages_expose_run_search_actions"` (`4 passed`, `62 deselected`).
+  - `./scripts/test.sh tests/test_routes.py` (`66 passed`).
+- Added phase-8 implementation plan on 2026-03-14: `docs/plans/phase-8-persistent-rule-search-snapshots-and-unified-workspace.md` with explicit scope for persisted snapshots, unified IMDb/title table rendering, compact rule-page IA, interactive table sorting + compact queue UX redesign, and removal of standalone filter-impact diagnostics in unified-table flow.
+- Applied phase-8 roadmap adjustment on 2026-03-14 so unified IMDb/title table rendering is the primary mechanism for removing standalone filter-impact diagnostics, and sorting wording now explicitly requires interactive column-title sorting behavior.
+- Updated `ROADMAP.md` on 2026-03-14 to `v0.4.0` target and set phase 8 as the active track, with phase-8 detail pointer and release-focus alignment.
+- Updated `docs/plans/README.md` and phase-7 status notes on 2026-03-14 so planning docs clearly mark phase 8 as active and phase 7 as closed.
 - Expanded deterministic browser closeout automation on 2026-03-13 to phase-7 inline scope:
   - mock qB feed fixtures now use Jackett-style Torznab feed URLs so inline feed-scope derivation is test-realistic (`alpha`/`beta`/`gamma` slugs) and WSL localhost rewrite does not break mock qB connectivity (`localhost.` mock URL path in script env).
   - `P6-05` browser flow now validates current inline `Run Search Here` behavior (`/rules/{id}?run_search=1`) instead of legacy `/search?rule_id=...` navigation.
@@ -287,21 +377,21 @@
 
 ## In progress
 
-- v0.3.0 release-prep synchronization is in progress across version touchpoints, changelog, roadmap, and phase/status docs.
-- Local release gates are green in Linux `.venv-linux` (`./scripts/check.sh`) and deterministic browser closeout is fully green (`./scripts/closeout_qa.sh`, `14/14` checks).
-- Optional live-provider smoke evidence is pending only when endpoint topology/credentials change for the final publish environment.
-- Post-release v0.3.1 polish backlog remains for additional deterministic checks around episode-floor range variants (`P7-14`), unsaved affected-feed toggles + queue-default persistence UX (`P7-15`), and scoped timeout partial-result coverage (`P7-16`).
+- Phase-8 implementation continues with `P8-04`..`P8-08` pending: unified IMDb/title table rendering, compact rule-page layout, interactive table-header sorting UX, compact queue toolbar, and standalone filter-impact removal.
+- Snapshot replay currently applies on rule-page inline search paths; broader workspace unification and `/search` parity adjustments are still pending.
+- Existing deterministic quality gates from phase 7 remain the baseline release guardrails while phase-8 coverage expands.
 
 ## Next actions
 
-- Finalize v0.3.0 release cut by completing version/doc sync and creating the local annotated `v0.3.0` tag from the release-ready commit.
-- Re-run optional live-provider smoke for the publish environment if credentials or endpoint topology changed since the latest smoke artifact.
-- Keep `./scripts/closeout_qa.sh` as the default deterministic browser release gate (now including phase-7 inline checks).
-- Start v0.3.1 planning with targeted closeout additions for `P7-14`/`P7-15`/`P7-16` and a phase-7-specific DB-backed QA matrix extension.
+- Implement `P8-04` by merging inline primary/fallback rendering into a single query-keyed table payload and template.
+- Implement `P8-08` by removing standalone filter-impact blocks from unified-table rule/search workflows and keeping concise empty-state context.
+- Implement `P8-05`/`P8-06`/`P8-07` UX slices (sticky refinement rail, compact criteria controls, compact queue toolbar, interactive table-header sorting) with desktop/mobile parity.
+- Extend deterministic closeout/browser QA for phase-8 contracts (`P8-09`) and keep docs synchronized for slice completion (`P8-10`).
 
 ## Deferred / future phases
 
 - Phase 6 planning lives in `docs/plans/phase-6-jackett-active-search.md`; implemented scope is in the repo and deeper persistence work remains deferred.
-- Phase 7 planning now lives in `docs/plans/phase-7-cached-refinement-and-category-catalog.md`; execution begins with responsiveness and category-integrity slices before any broader search-source persistence decisions.
+- Phase 7 planning lives in `docs/plans/phase-7-cached-refinement-and-category-catalog.md`; implementation is complete and serves as the baseline for phase-8 follow-up UX/data-model evolution.
+- Phase 8 planning now lives in `docs/plans/phase-8-persistent-rule-search-snapshots-and-unified-workspace.md`; execution starts with snapshot persistence and unified table rendering.
 - Follow-up: decide whether remembered feed defaults should also be editable from `/settings`
 - Follow-up: decide whether provider-specific lookup hints or richer search result pickers are needed beyond the current first-match flow

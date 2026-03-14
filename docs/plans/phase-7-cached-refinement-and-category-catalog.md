@@ -4,6 +4,7 @@
 
 - Planning baseline created on 2026-03-12.
 - This phase is intentionally separated from phase 6 to avoid widening the v0.2.0 release slice after closeout.
+- As of 2026-03-14, follow-up next-version scope moved to phase 8 (`docs/plans/phase-8-persistent-rule-search-snapshots-and-unified-workspace.md`); phase 7 remains closed/completed.
 - Implementation closeout is complete: `P7-01`..`P7-13` are now completed with deterministic browser evidence and release-gate reruns.
 - Follow-up UX integration slice `P7-08` is completed with deterministic browser assertions on inline saved-rule run flow and advanced workspace handoff link behavior.
 - Extension slice execution is completed: `P7-09`..`P7-12` are validated in deterministic browser QA, and `P7-13` closeout is complete.

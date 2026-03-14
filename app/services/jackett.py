@@ -4,7 +4,7 @@ import json
 import logging
 import re
 import xml.etree.ElementTree as ET
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -1447,9 +1447,9 @@ class JackettClient:
         if not payload.imdb_id_only:
             params["q"] = query
 
-        categories = _torznab_categories_for_media_type(payload.media_type)
-        if categories:
-            params["cat"] = ",".join(categories)
+        category_param = self._category_param_for_payload(payload)
+        if category_param:
+            params["cat"] = category_param
 
         imdb_lookup_id = _torznab_imdb_lookup_id(payload.imdb_id)
         if imdb_lookup_id and search_mode in {"movie", "tvsearch"}:
@@ -1473,7 +1473,7 @@ class JackettClient:
         seen_variants = {
             tuple(sorted((str(key), _coerce_text(value)) for key, value in params.items()))
         }
-        categories = _torznab_categories_for_media_type(payload.media_type)
+        category_param = self._category_param_for_payload(payload)
 
         def add_candidate(candidate: dict[str, object]) -> None:
             candidate_key = tuple(
@@ -1496,8 +1496,8 @@ class JackettClient:
                 "t": _coerce_text(params.get("t")) or "search",
                 "imdbid": imdb_lookup_id,
             }
-            if categories:
-                candidate["cat"] = ",".join(categories)
+            if category_param:
+                candidate["cat"] = category_param
             add_candidate(candidate)
 
         candidate = {
@@ -1505,8 +1505,8 @@ class JackettClient:
             "t": "search",
             "q": query,
         }
-        if categories:
-            candidate["cat"] = ",".join(categories)
+        if category_param:
+            candidate["cat"] = category_param
         add_candidate(candidate)
 
         return fallback_variants
@@ -1531,7 +1531,11 @@ class JackettClient:
         last_timeout_error: JackettTimeoutError | None = None
 
         for indexer in indexers:
-            request_attempts = self._imdb_enforced_params_for_indexer(payload, search_mode)
+            request_attempts = self._imdb_enforced_params_for_indexer(
+                payload,
+                search_mode,
+                indexer=indexer.indexer_id,
+            )
             if not request_attempts:
                 continue
             try:
@@ -1566,6 +1570,111 @@ class JackettClient:
         raise JackettClientError(
             "Jackett could not find a configured indexer that supports IMDb-enforced search for this media type."
         )
+
+    @staticmethod
+    def _category_family_root(category_id: str) -> str | None:
+        cleaned = _coerce_text(category_id)
+        if not cleaned.isdigit():
+            return None
+        try:
+            numeric_value = int(cleaned)
+        except ValueError:
+            return None
+        if numeric_value < 1000:
+            return None
+        return str((numeric_value // 1000) * 1000)
+
+    @staticmethod
+    def _scoped_indexers_for_category_narrowing(
+        payload: JackettSearchRequest,
+        *,
+        indexer_hint: str | None = None,
+    ) -> list[str]:
+        hinted_indexer = _coerce_text(indexer_hint).casefold()
+        if hinted_indexer and hinted_indexer != "all":
+            return [hinted_indexer]
+
+        selected_indexer = _coerce_text(payload.indexer).casefold()
+        if selected_indexer and selected_indexer != "all":
+            return [selected_indexer]
+
+        scoped_indexers: list[str] = []
+        seen_indexers: set[str] = set()
+        for raw_indexer in payload.filter_indexers:
+            candidate = _coerce_text(raw_indexer).casefold()
+            if not candidate:
+                continue
+            if candidate == "all":
+                return []
+            if not SEARCH_INDEXER_RE.match(candidate):
+                return []
+            if candidate in seen_indexers:
+                continue
+            seen_indexers.add(candidate)
+            scoped_indexers.append(candidate)
+        return scoped_indexers
+
+    @classmethod
+    def _indexer_supports_category_roots(
+        cls,
+        *,
+        indexer: str,
+        target_roots: set[str],
+        indexer_category_labels: Mapping[str, Mapping[str, Sequence[str]]],
+    ) -> bool | None:
+        indexer_keys = _indexer_key_variants(indexer)
+        if not indexer_keys:
+            return None
+
+        category_ids: set[str] = set()
+        for indexer_key in indexer_keys:
+            category_ids.update(indexer_category_labels.get(indexer_key, {}).keys())
+        if not category_ids:
+            return None
+
+        for raw_category_id in category_ids:
+            category_id = _coerce_text(raw_category_id)
+            if not category_id:
+                continue
+            if category_id in target_roots:
+                return True
+            root_id = cls._category_family_root(category_id)
+            if root_id and root_id in target_roots:
+                return True
+        return False
+
+    def _category_param_for_payload(
+        self,
+        payload: JackettSearchRequest,
+        *,
+        indexer_hint: str | None = None,
+    ) -> str | None:
+        categories = _torznab_categories_for_media_type(payload.media_type)
+        if not categories:
+            return None
+
+        scoped_indexers = self._scoped_indexers_for_category_narrowing(
+            payload,
+            indexer_hint=indexer_hint,
+        )
+        if not scoped_indexers:
+            return ",".join(categories)
+
+        discovered_categories = self._indexer_category_label_map or {}
+        if not discovered_categories:
+            return None
+
+        target_roots = {item for item in categories if item}
+        for indexer in scoped_indexers:
+            supports_root = self._indexer_supports_category_roots(
+                indexer=indexer,
+                target_roots=target_roots,
+                indexer_category_labels=discovered_categories,
+            )
+            if supports_root is not True:
+                return None
+
+        return ",".join(categories)
 
     def _search_title_fallback(
         self,
@@ -1694,19 +1803,21 @@ class JackettClient:
         self,
         payload: JackettSearchRequest,
         search_mode: str,
+        *,
+        indexer: str,
     ) -> list[dict[str, object]]:
         imdb_lookup_id = _torznab_imdb_lookup_id(payload.imdb_id)
         if not imdb_lookup_id:
             return []
 
-        categories = _torznab_categories_for_media_type(payload.media_type)
+        category_param = self._category_param_for_payload(payload, indexer_hint=indexer)
         base_params: dict[str, object] = {
             "apikey": self.api_key or "",
             "t": search_mode,
             "imdbid": imdb_lookup_id,
         }
-        if categories:
-            base_params["cat"] = ",".join(categories)
+        if category_param:
+            base_params["cat"] = category_param
 
         return [base_params]
 

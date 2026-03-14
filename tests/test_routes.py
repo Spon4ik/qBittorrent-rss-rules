@@ -14,6 +14,7 @@ from app.models import (
     MediaType,
     QualityProfile,
     Rule,
+    RuleSearchSnapshot,
     SyncStatus,
 )
 from app.schemas import (
@@ -68,6 +69,41 @@ def test_inline_local_generated_pattern_uses_raw_title_surface() -> None:
         'regexSurface: String(card.dataset.title || card.dataset.textSurface || "").trim(),'
         in app_js_source
     )
+    assert "const getLocalPatternForFilters = () => {" in app_js_source
+    assert (
+        "if (!manualMustContainValue && (normalizedStartSeason === null || normalizedStartEpisode === null)) {"
+        in app_js_source
+    )
+    assert (
+        "generatedPatternRegex: compileGeneratedPatternRegex(getLocalPatternForFilters()),"
+        in app_js_source
+    )
+    assert 'cleaned.includes("title fallback")' in app_js_source
+
+
+def test_inline_clear_local_filters_resets_regex_and_episode_floor_inputs() -> None:
+    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+    app_js_source = app_js_path.read_text(encoding="utf-8")
+
+    assert 'mustContainOverrideInput.value = "";' in app_js_source
+    assert 'startSeasonInput.value = "";' in app_js_source
+    assert 'startEpisodeInput.value = "";' in app_js_source
+    assert 'kind: "manual_must_contain"' in app_js_source
+    assert 'kind: "episode_progress_floor"' in app_js_source
+
+
+def test_inline_feed_scope_indexer_matching_uses_key_variants() -> None:
+    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+    app_js_source = app_js_path.read_text(encoding="utf-8")
+
+    assert "function buildIndexerKeyVariants(value) {" in app_js_source
+    assert "const getSelectedFeedIndexerSlugs = () => {" in app_js_source
+    assert "const feedScopeBlocksAll = hasFeedSelectionConstraint() && feedScopedIndexers.length === 0;" in app_js_source
+    assert "indexerVariantKeys: mergeUniqueIndexerVariantKeys(selectedIndexers)," in app_js_source
+    assert "feedScopedIndexerVariantKeys: mergeUniqueIndexerVariantKeys(feedScopedIndexers)," in app_js_source
+    assert "indexerKeys: buildIndexerKeyVariants(card.dataset.indexer || \"\")," in app_js_source
+    assert "entry.indexerKeys.some((item) => allowedIndexerKeys.has(item))" in app_js_source
+    assert "entry.indexerKeys.some((item) => allowedFeedKeys.has(item))" in app_js_source
 
 
 def test_run_rule_search_route_redirects_to_inline_rule_page(app_client, db_session) -> None:
@@ -118,6 +154,30 @@ def test_run_rule_search_route_preserves_feed_url_overrides(app_client, db_sessi
         "&feed_urls=http%3A%2F%2Fjackett%3A9117%2Fapi%2Fv2.0%2Findexers%2Frutracker%2Fresults%2Ftorznab%2Fapi%3Fapikey%3Dabc"
         "&feed_urls=http%3A%2F%2Fjackett%3A9117%2Fapi%2Fv2.0%2Findexers%2Fkinozal%2Fresults%2Ftorznab%2Fapi%3Fapikey%3Dabc"
         "#inline-search-results"
+    )
+
+
+def test_run_rule_search_route_preserves_refresh_snapshot_flag(app_client, db_session) -> None:
+    rule = Rule(
+        rule_name="Rule Search Redirect Refresh",
+        content_name="Rule Search Redirect Refresh",
+        normalized_title="Rule Search Redirect Refresh",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/redirect-refresh"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    response = app_client.get(
+        f"/rules/{rule.id}/search",
+        params={"refresh_snapshot": "1"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        f"/rules/{rule.id}?run_search=1&refresh_snapshot=1#inline-search-results"
     )
 
 
@@ -204,13 +264,13 @@ def test_search_page_embeds_raw_cache_payload_for_local_refinement(app_client, m
 
     assert response.status_code == 200
     assert 'id="search-run-cache"' in response.text
-    assert 'data-search-card="primary"' in response.text
-    assert 'data-search-row="primary"' in response.text
-    assert 'data-search-view-mode' in response.text
-    assert 'data-search-sort-field="1"' in response.text
-    assert 'data-filter-impact-list="primary"' in response.text
-    assert 'data-search-filtered-count="primary"' in response.text
-    assert 'data-search-fetched-count="primary"' in response.text
+    assert 'data-search-card="combined"' in response.text
+    assert 'data-search-row="combined"' in response.text
+    assert 'data-search-view-mode' not in response.text
+    assert 'data-search-table-sort-field="title"' in response.text
+    assert 'data-filter-impact-list=' not in response.text
+    assert 'data-search-filtered-count="combined"' in response.text
+    assert 'data-search-fetched-count="combined"' in response.text
     assert "data-search-category-scope-status" in response.text
 
 
@@ -361,7 +421,7 @@ def test_search_page_uses_saved_result_view_defaults(app_client, db_session, mon
     assert '"field": "seeders"' in response.text
 
 
-def test_search_page_auto_enforces_imdb_and_renders_fallback_section(app_client, monkeypatch) -> None:
+def test_search_page_auto_enforces_imdb_and_renders_unified_results_table(app_client, monkeypatch) -> None:
     def fake_search(self, payload):
         assert payload.query == "Ghosts"
         assert payload.imdb_id == "tt11379026"
@@ -398,17 +458,15 @@ def test_search_page_auto_enforces_imdb_and_renders_fallback_section(app_client,
 
     assert response.status_code == 200
     assert "Require IMDb ID" not in response.text
-    assert "IMDb-first results" in response.text
-    assert "No IMDb-first matches" in response.text
+    assert "Unified query results" in response.text
     assert "Title fallback" in response.text
     assert "IMDb-enforced Jackett lookup" in response.text
     assert "t=tvsearch imdbid=tt11379026 cat=5000" in response.text
     assert "Ghosts full hd" in response.text
-    assert "Fallback Requests" in response.text
     assert "Ghosts S03E01 1080p" in response.text
 
 
-def test_search_page_renders_result_view_panels_for_primary_and_fallback(app_client, monkeypatch) -> None:
+def test_search_page_renders_single_result_view_panel_for_unified_results(app_client, monkeypatch) -> None:
     def fake_search(self, payload):
         return JackettSearchRun(
             query_variants=["Ghosts"],
@@ -440,11 +498,11 @@ def test_search_page_renders_result_view_panels_for_primary_and_fallback(app_cli
     )
 
     assert response.status_code == 200
-    assert response.text.count('data-search-controls') == 2
-    assert response.text.count('data-search-save-defaults') == 2
+    assert response.text.count('data-search-controls') == 1
+    assert response.text.count('data-search-save-defaults') == 1
 
 
-def test_search_page_hides_primary_filter_impact_when_imdb_first_fetch_is_zero(app_client, monkeypatch) -> None:
+def test_search_page_unified_results_do_not_render_filter_impact_panels(app_client, monkeypatch) -> None:
     def fake_search(self, payload):
         return JackettSearchRun(
             query_variants=["Ghosts"],
@@ -471,9 +529,9 @@ def test_search_page_hides_primary_filter_impact_when_imdb_first_fetch_is_zero(a
     )
 
     assert response.status_code == 200
-    assert "<p class=\"eyebrow\">Query string</p>" in response.text
     assert 'data-filter-impact-list="primary"' not in response.text
-    assert 'data-filter-impact-list="fallback"' in response.text
+    assert 'data-filter-impact-list="fallback"' not in response.text
+    assert "Unified query results" in response.text
 
 
 def test_search_page_skips_release_year_when_toggle_is_unchecked(app_client, monkeypatch) -> None:
@@ -923,7 +981,7 @@ def test_search_page_falls_back_to_title_when_rule_derivation_validation_fails(
 
     assert response.status_code == 200
     assert "Search kept a reduced subset of inherited keywords." in response.text
-    assert "Requests used" in response.text
+    assert "Source requests" in response.text
     assert "Rule Fallback" in response.text
 
 
@@ -1064,6 +1122,7 @@ def test_rule_pages_expose_run_search_actions(app_client, db_session) -> None:
     assert edit_response.status_code == 200
     assert f'/rules/{rule.id}/search' in edit_response.text
     assert ">Run Search Here</a>" in edit_response.text
+    assert ">Refresh Search Snapshot</a>" in edit_response.text
     assert ">Advanced Search Workspace</a>" in edit_response.text
 
 
@@ -1108,11 +1167,322 @@ def test_edit_rule_page_can_render_inline_search_results(app_client, db_session,
     assert response.status_code == 200
     assert 'id="inline-search-results"' in response.text
     assert "Results on this page" in response.text
+    assert "rule-workspace" in response.text
+    assert "rule-workspace-rail" in response.text
+    assert "rule-workspace-results" in response.text
+    assert "rule-form--compact" in response.text
+    assert "data-initial-feed-urls=" in response.text
     assert "Shrinking S01E01" in response.text
     assert "Queue via Rule" in response.text
-    assert 'data-search-table-wrap="primary"' in response.text
-    assert 'data-search-sort-field="1"' in response.text
-    assert 'data-search-view-mode' in response.text
+    assert "Advanced queue options" in response.text
+    assert 'data-search-table-wrap="combined"' in response.text
+    assert 'data-search-table-sort-field="title"' in response.text
+    assert 'data-search-view-mode' not in response.text
+    assert 'data-search-multiselect="indexers"' in response.text
+    assert 'data-search-multiselect="categories"' in response.text
+    assert 'data-search-source-summary="primary"' in response.text
+    assert 'data-search-source-filtered-count' in response.text
+    assert 'data-query-source-key="primary"' in response.text
+    assert 'data-filter-impact-list=' not in response.text
+    snapshot = db_session.get(RuleSearchSnapshot, rule.id)
+    assert snapshot is not None
+    assert snapshot.inline_search["raw_results"][0]["title"] == "Shrinking S01E01"
+
+
+def test_edit_rule_inline_search_replays_saved_snapshot_without_jackett_call(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    rule = Rule(
+        rule_name="Replay Snapshot Rule",
+        content_name="Replay Snapshot Rule",
+        normalized_title="Replay Snapshot Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/replay-snapshot"],
+    )
+    db_session.add(rule)
+    db_session.flush()
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule.id,
+            payload={"query": "Replay Snapshot Rule", "media_type": "series"},
+            inline_search={
+                "query": "Replay Snapshot Rule",
+                "primary_label": "Rule search results",
+                "request_variants": ['t=search q="Replay Snapshot Rule"'],
+                "raw_results": [
+                    {
+                        "title": "Replay Snapshot S01E01",
+                        "link": "https://example.com/replay-snapshot.torrent",
+                        "indexer": "snapshot-indexer",
+                        "visible": True,
+                    }
+                ],
+                "results": [
+                    {
+                        "title": "Replay Snapshot S01E01",
+                        "link": "https://example.com/replay-snapshot.torrent",
+                    }
+                ],
+                "fallback_label": "",
+                "fallback_request_variants": [],
+                "raw_fallback_results": [],
+                "fallback_results": [],
+                "warning_messages": [],
+                "ignored_full_regex": False,
+                "show_peers_column": False,
+                "show_leechers_column": False,
+                "show_grabs_column": False,
+            },
+        )
+    )
+    db_session.commit()
+
+    def fail_search(self, payload):
+        raise AssertionError("Jackett search should not run when replaying a saved snapshot.")
+
+    monkeypatch.setattr(JackettClient, "search", fail_search)
+
+    response = app_client.get(f"/rules/{rule.id}", params={"run_search": "1"})
+
+    assert response.status_code == 200
+    assert "Replay Snapshot S01E01" in response.text
+    assert "Showing saved search snapshot from" in response.text
+
+
+def test_edit_rule_page_loads_saved_snapshot_by_default_and_can_clear_results(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    rule = Rule(
+        rule_name="Auto Replay Snapshot Rule",
+        content_name="Auto Replay Snapshot Rule",
+        normalized_title="Auto Replay Snapshot Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/auto-replay-snapshot"],
+    )
+    db_session.add(rule)
+    db_session.flush()
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule.id,
+            payload={"query": "Auto Replay Snapshot Rule", "media_type": "series"},
+            inline_search={
+                "query": "Auto Replay Snapshot Rule",
+                "primary_label": "Rule search results",
+                "request_variants": ['t=search q="Auto Replay Snapshot Rule"'],
+                "raw_results": [
+                    {
+                        "title": "Auto Replay Snapshot S01E02",
+                        "link": "https://example.com/auto-replay-snapshot.torrent",
+                        "indexer": "snapshot-indexer",
+                        "visible": True,
+                    }
+                ],
+                "results": [
+                    {
+                        "title": "Auto Replay Snapshot S01E02",
+                        "link": "https://example.com/auto-replay-snapshot.torrent",
+                    }
+                ],
+                "fallback_label": "",
+                "fallback_request_variants": [],
+                "raw_fallback_results": [],
+                "fallback_results": [],
+                "warning_messages": [],
+                "ignored_full_regex": False,
+                "show_peers_column": False,
+                "show_leechers_column": False,
+                "show_grabs_column": False,
+            },
+        )
+    )
+    db_session.commit()
+
+    def fail_search(self, payload):
+        raise AssertionError("Jackett search should not run when auto-replaying a saved snapshot.")
+
+    monkeypatch.setattr(JackettClient, "search", fail_search)
+
+    default_response = app_client.get(f"/rules/{rule.id}")
+
+    assert default_response.status_code == 200
+    assert "Auto Replay Snapshot S01E02" in default_response.text
+    assert "Showing saved search snapshot from" in default_response.text
+    assert f'href="/rules/{rule.id}?clear_results=1"' in default_response.text
+
+    cleared_response = app_client.get(f"/rules/{rule.id}", params={"clear_results": "1"})
+
+    assert cleared_response.status_code == 200
+    assert "Auto Replay Snapshot S01E02" not in cleared_response.text
+
+
+def test_edit_rule_inline_search_ignores_feed_override_when_selection_matches_rule(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    feed_url = "http://jackett:9117/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc&t=tvsearch&cat=5000"
+    rule = Rule(
+        rule_name="Replay Snapshot With Matching Override",
+        content_name="Replay Snapshot With Matching Override",
+        normalized_title="Replay Snapshot With Matching Override",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=[feed_url],
+    )
+    db_session.add(rule)
+    db_session.flush()
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule.id,
+            payload={"query": "Replay Snapshot With Matching Override", "media_type": "series"},
+            inline_search={
+                "query": "Replay Snapshot With Matching Override",
+                "primary_label": "Rule search results",
+                "request_variants": ['t=search q="Replay Snapshot With Matching Override"'],
+                "raw_results": [
+                    {
+                        "title": "Replay Override Snapshot S01E01",
+                        "link": "https://example.com/replay-override.torrent",
+                        "indexer": "snapshot-indexer",
+                        "visible": True,
+                    }
+                ],
+                "results": [
+                    {
+                        "title": "Replay Override Snapshot S01E01",
+                        "link": "https://example.com/replay-override.torrent",
+                    }
+                ],
+                "fallback_label": "",
+                "fallback_request_variants": [],
+                "raw_fallback_results": [],
+                "fallback_results": [],
+                "warning_messages": [],
+                "ignored_full_regex": False,
+                "show_peers_column": False,
+                "show_leechers_column": False,
+                "show_grabs_column": False,
+            },
+        )
+    )
+    db_session.commit()
+
+    def fail_search(self, payload):
+        raise AssertionError("Jackett search should not run when feed override matches saved rule feeds.")
+
+    monkeypatch.setattr(JackettClient, "search", fail_search)
+
+    response = app_client.get(
+        f"/rules/{rule.id}",
+        params=[
+            ("run_search", "1"),
+            ("feed_scope_override", "1"),
+            ("feed_urls", feed_url),
+        ],
+    )
+
+    assert response.status_code == 200
+    assert "Replay Override Snapshot S01E01" in response.text
+    assert "Showing saved search snapshot from" in response.text
+
+
+def test_edit_rule_inline_search_refreshes_and_persists_snapshot(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett:9117",
+        jackett_api_key_encrypted=obfuscate_secret("api-key"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Refresh Snapshot Rule",
+        content_name="Refresh Snapshot Rule",
+        normalized_title="Refresh Snapshot Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/refresh-snapshot"],
+    )
+    db_session.add(rule)
+    db_session.flush()
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule.id,
+            payload={"query": "Refresh Snapshot Rule", "media_type": "series"},
+            inline_search={
+                "query": "Refresh Snapshot Rule",
+                "primary_label": "Rule search results",
+                "request_variants": ['t=search q="Refresh Snapshot Rule"'],
+                "raw_results": [
+                    {
+                        "title": "Old Snapshot Result",
+                        "link": "https://example.com/old-snapshot.torrent",
+                        "visible": True,
+                    }
+                ],
+                "results": [
+                    {
+                        "title": "Old Snapshot Result",
+                        "link": "https://example.com/old-snapshot.torrent",
+                    }
+                ],
+                "fallback_label": "",
+                "fallback_request_variants": [],
+                "raw_fallback_results": [],
+                "fallback_results": [],
+                "warning_messages": [],
+                "ignored_full_regex": False,
+                "show_peers_column": False,
+                "show_leechers_column": False,
+                "show_grabs_column": False,
+            },
+        )
+    )
+    db_session.commit()
+
+    captured: dict[str, int] = {"count": 0}
+
+    def fake_search(self, payload):
+        captured["count"] += 1
+        return JackettSearchRun(
+            request_variants=['t=search q="Refresh Snapshot Rule"'],
+            results=[
+                JackettSearchResult(
+                    title="New Snapshot Result",
+                    link="https://example.com/new-snapshot.torrent",
+                    indexer="snapshot-indexer",
+                    category_ids=["5000"],
+                    category_labels=["TV"],
+                )
+            ],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "enrich_result_category_labels", lambda self, results: None)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", lambda self: {})
+
+    response = app_client.get(
+        f"/rules/{rule.id}",
+        params={"run_search": "1", "refresh_snapshot": "1"},
+    )
+
+    assert response.status_code == 200
+    assert captured["count"] == 1
+    assert "New Snapshot Result" in response.text
+    assert "Search snapshot refreshed from Jackett and saved for future runs." in response.text
+
+    db_session.expire_all()
+    snapshot = db_session.get(RuleSearchSnapshot, rule.id)
+    assert snapshot is not None
+    assert snapshot.inline_search["raw_results"][0]["title"] == "New Snapshot Result"
 
 
 def test_edit_rule_inline_search_scopes_single_jackett_feed_indexer(
@@ -1209,6 +1579,9 @@ def test_edit_rule_inline_search_uses_feed_url_override_scope(
     assert response.status_code == 200
     assert "Inline search used current affected-feed selection from the form (not yet saved)." in response.text
     assert "Search scoped to affected feed indexer: rutracker." in response.text
+    snapshot = db_session.get(RuleSearchSnapshot, rule.id)
+    assert snapshot is not None
+    assert snapshot.payload.get("filter_indexers") == ["rutracker"]
 
 
 def test_edit_rule_inline_search_scopes_multiple_jackett_feed_indexers(

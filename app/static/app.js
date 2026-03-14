@@ -657,13 +657,17 @@ function buildEpisodeProgressRegexFragment(startSeasonValue, startEpisodeValue) 
   const seasonExact = `0*${startSeason}`;
   const episodeAny = "0*[1-9]\\d?";
   const episodeGe = buildMinNumericPattern1To99(startEpisode);
+  const seasonPrefix = "(?:s(?:eason)?[\\s._:-]*)";
+  const episodePrefix = "(?:e(?:p(?:isode)?)?[\\s._:-]*)";
   const fragments = [
-    `s${seasonExact}${separators}e${episodeGe}`,
-    `s${seasonExact}${separators}e${episodeAny}${separators}-${separators}(?:e)?${episodeGe}`,
+    `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeGe}`,
+    `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeAny}${separators}-${separators}(?:${episodePrefix})?${episodeGe}`,
+    `${seasonPrefix}${seasonExact}(?!\\d)(?:\\b|$)`,
   ];
   if (startSeason < 99) {
     const seasonAfter = buildMinNumericPattern1To99(startSeason + 1);
-    fragments.unshift(`s${seasonAfter}${separators}e${episodeAny}`);
+    fragments.unshift(`${seasonPrefix}${seasonAfter}(?!\\d)${separators}${episodePrefix}${episodeAny}`);
+    fragments.splice(1, 0, `${seasonPrefix}${seasonAfter}(?!\\d)(?:\\b|$)`);
   }
   return `(?:${fragments.join("|")})`;
 }
@@ -858,6 +862,7 @@ function parseSearchFilterList(value) {
 }
 
 const FEED_INDEXER_PATH_RE = /\/api\/v2\.0\/indexers\/([^/]+)\/results\/torznab(?:\/api)?\/?$/iu;
+const INDEXER_KEY_STRIP_RE = /[^a-z0-9]+/gu;
 
 function feedUrlToIndexerSlug(feedUrl) {
   const cleaned = String(feedUrl || "").trim();
@@ -885,6 +890,47 @@ function feedUrlToIndexerSlug(feedUrl) {
     return "";
   }
   return slug;
+}
+
+function buildIndexerKeyVariants(value) {
+  const raw = String(value || "").trim().toLocaleLowerCase();
+  if (!raw) {
+    return [];
+  }
+  const cleaned = raw.startsWith("www.") ? raw.slice(4) : raw;
+  const variants = [];
+  const seen = new Set();
+  const pushUnique = (candidate) => {
+    const normalized = String(candidate || "").trim();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    variants.push(normalized);
+  };
+  pushUnique(cleaned);
+  pushUnique(cleaned.replace(INDEXER_KEY_STRIP_RE, ""));
+  if (cleaned.includes(".")) {
+    const hostWithoutTld = cleaned.slice(0, cleaned.lastIndexOf(".")).trim();
+    pushUnique(hostWithoutTld);
+    pushUnique(hostWithoutTld.replace(INDEXER_KEY_STRIP_RE, ""));
+  }
+  return variants;
+}
+
+function mergeUniqueIndexerVariantKeys(values) {
+  const merged = [];
+  const seen = new Set();
+  for (const value of values || []) {
+    for (const variant of buildIndexerKeyVariants(value)) {
+      if (seen.has(variant)) {
+        continue;
+      }
+      seen.add(variant);
+      merged.push(variant);
+    }
+  }
+  return merged;
 }
 
 function normalizeCategoryFilterValue(value) {
@@ -956,17 +1002,17 @@ function initSearchPage(container) {
   const sizeMaxInput = form.querySelector('input[name="size_max_mb"]');
   const startSeasonInput = form.querySelector('input[name="start_season"]');
   const startEpisodeInput = form.querySelector('input[name="start_episode"]');
-  const filterIndexersInput = form.querySelector('input[name="filter_indexers"]');
-  const filterCategoryIdsInput = form.querySelector('input[name="filter_category_ids"]');
-  const indexerMultiSelectOptions = form.querySelector('[data-search-multiselect-options="indexers"]');
-  const indexerMultiSelectSummary = form.querySelector('[data-search-multiselect-summary="indexers"]');
-  const indexerMultiSelectSelectAll = form.querySelector('[data-search-multiselect-select-all="indexers"]');
-  const indexerMultiSelectClear = form.querySelector('[data-search-multiselect-clear="indexers"]');
-  const categoryMultiSelectOptions = form.querySelector('[data-search-multiselect-options="categories"]');
-  const categoryMultiSelectSummary = form.querySelector('[data-search-multiselect-summary="categories"]');
-  const categoryMultiSelectSelectAll = form.querySelector('[data-search-multiselect-select-all="categories"]');
-  const categoryMultiSelectClear = form.querySelector('[data-search-multiselect-clear="categories"]');
-  const categoryScopeStatusElement = form.querySelector("[data-search-category-scope-status]");
+  const filterIndexersInput = container.querySelector('input[name="filter_indexers"]');
+  const filterCategoryIdsInput = container.querySelector('input[name="filter_category_ids"]');
+  const indexerMultiSelectOptions = container.querySelector('[data-search-multiselect-options="indexers"]');
+  const indexerMultiSelectSummary = container.querySelector('[data-search-multiselect-summary="indexers"]');
+  const indexerMultiSelectSelectAll = container.querySelector('[data-search-multiselect-select-all="indexers"]');
+  const indexerMultiSelectClear = container.querySelector('[data-search-multiselect-clear="indexers"]');
+  const categoryMultiSelectOptions = container.querySelector('[data-search-multiselect-options="categories"]');
+  const categoryMultiSelectSummary = container.querySelector('[data-search-multiselect-summary="categories"]');
+  const categoryMultiSelectSelectAll = container.querySelector('[data-search-multiselect-select-all="categories"]');
+  const categoryMultiSelectClear = container.querySelector('[data-search-multiselect-clear="categories"]');
+  const categoryScopeStatusElement = container.querySelector("[data-search-category-scope-status]");
   const getFeedUrlInputs = () => Array.from(form.querySelectorAll('input[name="feed_urls"]'));
   const hasFeedSelectionConstraint = () => getFeedUrlInputs().length > 0;
   const getSelectedFeedIndexerSlugs = () => {
@@ -988,26 +1034,33 @@ function initSearchPage(container) {
   const qualitySearchTermMap = parseJsonData(container.dataset.qualitySearchTerms || "{}", {});
   const qualityPatternMap = parseJsonData(container.dataset.qualityPatternMap || "{}", {});
   const qualityTokenGroupMap = buildQualityTokenGroupMapFromElements(form);
+  const sortHeaderButtons = Array.from(container.querySelectorAll("[data-search-table-sort-field]"));
   const controlSets = Array.from(container.querySelectorAll("[data-search-controls]")).map((controlContainer) => ({
     controlContainer,
     viewModeSelect: controlContainer.querySelector("[data-search-view-mode]"),
-    sortFieldInputs: [1, 2, 3]
-      .map((level) => controlContainer.querySelector(`[data-search-sort-field="${level}"]`))
-      .filter(Boolean),
-    sortDirectionInputs: [1, 2, 3]
-      .map((level) => controlContainer.querySelector(`[data-search-sort-dir="${level}"]`))
-      .filter(Boolean),
     saveDefaultsButton: controlContainer.querySelector("[data-search-save-defaults]"),
     saveDefaultsStatus: controlContainer.querySelector("[data-search-default-status]"),
+    clearFiltersButton: controlContainer.querySelector("[data-search-clear-filters]"),
+    activeFiltersContainer: controlContainer.querySelector("[data-search-active-filters]"),
+    activeFilterList: controlContainer.querySelector("[data-search-active-filter-list]"),
   }));
-  const allSortFieldInputs = controlSets.flatMap((set) => set.sortFieldInputs);
-  const allSortDirectionInputs = controlSets.flatMap((set) => set.sortDirectionInputs);
   const saveDefaultsButtons = controlSets.map((set) => set.saveDefaultsButton).filter(Boolean);
   const saveDefaultsStatuses = controlSets.map((set) => set.saveDefaultsStatus).filter(Boolean);
   const getSearchQueryLabel = () => String(queryInput?.value || container.dataset.searchQuery || "").trim();
   const getSearchQuery = () => normalizeSearchText(getSearchQueryLabel());
   const getSearchImdbId = () => normalizeSearchImdbId(imdbIdInput?.value || "");
   const DEFAULT_SORT_FIELD = "published_at";
+  const DEFAULT_SORT_DIRECTION_BY_FIELD = {
+    published_at: "desc",
+    seeders: "desc",
+    peers: "desc",
+    leechers: "desc",
+    grabs: "desc",
+    size_bytes: "desc",
+    year: "desc",
+    indexer: "asc",
+    title: "asc",
+  };
   const SORT_FIELDS = new Set([
     "published_at",
     "seeders",
@@ -1026,6 +1079,10 @@ function initSearchPage(container) {
     const cleaned = String(value || "").trim();
     return SORT_FIELDS.has(cleaned) ? cleaned : "";
   };
+  const defaultSortDirectionForField = (field) => (
+    DEFAULT_SORT_DIRECTION_BY_FIELD[normalizeSortField(field)] || "asc"
+  );
+  const toggleSortDirection = (direction) => (normalizeSortDirection(direction) === "asc" ? "desc" : "asc");
   const normalizeSortCriteria = (rawValue) => {
     const normalized = [];
     const seen = new Set();
@@ -1045,10 +1102,7 @@ function initSearchPage(container) {
     }
     return [{ field: DEFAULT_SORT_FIELD, direction: "desc" }];
   };
-  const normalizeViewMode = (value) => {
-    const cleaned = String(value || "").trim().toLocaleLowerCase();
-    return cleaned === "cards" ? "cards" : "table";
-  };
+  const normalizeViewMode = () => "table";
   let controlState = {
     viewMode: normalizeViewMode(container.dataset.defaultViewMode || "table"),
     sortCriteria: normalizeSortCriteria(parseJsonData(container.dataset.defaultSort || "", [])),
@@ -1077,25 +1131,6 @@ function initSearchPage(container) {
     }
     return timestamp;
   };
-
-  const emptyFilters = () => ({
-    query: "",
-    imdbId: getSearchImdbId(),
-    releaseYear: "",
-    keywordsAll: [],
-    keywordsAnyGroups: [],
-    keywordsNot: [],
-    qualityIncludeTokens: [],
-    qualityExcludeTokens: [],
-    qualityIncludeRegex: null,
-    qualityExcludeRegex: null,
-    generatedPatternRegex: null,
-    sizeMinMb: null,
-    sizeMaxMb: null,
-    feedScopeBlocksAll: false,
-    indexers: [],
-    categories: [],
-  });
 
   const mergeUniqueTerms = (...termLists) => {
     const merged = [];
@@ -1223,40 +1258,133 @@ function initSearchPage(container) {
     qualityIncludeRegex: filters.qualityIncludeRegex || null,
     qualityExcludeRegex: filters.qualityExcludeRegex || null,
     generatedPatternRegex: filters.generatedPatternRegex || null,
+    manualMustContain: String(filters.manualMustContain || ""),
+    startSeason: filters.startSeason,
+    startEpisode: filters.startEpisode,
     sizeMinMb: filters.sizeMinMb,
     sizeMaxMb: filters.sizeMaxMb,
     feedScopeBlocksAll: Boolean(filters.feedScopeBlocksAll),
+    feedScopedIndexers: [...(filters.feedScopedIndexers || [])],
+    feedScopedIndexerVariantKeys: [...(filters.feedScopedIndexerVariantKeys || [])],
+    explicitIndexers: [...(filters.explicitIndexers || [])],
     indexers: [...filters.indexers],
+    indexerVariantKeys: [...(filters.indexerVariantKeys || [])],
     categories: [...filters.categories],
   });
+
+  const NUMERIC_SORT_FIELDS = new Set([
+    "published_at",
+    "seeders",
+    "peers",
+    "leechers",
+    "grabs",
+    "size_bytes",
+    "year",
+  ]);
+
+  const sortGlyphForDirection = (field, direction) => {
+    const normalizedField = normalizeSortField(field);
+    const normalizedDirection = normalizeSortDirection(direction);
+    const numeric = NUMERIC_SORT_FIELDS.has(normalizedField);
+    if (numeric) {
+      return normalizedDirection === "asc" ? "0-9" : "9-0";
+    }
+    return normalizedDirection === "asc" ? "A-Z" : "Z-A";
+  };
+
+  const renderSortHeaders = () => {
+    const activeByField = new Map(
+      controlState.sortCriteria.map((criterion, index) => [criterion.field, { ...criterion, level: index + 1 }])
+    );
+    for (const button of sortHeaderButtons) {
+      const field = normalizeSortField(button.dataset.searchTableSortField || "");
+      if (!field) {
+        continue;
+      }
+      const active = activeByField.get(field);
+      const th = button.closest("th");
+      const glyph = button.querySelector(`[data-search-sort-glyph="${field}"]`)
+        || button.querySelector("[data-search-sort-glyph]");
+      if (!active) {
+        button.dataset.sortActive = "0";
+        button.setAttribute("aria-pressed", "false");
+        button.setAttribute("title", "Click to sort ascending. Shift+click adds to multi-sort.");
+        if (glyph) {
+          glyph.textContent = "↕";
+        }
+        if (th) {
+          th.setAttribute("aria-sort", "none");
+        }
+        continue;
+      }
+
+      button.dataset.sortActive = "1";
+      button.setAttribute("aria-pressed", "true");
+      button.setAttribute(
+        "title",
+        `Sorted ${active.direction} at level ${active.level}. `
+        + "Click to toggle direction. Shift+click keeps other sort levels."
+      );
+      if (glyph) {
+        const label = sortGlyphForDirection(field, active.direction);
+        glyph.textContent = controlState.sortCriteria.length > 1 ? `${label}${active.level}` : label;
+      }
+      if (th) {
+        if (active.level === 1) {
+          th.setAttribute("aria-sort", active.direction === "desc" ? "descending" : "ascending");
+        } else {
+          th.setAttribute("aria-sort", "none");
+        }
+      }
+    }
+  };
 
   const writeControlStateToSet = (controlSet, state) => {
     if (controlSet.viewModeSelect) {
       controlSet.viewModeSelect.value = state.viewMode;
     }
-    for (const level of [1, 2, 3]) {
-      const fieldInput = controlSet.sortFieldInputs[level - 1];
-      const directionInput = controlSet.sortDirectionInputs[level - 1];
-      const criterion = state.sortCriteria[level - 1];
-      if (fieldInput) {
-        fieldInput.value = criterion?.field || "";
-      }
-      if (directionInput) {
-        directionInput.value = criterion?.direction || "asc";
-      }
-    }
   };
 
-  const readControlStateFromSet = (controlSet) => {
-    const viewMode = normalizeViewMode(controlSet.viewModeSelect?.value || controlState.viewMode);
-    const rawSortCriteria = [1, 2, 3].map((level) => ({
-      field: controlSet.sortFieldInputs[level - 1]?.value || "",
-      direction: controlSet.sortDirectionInputs[level - 1]?.value || "asc",
-    }));
-    return {
-      viewMode,
-      sortCriteria: normalizeSortCriteria(rawSortCriteria),
+  const updateSortFromHeader = (field, additive = false) => {
+    const normalizedField = normalizeSortField(field);
+    if (!normalizedField) {
+      return;
+    }
+
+    const current = controlState.sortCriteria.map((criterion) => ({ ...criterion }));
+    const existingIndex = current.findIndex((criterion) => criterion.field === normalizedField);
+    let nextCriteria = [];
+
+    if (additive) {
+      if (existingIndex >= 0) {
+        const existing = current.splice(existingIndex, 1)[0];
+        existing.direction = toggleSortDirection(existing.direction);
+        nextCriteria = [existing, ...current];
+      } else {
+        nextCriteria = [
+          { field: normalizedField, direction: defaultSortDirectionForField(normalizedField) },
+          ...current,
+        ];
+      }
+    } else if (existingIndex === 0) {
+      nextCriteria = [
+        {
+          field: normalizedField,
+          direction: toggleSortDirection(current[0].direction),
+        }
+      ];
+    } else if (existingIndex > 0) {
+      nextCriteria = [{ ...current[existingIndex] }];
+    } else {
+      nextCriteria = [{ field: normalizedField, direction: defaultSortDirectionForField(normalizedField) }];
+    }
+
+    controlState = {
+      ...controlState,
+      sortCriteria: normalizeSortCriteria(nextCriteria),
     };
+    syncControlSets();
+    applyLocalFilters();
   };
 
   const syncControlSets = (sourceControlSet = null) => {
@@ -1266,6 +1394,7 @@ function initSearchPage(container) {
       }
       writeControlStateToSet(controlSet, controlState);
     }
+    renderSortHeaders();
   };
 
   const setSaveDefaultStatus = (message, isError = false) => {
@@ -1353,14 +1482,30 @@ function initSearchPage(container) {
     searchPatternPreview.value = getSearchPatternPreviewValue();
   };
 
-  const getGeneratedPatternForFilters = () => {
-    if (searchPatternPreview) {
-      return String(searchPatternPreview.value || "").trim();
+  const getLocalPatternForFilters = () => {
+    const manualMustContainValue = String(mustContainOverrideInput?.value || "").trim();
+    const startSeasonValue = String(startSeasonInput?.value || "").trim();
+    const startEpisodeValue = String(startEpisodeInput?.value || "").trim();
+    const normalizedStartSeason = normalizeBoundedPositiveInt(startSeasonValue, { min: 1, max: 99 });
+    const normalizedStartEpisode = normalizeBoundedPositiveInt(startEpisodeValue, { min: 1, max: 99 });
+    if (!manualMustContainValue && (normalizedStartSeason === null || normalizedStartEpisode === null)) {
+      return "";
     }
-    if (generatedPatternInput?.id === "pattern-preview") {
-      return String(derivePattern(form, qualityPatternMap, qualityTokenGroupMap) || "").trim();
-    }
-    return String(generatedPatternInput?.value || "").trim();
+    return deriveGeneratedPattern({
+      title: "",
+      useRegex: true,
+      includeReleaseYear: false,
+      releaseYear: "",
+      additionalIncludes: "",
+      additionalExcludes: "",
+      manualMustContain: manualMustContainValue,
+      startSeason: startSeasonValue,
+      startEpisode: startEpisodeValue,
+      qualityIncludeTokens: [],
+      qualityExcludeTokens: [],
+      qualityPatternMap,
+      qualityTokenGroupMap,
+    });
   };
 
   const getActiveFilters = () => {
@@ -1376,18 +1521,20 @@ function initSearchPage(container) {
       keywordsAnyGroups.push(tokenState.includeKeywordTerms);
     }
 
-    let feedScopeBlocksAll = false;
-    let selectedIndexers = parseSearchFilterList(filterIndexersInput?.value || "")
+    const explicitIndexerFilters = parseSearchFilterList(filterIndexersInput?.value || "")
       .map((item) => item.toLocaleLowerCase());
-    if (hasFeedSelectionConstraint()) {
-      const selectedFeedIndexers = getSelectedFeedIndexerSlugs();
-      if (selectedFeedIndexers.length === 0) {
-        feedScopeBlocksAll = true;
-        selectedIndexers = [];
-      } else if (selectedIndexers.length === 0) {
-        selectedIndexers = selectedFeedIndexers;
+    const feedScopedIndexers = hasFeedSelectionConstraint() ? getSelectedFeedIndexerSlugs() : [];
+    const feedScopeBlocksAll = hasFeedSelectionConstraint() && feedScopedIndexers.length === 0;
+    let selectedIndexers = [...explicitIndexerFilters];
+    if (feedScopedIndexers.length > 0) {
+      if (selectedIndexers.length === 0) {
+        selectedIndexers = [...feedScopedIndexers];
       } else {
-        selectedIndexers = selectedIndexers.filter((item) => selectedFeedIndexers.includes(item));
+        const allowedFeedKeys = new Set(mergeUniqueIndexerVariantKeys(feedScopedIndexers));
+        selectedIndexers = selectedIndexers.filter((value) => {
+          const variantKeys = buildIndexerKeyVariants(value);
+          return variantKeys.some((item) => allowedFeedKeys.has(item));
+        });
       }
     }
 
@@ -1407,11 +1554,18 @@ function initSearchPage(container) {
       qualityExcludeTokens: tokenState.excludeKeywordTokens,
       qualityIncludeRegex: tokenState.includeKeywordRegex,
       qualityExcludeRegex: tokenState.excludeKeywordRegex,
-      generatedPatternRegex: compileGeneratedPatternRegex(getGeneratedPatternForFilters()),
+      generatedPatternRegex: compileGeneratedPatternRegex(getLocalPatternForFilters()),
+      manualMustContain: String(mustContainOverrideInput?.value || "").trim(),
+      startSeason: normalizeBoundedPositiveInt(startSeasonInput?.value || "", { min: 1, max: 99 }),
+      startEpisode: normalizeBoundedPositiveInt(startEpisodeInput?.value || "", { min: 1, max: 99 }),
       sizeMinMb: parseSearchMb(sizeMinInput?.value || ""),
       sizeMaxMb: parseSearchMb(sizeMaxInput?.value || ""),
       feedScopeBlocksAll,
+      feedScopedIndexers,
+      feedScopedIndexerVariantKeys: mergeUniqueIndexerVariantKeys(feedScopedIndexers),
+      explicitIndexers: explicitIndexerFilters,
       indexers: selectedIndexers,
+      indexerVariantKeys: mergeUniqueIndexerVariantKeys(selectedIndexers),
       categories: parseSearchFilterList(filterCategoryIdsInput?.value || "")
         .map((item) => normalizeCategoryFilterValue(item))
         .filter(Boolean),
@@ -1420,14 +1574,6 @@ function initSearchPage(container) {
 
   const buildFilterValues = (filters) => {
     const values = [];
-    if (filters.query) {
-      const activeQueryLabel = getSearchQueryLabel();
-      values.push({
-        kind: "query",
-        label: `Title query: ${activeQueryLabel || filters.query}`,
-        value: filters.query,
-      });
-    }
     if (filters.releaseYear) {
       values.push({
         kind: "release_year",
@@ -1477,6 +1623,23 @@ function initSearchPage(container) {
         matchKey: normalizeSearchText(token),
       });
     }
+    if (filters.startSeason !== null && filters.startEpisode !== null) {
+      values.push({
+        kind: "episode_progress_floor",
+        label: `Episode floor: S${filters.startSeason}E${filters.startEpisode}`,
+        value: `${filters.startSeason}:${filters.startEpisode}`,
+      });
+    }
+    if (filters.manualMustContain) {
+      const compactRegexValue = filters.manualMustContain.length > 96
+        ? `${filters.manualMustContain.slice(0, 93)}...`
+        : filters.manualMustContain;
+      values.push({
+        kind: "manual_must_contain",
+        label: `Regex fragments: ${compactRegexValue}`,
+        value: filters.manualMustContain,
+      });
+    }
     if (filters.sizeMinMb !== null) {
       values.push({
         kind: "size_min_mb",
@@ -1498,7 +1661,8 @@ function initSearchPage(container) {
         value: true,
       });
     }
-    for (const indexer of filters.indexers) {
+    const explicitIndexers = filters.explicitIndexers || filters.indexers;
+    for (const indexer of explicitIndexers) {
       values.push({
         kind: "filter_indexer",
         label: `Indexer = ${indexer}`,
@@ -1515,78 +1679,201 @@ function initSearchPage(container) {
     return values;
   };
 
-  const filtersWithOnlyValue = (filterValue) => {
-    const filters = emptyFilters();
-    if (filterValue.kind === "query") {
-      filters.query = filterValue.value;
-    } else if (filterValue.kind === "release_year") {
-      filters.releaseYear = filterValue.value;
-    } else if (filterValue.kind === "keywords_all") {
-      filters.keywordsAll = [filterValue.value];
-    } else if (filterValue.kind === "keywords_any_group") {
-      filters.keywordsAnyGroups = [[...filterValue.value]];
-    } else if (filterValue.kind === "keywords_not") {
-      filters.keywordsNot = [filterValue.value];
-    } else if (filterValue.kind === "quality_include_token") {
-      filters.qualityIncludeTokens = [filterValue.value];
-      filters.qualityIncludeRegex = compileQualityRegex(
-        buildQualityIncludeRegex(filters.qualityIncludeTokens, qualityPatternMap, qualityTokenGroupMap)
-      );
-    } else if (filterValue.kind === "quality_exclude_token") {
-      filters.qualityExcludeTokens = [filterValue.value];
-      filters.qualityExcludeRegex = compileQualityRegex(buildQualityRegex(filters.qualityExcludeTokens, qualityPatternMap));
-    } else if (filterValue.kind === "size_min_mb") {
-      filters.sizeMinMb = filterValue.value;
-    } else if (filterValue.kind === "size_max_mb") {
-      filters.sizeMaxMb = filterValue.value;
-    } else if (filterValue.kind === "feed_scope_none") {
-      filters.feedScopeBlocksAll = true;
-    } else if (filterValue.kind === "filter_indexer") {
-      filters.indexers = [filterValue.value];
-    } else if (filterValue.kind === "filter_category") {
-      filters.categories = [filterValue.value];
+  const serializeKeywordGroups = (groups) => groups.map((group) => group.join("|")).join("\n");
+  const serializeAnyKeywordGroups = (groups) => groups.map((group) => group.join(", ")).join(" | ");
+
+  const setHiddenMultiselectValues = (input, values) => {
+    if (!input) {
+      return;
     }
-    return filters;
+    input.value = values.join(", ");
   };
 
-  const filtersWithoutValue = (filters, filterValue) => {
-    const next = cloneFilters(filters);
-    if (filterValue.kind === "query") {
-      next.query = "";
-    } else if (filterValue.kind === "release_year") {
-      next.releaseYear = "";
-    } else if (filterValue.kind === "keywords_all") {
-      next.keywordsAll = next.keywordsAll.filter((item) => normalizeSearchText(item) !== filterValue.matchKey);
-    } else if (filterValue.kind === "keywords_any_group") {
-      next.keywordsAnyGroups = next.keywordsAnyGroups.filter(
-        (group) => group.map((item) => normalizeSearchText(item)).filter(Boolean).join("||") !== filterValue.matchKey
-      );
-    } else if (filterValue.kind === "keywords_not") {
-      next.keywordsNot = next.keywordsNot.filter((item) => normalizeSearchText(item) !== filterValue.matchKey);
-    } else if (filterValue.kind === "quality_include_token") {
-      next.qualityIncludeTokens = next.qualityIncludeTokens.filter(
-        (item) => normalizeSearchText(item) !== filterValue.matchKey
-      );
-      next.qualityIncludeRegex = compileQualityRegex(
-        buildQualityIncludeRegex(next.qualityIncludeTokens, qualityPatternMap, qualityTokenGroupMap)
-      );
-    } else if (filterValue.kind === "quality_exclude_token") {
-      next.qualityExcludeTokens = next.qualityExcludeTokens.filter(
-        (item) => normalizeSearchText(item) !== filterValue.matchKey
-      );
-      next.qualityExcludeRegex = compileQualityRegex(buildQualityRegex(next.qualityExcludeTokens, qualityPatternMap));
-    } else if (filterValue.kind === "size_min_mb") {
-      next.sizeMinMb = null;
-    } else if (filterValue.kind === "size_max_mb") {
-      next.sizeMaxMb = null;
-    } else if (filterValue.kind === "feed_scope_none") {
-      next.feedScopeBlocksAll = false;
-    } else if (filterValue.kind === "filter_indexer") {
-      next.indexers = next.indexers.filter((item) => item !== filterValue.value);
-    } else if (filterValue.kind === "filter_category") {
-      next.categories = next.categories.filter((item) => item !== filterValue.value);
+  const removeFilterValueFromInputs = (filterValue) => {
+    if (filterValue.kind === "release_year") {
+      if (includeReleaseYearInput) {
+        includeReleaseYearInput.checked = false;
+      }
+      if (releaseYearInput) {
+        releaseYearInput.value = "";
+      }
+      return;
     }
-    return next;
+
+    if (filterValue.kind === "keywords_all" && keywordsAllInput) {
+      const nextGroups = parseAdditionalKeywordAlternativeGroups(keywordsAllInput.value || "").filter(
+        (group) => !(group.length === 1 && normalizeSearchText(group[0]) === filterValue.matchKey)
+      );
+      keywordsAllInput.value = serializeKeywordGroups(nextGroups);
+      return;
+    }
+
+    if (filterValue.kind === "keywords_any_group") {
+      let removed = false;
+      if (keywordsAnyInput) {
+        const anyGroups = parseSearchAnyKeywordGroups(keywordsAnyInput.value || "");
+        const nextAnyGroups = anyGroups.filter(
+          (group) => group.map((item) => normalizeSearchText(item)).filter(Boolean).join("||") !== filterValue.matchKey
+        );
+        if (nextAnyGroups.length !== anyGroups.length) {
+          keywordsAnyInput.value = serializeAnyKeywordGroups(nextAnyGroups);
+          removed = true;
+        }
+      }
+      if (!removed && keywordsAllInput) {
+        const includeGroups = parseAdditionalKeywordAlternativeGroups(keywordsAllInput.value || "");
+        const nextGroups = includeGroups.filter(
+          (group) => !(group.length > 1 && group.map((item) => normalizeSearchText(item)).filter(Boolean).join("||") === filterValue.matchKey)
+        );
+        keywordsAllInput.value = serializeKeywordGroups(nextGroups);
+      }
+      return;
+    }
+
+    if (filterValue.kind === "keywords_not" && keywordsNotInput) {
+      const nextGroups = [];
+      for (const group of parseAdditionalKeywordAlternativeGroups(keywordsNotInput.value || "")) {
+        const keptTerms = group.filter((item) => normalizeSearchText(item) !== filterValue.matchKey);
+        if (keptTerms.length > 0) {
+          nextGroups.push(keptTerms);
+        }
+      }
+      keywordsNotInput.value = serializeKeywordGroups(nextGroups);
+      return;
+    }
+
+    if (filterValue.kind === "quality_include_token") {
+      const includeInput = Array.from(form.querySelectorAll('input[name="quality_include_tokens"]')).find(
+        (input) => input.value === String(filterValue.value || "")
+      );
+      if (includeInput) {
+        includeInput.checked = false;
+      }
+      return;
+    }
+
+    if (filterValue.kind === "quality_exclude_token") {
+      const excludeInput = Array.from(form.querySelectorAll('input[name="quality_exclude_tokens"]')).find(
+        (input) => input.value === String(filterValue.value || "")
+      );
+      if (excludeInput) {
+        excludeInput.checked = false;
+      }
+      return;
+    }
+
+    if (filterValue.kind === "episode_progress_floor") {
+      if (startSeasonInput) {
+        startSeasonInput.value = "";
+      }
+      if (startEpisodeInput) {
+        startEpisodeInput.value = "";
+      }
+      return;
+    }
+
+    if (filterValue.kind === "manual_must_contain" && mustContainOverrideInput) {
+      mustContainOverrideInput.value = "";
+      return;
+    }
+
+    if (filterValue.kind === "size_min_mb" && sizeMinInput) {
+      sizeMinInput.value = "";
+      return;
+    }
+
+    if (filterValue.kind === "size_max_mb" && sizeMaxInput) {
+      sizeMaxInput.value = "";
+      return;
+    }
+
+    if (filterValue.kind === "feed_scope_none") {
+      getFeedUrlInputs().forEach((input) => {
+        input.checked = true;
+      });
+      return;
+    }
+
+    if (filterValue.kind === "filter_indexer") {
+      const keptValues = parseStoredMultiselectValues(
+        filterIndexersInput,
+        (value) => String(value || "").trim().toLocaleLowerCase()
+      )
+        .filter((item) => item.key !== String(filterValue.value || "").trim().toLocaleLowerCase())
+        .map((item) => item.value);
+      setHiddenMultiselectValues(filterIndexersInput, keptValues);
+      return;
+    }
+
+    if (filterValue.kind === "filter_category") {
+      const keptValues = parseStoredMultiselectValues(filterCategoryIdsInput, normalizeCategoryFilterValue)
+        .filter((item) => item.key !== normalizeCategoryFilterValue(filterValue.value || ""))
+        .map((item) => item.value);
+      setHiddenMultiselectValues(filterCategoryIdsInput, keptValues);
+    }
+  };
+
+  const clearLocalFilters = () => {
+    if (includeReleaseYearInput) {
+      includeReleaseYearInput.checked = false;
+    }
+    if (releaseYearInput) {
+      releaseYearInput.value = "";
+    }
+    if (keywordsAllInput) {
+      keywordsAllInput.value = "";
+    }
+    if (keywordsAnyInput) {
+      keywordsAnyInput.value = "";
+    }
+    if (keywordsNotInput) {
+      keywordsNotInput.value = "";
+    }
+    if (mustContainOverrideInput) {
+      mustContainOverrideInput.value = "";
+    }
+    if (startSeasonInput) {
+      startSeasonInput.value = "";
+    }
+    if (startEpisodeInput) {
+      startEpisodeInput.value = "";
+    }
+    if (sizeMinInput) {
+      sizeMinInput.value = "";
+    }
+    if (sizeMaxInput) {
+      sizeMaxInput.value = "";
+    }
+    setCheckedValues(form, "quality_include_tokens", []);
+    setCheckedValues(form, "quality_exclude_tokens", []);
+    setHiddenMultiselectValues(filterIndexersInput, []);
+    setHiddenMultiselectValues(filterCategoryIdsInput, []);
+    syncReleaseYearFieldState();
+  };
+
+  const renderActiveFilterChips = (filters) => {
+    const activeValues = buildFilterValues(filters);
+    for (const controlSet of controlSets) {
+      const chipList = controlSet.activeFilterList;
+      const chipContainer = controlSet.activeFiltersContainer;
+      if (!chipList || !chipContainer) {
+        continue;
+      }
+      chipList.innerHTML = "";
+      for (const filterValue of activeValues) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "search-active-filter-chip";
+        chip.textContent = `× ${filterValue.label}`;
+        chip.addEventListener("click", () => {
+          removeFilterValueFromInputs(filterValue);
+          qualityTokenControls.syncFromStateInputs();
+          applyLocalFilters();
+        });
+        chipList.appendChild(chip);
+      }
+      chipContainer.hidden = activeValues.length === 0;
+    }
   };
 
   const matchesStructuredKeywordToken = (textSurface, normalizedTerm) => {
@@ -1601,13 +1888,24 @@ function initSearchPage(container) {
         `s${season}e${String(episode).padStart(2, "0")}`,
         `s${String(season).padStart(2, "0")}e${String(episode).padStart(2, "0")}`,
       ];
-      return tokens.some((token) => variants.includes(token));
+      if (tokens.some((token) => variants.includes(token))) {
+        return true;
+      }
+      const seasonVariants = [String(season), String(season).padStart(2, "0")];
+      const episodeVariants = [String(episode), String(episode).padStart(2, "0")];
+      return seasonVariants.some((seasonVariant) => (
+        episodeVariants.some((episodeVariant) => (
+          textSurface.includes(`season ${seasonVariant} episode ${episodeVariant}`)
+          || textSurface.includes(`season ${seasonVariant} ep ${episodeVariant}`)
+          || textSurface.includes(`s ${seasonVariant} e ${episodeVariant}`)
+        ))
+      ));
     }
     const seasonMatch = normalizedTerm.match(/^s0*(\d{1,2})$/u);
     if (seasonMatch) {
       const season = Number(seasonMatch[1]);
       const variants = [`s${season}`, `s${String(season).padStart(2, "0")}`];
-      return tokens.some((token) => {
+      if (tokens.some((token) => {
         if (variants.includes(token)) {
           return true;
         }
@@ -1618,13 +1916,20 @@ function initSearchPage(container) {
           const suffix = token.slice(variant.length + 1);
           return /^\d+$/u.test(suffix);
         });
-      });
+      })) {
+        return true;
+      }
+      const seasonVariants = [String(season), String(season).padStart(2, "0")];
+      return seasonVariants.some((seasonVariant) => (
+        textSurface.includes(`season ${seasonVariant}`)
+        || textSurface.includes(`s ${seasonVariant}`)
+      ));
     }
     const episodeMatch = normalizedTerm.match(/^e0*(\d{1,3})$/u);
     if (episodeMatch) {
       const episode = Number(episodeMatch[1]);
       const variants = [`e${episode}`, `e${String(episode).padStart(2, "0")}`];
-      return tokens.some((token) => {
+      if (tokens.some((token) => {
         if (variants.includes(token)) {
           return true;
         }
@@ -1638,7 +1943,15 @@ function initSearchPage(container) {
           return false;
         }
         return Number(episodeToken) === episode;
-      });
+      })) {
+        return true;
+      }
+      const episodeVariants = [String(episode), String(episode).padStart(2, "0")];
+      return episodeVariants.some((episodeVariant) => (
+        textSurface.includes(`episode ${episodeVariant}`)
+        || textSurface.includes(`ep ${episodeVariant}`)
+        || textSurface.includes(`e ${episodeVariant}`)
+      ));
     }
     return false;
   };
@@ -1670,28 +1983,7 @@ function initSearchPage(container) {
     return textSurface.includes(normalizedTerm);
   };
 
-  const matchesQuery = (titleSurface, normalizedQuery, entryImdbId, normalizedImdbId) => {
-    if (normalizedImdbId && entryImdbId && entryImdbId === normalizedImdbId) {
-      return true;
-    }
-    if (!normalizedQuery) {
-      return true;
-    }
-    if (titleSurface.includes(normalizedQuery)) {
-      return true;
-    }
-    const queryTerms = normalizedQuery.split(" ").filter(Boolean);
-    if (queryTerms.length === 0) {
-      return true;
-    }
-    const titleTerms = new Set(titleSurface.split(" ").filter(Boolean));
-    return queryTerms.every((term) => titleTerms.has(term));
-  };
-
   const entryMatchesFilters = (entry, filters) => {
-    if (!matchesQuery(entry.titleSurface, filters.query, entry.imdbId, filters.imdbId)) {
-      return false;
-    }
     if (filters.feedScopeBlocksAll) {
       return false;
     }
@@ -1743,8 +2035,24 @@ function initSearchPage(container) {
       }
     }
 
+    if (filters.feedScopedIndexers && filters.feedScopedIndexers.length > 0) {
+      const allowedFeedKeys = new Set(
+        filters.feedScopedIndexerVariantKeys && filters.feedScopedIndexerVariantKeys.length > 0
+          ? filters.feedScopedIndexerVariantKeys
+          : mergeUniqueIndexerVariantKeys(filters.feedScopedIndexers)
+      );
+      if (!entry.indexerKeys.some((item) => allowedFeedKeys.has(item))) {
+        return false;
+      }
+    }
+
     if (filters.indexers.length > 0) {
-      if (!entry.indexer || !filters.indexers.includes(entry.indexer)) {
+      const allowedIndexerKeys = new Set(
+        filters.indexerVariantKeys && filters.indexerVariantKeys.length > 0
+          ? filters.indexerVariantKeys
+          : mergeUniqueIndexerVariantKeys(filters.indexers)
+      );
+      if (!entry.indexerKeys.some((item) => allowedIndexerKeys.has(item))) {
         return false;
       }
     }
@@ -1826,7 +2134,49 @@ function initSearchPage(container) {
     return left.originalIndex - right.originalIndex;
   };
 
-  const sections = ["primary", "fallback"];
+  const sectionCandidates = [
+    ...Array.from(container.querySelectorAll("[data-search-results]")).map((element) => element.dataset.searchResults),
+    ...Array.from(container.querySelectorAll("[data-search-table-wrap]")).map((element) => element.dataset.searchTableWrap),
+    ...Array.from(container.querySelectorAll("[data-search-summary]")).map((element) => element.dataset.searchSummary),
+    ...Array.from(container.querySelectorAll("[data-search-card]")).map((element) => element.dataset.searchCard),
+    ...Array.from(container.querySelectorAll("[data-search-row]")).map((element) => element.dataset.searchRow),
+  ];
+  const sections = [];
+  const seenSections = new Set();
+  for (const candidate of sectionCandidates) {
+    const normalized = String(candidate || "").trim();
+    if (!normalized || seenSections.has(normalized)) {
+      continue;
+    }
+    seenSections.add(normalized);
+    sections.push(normalized);
+  }
+  const parseQuerySourceKeys = (value) => {
+    const cleaned = String(value || "").trim().toLocaleLowerCase();
+    if (!cleaned) {
+      return [];
+    }
+    if (cleaned === "primary+fallback") {
+      return ["primary", "fallback"];
+    }
+    if (cleaned === "primary" || cleaned === "fallback") {
+      return [cleaned];
+    }
+    if (cleaned.includes("title fallback")) {
+      if (cleaned.includes("imdb-first") || cleaned.includes("rule search results")) {
+        return ["primary", "fallback"];
+      }
+      return ["fallback"];
+    }
+    if (cleaned.includes("imdb-first") || cleaned.includes("rule search results") || cleaned.includes("primary")) {
+      return ["primary"];
+    }
+    return cleaned
+      .split("+")
+      .map((item) => item.trim())
+      .filter((item) => item === "primary" || item === "fallback");
+  };
+
   const sectionState = Object.fromEntries(
     sections.map((section) => {
       const cardContainer = container.querySelector(`[data-search-results="${section}"]`);
@@ -1847,6 +2197,7 @@ function initSearchPage(container) {
         imdbId: normalizeSearchImdbId(card.dataset.imdbId || ""),
         indexerRaw: String(card.dataset.indexer || "").trim(),
         indexer: String(card.dataset.indexer || "").trim().toLocaleLowerCase(),
+        indexerKeys: buildIndexerKeyVariants(card.dataset.indexer || ""),
         sizeBytes: parseOptionalNumber(card.dataset.sizeBytes),
         publishedAtMs: parseIsoDateMs(card.dataset.publishedAt),
         year: normalizeReleaseYear(card.dataset.year || card.dataset.title || ""),
@@ -1862,6 +2213,9 @@ function initSearchPage(container) {
         )
           .map((item) => normalizeCategoryFilterValue(item))
           .filter(Boolean),
+        querySourceKeys: parseQuerySourceKeys(
+          card.dataset.querySourceKey || card.dataset.querySource || ""
+        ),
       }));
 
       return [
@@ -1874,12 +2228,28 @@ function initSearchPage(container) {
           filteredCountElement: container.querySelector(`[data-search-filtered-count="${section}"]`),
           fetchedCountElement: container.querySelector(`[data-search-fetched-count="${section}"]`),
           emptyState: container.querySelector(`[data-search-empty="${section}"]`),
-          filterImpactList: container.querySelector(`[data-filter-impact-list="${section}"]`),
-          filterImpactEmpty: container.querySelector(`[data-filter-impact-empty="${section}"]`),
         },
       ];
     })
   );
+  const sourceSummaryState = Array.from(container.querySelectorAll("[data-search-source-summary]"))
+    .map((summaryElement) => {
+      const key = String(summaryElement.dataset.searchSourceSummary || "").trim().toLocaleLowerCase();
+      if (!key) {
+        return null;
+      }
+      const filteredCountElement = summaryElement.querySelector("[data-search-source-filtered-count]");
+      const fetchedCountElement = summaryElement.querySelector("[data-search-source-fetched-count]");
+      const datasetFetchedCount = parseOptionalNumber(summaryElement.dataset.searchSourceFetched);
+      const textFetchedCount = parseOptionalNumber(fetchedCountElement?.textContent || "");
+      return {
+        key,
+        filteredCountElement,
+        fetchedCountElement,
+        fetchedCount: datasetFetchedCount ?? textFetchedCount ?? 0,
+      };
+    })
+    .filter(Boolean);
 
   const parseStoredMultiselectValues = (input, normalizeValue) => {
     const values = [];
@@ -2213,77 +2583,10 @@ function initSearchPage(container) {
     }
   };
 
-  const renderFilterImpact = (section, filters, visibleCount) => {
-    const state = sectionState[section];
-    if (!state || !state.filterImpactList || !state.filterImpactEmpty) {
-      return;
-    }
-    const values = buildFilterValues(filters);
-    state.filterImpactList.innerHTML = "";
-    if (values.length === 0) {
-      state.filterImpactEmpty.hidden = false;
-      return;
-    }
-    state.filterImpactEmpty.hidden = true;
-
-    const total = state.entries.length;
-    const emptyResultSet = total > 0 && visibleCount === 0;
-    const formatResultCount = (count) => `${count} result${count === 1 ? "" : "s"}`;
-    for (const filterValue of values) {
-      const onlyFilters = filtersWithOnlyValue(filterValue);
-      let onlyRemainCount = 0;
-      for (const entry of state.entries) {
-        if (entryMatchesFilters(entry, onlyFilters)) {
-          onlyRemainCount += 1;
-        }
-      }
-      const onlyFilteredOutCount = total - onlyRemainCount;
-      let withoutThisCount = 0;
-      let isBlocker = false;
-
-      if (emptyResultSet) {
-        const withoutThisFilters = filtersWithoutValue(filters, filterValue);
-        for (const entry of state.entries) {
-          if (entryMatchesFilters(entry, withoutThisFilters)) {
-            withoutThisCount += 1;
-          }
-        }
-        isBlocker = withoutThisCount > 0;
-      }
-
-      const item = document.createElement("li");
-      item.className = "filter-impact-item";
-      if (isBlocker) {
-        item.classList.add("blocker");
-      }
-
-      const label = document.createElement("span");
-      label.className = "filter-impact-label";
-      label.textContent = `${filterValue.label}.`;
-
-      const metrics = document.createElement("span");
-      metrics.className = "filter-impact-metrics";
-      metrics.textContent = `If applied alone: ${onlyRemainCount} remain; ${onlyFilteredOutCount} filtered out.`;
-
-      item.append(label, metrics);
-
-      if (emptyResultSet) {
-        const blockerNote = document.createElement("span");
-        blockerNote.className = "filter-impact-blocker-note";
-        blockerNote.textContent = isBlocker
-          ? `Blocks current list: removing this value would leave ${formatResultCount(withoutThisCount)}.`
-          : "Not the only blocker: removing this value still leaves 0 results because other active filters also block matches.";
-        item.appendChild(blockerNote);
-      }
-
-      state.filterImpactList.appendChild(item);
-    }
-  };
-
   const applyFiltersForSection = (section, filters, sortCriteria) => {
     const state = sectionState[section];
     if (!state) {
-      return;
+      return [];
     }
 
     const sortedEntries = [...state.entries].sort((left, right) => compareEntries(left, right, sortCriteria));
@@ -2300,6 +2603,7 @@ function initSearchPage(container) {
       }
     }
 
+    const visibleEntries = [];
     let visibleCount = 0;
     for (const entry of sortedEntries) {
       const visible = entryMatchesFilters(entry, filters);
@@ -2309,6 +2613,7 @@ function initSearchPage(container) {
       }
       if (visible) {
         visibleCount += 1;
+        visibleEntries.push(entry);
       }
     }
 
@@ -2321,8 +2626,37 @@ function initSearchPage(container) {
     if (state.emptyState) {
       state.emptyState.hidden = visibleCount > 0;
     }
+    return visibleEntries;
+  };
 
-    renderFilterImpact(section, filters, visibleCount);
+  const updateSourceBreakdownCounts = (visibleCombinedEntries) => {
+    if (sourceSummaryState.length === 0) {
+      return;
+    }
+    const visibleBySource = new Map();
+    for (const source of sourceSummaryState) {
+      if (source.key === "combined") {
+        visibleBySource.set(source.key, visibleCombinedEntries.length);
+        continue;
+      }
+      visibleBySource.set(source.key, 0);
+    }
+    for (const entry of visibleCombinedEntries) {
+      for (const sourceKey of entry.querySourceKeys || []) {
+        if (!visibleBySource.has(sourceKey)) {
+          continue;
+        }
+        visibleBySource.set(sourceKey, Number(visibleBySource.get(sourceKey) || 0) + 1);
+      }
+    }
+    for (const source of sourceSummaryState) {
+      if (source.filteredCountElement) {
+        source.filteredCountElement.textContent = String(visibleBySource.get(source.key) || 0);
+      }
+      if (source.fetchedCountElement) {
+        source.fetchedCountElement.textContent = String(source.fetchedCount);
+      }
+    }
   };
 
   applyLocalFilters = () => {
@@ -2337,8 +2671,15 @@ function initSearchPage(container) {
     filters = getActiveFilters();
     const sortCriteria = getSortCriteria();
     applyViewMode();
-    applyFiltersForSection("primary", filters, sortCriteria);
-    applyFiltersForSection("fallback", filters, sortCriteria);
+    let visibleCombinedEntries = [];
+    for (const section of sections) {
+      const visibleEntries = applyFiltersForSection(section, filters, sortCriteria);
+      if (section === "combined") {
+        visibleCombinedEntries = visibleEntries;
+      }
+    }
+    updateSourceBreakdownCounts(visibleCombinedEntries);
+    renderActiveFilterChips(filters);
   };
 
   const localFilterInputs = [
@@ -2397,19 +2738,33 @@ function initSearchPage(container) {
 
   const qualityTokenControls = initUnifiedQualityTokenControls(form, { onChange: applyLocalFilters });
 
+  for (const button of sortHeaderButtons) {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      updateSortFromHeader(button.dataset.searchTableSortField || "", event.shiftKey);
+    });
+  }
+
   for (const controlSet of controlSets) {
-    const syncFromControlSet = () => {
-      controlState = readControlStateFromSet(controlSet);
-      syncControlSets(controlSet);
-      applyLocalFilters();
-    };
     if (controlSet.viewModeSelect) {
-      controlSet.viewModeSelect.addEventListener("change", syncFromControlSet);
-      controlSet.viewModeSelect.addEventListener("input", syncFromControlSet);
+      const syncViewMode = () => {
+        controlState = {
+          ...controlState,
+          viewMode: normalizeViewMode(controlSet.viewModeSelect?.value || controlState.viewMode),
+        };
+        syncControlSets(controlSet);
+        applyLocalFilters();
+      };
+      controlSet.viewModeSelect.addEventListener("change", syncViewMode);
+      controlSet.viewModeSelect.addEventListener("input", syncViewMode);
     }
-    for (const input of [...controlSet.sortFieldInputs, ...controlSet.sortDirectionInputs]) {
-      input.addEventListener("change", syncFromControlSet);
-      input.addEventListener("input", syncFromControlSet);
+    if (controlSet.clearFiltersButton) {
+      controlSet.clearFiltersButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        clearLocalFilters();
+        qualityTokenControls.syncFromStateInputs();
+        applyLocalFilters();
+      });
     }
     if (controlSet.saveDefaultsButton) {
       controlSet.saveDefaultsButton.addEventListener("click", async () => {
@@ -2607,6 +2962,38 @@ function initRuleForm(form) {
   const getCurrentMediaType = () => mediaField?.value || currentMediaType || "series";
 
   const getFeedCheckboxes = () => Array.from(feedOptionsContainer?.querySelectorAll('input[name="feed_urls"]') || []);
+  const initialFeedUrls = parseJsonData(form.dataset.initialFeedUrls || "[]", []);
+  const normalizeFeedUrlList = (values) => {
+    const normalized = [];
+    const seen = new Set();
+    for (const value of Array.isArray(values) ? values : []) {
+      const candidate = String(value || "").trim();
+      if (!candidate || seen.has(candidate)) {
+        continue;
+      }
+      seen.add(candidate);
+      normalized.push(candidate);
+    }
+    return normalized.sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+  };
+  const selectedFeedUrls = () => (
+    getFeedCheckboxes()
+      .filter((checkbox) => checkbox.checked)
+      .map((checkbox) => checkbox.value)
+  );
+  const feedsDifferFromInitialSelection = () => {
+    const initial = normalizeFeedUrlList(initialFeedUrls);
+    const selected = normalizeFeedUrlList(selectedFeedUrls());
+    if (initial.length !== selected.length) {
+      return true;
+    }
+    for (let index = 0; index < initial.length; index += 1) {
+      if (initial[index] !== selected[index]) {
+        return true;
+      }
+    }
+    return false;
+  };
 
   const buildFeedLabelMap = () => {
     const labels = new Map();
@@ -3083,16 +3470,26 @@ function initRuleForm(form) {
   });
 
 
+  const notifyFeedSelectionChanged = () => {
+    const firstCheckbox = getFeedCheckboxes()[0];
+    if (!firstCheckbox) {
+      return;
+    }
+    firstCheckbox.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
   feedSelectAllButton?.addEventListener("click", () => {
     getFeedCheckboxes().forEach((checkbox) => {
       checkbox.checked = true;
     });
+    notifyFeedSelectionChanged();
   });
 
   feedClearAllButton?.addEventListener("click", () => {
     getFeedCheckboxes().forEach((checkbox) => {
       checkbox.checked = false;
     });
+    notifyFeedSelectionChanged();
   });
 
   feedRefreshButton?.addEventListener("click", async () => {
@@ -3140,12 +3537,14 @@ function initRuleForm(form) {
       return;
     }
     const url = new URL(href, window.location.origin);
-    url.searchParams.set("feed_scope_override", "1");
-    for (const input of getFeedCheckboxes()) {
-      if (!input.checked) {
-        continue;
+    if (feedsDifferFromInitialSelection()) {
+      url.searchParams.set("feed_scope_override", "1");
+      for (const feedUrl of selectedFeedUrls()) {
+        url.searchParams.append("feed_urls", feedUrl);
       }
-      url.searchParams.append("feed_urls", input.value);
+    } else {
+      url.searchParams.delete("feed_scope_override");
+      url.searchParams.delete("feed_urls");
     }
     window.location.href = `${url.pathname}${url.search}${url.hash}`;
   });

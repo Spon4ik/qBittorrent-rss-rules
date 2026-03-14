@@ -11,6 +11,7 @@ Primary documents:
 - `docs/plans/phase-4-feed-selection-ux.md`: implemented phase 4 feed selection UX plan pending final validation
 - `docs/plans/phase-5-media-aware-rule-form-and-metadata.md`: implemented phase 5 validation and closeout plan
 - `docs/plans/phase-6-jackett-active-search.md`: implemented phase 6 Jackett active-search plan with deferred follow-up decisions
-- `docs/plans/phase-7-cached-refinement-and-category-catalog.md`: active next-version plan for cached refinement responsiveness and category-catalog integrity
+- `docs/plans/phase-7-cached-refinement-and-category-catalog.md`: implemented phase 7 cached-refinement and category-catalog integrity plan
+- `docs/plans/phase-8-persistent-rule-search-snapshots-and-unified-workspace.md`: active next-version plan for persistent per-rule snapshots and unified rule/results workspace UX
 
-`ROADMAP.md` remains the high-level product roadmap. The files in `docs/plans/` are the detailed source of truth for work that is actively being implemented or prepared, with phases 5 and 6 implemented and phase 7 now active for the next-version `/search` refinement and category-integrity slice.
+`ROADMAP.md` remains the high-level product roadmap. The files in `docs/plans/` are the detailed source of truth for work that is actively being implemented or prepared, with phases 5, 6, and 7 implemented and phase 8 now active for the next-version persistent snapshot and unified workspace slice.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import unquote, urlencode, urlsplit
@@ -50,6 +51,12 @@ from app.services.quality_filters import (
     read_quality_taxonomy_text,
     recent_quality_taxonomy_audit_entries,
     resolve_quality_profile_rules,
+)
+from app.services.rule_search_snapshots import (
+    build_inline_search_payload,
+    get_rule_search_snapshot,
+    inline_search_from_snapshot,
+    save_rule_search_snapshot,
 )
 from app.services.settings_service import (
     DEFAULT_SEARCH_RESULT_VIEW_MODE,
@@ -293,6 +300,12 @@ def _unexpected_error_message(prefix: str, exc: Exception) -> str:
     return f"{prefix} ({label})."
 
 
+def _format_snapshot_fetched_at(value: datetime | None) -> str:
+    if value is None:
+        return "unknown time"
+    return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+
 def _search_result_key(item: object) -> str:
     merge_key = str(getattr(item, "merge_key", "") or "").strip()
     if merge_key:
@@ -423,7 +436,7 @@ def _dedupe_labels(labels: list[str]) -> list[str]:
     return deduped
 
 
-def _apply_catalog_category_labels(session: Session, results: list[object]) -> None:
+def _apply_catalog_category_labels(session: Session, results: list[Any]) -> None:
     for result in results:
         result_record = cast(Any, result)
         category_ids = list(getattr(result, "category_ids", []) or [])
@@ -795,11 +808,12 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                     rule_prefill["must_contain_override"] = keyword_fragment
                 new_rule_href = f"/rules/new?{urlencode(rule_prefill)}"
 
-                raw_primary = list(result.raw_results or result.results)
-                raw_fallback = list(result.raw_fallback_results or result.fallback_results)
-                all_raw_results = [*raw_primary, *raw_fallback]
-                visible_primary_keys = {_search_result_key(item) for item in result.results}
-                visible_fallback_keys = {_search_result_key(item) for item in result.fallback_results}
+                primary_label = (
+                    "IMDb-first results"
+                    if active_payload.imdb_id_only
+                    else ("Saved rule search" if source_rule else "Jackett active search")
+                )
+                fallback_label = "Title fallback" if result.fallback_request_variants else ""
                 form_data["include_release_year"] = bool(active_payload.release_year)
                 summary_parts = ["Title"]
                 if active_payload.imdb_id_only:
@@ -815,52 +829,30 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         summary_parts.append(f"{keyword_group_count} any-of mustContain groups")
                     else:
                         summary_parts.append("an any-of mustContain regex fragment")
-                search_run = {
-                    **result.model_dump(mode="json"),
-                    "source_label": "Saved rule search" if source_rule else "Jackett active search",
-                    "primary_label": (
-                        "IMDb-first results"
-                        if active_payload.imdb_id_only
-                        else ("Saved rule search" if source_rule else "Jackett active search")
-                    ),
-                    "fallback_label": "Title fallback" if result.fallback_request_variants else "",
-                    "raw_results": [
-                        {
-                            **item.model_dump(mode="json"),
-                            "new_rule_href": new_rule_href,
-                            "visible": _search_result_key(item) in visible_primary_keys,
-                        }
-                        for item in raw_primary
-                    ],
-                    "results": [
-                        {
-                            **item.model_dump(mode="json"),
-                            "new_rule_href": new_rule_href,
-                        }
-                        for item in result.results
-                    ],
-                    "raw_fallback_results": [
-                        {
-                            **item.model_dump(mode="json"),
-                            "new_rule_href": new_rule_href,
-                            "visible": _search_result_key(item) in visible_fallback_keys,
-                        }
-                        for item in raw_fallback
-                    ],
-                    "fallback_results": [
-                        {
-                            **item.model_dump(mode="json"),
-                            "new_rule_href": new_rule_href,
-                        }
-                        for item in result.fallback_results
-                    ],
-                    "rule_prefill_summary": f"{', '.join(summary_parts)}.",
-                    "source_rule_name": source_rule.rule_name if source_rule else "",
-                    "ignored_full_regex": ignored_full_regex,
-                    "show_peers_column": any(item.peers is not None for item in all_raw_results),
-                    "show_leechers_column": any(item.leechers is not None for item in all_raw_results),
-                    "show_grabs_column": any(item.grabs is not None for item in all_raw_results),
-                }
+                search_run = build_inline_search_payload(
+                    payload=active_payload,
+                    run=result,
+                    ignored_full_regex=ignored_full_regex,
+                    primary_label_override=primary_label,
+                    fallback_label_override=fallback_label,
+                )
+                for key in (
+                    "raw_results",
+                    "results",
+                    "raw_fallback_results",
+                    "fallback_results",
+                    "unified_raw_results",
+                ):
+                    raw_items = cast(list[dict[str, Any]], search_run.get(key, []))
+                    search_run[key] = [{**item, "new_rule_href": new_rule_href} for item in raw_items]
+                search_run.update(
+                    {
+                        "source_label": "Saved rule search" if source_rule else "Jackett active search",
+                        "rule_prefill_summary": f"{', '.join(summary_parts)}.",
+                        "source_rule_name": source_rule.rule_name if source_rule else "",
+                        "ignored_full_regex": ignored_full_regex,
+                    }
+                )
             except JackettClientError as exc:
                 errors = [str(exc)]
             except Exception as exc:
@@ -900,10 +892,18 @@ def run_rule_search(rule_id: str, request: Request) -> RedirectResponse:
         "on",
         "yes",
     }
+    refresh_snapshot = request.query_params.get("refresh_snapshot", "").strip().casefold() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
     query_params: list[tuple[str, str]] = [("run_search", "1")]
     if feed_scope_override:
         query_params.append(("feed_scope_override", "1"))
-    query_params.extend(("feed_urls", item) for item in feed_urls)
+        query_params.extend(("feed_urls", item) for item in feed_urls)
+    if refresh_snapshot:
+        query_params.append(("refresh_snapshot", "1"))
     query = urlencode(query_params, doseq=True)
     return RedirectResponse(url=f"/rules/{rule_id}?{query}#inline-search-results", status_code=303)
 
@@ -1048,7 +1048,19 @@ def edit_rule(
     inline_search: dict[str, object] | None = None
     inline_search_errors: list[str] = []
     inline_search_notices: list[str] = []
-    run_inline_search = request.query_params.get("run_search", "").strip().casefold() in {"1", "true", "on", "yes"}
+    run_inline_search_requested = request.query_params.get("run_search", "").strip().casefold() in {"1", "true", "on", "yes"}
+    refresh_inline_snapshot = request.query_params.get("refresh_snapshot", "").strip().casefold() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+    clear_inline_results = request.query_params.get("clear_results", "").strip().casefold() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
     feed_scope_override_requested = request.query_params.get("feed_scope_override", "").strip().casefold() in {
         "1",
         "true",
@@ -1056,104 +1068,101 @@ def edit_rule(
         "yes",
     }
     feed_urls_override = _normalize_feed_url_list(request.query_params.getlist("feed_urls"))
-    if run_inline_search:
-        payload_from_rule: JackettSearchRequest | None = None
-        ignored_full_regex = False
-        try:
-            payload_from_rule, ignored_full_regex = build_search_request_from_rule(rule)
-        except ValidationError:
-            ignored_full_regex = True
-            try:
-                payload_from_rule, _ = build_reduced_search_request_from_rule(rule)
+    feed_urls_from_rule = _normalize_feed_url_list(list(rule.feed_urls or []))
+    effective_feed_scope_override = (
+        feed_scope_override_requested
+        and sorted(feed_urls_override) != sorted(feed_urls_from_rule)
+    )
+    auto_replay_inline_snapshot = (
+        not run_inline_search_requested
+        and not clear_inline_results
+        and not refresh_inline_snapshot
+        and not effective_feed_scope_override
+    )
+    if run_inline_search_requested or auto_replay_inline_snapshot:
+        replay_saved_snapshot = not refresh_inline_snapshot and not effective_feed_scope_override
+        if replay_saved_snapshot:
+            snapshot = get_rule_search_snapshot(session, rule_id=rule.id)
+            if snapshot is not None:
+                inline_search = inline_search_from_snapshot(snapshot)
                 inline_search_notices.append(
-                    "Rule keywords were reduced to stay within structured-search limits."
+                    "Showing saved search snapshot from "
+                    f"{_format_snapshot_fetched_at(snapshot.fetched_at)}."
                 )
+        if inline_search is None and run_inline_search_requested:
+            payload_from_rule: JackettSearchRequest | None = None
+            ignored_full_regex = False
+            try:
+                payload_from_rule, ignored_full_regex = build_search_request_from_rule(rule)
+            except ValidationError:
+                ignored_full_regex = True
+                try:
+                    payload_from_rule, _ = build_reduced_search_request_from_rule(rule)
+                    inline_search_notices.append(
+                        "Rule keywords were reduced to stay within structured-search limits."
+                    )
+                except Exception:
+                    payload_from_rule = _title_only_search_request_from_rule(rule)
+                    if payload_from_rule is not None:
+                        inline_search_notices.append("Rule search fell back to title-only compatibility mode.")
             except Exception:
+                ignored_full_regex = True
                 payload_from_rule = _title_only_search_request_from_rule(rule)
                 if payload_from_rule is not None:
-                    inline_search_notices.append("Rule search fell back to title-only compatibility mode.")
-        except Exception:
-            ignored_full_regex = True
-            payload_from_rule = _title_only_search_request_from_rule(rule)
-            if payload_from_rule is not None:
-                inline_search_notices.append("Rule search needed compatibility fallback and used title-only mode.")
+                    inline_search_notices.append("Rule search needed compatibility fallback and used title-only mode.")
 
-        if payload_from_rule is None:
-            inline_search_errors = ["Rule could not be converted into a Jackett search payload."]
-        else:
-            payload_from_rule, feed_scope_notice = _apply_rule_feed_scope(
-                payload_from_rule,
-                rule,
-                feed_urls_override=(feed_urls_override if feed_scope_override_requested else None),
-            )
-            if feed_scope_notice:
-                inline_search_notices.append(feed_scope_notice)
-            if feed_scope_override_requested:
-                inline_search_notices.append(
-                    "Inline search used current affected-feed selection from the form (not yet saved)."
-                )
-            jackett = SettingsService.resolve_jackett(settings)
-            if not jackett.app_ready:
-                inline_search_errors = ["Jackett app search is not configured in Settings."]
+            if payload_from_rule is None:
+                inline_search_errors = ["Rule could not be converted into a Jackett search payload."]
             else:
-                try:
-                    payload_from_rule = _auto_imdb_first_payload(payload_from_rule)
-                    client = JackettClient(jackett.api_url, jackett.api_key)
-                    result = client.search(payload_from_rule)
-                    all_results = [
-                        *list(result.raw_results or []),
-                        *list(result.results or []),
-                        *list(result.raw_fallback_results or []),
-                        *list(result.fallback_results or []),
-                    ]
-                    client.enrich_result_category_labels(all_results)
-                    sync_category_catalog_from_results(session, all_results)
-                    sync_category_catalog_from_indexer_map(
-                        session,
-                        client.configured_indexer_category_labels(),
+                payload_from_rule, feed_scope_notice = _apply_rule_feed_scope(
+                    payload_from_rule,
+                    rule,
+                    feed_urls_override=(feed_urls_override if effective_feed_scope_override else None),
+                )
+                if feed_scope_notice:
+                    inline_search_notices.append(feed_scope_notice)
+                if effective_feed_scope_override:
+                    inline_search_notices.append(
+                        "Inline search used current affected-feed selection from the form (not yet saved)."
                     )
-                    _apply_catalog_category_labels(session, all_results)
-                    session.commit()
-                    raw_primary = list(result.raw_results or result.results)
-                    raw_fallback = list(result.raw_fallback_results or result.fallback_results)
-                    visible_primary_keys = {_search_result_key(item) for item in result.results}
-                    visible_fallback_keys = {_search_result_key(item) for item in result.fallback_results}
-                    inline_search = {
-                        "query": payload_from_rule.query,
-                        "primary_label": (
-                            "IMDb-first results"
-                            if payload_from_rule.imdb_id_only
-                            else "Rule search results"
-                        ),
-                        "request_variants": list(result.request_variants or result.query_variants),
-                        "raw_results": [
-                            {
-                                **item.model_dump(mode="json"),
-                                "visible": _search_result_key(item) in visible_primary_keys,
-                            }
-                            for item in raw_primary
-                        ],
-                        "results": [item.model_dump(mode="json") for item in result.results],
-                        "fallback_label": "Title fallback" if result.fallback_request_variants else "",
-                        "fallback_request_variants": list(result.fallback_request_variants or []),
-                        "raw_fallback_results": [
-                            {
-                                **item.model_dump(mode="json"),
-                                "visible": _search_result_key(item) in visible_fallback_keys,
-                            }
-                            for item in raw_fallback
-                        ],
-                        "fallback_results": [item.model_dump(mode="json") for item in result.fallback_results],
-                        "warning_messages": list(result.warning_messages or []),
-                        "ignored_full_regex": ignored_full_regex,
-                        "show_peers_column": any(item.peers is not None for item in all_results),
-                        "show_leechers_column": any(item.leechers is not None for item in all_results),
-                        "show_grabs_column": any(item.grabs is not None for item in all_results),
-                    }
-                except JackettClientError as exc:
-                    inline_search_errors = [str(exc)]
-                except Exception as exc:
-                    inline_search_errors = [_unexpected_error_message("Inline rule search failed unexpectedly", exc)]
+                jackett = SettingsService.resolve_jackett(settings)
+                if not jackett.app_ready:
+                    inline_search_errors = ["Jackett app search is not configured in Settings."]
+                else:
+                    try:
+                        payload_from_rule = _auto_imdb_first_payload(payload_from_rule)
+                        client = JackettClient(jackett.api_url, jackett.api_key)
+                        result = client.search(payload_from_rule)
+                        all_results = [
+                            *list(result.raw_results or []),
+                            *list(result.results or []),
+                            *list(result.raw_fallback_results or []),
+                            *list(result.fallback_results or []),
+                        ]
+                        client.enrich_result_category_labels(all_results)
+                        sync_category_catalog_from_results(session, all_results)
+                        sync_category_catalog_from_indexer_map(
+                            session,
+                            client.configured_indexer_category_labels(),
+                        )
+                        _apply_catalog_category_labels(session, all_results)
+                        snapshot = save_rule_search_snapshot(
+                            session,
+                            rule_id=rule.id,
+                            payload=payload_from_rule,
+                            run=result,
+                            ignored_full_regex=ignored_full_regex,
+                        )
+                        inline_search = inline_search_from_snapshot(snapshot)
+                        session.commit()
+                        if refresh_inline_snapshot:
+                            inline_search_notices.append(
+                                "Search snapshot refreshed from Jackett and saved for future runs."
+                            )
+                    except JackettClientError as exc:
+                        inline_search_errors = [str(exc)]
+                    except Exception as exc:
+                        inline_search_errors = [_unexpected_error_message("Inline rule search failed unexpectedly", exc)]
 
     context = _base_context(request, f"Edit {rule.rule_name}")
     available_filter_profiles = available_filter_profile_choices(settings)

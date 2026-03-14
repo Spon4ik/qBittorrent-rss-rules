@@ -204,14 +204,18 @@ def build_episode_progress_fragment(start_season: int | None, start_episode: int
     episode_any = r"0*[1-9]\d?"
     episode_ge = _build_min_numeric_pattern_1_to_99(episode_value)
     separators = r"[\s._-]*"
+    season_prefix = r"(?:s(?:eason)?[\s._:-]*)"
+    episode_prefix = r"(?:e(?:p(?:isode)?)?[\s._:-]*)"
 
     fragments = [
-        rf"s{season_exact}{separators}e{episode_ge}",
-        rf"s{season_exact}{separators}e{episode_any}{separators}-{separators}(?:e)?{episode_ge}",
+        rf"{season_prefix}{season_exact}(?!\d){separators}{episode_prefix}{episode_ge}",
+        rf"{season_prefix}{season_exact}(?!\d){separators}{episode_prefix}{episode_any}{separators}-{separators}(?:{episode_prefix})?{episode_ge}",
+        rf"{season_prefix}{season_exact}(?!\d)(?:\b|$)",
     ]
     if season_value < 99:
         season_after = _build_min_numeric_pattern_1_to_99(season_value + 1)
-        fragments.insert(0, rf"s{season_after}{separators}e{episode_any}")
+        fragments.insert(0, rf"{season_prefix}{season_after}(?!\d){separators}{episode_prefix}{episode_any}")
+        fragments.insert(1, rf"{season_prefix}{season_after}(?!\d)(?:\b|$)")
     return f"(?:{'|'.join(fragments)})"
 
 

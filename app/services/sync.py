@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AppSettings, Rule, SyncEvent, SyncStatus, utcnow
+from app.models import AppSettings, Rule, RuleSearchSnapshot, SyncEvent, SyncStatus, utcnow
 from app.schemas import BatchSyncResult, SyncResult
 from app.services.qbittorrent import QbittorrentClient, QbittorrentClientError
 from app.services.rule_builder import RuleBuilder
@@ -113,6 +113,9 @@ class SyncService:
         self._record_event(rule, action="delete", status="ok", error_message=None)
         deleted_name = rule.rule_name
         deleted_id = rule.id
+        snapshot = self.session.get(RuleSearchSnapshot, rule_id)
+        if snapshot is not None:
+            self.session.delete(snapshot)
         self.session.delete(rule)
         self.session.commit()
         return SyncResult(

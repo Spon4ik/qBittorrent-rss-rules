@@ -1,18 +1,22 @@
 # Roadmap
 
-## Current release target: v0.3.1
+## Current release target: v0.4.0
 
 ### In progress
 
-- Phase-7 post-release polish and regression automation hardening
-- Release-process polish and release automation improvements
+- Phase-8 persistent rule-search snapshots and unified rule/search results workspace
+- Rule-page UX modernization for compact criteria + result operations with minimal scrolling
 
 ### Current phase track
 
-- Phase 7: cached-refinement responsiveness and category-catalog integrity (implemented and release-validated in v0.3.0; follow-up polish tracked in `docs/plans/phase-7-cached-refinement-and-category-catalog.md`)
+- Phase 8: persistent rule-search snapshots and unified results workspace UX (active; tracked in `docs/plans/phase-8-persistent-rule-search-snapshots-and-unified-workspace.md`)
+- Phase 7: cached-refinement responsiveness and category-catalog integrity (implemented and release-validated in v0.3.0; follow-up polish folded into phase-8 workspace scope)
 - Phase 6: Jackett-backed active search workspace (implemented and release-validated in v0.2.0; follow-up polish completed, deeper persistence still deferred)
 - Phase 4: feed selection UX improvements (implemented, automated closeout validated)
 - Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, automated closeout validated)
+
+Phase 8 detail pointer:
+- Detailed checklist and dated execution tracker for persistent per-rule snapshots, unified IMDb-first/title-fallback results, and compact rule-page UX is tracked in `docs/plans/phase-8-persistent-rule-search-snapshots-and-unified-workspace.md` under `Dated execution checklist (2026-03-14 baseline)`.
 
 Phase 7 detail pointer:
 - Detailed checklist and dated execution tracker for immediate cached filtering responsiveness and normalized category mapping is tracked in `docs/plans/phase-7-cached-refinement-and-category-catalog.md` under `Dated execution checklist (2026-03-12 baseline)`.
@@ -22,13 +26,14 @@ Phase 6 detail pointer:
 
 ### Release focus
 
-- Keep localhost-only defaults while phase-7 workflows mature
-- Keep phase-4/phase-5 closeout green via deterministic browser QA automation
-- Keep Jackett active search explicitly separate from persistent RSS feed rule sources
-- Keep category-label mapping deterministic via indexer-scoped normalization
-- Keep the data model stable and explicit
-- Avoid undocumented qBittorrent rule fields
-- Prefer correctness and maintainability over broad feature count
+- Persist one refreshable search-result snapshot per rule so local refinement is reusable across sessions.
+- Redesign rule-page information architecture to keep search criteria, local filters, and results in the same visible workspace with less scrolling.
+- Unify `IMDb-first` and `Title fallback` rows in one table and add a query-source key per row.
+- Retire the standalone filter-impact panel in the unified-table flow, so `0 fetched / 0 filtered` states show only clean empty-state context.
+- Use an interactive sortable table: clicking/tapping column titles toggles `A-Z` / `Z-A` (or low-high / high-low) and supports compact multi-level sort.
+- Compact queue-to-qB actions into a smaller high-signal toolbar while preserving advanced options.
+- Keep deterministic browser QA and route/service regressions as release gates for every UX contract change.
+- Keep the data model explicit and maintainable; avoid undocumented qBittorrent rule fields.
 
 ## Recently released: v0.3.0 (2026-03-13)
 
@@ -52,7 +57,7 @@ Phase 6 detail pointer:
 - Taxonomy-driven quality filtering and media-aware rule form
 - Baseline docs, ADRs, and automated test suite
 
-## Planned after v0.3.x
+## Planned after v0.4.x
 
 - Bulk rule creation from list or CSV
 - Rule clone/duplicate flows

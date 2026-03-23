@@ -31,6 +31,8 @@ class EnvironmentSettings:
     jackett_api_key: str | None
     omdb_api_key: str | None
     save_secrets_to_db: bool
+    enable_rule_fetch_scheduler: bool
+    rule_fetch_scheduler_poll_seconds: float
 
 
 @lru_cache
@@ -49,6 +51,10 @@ def get_environment_settings() -> EnvironmentSettings:
         jackett_api_key=os.getenv("QB_RULES_JACKETT_API_KEY") or None,
         omdb_api_key=os.getenv("QB_RULES_OMDB_API_KEY") or None,
         save_secrets_to_db=_get_bool(os.getenv("QB_RULES_SAVE_SECRETS_TO_DB"), False),
+        enable_rule_fetch_scheduler=_get_bool(os.getenv("QB_RULES_ENABLE_RULE_FETCH_SCHEDULER"), True),
+        rule_fetch_scheduler_poll_seconds=float(
+            os.getenv("QB_RULES_RULE_FETCH_SCHEDULER_POLL_SECONDS", "30")
+        ),
     )
 
 

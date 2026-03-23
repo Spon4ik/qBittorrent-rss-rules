@@ -225,6 +225,8 @@ class MetadataClient:
             resolved_media_type = MediaType.SERIES
 
         imdb_id = str(payload.get("imdbID", "")).strip() or None
+        raw_poster_url = str(payload.get("Poster", "")).strip()
+        poster_url = raw_poster_url if raw_poster_url and raw_poster_url.upper() != "N/A" else None
         return MetadataResult(
             title=str(payload.get("Title", lookup_value)).strip(),
             provider=MetadataLookupProvider.OMDB,
@@ -232,6 +234,7 @@ class MetadataClient:
             source_id=imdb_id,
             media_type=resolved_media_type,
             year=_extract_year(payload.get("Year")),
+            poster_url=poster_url,
         )
 
     def _lookup_musicbrainz(self, lookup_value: str) -> MetadataResult:

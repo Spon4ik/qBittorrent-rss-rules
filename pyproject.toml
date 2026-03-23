@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "qbittorrent-rss-rule-manager"
-version = "0.4.0"
+version = "0.6.0"
 description = "Local web UI for managing qBittorrent RSS auto-download rules."
 readme = "README.md"
 license = { text = "MIT" }
@@ -26,6 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "mypy>=1.15,<2.0",
+  "pillow>=12,<13",
   "playwright>=1.52,<2.0",
   "pre-commit>=4,<5",
   "pytest>=8,<9",

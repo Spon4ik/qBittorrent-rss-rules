@@ -25,6 +25,19 @@ SEARCH_SORT_FIELDS = {
     "indexer",
     "title",
 }
+RULES_PAGE_VIEW_MODE_OPTIONS = {"table", "cards"}
+RULES_PAGE_SORT_FIELDS = {
+    "updated_at",
+    "rule_name",
+    "media_type",
+    "last_sync_status",
+    "enabled",
+    "release_state",
+    "combined_filtered_count",
+    "combined_fetched_count",
+    "last_snapshot_at",
+}
+RULES_FETCH_SCHEDULE_SCOPES = {"enabled", "all"}
 
 
 class FeedOption(BaseModel):
@@ -83,6 +96,7 @@ class MetadataResult(BaseModel):
     source_id: str | None = None
     media_type: MediaType
     year: str | None = None
+    poster_url: str | None = None
 
 
 class JackettSearchRequest(BaseModel):
@@ -354,6 +368,7 @@ class RuleFormPayload(BaseModel):
     content_name: str = Field(min_length=1, max_length=255)
     imdb_id: str | None = None
     normalized_title: str = Field(default="", max_length=255)
+    poster_url: str | None = Field(default=None, max_length=512)
     media_type: MediaType = MediaType.SERIES
     quality_profile: QualityProfile = QualityProfile.PLAIN
     release_year: str = Field(default="", max_length=16)
@@ -384,6 +399,16 @@ class RuleFormPayload(BaseModel):
         cleaned = value.strip()
         if not IMDB_ID_RE.match(cleaned):
             raise ValueError("IMDb ID must look like tt1234567.")
+        return cleaned
+
+    @field_validator("poster_url")
+    @classmethod
+    def normalize_poster_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            return None
         return cleaned
 
     @field_validator("release_year")
@@ -525,6 +550,77 @@ class FilterProfileSaveRequest(BaseModel):
         if self.mode == "overwrite" and not self.target_key:
             raise ValueError("Select an existing saved profile to overwrite.")
         return self
+
+
+class RulesPagePreferencesPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    view_mode: str = "table"
+    sort_field: str = "updated_at"
+    sort_direction: str = "desc"
+
+    @field_validator("view_mode")
+    @classmethod
+    def validate_view_mode(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if cleaned not in RULES_PAGE_VIEW_MODE_OPTIONS:
+            raise ValueError("Rules page view mode must be table or cards.")
+        return cleaned
+
+    @field_validator("sort_field")
+    @classmethod
+    def validate_sort_field(cls, value: str) -> str:
+        cleaned = value.strip()
+        if cleaned not in RULES_PAGE_SORT_FIELDS:
+            raise ValueError("Unsupported rules page sort field.")
+        return cleaned
+
+    @field_validator("sort_direction")
+    @classmethod
+    def validate_sort_direction(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if cleaned not in {"asc", "desc"}:
+            raise ValueError("Sort direction must be asc or desc.")
+        return cleaned
+
+
+class RuleBatchFetchRequest(BaseModel):
+    run_all: bool = False
+    rule_ids: list[str] = Field(default_factory=list)
+    include_disabled: bool = False
+
+    @field_validator("rule_ids")
+    @classmethod
+    def normalize_rule_ids(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            candidate = str(item or "").strip()
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            cleaned.append(candidate)
+        return cleaned
+
+    @model_validator(mode="after")
+    def validate_scope(self) -> RuleBatchFetchRequest:
+        if not self.run_all and not self.rule_ids:
+            raise ValueError("Select one or more rules, or choose Run all.")
+        return self
+
+
+class RuleFetchSchedulePayload(BaseModel):
+    enabled: bool
+    interval_minutes: int = Field(default=360, ge=5, le=10080)
+    scope: Literal["enabled", "all"] = "enabled"
+
+    @field_validator("scope")
+    @classmethod
+    def validate_scope(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if cleaned not in RULES_FETCH_SCHEDULE_SCOPES:
+            raise ValueError("Schedule scope must be enabled or all.")
+        return cleaned
 
 
 class SyncResult(BaseModel):

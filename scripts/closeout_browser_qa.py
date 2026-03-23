@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote_plus, urlparse
+from urllib.parse import parse_qs, quote, unquote_plus, urlparse
 from urllib.request import ProxyHandler, build_opener
 from xml.sax.saxutils import escape
 
@@ -252,13 +252,24 @@ LOCAL_URL_OPENER = build_opener(ProxyHandler({}))
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run deterministic browser-closeout QA for phases 4/5/6/7 using "
+            "Run deterministic browser-closeout QA for phases 4/5/6/7/9 using "
             "isolated mock qBittorrent + Jackett services."
         )
     )
     parser.add_argument("--output-dir", default="logs/qa", help="Directory for timestamped QA artifacts.")
     parser.add_argument("--timeout-ms", type=int, default=25000, help="Playwright step timeout in milliseconds.")
     parser.add_argument("--headful", action="store_true", help="Run Chromium with a visible window.")
+    parser.add_argument(
+        "--p9-hover-sample-count",
+        type=int,
+        default=4,
+        help="How many lower visible rules to capture for phase-9 hover-overlay evidence.",
+    )
+    parser.add_argument(
+        "--capture-p9-hover-video",
+        action="store_true",
+        help="Also record a short Playwright video for the phase-9 lower-list hover-overlay sequence.",
+    )
     parser.add_argument(
         "--app-host",
         default="127.0.0.1",
@@ -569,6 +580,26 @@ def _sorted_values(values: list[str]) -> list[str]:
     return sorted(value.strip() for value in values if value and value.strip())
 
 
+def build_svg_data_url(label: str) -> str:
+    safe_label = escape(label)
+    svg = f"""
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 300" role="img" aria-label="{safe_label}">
+      <defs>
+        <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
+          <stop offset="0%" stop-color="#29434e" />
+          <stop offset="100%" stop-color="#bf6c2c" />
+        </linearGradient>
+      </defs>
+      <rect width="200" height="300" rx="18" fill="url(#bg)" />
+      <rect x="18" y="18" width="164" height="264" rx="14" fill="rgba(255,252,246,0.14)" />
+      <text x="100" y="126" font-family="Arial, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#fff">QA Hover</text>
+      <text x="100" y="156" font-family="Arial, sans-serif" font-size="15" text-anchor="middle" fill="#fff">{safe_label}</text>
+      <text x="100" y="266" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#f3e5d0">2:3 poster stub</text>
+    </svg>
+    """.strip()
+    return f"data:image/svg+xml;charset=utf-8,{quote(svg)}"
+
+
 def main() -> int:
     args = parse_args()
     project_dir = Path(__file__).resolve().parent.parent
@@ -605,6 +636,9 @@ def main() -> int:
         torrent_add_calls=[],
     )
     jackett_state = MockJackettState(request_count=0)
+    p9_hover_artifacts: list[str] = []
+    p9_hover_manifest_path: str | None = None
+    p9_hover_video_path: str | None = None
 
     qb_server, qb_thread = start_threaded_server(build_qb_handler(qb_state), "127.0.0.1", qb_port)
     jackett_server, jackett_thread = start_threaded_server(
@@ -706,8 +740,9 @@ def main() -> int:
             ) from exc
 
         with sync_playwright() as playwright:
+            viewport = {"width": 1720, "height": 1040}
             browser = playwright.chromium.launch(headless=not args.headful)
-            context = browser.new_context(viewport={"width": 1720, "height": 1040})
+            context = browser.new_context(viewport=viewport)
             page = context.new_page()
             app_requests: list[str] = []
 
@@ -834,6 +869,9 @@ def main() -> int:
                 )
 
             def reset_inline_local_filters_for_visibility() -> None:
+                matching_section = page.locator("details:has-text('Matching And Quality')").first
+                if matching_section.count() == 1 and not matching_section.evaluate("node => Boolean(node.open)"):
+                    matching_section.locator("summary").click()
                 if page.locator('textarea[name="must_not_contain"]').count() == 1:
                     page.fill('textarea[name="must_not_contain"]', "")
                 if page.locator('textarea[name="additional_includes"]').count() == 1:
@@ -894,6 +932,322 @@ def main() -> int:
                         "Select all should check every feed.",
                     ),
                 ),
+                page=page,
+            )
+
+            def check_phase9_rules_main_page_workspace() -> None:
+                nonlocal p9_hover_artifacts, p9_hover_manifest_path, p9_hover_video_path
+
+                def ensure_poster_rules(min_count: int) -> None:
+                    from sqlalchemy import create_engine, select
+                    from sqlalchemy.orm import Session
+
+                    from app.models import MediaType, QualityProfile, Rule, SyncStatus
+
+                    engine = create_engine(
+                        f"sqlite:///{db_path.as_posix()}",
+                        connect_args={"check_same_thread": False},
+                        future=True,
+                    )
+                    try:
+                        with Session(engine) as session:
+                            existing_names = set(
+                                session.scalars(
+                                    select(Rule.rule_name).where(Rule.rule_name.like("QA P9 Hover Seed %"))
+                                ).all()
+                            )
+                            for index in range(min_count):
+                                rule_name = f"QA P9 Hover Seed {index + 1:02d}"
+                                if rule_name in existing_names:
+                                    continue
+                                session.add(
+                                    Rule(
+                                        rule_name=rule_name,
+                                        content_name=rule_name,
+                                        normalized_title=rule_name,
+                                        imdb_id=f"tt{9000000 + index}",
+                                        poster_url=build_svg_data_url(rule_name),
+                                        media_type=MediaType.SERIES if index % 2 == 0 else MediaType.MOVIE,
+                                        quality_profile=QualityProfile.PLAIN,
+                                        feed_urls=[DEFAULT_FEEDS[index % len(DEFAULT_FEEDS)]],
+                                        enabled=True,
+                                        last_sync_status=SyncStatus.OK,
+                                    )
+                                )
+                            session.commit()
+                    finally:
+                        engine.dispose()
+
+                def capture_lower_hover_overlay_evidence(
+                    target_page: Any,
+                    *,
+                    evidence_dir: Path,
+                    artifact_prefix: str,
+                    capture_screenshots: bool,
+                ) -> tuple[list[str], str, list[dict[str, Any]]]:
+                    target_page.goto(f"{app_base_url}/", wait_until="networkidle", timeout=args.timeout_ms)
+                    target_page.wait_for_selector("[data-rules-page]", timeout=args.timeout_ms)
+                    target_poster_rows = target_page.locator(
+                        '[data-rules-row][data-rule-poster-url]:not([data-rule-poster-url=""])'
+                    )
+                    target_hover_poster = target_page.locator("[data-rules-hover-poster]").first
+                    target_row_count = target_poster_rows.count()
+                    _expect(
+                        target_row_count >= max(8, args.p9_hover_sample_count + 4),
+                        (
+                            "Expected enough poster-backed rules to exercise lower-list hover behavior; "
+                            f"saw {target_row_count}."
+                        ),
+                    )
+                    target_poster_rows.nth(target_row_count - 1).evaluate(
+                        "node => node.scrollIntoView({ block: 'end', inline: 'nearest' })"
+                    )
+                    target_page.wait_for_timeout(240)
+                    viewport_height = float(target_page.evaluate("window.innerHeight"))
+                    visible_indexes: list[int] = []
+                    for row_index in range(target_row_count):
+                        row_box = target_poster_rows.nth(row_index).bounding_box()
+                        if row_box is None:
+                            continue
+                        row_top = float(row_box["y"])
+                        row_bottom = float(row_box["y"] + row_box["height"])
+                        if row_top >= 0 and row_bottom <= viewport_height + 1:
+                            visible_indexes.append(row_index)
+                    sample_count = max(2, min(args.p9_hover_sample_count, len(visible_indexes)))
+                    sample_indexes = visible_indexes[-sample_count:]
+                    _expect(
+                        len(sample_indexes) >= 2,
+                        (
+                            "Expected at least two lower visible poster rows for hover evidence; "
+                            f"visible_indexes={visible_indexes}."
+                        ),
+                    )
+
+                    screenshot_artifacts: list[str] = []
+                    manifest_rows: list[dict[str, Any]] = []
+                    for sequence_number, row_index in enumerate(sample_indexes, start=1):
+                        target_row = target_poster_rows.nth(row_index)
+                        target_row.hover()
+                        target_page.wait_for_timeout(260)
+                        target_page.wait_for_function(
+                            """
+                            () => {
+                              const img = document.querySelector('[data-rules-hover-image]');
+                              return Boolean(img && img.complete && img.naturalWidth > 0);
+                            }
+                            """,
+                            timeout=args.timeout_ms,
+                        )
+                        _expect(
+                            not target_hover_poster.evaluate("node => Boolean(node.hidden)"),
+                            "Hover poster should appear for each sampled lower-list rule.",
+                        )
+                        row_box = target_row.bounding_box()
+                        poster_box = target_hover_poster.bounding_box()
+                        _expect(
+                            row_box is not None and poster_box is not None,
+                            f"Expected row and poster bounding boxes for sampled row index {row_index}.",
+                        )
+                        row_name = target_row.get_attribute("data-rule-name") or f"row-{row_index}"
+                        row_top = float(row_box["y"]) if row_box is not None else -1.0
+                        row_bottom = float(row_box["y"] + row_box["height"]) if row_box is not None else -1.0
+                        row_center = float(row_box["y"] + (row_box["height"] / 2)) if row_box is not None else -1.0
+                        poster_top = float(poster_box["y"]) if poster_box is not None else -1.0
+                        poster_bottom = float(poster_box["y"] + poster_box["height"]) if poster_box is not None else -1.0
+                        edge_gap = (
+                            abs(poster_bottom - row_bottom)
+                            if poster_top < row_top
+                            else abs(poster_top - row_top)
+                        )
+                        within_viewport = poster_top >= 0 and poster_bottom <= viewport_height + 1
+                        manifest_rows.append(
+                            {
+                                "sequence": sequence_number,
+                                "row_index": row_index,
+                                "row_name": row_name,
+                                "row_top": row_top,
+                                "row_bottom": row_bottom,
+                                "row_center": row_center,
+                                "poster_top": poster_top,
+                                "poster_bottom": poster_bottom,
+                                "edge_gap": edge_gap,
+                                "within_viewport": within_viewport,
+                            }
+                        )
+                        if capture_screenshots:
+                            screenshot_path = evidence_dir / (
+                                f"{artifact_prefix}-hover-{sequence_number:02d}-row-{row_index:02d}.png"
+                            )
+                            target_page.screenshot(path=str(screenshot_path), full_page=False)
+                            screenshot_artifacts.append(relative_path(screenshot_path, project_dir))
+
+                    manifest_path = evidence_dir / f"{artifact_prefix}-manifest.json"
+                    manifest_path.write_text(
+                        json.dumps(
+                            {
+                                "generated_at": datetime.now(UTC).isoformat(),
+                                "target_url": f"{app_base_url}/",
+                                "viewport": viewport,
+                                "visible_indexes": visible_indexes,
+                                "sample_indexes": sample_indexes,
+                                "rows": manifest_rows,
+                            },
+                            indent=2,
+                        ),
+                        encoding="utf-8",
+                    )
+                    return screenshot_artifacts, relative_path(manifest_path, project_dir), manifest_rows
+
+                def capture_p9_hover_video(evidence_dir: Path) -> str | None:
+                    video_context = browser.new_context(
+                        viewport=viewport,
+                        record_video_dir=str(evidence_dir),
+                        record_video_size=viewport,
+                    )
+                    video_page = video_context.new_page()
+                    video_handle = video_page.video
+                    try:
+                        capture_lower_hover_overlay_evidence(
+                            video_page,
+                            evidence_dir=evidence_dir,
+                            artifact_prefix="p9-hover-video",
+                            capture_screenshots=False,
+                        )
+                    finally:
+                        video_context.close()
+                    if video_handle is None:
+                        return None
+                    video_path = Path(video_handle.path())
+                    target_path = evidence_dir / "p9-hover-overlay.webm"
+                    if video_path != target_path:
+                        if target_path.exists():
+                            target_path.unlink()
+                        video_path.replace(target_path)
+                    return relative_path(target_path, project_dir)
+
+                ensure_poster_rules(max(12, args.p9_hover_sample_count + 8))
+
+                page.goto(f"{app_base_url}/", wait_until="networkidle", timeout=args.timeout_ms)
+                page.wait_for_selector("[data-rules-page]", timeout=args.timeout_ms)
+                table_wrap = page.locator("[data-rules-table-wrap]").first
+                cards_wrap = page.locator("[data-rules-cards-wrap]").first
+
+                poster_rows = page.locator(
+                    '[data-rules-row][data-rule-poster-url]:not([data-rule-poster-url=""])'
+                )
+
+                if table_wrap.count() == 1 and cards_wrap.count() == 1 and page.locator("[data-rules-row]").count() >= 1:
+                    _expect(
+                        table_wrap.evaluate("node => !node.hidden"),
+                        "Rules page should default to table view.",
+                    )
+                    _expect(
+                        cards_wrap.evaluate("node => Boolean(node.hidden)"),
+                        "Rules cards view should be hidden by default.",
+                    )
+                    page.click('[data-rules-view-mode-button="cards"]')
+                    page.wait_for_timeout(120)
+                    _expect(
+                        cards_wrap.evaluate("node => !node.hidden"),
+                        "Rules cards view should become visible after cards toggle.",
+                    )
+                    page.click('[data-rules-view-mode-button="table"]')
+                    page.wait_for_timeout(120)
+                    _expect(
+                        table_wrap.evaluate("node => !node.hidden"),
+                        "Rules table should become visible after table toggle.",
+                    )
+
+                    poster_row_count = poster_rows.count()
+                    _expect(
+                        poster_row_count >= max(8, args.p9_hover_sample_count + 4),
+                        (
+                            "Expected enough poster-backed rules for lower-list hover evidence; "
+                            f"saw {poster_row_count}."
+                        ),
+                    )
+                    hover_poster = page.locator("[data-rules-hover-poster]").first
+                    _expect(
+                        hover_poster.count() == 1,
+                        "Rules table should render hover-poster shell.",
+                    )
+
+                    p9_hover_dir = run_dir / "p9-hover-overlay"
+                    p9_hover_dir.mkdir(parents=True, exist_ok=True)
+                    (
+                        p9_hover_artifacts,
+                        p9_hover_manifest_path,
+                        p9_hover_rows,
+                    ) = capture_lower_hover_overlay_evidence(
+                        page,
+                        evidence_dir=p9_hover_dir,
+                        artifact_prefix="p9-hover-overlay",
+                        capture_screenshots=True,
+                    )
+                    for hover_row in p9_hover_rows:
+                        _expect(
+                            bool(hover_row["within_viewport"]),
+                            (
+                                "Hover poster should stay fully visible inside the viewport for sampled lower rows; "
+                                f"row_index={hover_row['row_index']} poster_top={hover_row['poster_top']:.1f} "
+                                f"poster_bottom={hover_row['poster_bottom']:.1f}"
+                            ),
+                        )
+                        _expect(
+                            float(hover_row["edge_gap"]) <= 60,
+                            (
+                                "Hover poster should stay adjacent to each sampled lower-row hover instead of jumping to a detached upper zone; "
+                                f"row_index={hover_row['row_index']} row_top={hover_row['row_top']:.1f} "
+                                f"poster_top={hover_row['poster_top']:.1f} poster_bottom={hover_row['poster_bottom']:.1f} "
+                                f"edge_gap={hover_row['edge_gap']:.1f}"
+                            ),
+                        )
+                    if args.capture_p9_hover_video:
+                        p9_hover_video_path = capture_p9_hover_video(p9_hover_dir)
+                else:
+                    _expect(
+                        page.locator(".empty-state").count() == 1,
+                        "Rules page should show empty-state when no rules are present.",
+                    )
+
+                page.click("[data-rules-save-defaults]")
+                page.wait_for_function(
+                    """
+                    () => {
+                      const node = document.querySelector('[data-rules-run-status]');
+                      return Boolean(node && (node.textContent || '').includes('Saved rules-page defaults.'));
+                    }
+                    """,
+                    timeout=args.timeout_ms,
+                )
+
+                schedule_enabled = page.locator("[data-rules-schedule-enabled]")
+                _expect(
+                    schedule_enabled.count() == 1,
+                    "Rules main page should expose schedule-enabled toggle.",
+                )
+                if not schedule_enabled.first.is_checked():
+                    schedule_enabled.first.check()
+                page.fill("[data-rules-schedule-interval]", "5")
+                page.select_option("[data-rules-schedule-scope]", "enabled")
+                page.click("[data-rules-schedule-save]")
+                page.wait_for_function(
+                    """
+                    () => {
+                      const node = document.querySelector('[data-rules-run-status]');
+                      return Boolean(node && (node.textContent || '').includes('Schedule saved.'));
+                    }
+                    """,
+                    timeout=args.timeout_ms,
+                )
+                page.goto(f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms)
+                page.wait_for_selector('input[name="rule_name"]', timeout=args.timeout_ms)
+
+            run_check(
+                "P9-01",
+                "Phase 9",
+                "Rules main-page workspace supports table-first view, cards toggle, defaults save, and schedule save",
+                check_phase9_rules_main_page_workspace,
                 page=page,
             )
 
@@ -982,6 +1336,9 @@ def main() -> int:
 
             def check_phase5_rule_pattern_preview_parity() -> None:
                 page.goto(f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms)
+                matching_section = page.locator("details:has(#pattern-preview)").first
+                if not matching_section.evaluate("node => Boolean(node.open)"):
+                    matching_section.locator("summary").click()
                 page.wait_for_selector("#pattern-preview", timeout=args.timeout_ms)
                 page.fill('input[name="normalized_title"]', "Pattern Preview Rule")
                 page.fill('textarea[name="additional_includes"]', "aaa, bbb|ccc, ddd")
@@ -1023,20 +1380,17 @@ def main() -> int:
                 page.wait_for_selector("[data-search-controls]", timeout=args.timeout_ms)
                 controls = page.locator("[data-search-controls]")
                 _expect(controls.count() == 1, "Expected one compact result-view panel for unified results.")
-
-                view_mode = controls.first.locator("[data-search-view-mode]")
-                _expect(view_mode.input_value() == "table", "Default view mode should be table.")
-                view_mode.select_option("cards")
-                page.wait_for_timeout(100)
                 _expect(
-                    page.locator('[data-search-results="combined"]').first.evaluate("node => !node.hidden"),
-                    "Card view should become visible after switching to cards mode.",
+                    controls.first.locator("[data-search-view-mode]").count() == 0,
+                    "Search panel should stay table-only in compact mode.",
                 )
-                view_mode.select_option("table")
-                page.wait_for_timeout(100)
                 _expect(
                     page.locator('[data-search-table-wrap="combined"]').first.evaluate("node => !node.hidden"),
-                    "Table view should become visible after switching back to table mode.",
+                    "Table view should be visible by default.",
+                )
+                _expect(
+                    page.locator('[data-search-results="combined"]').first.evaluate("node => Boolean(node.hidden)"),
+                    "Card container should remain hidden in table-only mode.",
                 )
 
                 title_sort = page.locator('[data-search-table-sort-field="title"]').first
@@ -1076,16 +1430,12 @@ def main() -> int:
             run_check(
                 "P6-01",
                 "Phase 6",
-                "Unified result-view panel supports table/cards, header sort, and defaults save",
+                "Unified result-view panel stays table-only while preserving header sort and defaults save",
                 check_phase6_controls,
                 page=page,
             )
 
             def check_phase6_local_filters() -> None:
-                controls = page.locator("[data-search-controls]")
-                controls.nth(0).locator("[data-search-view-mode]").select_option("table")
-                page.wait_for_timeout(100)
-
                 baseline_requests = request_count()
                 page.fill('input[name="keywords_any"]', "2160p | hdr10")
                 page.wait_for_timeout(180)
@@ -1396,8 +1746,6 @@ def main() -> int:
             def check_phase6_filter_impact_and_handoff() -> None:
                 page.goto(search_url, wait_until="networkidle", timeout=args.timeout_ms)
                 page.wait_for_selector('[data-search-summary="combined"]', timeout=args.timeout_ms)
-                page.locator("[data-search-controls]").nth(0).locator("[data-search-view-mode]").select_option("table")
-                page.wait_for_timeout(120)
                 page.fill('input[name="keywords_any"]', "2160p | hdr10")
                 page.wait_for_timeout(180)
                 filter_impact_count = page.eval_on_selector_all(
@@ -1444,6 +1792,9 @@ def main() -> int:
                     page.input_value('input[name="release_year"]').strip() == "2026",
                     "Handoff should prefill release year.",
                 )
+                matching_section = page.locator("details:has-text('Matching And Quality')").first
+                if not matching_section.evaluate("node => Boolean(node.open)"):
+                    matching_section.locator("summary").click()
                 # Keep downstream inline-search assertions deterministic by clearing
                 # prefilled exclusions from handoff query state.
                 page.fill('textarea[name="must_not_contain"]', "")
@@ -1770,6 +2121,9 @@ def main() -> int:
             "run_dir": relative_path(run_dir, project_dir),
             "db": relative_path(db_path, project_dir),
             "uvicorn_log": relative_path(app_log_path, project_dir),
+            "p9_hover_screenshots": p9_hover_artifacts,
+            "p9_hover_manifest": p9_hover_manifest_path,
+            "p9_hover_video": p9_hover_video_path,
         },
         "counts": {
             "total": len(checks),
@@ -1781,7 +2135,7 @@ def main() -> int:
     report_json_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     headline = (
-        f"# Phase 4/5/6/7 Browser Closeout QA ({run_stamp})\n\n"
+        f"# Phase 4/5/6/7/9 Browser Closeout QA ({run_stamp})\n\n"
         f"- Total checks: **{len(checks)}**\n"
         f"- Passed: **{passed}**\n"
         f"- Failed: **{len(failures)}**\n"
@@ -1790,7 +2144,20 @@ def main() -> int:
         f"- Mock Jackett URL: `{jackett_base_url}`\n"
         f"- Jackett requests observed: **{jackett_state.request_count}**\n\n"
     )
-    report_md_path.write_text(headline + markdown_table(checks) + "\n", encoding="utf-8")
+    artifact_lines: list[str] = []
+    if p9_hover_artifacts or p9_hover_manifest_path or p9_hover_video_path:
+        artifact_lines.extend(["## Hover Overlay Evidence", ""])
+        if p9_hover_manifest_path:
+            artifact_lines.append(f"- Manifest: `{p9_hover_manifest_path}`")
+        for screenshot_path in p9_hover_artifacts:
+            artifact_lines.append(f"- Screenshot: `{screenshot_path}`")
+        if p9_hover_video_path:
+            artifact_lines.append(f"- Video: `{p9_hover_video_path}`")
+        artifact_lines.append("")
+    report_md_path.write_text(
+        headline + markdown_table(checks) + "\n\n" + "\n".join(artifact_lines),
+        encoding="utf-8",
+    )
 
     print(f"Saved closeout report: {report_json_path}")
     print(f"Saved closeout summary: {report_md_path}")

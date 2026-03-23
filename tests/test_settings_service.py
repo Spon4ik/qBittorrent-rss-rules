@@ -91,3 +91,26 @@ def test_resolve_qb_connection_rewrites_env_localhost_in_wsl(monkeypatch: pytest
     assert resolved.base_url == "http://host.docker.internal:18080/"
     assert resolved.username == "env-user"
     assert resolved.password == "env-pass"
+
+
+def test_get_or_create_normalizes_rules_page_and_schedule_defaults(db_session) -> None:
+    settings = AppSettings(
+        id="default",
+        rules_page_view_mode="unsupported",
+        rules_page_sort_field="unknown-field",
+        rules_page_sort_direction="up",
+        rules_fetch_schedule_interval_minutes=1,
+        rules_fetch_schedule_scope="invalid",
+        rules_fetch_schedule_last_status="",
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    normalized = SettingsService.get_or_create(db_session)
+
+    assert normalized.rules_page_view_mode == "table"
+    assert normalized.rules_page_sort_field == "updated_at"
+    assert normalized.rules_page_sort_direction == "desc"
+    assert normalized.rules_fetch_schedule_interval_minutes == 5
+    assert normalized.rules_fetch_schedule_scope == "enabled"
+    assert normalized.rules_fetch_schedule_last_status == "idle"

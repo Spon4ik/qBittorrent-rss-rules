@@ -1,20 +1,26 @@
 # Roadmap
 
-## Current release target: v0.5.0
+## Current release target: v0.6.1
 
 ### In progress
 
-- Phase-9 rules main-page release-aware operations and Jackett fetch orchestration
-- Main-page UX pass: table-first rules workspace with richer visual context and lower scrolling overhead
+- Post-`v0.6.0` stabilization and cross-machine validation for the WinUI desktop companion-process baseline
+- Phase-10 follow-up backlog shaping for single-instance behavior, live hover verification, and remaining rules-page performance polish
+- Define the next implementation phase after `v0.6.0` based on desktop usage feedback and regression data
 
 ### Current phase track
 
-- Phase 9: rules main-page release-aware operations + Jackett fetch orchestration (active; tracked in `docs/plans/phase-9-rules-main-page-release-ops.md`)
+- No new implementation phase is active yet; phase 10 shipped in `v0.6.0` and post-release scope is being shaped.
+- Phase 10: WinUI desktop bootstrap baseline + next-version planning (implemented and release-validated in `v0.6.0`)
+- Phase 9: rules main-page release-aware operations + Jackett fetch orchestration (implemented and release-validated in v0.5.0)
 - Phase 8: persistent rule-search snapshots and unified results workspace UX (implemented and release-validated in v0.4.0)
 - Phase 7: cached-refinement responsiveness and category-catalog integrity (implemented and release-validated in v0.3.0)
 - Phase 6: Jackett-backed active search workspace (implemented and release-validated in v0.2.0; follow-up polish completed, deeper persistence still deferred)
 - Phase 4: feed selection UX improvements (implemented, automated closeout validated)
 - Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, automated closeout validated)
+
+Phase 10 detail pointer:
+- Dated checklist, release validation, and post-release follow-up decisions for WinUI desktop phase-10 work (`QbRssRulesDesktop` scaffold, dev-loop hardening, WebView-shell baseline, and retained companion-process direction) are tracked in `docs/plans/phase-10-winui-desktop-bootstrap.md`.
 
 Phase 9 detail pointer:
 - Detailed checklist and dated execution tracker for the table-first rules page UX, poster hover/cards behavior, on-demand/scheduled Jackett rule fetch orchestration, and rule sorting by post-filter release availability is tracked in `docs/plans/phase-9-rules-main-page-release-ops.md`.
@@ -30,21 +36,37 @@ Phase 6 detail pointer:
 
 ### Release focus
 
-- Make the rules main page table-first by default, with poster preview on row hover and visible poster media when cards mode is explicitly selected.
-- Add on-demand Jackett fetch orchestration for either all rules or selected rules from the main page.
-- Add scheduled Jackett fetch orchestration with clear cadence controls and deterministic status feedback.
-- Add rule sorting by release availability outcome after all rule filters apply (for example new movie release found, new episode found, no match).
+- Observe `v0.6.0` desktop companion-process behavior across additional Windows profiles and machines.
+- Decide the first post-release follow-ups for single-instance policy, live hover verification, and remaining rules-page performance work.
+- Define the next implementation phase and target version after `v0.6.0` stabilization.
 - Keep deterministic browser QA and route/service regressions as release gates for every workflow change.
-- Preserve data-model clarity and explicit sync contracts while adding schedule execution state.
 
-## Recently released: v0.4.0 (2026-03-15)
+## Recently released: v0.6.0 (2026-03-23)
+
+- Shipped the phase-10 WinUI `QbRssRulesDesktop` WebView shell with repo-local build/run flow, shortcut refresh, and hidden companion-backend startup.
+- Added stale-backend contract validation plus managed fallback-port startup so the desktop no longer reuses incompatible local servers already listening on `:8000`.
+- Added desktop freshness protections (`--reload`, launch cache-buster query, orphaned managed-backend cleanup) and `/health` compatibility metadata.
+- Added hidden fetched-row diagnostics and visibility reasons across `/search` and inline rule results.
+- Hardened rules main-page performance with persisted release-cache columns, filtered snapshot loading, and bounded poster backfill retries.
+- Revalidated the release with `scripts\check.bat`, `scripts\closeout_qa.bat`, and `scripts\run_dev.bat desktop-build`.
+
+## Previously released: v0.5.0 (2026-03-15)
+
+- Shipped the phase-9 rules main-page workspace redesign with table-first defaults, cards fallback mode, and row-hover poster previews.
+- Added poster metadata plumbing to persisted rules and metadata lookup flows, with graceful no-poster fallbacks in table/cards surfaces.
+- Added on-demand Jackett fetch orchestration from the rules page (`Fetch Selected` and `Fetch All`) with centralized snapshot persistence for each run.
+- Added schedule controls and runtime execution for recurring rule fetches, including persisted cadence/scope/last-run status in app settings.
+- Added release-availability sorting and status chips derived from centralized `RuleSearchSnapshot` data (`Matches found`/`No matches`/`No snapshot`).
+- Extended deterministic browser closeout automation with a phase-9 rules-workspace check (`P9-01`) plus compatibility updates for the table-only result controls.
+
+## Earlier release: v0.4.0 (2026-03-15)
 
 - Phase-8 persistent per-rule snapshot workflow shipped, including centralized replay/refresh behavior for inline rule results.
 - Unified IMDb-first/title-fallback rendering shipped as a single source-keyed table with compact empty-state diagnostics and no standalone filter-impact panel.
 - Rule-page workspace modernization shipped (sticky split rail/results layout, header-driven sorting, compact queue controls, and active local-filter chips).
 - Inline affected-feed scope now applies both to rule RSS listener configuration and immediate indexer visibility in cached unified results.
 
-## Previously released: v0.3.0 (2026-03-13)
+## Earlier release: v0.3.0 (2026-03-13)
 
 - Phase-7 cached-refinement/category-catalog slice shipped, including persisted indexer category mapping and scoped category option diagnostics.
 - Saved-rule `Run Search` now renders inline rule-page results with feed-aware scope handling, queue actions, and table-first sort/view parity.
@@ -66,7 +88,7 @@ Phase 6 detail pointer:
 - Taxonomy-driven quality filtering and media-aware rule form
 - Baseline docs, ADRs, and automated test suite
 
-## Planned after v0.5.x
+## Planned after v0.6.x
 
 - Bulk rule creation from list or CSV
 - Rule clone/duplicate flows

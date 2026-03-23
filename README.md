@@ -54,6 +54,16 @@ scripts\run_dev.bat
 
 The app binds to `127.0.0.1` by default and creates its SQLite DB under `./data`.
 
+## WinUI desktop quick start (Windows)
+
+1. From the repository root, run `scripts\run_dev.bat desktop` to restore/build the WinUI shell (use `desktop-build` + `desktop-run` if you want separate steps).
+2. Each successful desktop build refreshes two clickable shortcuts that use the app icon: `qB RSS Rules Desktop.lnk` in the repo root and `qB RSS Rules Desktop.lnk` on your Windows Desktop.
+3. If you ever need to recreate those shortcuts without rebuilding, run `scripts\run_dev.bat desktop-shortcuts`.
+4. You can still launch the GUI directly via `QbRssRulesDesktop\bin\x64\Debug\net10.0-windows10.0.19041.0\win-x64\QbRssRulesDesktop.exe`.
+5. When the desktop starts, it automatically launches the FastAPI backend in the background (hidden `pythonw` process). Closing the desktop shuts down the backend it started.
+6. Manual fallback commands: `scripts\run_dev.bat api` (API only) or `scripts\run_dev.bat full` (start hidden API + desktop together).
+7. To point the desktop at a different backend (including one running in Docker), set `QB_RSS_DESKTOP_URL` before launching the app.
+
 ## Environment variables
 
 - `QB_RULES_APP_ENV`: app mode label
@@ -209,7 +219,7 @@ Use the Import page to upload an exported qBittorrent RSS rules JSON file. The i
 
 ## Known limitations
 
-- v0.4.0 is designed for single-user localhost use.
+- The current release is designed for single-user localhost use.
 - qBittorrent secrets can be saved locally only as lightweight obfuscation; environment variables are preferred.
 - Drift detection is conservative and does not auto-resolve every remote edit case.
 - Jackett active search is separate from RSS feed selection; this slice does not yet create persistent Jackett-backed rule sources automatically.

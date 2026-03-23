@@ -37,6 +37,29 @@ SEARCH_SORT_FIELDS = frozenset(
 )
 DEFAULT_SEARCH_RESULT_VIEW_MODE = "table"
 DEFAULT_SEARCH_SORT_CRITERIA = [{"field": "published_at", "direction": "desc"}]
+RULES_PAGE_VIEW_MODES = frozenset({"table", "cards"})
+RULES_PAGE_SORT_FIELDS = frozenset(
+    {
+        "updated_at",
+        "rule_name",
+        "media_type",
+        "last_sync_status",
+        "enabled",
+        "release_state",
+        "combined_filtered_count",
+        "combined_fetched_count",
+        "last_snapshot_at",
+    }
+)
+RULES_PAGE_SORT_DIRECTIONS = frozenset({"asc", "desc"})
+DEFAULT_RULES_PAGE_VIEW_MODE = "table"
+DEFAULT_RULES_PAGE_SORT_FIELD = "updated_at"
+DEFAULT_RULES_PAGE_SORT_DIRECTION = "desc"
+RULE_FETCH_SCHEDULE_SCOPES = frozenset({"enabled", "all"})
+DEFAULT_RULE_FETCH_SCHEDULE_SCOPE = "enabled"
+DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 360
+MIN_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 5
+MAX_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 10080
 
 
 def _is_wsl_runtime() -> bool:
@@ -116,6 +139,47 @@ def normalize_search_sort_criteria(value: object | None) -> list[dict[str, str]]
     return [dict(item) for item in DEFAULT_SEARCH_SORT_CRITERIA]
 
 
+def normalize_rules_page_view_mode(value: object | None) -> str:
+    cleaned = str(value or "").strip().lower()
+    if cleaned in RULES_PAGE_VIEW_MODES:
+        return cleaned
+    return DEFAULT_RULES_PAGE_VIEW_MODE
+
+
+def normalize_rules_page_sort_field(value: object | None) -> str:
+    cleaned = str(value or "").strip()
+    if cleaned in RULES_PAGE_SORT_FIELDS:
+        return cleaned
+    return DEFAULT_RULES_PAGE_SORT_FIELD
+
+
+def normalize_rules_page_sort_direction(value: object | None) -> str:
+    cleaned = str(value or "").strip().lower()
+    if cleaned in RULES_PAGE_SORT_DIRECTIONS:
+        return cleaned
+    return DEFAULT_RULES_PAGE_SORT_DIRECTION
+
+
+def normalize_rule_fetch_schedule_scope(value: object | None) -> str:
+    cleaned = str(value or "").strip().lower()
+    if cleaned in RULE_FETCH_SCHEDULE_SCOPES:
+        return cleaned
+    return DEFAULT_RULE_FETCH_SCHEDULE_SCOPE
+
+
+def normalize_rule_fetch_schedule_interval_minutes(value: object | None) -> int:
+    if value is None:
+        return DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES
+    try:
+        numeric = int(str(value).strip())
+    except (TypeError, ValueError):
+        return DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES
+    return max(
+        MIN_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES,
+        min(MAX_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES, numeric),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedQbConnection:
     base_url: str | None
@@ -166,6 +230,14 @@ class SettingsService:
                 default_first_last_piece_prio=True,
                 search_result_view_mode=DEFAULT_SEARCH_RESULT_VIEW_MODE,
                 search_sort_criteria=[dict(item) for item in DEFAULT_SEARCH_SORT_CRITERIA],
+                rules_fetch_schedule_enabled=False,
+                rules_fetch_schedule_interval_minutes=DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES,
+                rules_fetch_schedule_scope=DEFAULT_RULE_FETCH_SCHEDULE_SCOPE,
+                rules_fetch_schedule_last_status="idle",
+                rules_fetch_schedule_last_message="",
+                rules_page_view_mode=DEFAULT_RULES_PAGE_VIEW_MODE,
+                rules_page_sort_field=DEFAULT_RULES_PAGE_SORT_FIELD,
+                rules_page_sort_direction=DEFAULT_RULES_PAGE_SORT_DIRECTION,
             )
             session.add(settings)
             session.commit()
@@ -232,6 +304,56 @@ class SettingsService:
         )
         if normalized_sort_criteria != list(settings.search_sort_criteria or []):
             settings.search_sort_criteria = normalized_sort_criteria
+            changed = True
+        normalized_rules_page_view_mode = normalize_rules_page_view_mode(
+            getattr(settings, "rules_page_view_mode", DEFAULT_RULES_PAGE_VIEW_MODE)
+        )
+        if normalized_rules_page_view_mode != getattr(settings, "rules_page_view_mode", None):
+            settings.rules_page_view_mode = normalized_rules_page_view_mode
+            changed = True
+        normalized_rules_page_sort_field = normalize_rules_page_sort_field(
+            getattr(settings, "rules_page_sort_field", DEFAULT_RULES_PAGE_SORT_FIELD)
+        )
+        if normalized_rules_page_sort_field != getattr(settings, "rules_page_sort_field", None):
+            settings.rules_page_sort_field = normalized_rules_page_sort_field
+            changed = True
+        normalized_rules_page_sort_direction = normalize_rules_page_sort_direction(
+            getattr(settings, "rules_page_sort_direction", DEFAULT_RULES_PAGE_SORT_DIRECTION)
+        )
+        if normalized_rules_page_sort_direction != getattr(settings, "rules_page_sort_direction", None):
+            settings.rules_page_sort_direction = normalized_rules_page_sort_direction
+            changed = True
+        normalized_schedule_scope = normalize_rule_fetch_schedule_scope(
+            getattr(settings, "rules_fetch_schedule_scope", DEFAULT_RULE_FETCH_SCHEDULE_SCOPE)
+        )
+        if normalized_schedule_scope != getattr(settings, "rules_fetch_schedule_scope", None):
+            settings.rules_fetch_schedule_scope = normalized_schedule_scope
+            changed = True
+        normalized_schedule_interval = normalize_rule_fetch_schedule_interval_minutes(
+            getattr(
+                settings,
+                "rules_fetch_schedule_interval_minutes",
+                DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES,
+            )
+        )
+        if normalized_schedule_interval != getattr(settings, "rules_fetch_schedule_interval_minutes", None):
+            settings.rules_fetch_schedule_interval_minutes = normalized_schedule_interval
+            changed = True
+        normalized_schedule_enabled = bool(getattr(settings, "rules_fetch_schedule_enabled", False))
+        if normalized_schedule_enabled != getattr(settings, "rules_fetch_schedule_enabled", None):
+            settings.rules_fetch_schedule_enabled = normalized_schedule_enabled
+            changed = True
+        normalized_schedule_status = str(
+            getattr(settings, "rules_fetch_schedule_last_status", "idle") or "idle"
+        ).strip().lower()
+        if not normalized_schedule_status:
+            normalized_schedule_status = "idle"
+        if normalized_schedule_status != getattr(settings, "rules_fetch_schedule_last_status", None):
+            settings.rules_fetch_schedule_last_status = normalized_schedule_status
+            changed = True
+        normalized_schedule_message = str(getattr(settings, "rules_fetch_schedule_last_message", "") or "")
+        if normalized_schedule_message != getattr(settings, "rules_fetch_schedule_last_message", None):
+            settings.rules_fetch_schedule_last_message = normalized_schedule_message
             changed = True
         if changed:
             session.add(settings)
@@ -338,4 +460,44 @@ class SettingsService:
             "has_env_omdb_key": bool(get_environment_settings().omdb_api_key),
             "search_result_view_mode": normalize_search_result_view_mode(settings.search_result_view_mode),
             "search_sort_criteria": normalize_search_sort_criteria(settings.search_sort_criteria),
+            "rules_page_view_mode": normalize_rules_page_view_mode(
+                getattr(settings, "rules_page_view_mode", DEFAULT_RULES_PAGE_VIEW_MODE)
+            ),
+            "rules_page_sort_field": normalize_rules_page_sort_field(
+                getattr(settings, "rules_page_sort_field", DEFAULT_RULES_PAGE_SORT_FIELD)
+            ),
+            "rules_page_sort_direction": normalize_rules_page_sort_direction(
+                getattr(settings, "rules_page_sort_direction", DEFAULT_RULES_PAGE_SORT_DIRECTION)
+            ),
+            "rules_fetch_schedule_enabled": bool(
+                getattr(settings, "rules_fetch_schedule_enabled", False)
+            ),
+            "rules_fetch_schedule_interval_minutes": normalize_rule_fetch_schedule_interval_minutes(
+                getattr(
+                    settings,
+                    "rules_fetch_schedule_interval_minutes",
+                    DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES,
+                )
+            ),
+            "rules_fetch_schedule_scope": normalize_rule_fetch_schedule_scope(
+                getattr(settings, "rules_fetch_schedule_scope", DEFAULT_RULE_FETCH_SCHEDULE_SCOPE)
+            ),
+            "rules_fetch_schedule_last_run_at": getattr(
+                settings,
+                "rules_fetch_schedule_last_run_at",
+                None,
+            ),
+            "rules_fetch_schedule_next_run_at": getattr(
+                settings,
+                "rules_fetch_schedule_next_run_at",
+                None,
+            ),
+            "rules_fetch_schedule_last_status": str(
+                getattr(settings, "rules_fetch_schedule_last_status", "idle")
+                or "idle"
+            ),
+            "rules_fetch_schedule_last_message": str(
+                getattr(settings, "rules_fetch_schedule_last_message", "")
+                or ""
+            ),
         }

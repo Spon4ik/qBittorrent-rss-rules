@@ -17,6 +17,10 @@
   <div class="result-view-sort-help">
     <p class="helper-text">Click a column for asc/desc. Shift+click keeps multi-sort levels.</p>
   </div>
+  <label class="toggle search-hidden-toggle">
+    <input type="checkbox" data-search-show-hidden-toggle />
+    <span>Show hidden fetched rows</span>
+  </label>
   <div class="result-view-active-filters" data-search-active-filters hidden>
     <div class="result-view-active-filters-head">
       <p class="eyebrow">Active local filters</p>
@@ -272,6 +276,8 @@
     {% if search_run.ignored_full_regex %}
     <p class="helper-text">Raw regex was intentionally not sent to Jackett. This search uses the saved title plus structured terms instead.</p>
     {% endif %}
+    <p class="helper-text search-scope-summary" data-search-scope-summary="combined"></p>
+    <p class="helper-text search-hidden-summary-text" data-search-hidden-summary="combined" hidden></p>
   </div>
   <div>
     <p class="eyebrow">Source requests</p>
@@ -454,6 +460,7 @@
         </th>
         {% endif %}
         <th>Categories</th>
+        <th>Visibility</th>
         <th>Actions</th>
       </tr>
     </thead>
@@ -506,6 +513,9 @@
           {% else %}
           Unknown
           {% endif %}
+        </td>
+        <td>
+          <span class="search-visibility-pill" data-search-visibility-status></span>
         </td>
         <td>
           <div class="search-row-actions">

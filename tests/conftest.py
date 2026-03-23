@@ -17,6 +17,7 @@ def configured_app_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("QB_RULES_JACKETT_QB_URL", raising=False)
     monkeypatch.delenv("QB_RULES_JACKETT_API_KEY", raising=False)
     monkeypatch.delenv("QB_RULES_OMDB_API_KEY", raising=False)
+    monkeypatch.setenv("QB_RULES_ENABLE_RULE_FETCH_SCHEDULER", "0")
 
     from app.config import get_environment_settings
     from app.db import reset_db_caches

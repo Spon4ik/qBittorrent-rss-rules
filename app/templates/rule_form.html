@@ -17,6 +17,10 @@
   <div class="result-view-sort-help">
     <p class="helper-text">Click a column for asc/desc. Shift+click keeps multi-sort levels.</p>
   </div>
+  <label class="toggle search-hidden-toggle">
+    <input type="checkbox" data-search-show-hidden-toggle />
+    <span>Show hidden fetched rows</span>
+  </label>
   <div class="result-view-local-grid">
     <label class="result-view-local-field">
       Indexer scope
@@ -112,6 +116,7 @@
   data-metadata-disabled="{{ 'true' if metadata_lookup_disabled else 'false' }}"
 >
   <input type="hidden" name="quality_profile" value="{{ form_data.quality_profile }}" />
+  <input type="hidden" name="poster_url" value="{{ form_data.poster_url }}" />
   <details class="rule-criteria-section" open>
     <summary class="rule-criteria-summary">
       <span class="eyebrow">Criteria</span>
@@ -398,6 +403,8 @@
       <div>
         <p class="eyebrow">Unified query results</p>
         <strong><span data-search-filtered-count="combined">{{ inline_search.combined_filtered_count }}</span> filtered / <span data-search-fetched-count="combined">{{ inline_search.combined_fetched_count }}</span> fetched</strong>
+        <p class="helper-text search-scope-summary" data-search-scope-summary="combined"></p>
+        <p class="helper-text search-hidden-summary-text" data-search-hidden-summary="combined" hidden></p>
       </div>
       <div>
         <p class="eyebrow">Source requests</p>
@@ -575,6 +582,7 @@
             </th>
             {% endif %}
             <th>Categories</th>
+            <th>Visibility</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -627,6 +635,9 @@
               {% else %}
               Unknown
               {% endif %}
+            </td>
+            <td>
+              <span class="search-visibility-pill" data-search-visibility-status></span>
             </td>
             <td>
               <div class="search-row-actions">

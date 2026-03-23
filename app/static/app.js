@@ -1038,6 +1038,7 @@ function initSearchPage(container) {
   const controlSets = Array.from(container.querySelectorAll("[data-search-controls]")).map((controlContainer) => ({
     controlContainer,
     viewModeSelect: controlContainer.querySelector("[data-search-view-mode]"),
+    showHiddenToggle: controlContainer.querySelector("[data-search-show-hidden-toggle]"),
     saveDefaultsButton: controlContainer.querySelector("[data-search-save-defaults]"),
     saveDefaultsStatus: controlContainer.querySelector("[data-search-default-status]"),
     clearFiltersButton: controlContainer.querySelector("[data-search-clear-filters]"),
@@ -1106,6 +1107,7 @@ function initSearchPage(container) {
   let controlState = {
     viewMode: normalizeViewMode(container.dataset.defaultViewMode || "table"),
     sortCriteria: normalizeSortCriteria(parseJsonData(container.dataset.defaultSort || "", [])),
+    showHiddenRows: false,
   };
 
   const parseOptionalNumber = (value) => {
@@ -1342,6 +1344,9 @@ function initSearchPage(container) {
   const writeControlStateToSet = (controlSet, state) => {
     if (controlSet.viewModeSelect) {
       controlSet.viewModeSelect.value = state.viewMode;
+    }
+    if (controlSet.showHiddenToggle) {
+      controlSet.showHiddenToggle.checked = Boolean(state.showHiddenRows);
     }
   };
 
@@ -1983,55 +1988,100 @@ function initSearchPage(container) {
     return textSurface.includes(normalizedTerm);
   };
 
-  const entryMatchesFilters = (entry, filters) => {
+  const matchesQueryText = (titleSurface, queryValue) => {
+    const normalizedQuery = normalizeSearchText(queryValue);
+    if (!normalizedQuery) {
+      return true;
+    }
+    if (titleSurface.includes(normalizedQuery)) {
+      return true;
+    }
+    const queryTerms = normalizedQuery.split(" ").filter(Boolean);
+    if (queryTerms.length === 0) {
+      return true;
+    }
+    const titleTerms = new Set(titleSurface.split(" ").filter(Boolean));
+    return queryTerms.every((item) => titleTerms.has(item));
+  };
+
+  const groupLabel = (group) => group.map((item) => String(item || "").trim()).filter(Boolean).join(" | ");
+  const searchScopeSummaryText = (filters) => {
+    const scopeParts = [];
+    const queryLabel = getSearchQueryLabel();
+    if (queryLabel) {
+      scopeParts.push(`query "${queryLabel}"`);
+    }
+    if (filters.imdbId) {
+      scopeParts.push(`IMDb ${filters.imdbId}`);
+    }
+    if (filters.feedScopedIndexers && filters.feedScopedIndexers.length > 0) {
+      scopeParts.push(`affected feed indexers ${filters.feedScopedIndexers.join(", ")}`);
+    }
+    if (scopeParts.length === 0) {
+      return "";
+    }
+    return `Current scope still includes ${scopeParts.join("; ")}.`;
+  };
+
+  const entryFilterFailure = (entry, filters) => {
     if (filters.feedScopeBlocksAll) {
-      return false;
+      return "No affected feeds are selected.";
+    }
+
+    const payloadImdbId = normalizeSearchImdbId(filters.imdbId || "");
+    const resultImdbId = normalizeSearchImdbId(entry.imdbId || "");
+    const imdbExactMatch = Boolean(payloadImdbId && resultImdbId && payloadImdbId === resultImdbId);
+    if (!imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {
+      const queryLabel = getSearchQueryLabel();
+      return queryLabel
+        ? `Title does not match query "${queryLabel}".`
+        : "Title does not match the current query.";
     }
 
     for (const keyword of filters.keywordsAll) {
       if (!containsTerm(entry.textSurface, keyword)) {
-        return false;
+        return `Missing include keyword: ${keyword}.`;
       }
     }
 
-    for (const group of filters.keywordsAnyGroups) {
+    for (const [groupIndex, group] of filters.keywordsAnyGroups.entries()) {
       if (!group.some((keyword) => containsTerm(entry.textSurface, keyword))) {
-        return false;
+        return `Missing any-of group ${groupIndex + 1}: ${groupLabel(group)}.`;
       }
     }
 
     for (const keyword of filters.keywordsNot) {
       if (containsExcludedTerm(entry.textSurface, keyword)) {
-        return false;
+        return `Matched excluded keyword: ${keyword}.`;
       }
     }
 
     if (filters.qualityIncludeRegex && !filters.qualityIncludeRegex.test(entry.regexSurface)) {
-      return false;
+      return "Missing required quality tags.";
     }
     if (filters.qualityExcludeRegex && filters.qualityExcludeRegex.test(entry.regexSurface)) {
-      return false;
+      return "Matched an excluded quality tag.";
     }
     if (filters.generatedPatternRegex && !filters.generatedPatternRegex.test(entry.regexSurface)) {
-      return false;
+      return "Does not match the generated rule pattern.";
     }
 
     if (filters.releaseYear) {
       if (!entry.year || entry.year !== filters.releaseYear) {
-        return false;
+        return `Release year does not match ${filters.releaseYear}.`;
       }
     }
 
     if (filters.sizeMinMb !== null || filters.sizeMaxMb !== null) {
       if (entry.sizeBytes === null) {
-        return false;
+        return "Missing size data for the current size filter.";
       }
       const sizeMb = entry.sizeBytes / (1024 * 1024);
       if (filters.sizeMinMb !== null && sizeMb < filters.sizeMinMb) {
-        return false;
+        return `Smaller than the minimum size (${filters.sizeMinMb} MB).`;
       }
       if (filters.sizeMaxMb !== null && sizeMb > filters.sizeMaxMb) {
-        return false;
+        return `Larger than the maximum size (${filters.sizeMaxMb} MB).`;
       }
     }
 
@@ -2042,7 +2092,7 @@ function initSearchPage(container) {
           : mergeUniqueIndexerVariantKeys(filters.feedScopedIndexers)
       );
       if (!entry.indexerKeys.some((item) => allowedFeedKeys.has(item))) {
-        return false;
+        return "Indexer is outside the affected-feed scope.";
       }
     }
 
@@ -2053,7 +2103,7 @@ function initSearchPage(container) {
           : mergeUniqueIndexerVariantKeys(filters.indexers)
       );
       if (!entry.indexerKeys.some((item) => allowedIndexerKeys.has(item))) {
-        return false;
+        return "Indexer is outside the current indexer scope.";
       }
     }
 
@@ -2062,11 +2112,15 @@ function initSearchPage(container) {
         entry.categoryValues.length === 0
         || !entry.categoryValues.some((item) => filters.categories.includes(item))
       ) {
-        return false;
+        return "Category is outside the current category scope.";
       }
     }
 
-    return true;
+    return null;
+  };
+
+  const entryMatchesFilters = (entry, filters) => {
+    return entryFilterFailure(entry, filters) === null;
   };
 
   const getSortCriteria = () => {
@@ -2188,6 +2242,7 @@ function initSearchPage(container) {
         originalIndex: index,
         card,
         row: rows[index] || null,
+        visibilityStatusElement: rows[index]?.querySelector("[data-search-visibility-status]") || null,
         title: String(card.dataset.title || "").trim(),
         titleSurface: normalizeSearchText(card.dataset.title || ""),
         textSurface: normalizeSearchText(card.dataset.textSurface || ""),
@@ -2227,6 +2282,8 @@ function initSearchPage(container) {
           tableBody,
           filteredCountElement: container.querySelector(`[data-search-filtered-count="${section}"]`),
           fetchedCountElement: container.querySelector(`[data-search-fetched-count="${section}"]`),
+          scopeSummaryElement: container.querySelector(`[data-search-scope-summary="${section}"]`),
+          hiddenSummaryElement: container.querySelector(`[data-search-hidden-summary="${section}"]`),
           emptyState: container.querySelector(`[data-search-empty="${section}"]`),
         },
       ];
@@ -2586,7 +2643,7 @@ function initSearchPage(container) {
   const applyFiltersForSection = (section, filters, sortCriteria) => {
     const state = sectionState[section];
     if (!state) {
-      return [];
+      return { visibleEntries: [], hiddenEntries: [] };
     }
 
     const sortedEntries = [...state.entries].sort((left, right) => compareEntries(left, right, sortCriteria));
@@ -2604,16 +2661,25 @@ function initSearchPage(container) {
     }
 
     const visibleEntries = [];
+    const hiddenEntries = [];
     let visibleCount = 0;
     for (const entry of sortedEntries) {
-      const visible = entryMatchesFilters(entry, filters);
+      const failure = entryFilterFailure(entry, filters);
+      const visible = failure === null;
       entry.card.hidden = !visible;
       if (entry.row) {
-        entry.row.hidden = !visible;
+        entry.row.hidden = !(visible || controlState.showHiddenRows);
+        entry.row.classList.toggle("search-row-filter-blocked", !visible);
+      }
+      if (entry.visibilityStatusElement) {
+        entry.visibilityStatusElement.dataset.state = visible ? "visible" : "hidden";
+        entry.visibilityStatusElement.textContent = visible ? "Visible" : failure;
       }
       if (visible) {
         visibleCount += 1;
         visibleEntries.push(entry);
+      } else {
+        hiddenEntries.push(entry);
       }
     }
 
@@ -2623,10 +2689,31 @@ function initSearchPage(container) {
     if (state.fetchedCountElement) {
       state.fetchedCountElement.textContent = String(state.entries.length);
     }
+    if (state.scopeSummaryElement) {
+      const scopeSummary = searchScopeSummaryText(filters);
+      state.scopeSummaryElement.textContent = scopeSummary;
+      state.scopeSummaryElement.hidden = scopeSummary.length === 0;
+    }
+    if (state.hiddenSummaryElement) {
+      if (hiddenEntries.length > 0) {
+        const actionLabel = controlState.showHiddenRows
+          ? "Hidden rows are shown below with their first blocker."
+          : "Enable \"Show hidden fetched rows\" to inspect them in the table.";
+        const rowLabel = hiddenEntries.length === 1 ? "row is" : "rows are";
+        state.hiddenSummaryElement.textContent = (
+          `${hiddenEntries.length} fetched row${hiddenEntries.length === 1 ? "" : "s"} `
+          + `${rowLabel} currently hidden. ${actionLabel}`
+        );
+        state.hiddenSummaryElement.hidden = false;
+      } else {
+        state.hiddenSummaryElement.textContent = "";
+        state.hiddenSummaryElement.hidden = true;
+      }
+    }
     if (state.emptyState) {
       state.emptyState.hidden = visibleCount > 0;
     }
-    return visibleEntries;
+    return { visibleEntries, hiddenEntries };
   };
 
   const updateSourceBreakdownCounts = (visibleCombinedEntries) => {
@@ -2673,7 +2760,7 @@ function initSearchPage(container) {
     applyViewMode();
     let visibleCombinedEntries = [];
     for (const section of sections) {
-      const visibleEntries = applyFiltersForSection(section, filters, sortCriteria);
+      const { visibleEntries } = applyFiltersForSection(section, filters, sortCriteria);
       if (section === "combined") {
         visibleCombinedEntries = visibleEntries;
       }
@@ -2757,6 +2844,16 @@ function initSearchPage(container) {
       };
       controlSet.viewModeSelect.addEventListener("change", syncViewMode);
       controlSet.viewModeSelect.addEventListener("input", syncViewMode);
+    }
+    if (controlSet.showHiddenToggle) {
+      controlSet.showHiddenToggle.addEventListener("change", () => {
+        controlState = {
+          ...controlState,
+          showHiddenRows: Boolean(controlSet.showHiddenToggle?.checked),
+        };
+        syncControlSets(controlSet);
+        applyLocalFilters();
+      });
     }
     if (controlSet.clearFiltersButton) {
       controlSet.clearFiltersButton.addEventListener("click", (event) => {
@@ -3442,6 +3539,7 @@ function initRuleForm(form) {
     const contentField = form.querySelector('input[name="content_name"]');
     const ruleNameField = form.querySelector('input[name="rule_name"]');
     const imdbField = form.querySelector('input[name="imdb_id"]');
+    const posterField = form.querySelector('input[name="poster_url"]');
 
     if (titleField) {
       titleField.value = payload.title || "";
@@ -3458,6 +3556,9 @@ function initRuleForm(form) {
     }
     if (imdbField && payload.imdb_id) {
       imdbField.value = payload.imdb_id;
+    }
+    if (posterField) {
+      posterField.value = payload.poster_url || "";
     }
     if (releaseYearInput && (!releaseYearTouched || !releaseYearInput.value.trim())) {
       releaseYearInput.value = normalizeReleaseYear(payload.year || "");
@@ -3567,6 +3668,841 @@ function initSettingsForm(form) {
   );
 }
 
+function initRulesPage(container) {
+  const filterForm = container.querySelector("[data-rules-filter-form]");
+  const tableWrap = container.querySelector("[data-rules-table-wrap]");
+  const cardsWrap = container.querySelector("[data-rules-cards-wrap]");
+  const tableBody = container.querySelector("[data-rules-table-body]");
+  const sortButtons = Array.from(container.querySelectorAll("[data-rules-sort-field]"));
+  const selectAllToggle = container.querySelector("[data-rules-select-all]");
+  const includeDisabledToggle = container.querySelector("[data-rules-include-disabled]");
+  const runSelectedButton = container.querySelector("[data-rules-run-selected]");
+  const runAllButton = container.querySelector("[data-rules-run-all]");
+  const viewModeButtons = Array.from(container.querySelectorAll("[data-rules-view-mode-button]"));
+  const saveDefaultsButton = container.querySelector("[data-rules-save-defaults]");
+  const runStatus = container.querySelector("[data-rules-run-status]");
+  const schedulePanel = container.querySelector("[data-rules-schedule]");
+  const scheduleEnabledInput = container.querySelector("[data-rules-schedule-enabled]");
+  const scheduleIntervalInput = container.querySelector("[data-rules-schedule-interval]");
+  const scheduleScopeInput = container.querySelector("[data-rules-schedule-scope]");
+  const scheduleSaveButton = container.querySelector("[data-rules-schedule-save]");
+  const scheduleRunNowButton = container.querySelector("[data-rules-schedule-run-now]");
+  const scheduleStatus = container.querySelector("[data-rules-schedule-status]");
+  const hoverPoster = container.querySelector("[data-rules-hover-poster]");
+  const hoverPosterImage = hoverPoster?.querySelector("[data-rules-hover-image]");
+  const hoverPosterTitle = hoverPoster?.querySelector("[data-rules-hover-title]");
+  const sortInput = filterForm?.querySelector("[data-rules-sort-input]");
+  const directionInput = filterForm?.querySelector("[data-rules-direction-input]");
+  const viewInput = filterForm?.querySelector("[data-rules-view-input]");
+
+  const VIEW_MODES = new Set(["table", "cards"]);
+  const SORT_FIELDS = new Set([
+    "updated_at",
+    "rule_name",
+    "media_type",
+    "last_sync_status",
+    "enabled",
+    "release_state",
+    "combined_filtered_count",
+    "combined_fetched_count",
+    "last_snapshot_at",
+  ]);
+  const SYNC_STATUS_RANK = {
+    ok: 0,
+    never: 1,
+    drift: 2,
+    error: 3,
+  };
+  const defaultDirectionByField = {
+    updated_at: "desc",
+    rule_name: "asc",
+    media_type: "asc",
+    last_sync_status: "asc",
+    enabled: "desc",
+    release_state: "asc",
+    combined_filtered_count: "desc",
+    combined_fetched_count: "desc",
+    last_snapshot_at: "desc",
+  };
+  const normalizeViewMode = (value) => (VIEW_MODES.has(String(value || "").trim()) ? String(value).trim() : "table");
+  const normalizeSortField = (value) => (SORT_FIELDS.has(String(value || "").trim()) ? String(value).trim() : "updated_at");
+  const normalizeSortDirection = (value) => (String(value || "").trim().toLowerCase() === "asc" ? "asc" : "desc");
+
+  const entries = Array.from(container.querySelectorAll("[data-rule-id]")).reduce((map, element) => {
+    const ruleId = String(element.dataset.ruleId || "").trim();
+    if (!ruleId) {
+      return map;
+    }
+    const existing = map.get(ruleId) || {
+      id: ruleId,
+      row: null,
+      card: null,
+      checkboxes: [],
+      name: "",
+      mediaType: "",
+      releaseRank: 99,
+      filteredCount: 0,
+      fetchedCount: 0,
+      lastSnapshotAtMs: 0,
+      lastSyncStatus: "",
+      enabled: 0,
+      updatedAtMs: 0,
+      posterUrl: "",
+      posterTitle: "",
+    };
+    if (element.matches("[data-rules-row]")) {
+      existing.row = element;
+    }
+    if (element.matches("[data-rules-card]")) {
+      existing.card = element;
+    }
+    existing.name = String(element.dataset.ruleName || existing.name || "").trim();
+    existing.mediaType = String(element.dataset.ruleMediaType || existing.mediaType || "").trim();
+    existing.releaseRank = Number(element.dataset.ruleReleaseRank || existing.releaseRank || 99);
+    existing.filteredCount = Number(element.dataset.ruleFilteredCount || existing.filteredCount || 0);
+    existing.fetchedCount = Number(element.dataset.ruleFetchedCount || existing.fetchedCount || 0);
+    existing.lastSnapshotAtMs = Date.parse(String(element.dataset.ruleLastSnapshotAt || "")) || 0;
+    existing.lastSyncStatus = String(element.dataset.ruleLastSyncStatus || existing.lastSyncStatus || "").trim();
+    existing.enabled = Number(element.dataset.ruleEnabled || existing.enabled || 0);
+    existing.updatedAtMs = Date.parse(String(element.dataset.ruleUpdatedAt || "")) || 0;
+    existing.posterUrl = String(element.dataset.rulePosterUrl || existing.posterUrl || "").trim();
+    existing.posterTitle = String(element.dataset.rulePosterTitle || existing.posterTitle || "").trim();
+    map.set(ruleId, existing);
+    return map;
+  }, new Map());
+
+  for (const checkbox of container.querySelectorAll("[data-rules-select-rule]")) {
+    const ruleId = String(checkbox.value || "").trim();
+    const entry = entries.get(ruleId);
+    if (!entry) {
+      continue;
+    }
+    entry.checkboxes.push(checkbox);
+  }
+
+  const state = {
+    viewMode: normalizeViewMode(container.dataset.defaultViewMode || container.dataset.defaultSettingsViewMode || "table"),
+    sortField: normalizeSortField(container.dataset.defaultSortField || container.dataset.defaultSettingsSortField || "updated_at"),
+    sortDirection: normalizeSortDirection(
+      container.dataset.defaultSortDirection || container.dataset.defaultSettingsSortDirection || "desc"
+    ),
+  };
+
+  const setRunStatus = (message, isError = false) => {
+    if (!runStatus) {
+      return;
+    }
+    runStatus.textContent = message;
+    runStatus.style.color = isError ? "var(--danger)" : "";
+  };
+
+  const syncFilterHiddenInputs = () => {
+    if (sortInput) {
+      sortInput.value = state.sortField;
+    }
+    if (directionInput) {
+      directionInput.value = state.sortDirection;
+    }
+    if (viewInput) {
+      viewInput.value = state.viewMode;
+    }
+  };
+
+  const compareEntries = (left, right) => {
+    const compareString = (a, b) => String(a || "").localeCompare(String(b || ""), undefined, { sensitivity: "base" });
+    const compareNumeric = (a, b) => Number(a || 0) - Number(b || 0);
+    let result = 0;
+    switch (state.sortField) {
+      case "rule_name":
+        result = compareString(left.name, right.name);
+        break;
+      case "media_type":
+        result = compareString(left.mediaType, right.mediaType);
+        break;
+      case "last_sync_status":
+        result = compareNumeric(
+          SYNC_STATUS_RANK[left.lastSyncStatus] ?? 9,
+          SYNC_STATUS_RANK[right.lastSyncStatus] ?? 9
+        );
+        break;
+      case "enabled":
+        result = compareNumeric(left.enabled, right.enabled);
+        break;
+      case "release_state":
+        result = compareNumeric(left.releaseRank, right.releaseRank);
+        break;
+      case "combined_filtered_count":
+        result = compareNumeric(left.filteredCount, right.filteredCount);
+        break;
+      case "combined_fetched_count":
+        result = compareNumeric(left.fetchedCount, right.fetchedCount);
+        break;
+      case "last_snapshot_at":
+        result = compareNumeric(left.lastSnapshotAtMs, right.lastSnapshotAtMs);
+        break;
+      case "updated_at":
+      default:
+        result = compareNumeric(left.updatedAtMs, right.updatedAtMs);
+        break;
+    }
+    if (result === 0) {
+      result = compareString(left.name, right.name);
+    }
+    if (state.sortDirection === "desc") {
+      result *= -1;
+    }
+    return result;
+  };
+
+  const sortEntries = () => {
+    const sorted = Array.from(entries.values()).sort(compareEntries);
+    if (tableBody) {
+      for (const entry of sorted) {
+        if (entry.row) {
+          tableBody.appendChild(entry.row);
+        }
+      }
+    }
+    if (cardsWrap) {
+      for (const entry of sorted) {
+        if (entry.card) {
+          cardsWrap.appendChild(entry.card);
+        }
+      }
+    }
+  };
+
+  const applyViewMode = () => {
+    const tableMode = state.viewMode === "table";
+    if (tableWrap) {
+      tableWrap.hidden = !tableMode;
+    }
+    if (cardsWrap) {
+      cardsWrap.hidden = tableMode;
+    }
+    for (const button of viewModeButtons) {
+      const mode = String(button.dataset.rulesViewModeButton || "").trim();
+      const active = mode === state.viewMode;
+      button.dataset.active = active ? "1" : "0";
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      button.classList.toggle("muted", !active);
+    }
+    if (hoverPoster) {
+      hoverPoster.hidden = true;
+    }
+  };
+
+  const sortGlyphFor = (field) => {
+    const numericFields = new Set([
+      "updated_at",
+      "enabled",
+      "release_state",
+      "combined_filtered_count",
+      "combined_fetched_count",
+      "last_snapshot_at",
+    ]);
+    const numeric = numericFields.has(field);
+    if (numeric) {
+      return state.sortDirection === "asc" ? "0-9" : "9-0";
+    }
+    return state.sortDirection === "asc" ? "A-Z" : "Z-A";
+  };
+
+  const renderSortHeaders = () => {
+    for (const button of sortButtons) {
+      const field = normalizeSortField(button.dataset.rulesSortField || "");
+      const glyph = button.querySelector("[data-rules-sort-glyph]");
+      const active = field === state.sortField;
+      button.dataset.sortActive = active ? "1" : "0";
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      if (glyph) {
+        glyph.textContent = active ? sortGlyphFor(field) : "↕";
+      }
+    }
+  };
+
+  const setSelectionForRule = (ruleId, checked) => {
+    const entry = entries.get(ruleId);
+    if (!entry) {
+      return;
+    }
+    for (const checkbox of entry.checkboxes) {
+      checkbox.checked = checked;
+    }
+  };
+
+  const visibleCheckboxes = () => {
+    const tableMode = state.viewMode === "table";
+    const checkboxes = [];
+    for (const entry of entries.values()) {
+      const host = tableMode ? entry.row : entry.card;
+      if (!host || host.hidden) {
+        continue;
+      }
+      const candidate = entry.checkboxes.find((input) => input.closest(tableMode ? "[data-rules-row]" : "[data-rules-card]"));
+      if (candidate) {
+        checkboxes.push(candidate);
+      }
+    }
+    return checkboxes;
+  };
+
+  const selectedRuleIds = () => {
+    const selected = [];
+    const seen = new Set();
+    for (const entry of entries.values()) {
+      if (!entry.checkboxes.some((input) => input.checked)) {
+        continue;
+      }
+      if (seen.has(entry.id)) {
+        continue;
+      }
+      seen.add(entry.id);
+      selected.push(entry.id);
+    }
+    return selected;
+  };
+
+  const runBatchFetch = async ({ runAll, ruleIds }) => {
+    if (!runAll && ruleIds.length === 0) {
+      setRunStatus("Select at least one rule first.", true);
+      return;
+    }
+    const includeDisabled = Boolean(includeDisabledToggle?.checked);
+    const buttons = [runSelectedButton, runAllButton].filter(Boolean);
+    for (const button of buttons) {
+      button.disabled = true;
+    }
+    setRunStatus("Running Jackett fetch...");
+    try {
+      const response = await fetch("/api/rules/fetch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          run_all: runAll,
+          rule_ids: ruleIds,
+          include_disabled: includeDisabled,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(String(payload?.message || payload?.error || "Could not run rule fetch."));
+      }
+      setRunStatus(String(payload?.message || "Rule fetch completed."));
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 450);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not run rule fetch.";
+      setRunStatus(message, true);
+    } finally {
+      for (const button of buttons) {
+        button.disabled = false;
+      }
+    }
+  };
+
+  const readScheduleState = () => {
+    const fallback = {
+      enabled: false,
+      interval_minutes: 360,
+      scope: "enabled",
+      last_status: "idle",
+      last_message: "",
+      last_run_at: null,
+      next_run_at: null,
+    };
+    if (!schedulePanel) {
+      return fallback;
+    }
+    return {
+      ...fallback,
+      ...parseJsonData(schedulePanel.dataset.rulesSchedule || "", fallback),
+    };
+  };
+
+  let scheduleState = readScheduleState();
+
+  const renderScheduleStatus = () => {
+    if (!scheduleStatus) {
+      return;
+    }
+    const parts = [`Last status: ${scheduleState.last_status || "idle"}.`];
+    if (scheduleState.last_message) {
+      parts.push(String(scheduleState.last_message));
+    }
+    if (scheduleState.last_run_at) {
+      parts.push(`Last run ${scheduleState.last_run_at}.`);
+    }
+    if (scheduleState.next_run_at) {
+      parts.push(`Next run ${scheduleState.next_run_at}.`);
+    }
+    scheduleStatus.textContent = parts.join(" ");
+  };
+
+  const saveSchedule = async () => {
+    if (!scheduleSaveButton) {
+      return;
+    }
+    scheduleSaveButton.disabled = true;
+    if (scheduleRunNowButton) {
+      scheduleRunNowButton.disabled = true;
+    }
+    try {
+      const response = await fetch("/api/rules/fetch-schedule", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          enabled: Boolean(scheduleEnabledInput?.checked),
+          interval_minutes: Number(scheduleIntervalInput?.value || 360),
+          scope: String(scheduleScopeInput?.value || "enabled"),
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(String(payload?.error || "Could not save schedule."));
+      }
+      scheduleState = payload.schedule || scheduleState;
+      renderScheduleStatus();
+      setRunStatus("Schedule saved.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not save schedule.";
+      setRunStatus(message, true);
+    } finally {
+      scheduleSaveButton.disabled = false;
+      if (scheduleRunNowButton) {
+        scheduleRunNowButton.disabled = false;
+      }
+    }
+  };
+
+  const runScheduleNow = async () => {
+    if (!scheduleRunNowButton) {
+      return;
+    }
+    scheduleRunNowButton.disabled = true;
+    if (scheduleSaveButton) {
+      scheduleSaveButton.disabled = true;
+    }
+    setRunStatus("Running scheduled fetch now...");
+    try {
+      const response = await fetch("/api/rules/fetch-schedule/run-now", {
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(String(payload?.message || payload?.error || "Could not run schedule now."));
+      }
+      scheduleState = payload.schedule || scheduleState;
+      renderScheduleStatus();
+      setRunStatus(String(payload?.message || "Scheduled run completed."));
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 450);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not run schedule now.";
+      setRunStatus(message, true);
+    } finally {
+      scheduleRunNowButton.disabled = false;
+      if (scheduleSaveButton) {
+        scheduleSaveButton.disabled = false;
+      }
+    }
+  };
+
+  const saveRulesPageDefaults = async () => {
+    if (!saveDefaultsButton) {
+      return;
+    }
+    saveDefaultsButton.disabled = true;
+    setRunStatus("Saving rules-page defaults...");
+    try {
+      const response = await fetch("/api/rules/page-preferences", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          view_mode: state.viewMode,
+          sort_field: state.sortField,
+          sort_direction: state.sortDirection,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(String(payload?.error || "Could not save defaults."));
+      }
+      setRunStatus("Saved rules-page defaults.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not save defaults.";
+      setRunStatus(message, true);
+    } finally {
+      saveDefaultsButton.disabled = false;
+    }
+  };
+
+  const currentUrl = new URL(window.location.href);
+  const hoverDebugEnabled = currentUrl.searchParams.get("hover_debug") === "1";
+  const hoverDebugSessionId = hoverDebugEnabled
+    ? currentUrl.searchParams.get("hover_debug_session") || `hover-${Date.now().toString(36)}`
+    : "";
+  const hoverDebugScrollMode = hoverDebugEnabled ? currentUrl.searchParams.get("hover_debug_scroll") || "" : "";
+  const hoverDebugAutoplay = hoverDebugEnabled && currentUrl.searchParams.get("hover_debug_autoplay") === "1";
+  const hoverDebugSampleCount = hoverDebugEnabled
+    ? Math.max(2, Math.min(8, Number.parseInt(currentUrl.searchParams.get("hover_debug_samples") || "4", 10) || 4))
+    : 0;
+  let hoverDebugSequence = 0;
+  let lastHoverDebugLogAt = 0;
+  let activeHoverEntry = null;
+  let activeHoverPointer = null;
+  let hoverRepositionFrameId = 0;
+  let hoverDebugAutoplayStarted = false;
+
+  const clearHoverRepositionFrame = () => {
+    if (!hoverRepositionFrameId) {
+      return;
+    }
+    window.cancelAnimationFrame(hoverRepositionFrameId);
+    hoverRepositionFrameId = 0;
+  };
+
+  const updateHoverPointer = (event) => {
+    if (!(event instanceof MouseEvent)) {
+      return;
+    }
+    activeHoverPointer = {
+      x: event.clientX,
+      y: event.clientY,
+    };
+  };
+
+  const rectSnapshot = (rect) => ({
+    left: Math.round(rect.left),
+    top: Math.round(rect.top),
+    right: Math.round(rect.right),
+    bottom: Math.round(rect.bottom),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+  });
+
+  const emitHoverDebug = (reason, entry, details = {}) => {
+    if (!hoverDebugEnabled || !hoverPoster || !entry?.row) {
+      return;
+    }
+    const now = Date.now();
+    if (reason === "mousemove" && now - lastHoverDebugLogAt < 250) {
+      return;
+    }
+    lastHoverDebugLogAt = now;
+    const anchor = entry.row.querySelector(".rules-title-cell") || entry.row;
+    const payload = {
+      session_id: hoverDebugSessionId,
+      sequence: ++hoverDebugSequence,
+      reason,
+      href: window.location.href,
+      row_id: entry.id,
+      row_name: entry.name,
+      poster_url: entry.posterUrl,
+      hover_side: hoverPoster.dataset.hoverSide || "",
+      hover_vertical_side: hoverPoster.dataset.hoverVerticalSide || "",
+      hidden: Boolean(hoverPoster.hidden),
+      pointer: activeHoverPointer ? { ...activeHoverPointer } : null,
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        scroll_x: Math.round(window.scrollX),
+        scroll_y: Math.round(window.scrollY),
+      },
+      row_rect: rectSnapshot(entry.row.getBoundingClientRect()),
+      anchor_rect: rectSnapshot(anchor.getBoundingClientRect()),
+      poster_rect: rectSnapshot(hoverPoster.getBoundingClientRect()),
+      styles: {
+        left: hoverPoster.style.left || "",
+        top: hoverPoster.style.top || "",
+        right: hoverPoster.style.right || "",
+        width: hoverPoster.style.width || "",
+        height: hoverPoster.style.height || "",
+        max_height: hoverPoster.style.maxHeight || "",
+      },
+      extra: details,
+    };
+    window.fetch("/api/debug/hover-telemetry", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(() => {});
+  };
+
+  const positionHoverPoster = (entry, reason = "position") => {
+    if (!hoverPoster || !entry?.row) {
+      return;
+    }
+    const rowRect = entry.row.getBoundingClientRect();
+    const anchor = entry.row.querySelector(".rules-title-cell") || entry.row;
+    if (!anchor) {
+      return;
+    }
+    if (rowRect.width <= 0 || rowRect.height <= 0) {
+      return;
+    }
+    const anchorRect = anchor.getBoundingClientRect();
+
+    if (hoverPoster.parentElement !== document.body) {
+      document.body.appendChild(hoverPoster);
+    }
+
+    const viewportMargin = 12;
+    const anchorGap = 10;
+    const minPosterHeight = 140;
+    const defaultPosterWidth = Math.max(120, Math.min(window.innerWidth * 0.16, 200));
+    const defaultPosterHeight = Math.round(defaultPosterWidth * 1.55);
+    const availableBelowFromAnchorTop = Math.max(
+      0,
+      Math.round(window.innerHeight - viewportMargin - anchorRect.top)
+    );
+    const availableAboveFromRowBottom = Math.max(0, Math.round(rowRect.bottom - viewportMargin));
+    let verticalSide = availableBelowFromAnchorTop >= minPosterHeight ? "below" : "above";
+    let posterHeight =
+      verticalSide === "below"
+        ? Math.min(defaultPosterHeight, Math.max(minPosterHeight, availableBelowFromAnchorTop))
+        : Math.min(
+            defaultPosterHeight,
+            availableAboveFromRowBottom,
+            Math.max(minPosterHeight, availableBelowFromAnchorTop + Math.round(rowRect.height * 0.35))
+          );
+    if (!Number.isFinite(posterHeight) || posterHeight <= 0) {
+      posterHeight = minPosterHeight;
+    }
+    let posterWidth = Math.max(96, Math.round(posterHeight / 1.55));
+    hoverPoster.style.width = `${posterWidth}px`;
+    hoverPoster.style.height = `${posterHeight}px`;
+    hoverPoster.style.maxHeight = `${posterHeight}px`;
+    const roomOnRight = anchorRect.right + anchorGap + posterWidth <= window.innerWidth - viewportMargin;
+    const nextLeft = roomOnRight
+      ? Math.min(anchorRect.right + anchorGap, window.innerWidth - viewportMargin - posterWidth)
+      : Math.max(viewportMargin, anchorRect.left - anchorGap - posterWidth);
+    let nextTop = Math.max(
+      viewportMargin,
+      Math.min(anchorRect.top - 4, window.innerHeight - viewportMargin - posterHeight)
+    );
+
+    if (verticalSide === "below" && anchorRect.top + posterHeight > window.innerHeight - viewportMargin) {
+      verticalSide = "above";
+      posterHeight = Math.min(
+        defaultPosterHeight,
+        availableAboveFromRowBottom || posterHeight,
+        Math.max(minPosterHeight, availableBelowFromAnchorTop + Math.round(rowRect.height * 0.35))
+      );
+      posterWidth = Math.max(96, Math.round(posterHeight / 1.55));
+      hoverPoster.style.width = `${posterWidth}px`;
+      hoverPoster.style.height = `${posterHeight}px`;
+      hoverPoster.style.maxHeight = `${posterHeight}px`;
+    }
+    if (verticalSide === "above") {
+      nextTop = Math.max(
+        viewportMargin,
+        Math.min(rowRect.bottom - anchorGap - posterHeight, window.innerHeight - viewportMargin - posterHeight)
+      );
+    }
+
+    hoverPoster.dataset.hoverSide = roomOnRight ? "right" : "left";
+    hoverPoster.dataset.hoverVerticalSide = verticalSide;
+    hoverPoster.style.left = `${Math.round(nextLeft)}px`;
+    hoverPoster.style.top = `${Math.round(nextTop)}px`;
+    hoverPoster.style.right = "";
+    emitHoverDebug(reason, entry, {
+      available_below_from_anchor_top: availableBelowFromAnchorTop,
+      available_above_from_row_bottom: availableAboveFromRowBottom,
+      computed_width: posterWidth,
+      computed_height: posterHeight,
+    });
+  };
+
+  const scheduleHoverPosterReposition = (reason = "frame") => {
+    if (!hoverPoster || !activeHoverEntry || hoverPoster.hidden || state.viewMode !== "table") {
+      return;
+    }
+    clearHoverRepositionFrame();
+    hoverRepositionFrameId = window.requestAnimationFrame(() => {
+      hoverRepositionFrameId = 0;
+      if (!activeHoverEntry?.row || !activeHoverEntry.row.matches(":hover")) {
+        hoverPoster.hidden = true;
+        activeHoverEntry = null;
+        return;
+      }
+      positionHoverPoster(activeHoverEntry, reason);
+    });
+  };
+
+  const showHoverPoster = (entry, event) => {
+    if (!hoverPoster || !hoverPosterImage || !hoverPosterTitle) {
+      return;
+    }
+    if (state.viewMode !== "table" || !entry.posterUrl) {
+      hoverPoster.hidden = true;
+      activeHoverEntry = null;
+      activeHoverPointer = null;
+      return;
+    }
+    updateHoverPointer(event);
+    activeHoverEntry = entry;
+    hoverPosterImage.src = entry.posterUrl;
+    hoverPosterImage.alt = `${entry.posterTitle || entry.name} poster`;
+    hoverPosterTitle.textContent = entry.posterTitle || entry.name;
+    hoverPoster.hidden = false;
+    positionHoverPoster(entry, "mouseenter");
+    scheduleHoverPosterReposition("mouseenter");
+  };
+
+  const runHoverDebugAutoplay = () => {
+    if (!hoverDebugAutoplay || hoverDebugAutoplayStarted || state.viewMode !== "table") {
+      return;
+    }
+    const posterEntries = Array.from(entries.values()).filter((entry) => entry.row && entry.posterUrl);
+    if (!posterEntries.length) {
+      return;
+    }
+    hoverDebugAutoplayStarted = true;
+    if (hoverDebugScrollMode === "bottom") {
+      const lastEntry = posterEntries[posterEntries.length - 1];
+      lastEntry?.row?.scrollIntoView({ block: "end", inline: "nearest" });
+    }
+    window.setTimeout(() => {
+      const viewportHeight = window.innerHeight;
+      const visibleEntries = posterEntries.filter((entry) => {
+        const rowRect = entry.row?.getBoundingClientRect();
+        return Boolean(rowRect && rowRect.top >= 0 && rowRect.bottom <= viewportHeight + 1);
+      });
+      const sampleEntries = visibleEntries.slice(-Math.max(2, Math.min(hoverDebugSampleCount, visibleEntries.length)));
+      sampleEntries.forEach((entry, index) => {
+        window.setTimeout(() => {
+          if (!entry.row) {
+            return;
+          }
+          const rowRect = entry.row.getBoundingClientRect();
+          const anchor = entry.row.querySelector(".rules-title-cell") || entry.row;
+          const anchorRect = anchor.getBoundingClientRect();
+          const pointerX = Math.round(anchorRect.left + Math.max(16, Math.min(anchorRect.width * 0.12, 32)));
+          const pointerY = Math.round(rowRect.top + rowRect.height / 2);
+          showHoverPoster(
+            entry,
+            new MouseEvent("mouseenter", {
+              bubbles: true,
+              clientX: pointerX,
+              clientY: pointerY,
+            })
+          );
+        }, index * 700);
+      });
+    }, 320);
+  };
+
+  const hideHoverPoster = () => {
+    if (!hoverPoster) {
+      return;
+    }
+    const previousEntry = activeHoverEntry;
+    clearHoverRepositionFrame();
+    activeHoverEntry = null;
+    activeHoverPointer = null;
+    hoverPoster.hidden = true;
+    emitHoverDebug("mouseleave", previousEntry, {});
+  };
+
+  for (const entry of entries.values()) {
+    if (!entry.row) {
+      continue;
+    }
+    entry.row.addEventListener("mouseenter", (event) => showHoverPoster(entry, event));
+    entry.row.addEventListener("mousemove", (event) => {
+      updateHoverPointer(event);
+      scheduleHoverPosterReposition("mousemove");
+    });
+    entry.row.addEventListener("mouseleave", hideHoverPoster);
+  }
+
+  window.addEventListener("resize", () => scheduleHoverPosterReposition("resize"));
+  window.addEventListener("scroll", () => scheduleHoverPosterReposition("scroll"), { passive: true });
+  hoverPosterImage?.addEventListener("load", () => scheduleHoverPosterReposition("image-load"));
+  hoverPosterImage?.addEventListener("error", () => scheduleHoverPosterReposition("image-error"));
+  window.setTimeout(runHoverDebugAutoplay, 450);
+
+  for (const entry of entries.values()) {
+    for (const checkbox of entry.checkboxes) {
+      checkbox.addEventListener("change", () => {
+        setSelectionForRule(entry.id, checkbox.checked);
+      });
+    }
+  }
+
+  selectAllToggle?.addEventListener("change", () => {
+    const visible = visibleCheckboxes();
+    for (const checkbox of visible) {
+      checkbox.checked = Boolean(selectAllToggle.checked);
+      checkbox.dispatchEvent(new Event("change"));
+    }
+  });
+
+  runSelectedButton?.addEventListener("click", () => {
+    runBatchFetch({
+      runAll: false,
+      ruleIds: selectedRuleIds(),
+    });
+  });
+
+  runAllButton?.addEventListener("click", () => {
+    runBatchFetch({
+      runAll: true,
+      ruleIds: [],
+    });
+  });
+
+  for (const button of viewModeButtons) {
+    button.addEventListener("click", () => {
+      const mode = normalizeViewMode(button.dataset.rulesViewModeButton || "table");
+      state.viewMode = mode;
+      applyViewMode();
+      syncFilterHiddenInputs();
+    });
+  }
+
+  for (const button of sortButtons) {
+    button.addEventListener("click", () => {
+      const field = normalizeSortField(button.dataset.rulesSortField || "updated_at");
+      if (state.sortField === field) {
+        state.sortDirection = state.sortDirection === "asc" ? "desc" : "asc";
+      } else {
+        state.sortField = field;
+        state.sortDirection = normalizeSortDirection(defaultDirectionByField[field] || "asc");
+      }
+      sortEntries();
+      renderSortHeaders();
+      syncFilterHiddenInputs();
+    });
+  }
+
+  saveDefaultsButton?.addEventListener("click", saveRulesPageDefaults);
+  scheduleSaveButton?.addEventListener("click", saveSchedule);
+  scheduleRunNowButton?.addEventListener("click", runScheduleNow);
+
+  filterForm?.addEventListener("submit", () => {
+    syncFilterHiddenInputs();
+  });
+
+  sortEntries();
+  renderSortHeaders();
+  applyViewMode();
+  syncFilterHiddenInputs();
+  renderScheduleStatus();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initResultQueueActions(document);
 
@@ -3583,5 +4519,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const settingsForm = document.querySelector("[data-settings-form]");
   if (settingsForm) {
     initSettingsForm(settingsForm);
+  }
+
+  const rulesPage = document.querySelector("[data-rules-page]");
+  if (rulesPage) {
+    initRulesPage(rulesPage);
   }
 });

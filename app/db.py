@@ -69,6 +69,7 @@ def _ensure_rule_columns() -> None:
         "quality_exclude_tokens": "JSON NOT NULL DEFAULT '[]'",
         "start_season": "INTEGER",
         "start_episode": "INTEGER",
+        "poster_url": "VARCHAR(512)",
     }
     expected_settings_columns = {
         "jackett_api_url": "VARCHAR(255)",
@@ -81,6 +82,21 @@ def _ensure_rule_columns() -> None:
         "default_first_last_piece_prio": "BOOLEAN NOT NULL DEFAULT 1",
         "search_result_view_mode": "VARCHAR(16) NOT NULL DEFAULT 'table'",
         "search_sort_criteria": "JSON NOT NULL DEFAULT '[]'",
+        "rules_fetch_schedule_enabled": "BOOLEAN NOT NULL DEFAULT 0",
+        "rules_fetch_schedule_interval_minutes": "INTEGER NOT NULL DEFAULT 360",
+        "rules_fetch_schedule_scope": "VARCHAR(32) NOT NULL DEFAULT 'enabled'",
+        "rules_fetch_schedule_last_run_at": "DATETIME",
+        "rules_fetch_schedule_next_run_at": "DATETIME",
+        "rules_fetch_schedule_last_status": "VARCHAR(32) NOT NULL DEFAULT 'idle'",
+        "rules_fetch_schedule_last_message": "TEXT NOT NULL DEFAULT ''",
+        "rules_page_view_mode": "VARCHAR(16) NOT NULL DEFAULT 'table'",
+        "rules_page_sort_field": "VARCHAR(64) NOT NULL DEFAULT 'updated_at'",
+        "rules_page_sort_direction": "VARCHAR(8) NOT NULL DEFAULT 'desc'",
+    }
+    expected_snapshot_columns = {
+        "release_filter_cache_key": "TEXT",
+        "release_filtered_count": "INTEGER",
+        "release_fetched_count": "INTEGER",
     }
 
     with engine.begin() as connection:
@@ -98,3 +114,9 @@ def _ensure_rule_columns() -> None:
                 if column_name in existing_settings_columns:
                     continue
                 connection.execute(text(f"ALTER TABLE app_settings ADD COLUMN {column_name} {column_def}"))
+        if "rule_search_snapshots" in existing_tables:
+            existing_snapshot_columns = {item["name"] for item in inspector.get_columns("rule_search_snapshots")}
+            for column_name, column_def in expected_snapshot_columns.items():
+                if column_name in existing_snapshot_columns:
+                    continue
+                connection.execute(text(f"ALTER TABLE rule_search_snapshots ADD COLUMN {column_name} {column_def}"))

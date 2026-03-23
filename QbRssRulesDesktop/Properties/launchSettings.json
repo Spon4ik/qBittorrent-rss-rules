@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "QbRssRulesDesktop (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "QbRssRulesDesktop (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

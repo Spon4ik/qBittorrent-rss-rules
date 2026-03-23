@@ -3,7 +3,7 @@
 <section class="panel-head">
   <div>
     <p class="eyebrow">Rules</p>
-    <h2>Library</h2>
+    <h2>Library Operations</h2>
   </div>
   <div class="card-actions">
     <a class="button-link" href="/rules/new">Create Rule</a>
@@ -13,88 +13,319 @@
   </div>
 </section>
 
-<form class="filter-grid" method="get" action="/">
-  <label>
-    Search
-    <input type="text" name="search" value="{{ filters.search }}" placeholder="Rule name or IMDb ID" />
-  </label>
-  <label>
-    Media
-    <select name="media">
-      <option value="">All</option>
-      {% for choice in media_choices %}
-      <option value="{{ choice.value }}" {% if filters.media == choice.value %}selected{% endif %}>{{ choice.label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Sync
-    <select name="sync">
-      <option value="">All</option>
-      {% for choice in sync_choices %}
-      <option value="{{ choice }}" {% if filters.sync == choice %}selected{% endif %}>{{ choice }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Enabled
-    <select name="enabled">
-      <option value="">All</option>
-      <option value="true" {% if filters.enabled == 'true' %}selected{% endif %}>Enabled</option>
-      <option value="false" {% if filters.enabled == 'false' %}selected{% endif %}>Disabled</option>
-    </select>
-  </label>
-  <button type="submit">Apply Filters</button>
-</form>
+<section
+  class="stack rules-page"
+  data-rules-page
+  data-default-view-mode="{{ filters.view or rules_page_defaults.view_mode }}"
+  data-default-sort-field="{{ filters.sort or rules_page_defaults.sort_field }}"
+  data-default-sort-direction="{{ filters.direction or rules_page_defaults.sort_direction }}"
+  data-default-settings-view-mode="{{ rules_page_defaults.view_mode }}"
+  data-default-settings-sort-field="{{ rules_page_defaults.sort_field }}"
+  data-default-settings-sort-direction="{{ rules_page_defaults.sort_direction }}"
+>
+  <form class="filter-grid rules-filter-grid" method="get" action="/" data-rules-filter-form>
+    <label>
+      Search
+      <input type="text" name="search" value="{{ filters.search }}" placeholder="Rule name or IMDb ID" />
+    </label>
+    <label>
+      Media
+      <select name="media">
+        <option value="">All</option>
+        {% for choice in media_choices %}
+        <option value="{{ choice.value }}" {% if filters.media == choice.value %}selected{% endif %}>{{ choice.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Sync
+      <select name="sync">
+        <option value="">All</option>
+        {% for choice in sync_choices %}
+        <option value="{{ choice }}" {% if filters.sync == choice %}selected{% endif %}>{{ choice }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Enabled
+      <select name="enabled">
+        <option value="">All</option>
+        <option value="true" {% if filters.enabled == 'true' %}selected{% endif %}>Enabled</option>
+        <option value="false" {% if filters.enabled == 'false' %}selected{% endif %}>Disabled</option>
+      </select>
+    </label>
+    <label>
+      Release status
+      <select name="release">
+        <option value="">All</option>
+        {% for choice in release_choices %}
+        <option value="{{ choice.value }}" {% if filters.release == choice.value %}selected{% endif %}>{{ choice.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <input type="hidden" name="sort" value="{{ filters.sort }}" data-rules-sort-input />
+    <input type="hidden" name="direction" value="{{ filters.direction }}" data-rules-direction-input />
+    <input type="hidden" name="view" value="{{ filters.view }}" data-rules-view-input />
+    <button type="submit">Apply Filters</button>
+  </form>
 
-{% if not rules %}
-<section class="empty-state">
-  <h3>No rules yet</h3>
-  <p>Create a rule or import an existing qBittorrent export to get started.</p>
-  <a class="button-link" href="/rules/new">Create Your First Rule</a>
-</section>
-{% else %}
-<section class="rule-grid">
-  {% for rule in rules %}
-  <article class="rule-card">
-    <div class="rule-card-top">
-      <div>
-        <p class="eyebrow">{{ media_type_labels.get(rule.media_type.value, rule.media_type.value) }}</p>
-        <h3>{{ rule.rule_name }}</h3>
-      </div>
-      <span class="status-chip status-{{ rule.last_sync_status.value }}">{{ rule.last_sync_status.value }}</span>
+  <section class="summary-strip rules-ops-strip">
+    <div class="rules-batch-controls">
+      <label class="toggle">
+        <input type="checkbox" data-rules-select-all />
+        <span>Select all visible</span>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" data-rules-include-disabled />
+        <span>Include disabled rules</span>
+      </label>
+      <button type="button" data-rules-run-selected>Fetch Selected</button>
+      <button type="button" data-rules-run-all>Fetch All</button>
     </div>
-    <dl class="detail-list">
-      <div>
-        <dt>IMDb</dt>
-        <dd>{{ rule.imdb_id or 'None' }}</dd>
+    <div class="rules-view-controls">
+      <div class="rules-view-toggle" role="group" aria-label="Rule list view mode">
+        <button type="button" class="button-link muted" data-rules-view-mode-button="table">Table</button>
+        <button type="button" class="button-link muted" data-rules-view-mode-button="cards">Cards</button>
       </div>
-      <div>
-        <dt>Category</dt>
-        <dd>{{ rule.assigned_category or 'Auto' }}</dd>
-      </div>
-      <div>
-        <dt>Feeds</dt>
-        <dd>{{ rule.feed_urls|length }}</dd>
-      </div>
-      <div>
-        <dt>Enabled</dt>
-        <dd>{{ 'Yes' if rule.enabled else 'No' }}</dd>
-      </div>
-    </dl>
-    <div class="card-actions">
-      <a class="button-link" href="/rules/{{ rule.id }}">Edit</a>
-      <a class="button-link" href="/rules/{{ rule.id }}/search">Run Search</a>
-      <a class="button-link muted" href="/search?rule_id={{ rule.id }}">Adjust Search</a>
-      <form method="post" action="/api/rules/{{ rule.id }}/sync">
-        <button type="submit">Sync</button>
-      </form>
-      <form method="post" action="/api/rules/{{ rule.id }}/delete" onsubmit="return confirm('Delete this rule locally and remotely?');">
-        <button type="submit" class="danger">Delete</button>
-      </form>
+      <button type="button" class="button-link muted" data-rules-save-defaults>Save as default</button>
     </div>
-  </article>
-  {% endfor %}
+    <p class="helper-text" data-rules-run-status aria-live="polite"></p>
+  </section>
+
+  <section class="summary-strip rules-schedule-strip" data-rules-schedule='{{ schedule | tojson }}'>
+    <div class="rules-schedule-controls">
+      <p class="eyebrow">Scheduled fetch</p>
+      <label class="toggle">
+        <input type="checkbox" data-rules-schedule-enabled {% if schedule.enabled %}checked{% endif %} />
+        <span>Enable schedule</span>
+      </label>
+      <label>
+        Every (minutes)
+        <input
+          type="number"
+          min="5"
+          max="10080"
+          value="{{ schedule.interval_minutes }}"
+          data-rules-schedule-interval
+        />
+      </label>
+      <label>
+        Scope
+        <select data-rules-schedule-scope>
+          <option value="enabled" {% if schedule.scope == 'enabled' %}selected{% endif %}>Enabled rules only</option>
+          <option value="all" {% if schedule.scope == 'all' %}selected{% endif %}>All rules</option>
+        </select>
+      </label>
+      <button type="button" data-rules-schedule-save>Save schedule</button>
+      <button type="button" data-rules-schedule-run-now>Run now</button>
+    </div>
+    <p class="helper-text" data-rules-schedule-status>
+      Last status: {{ schedule.last_status }}.
+      {% if schedule.last_message %}{{ schedule.last_message }}{% endif %}
+      {% if schedule.last_run_at %}Last run {{ schedule.last_run_at }}.{% endif %}
+      {% if schedule.next_run_at %}Next run {{ schedule.next_run_at }}.{% endif %}
+    </p>
+  </section>
+
+  {% if not rules %}
+  <section class="empty-state">
+    <h3>No rules found for this filter</h3>
+    <p>Create a rule or broaden filters to see library operations.</p>
+    <a class="button-link" href="/rules/new">Create Your First Rule</a>
+  </section>
+  {% else %}
+  <section class="rules-table-wrap search-table-wrap" data-rules-table-wrap>
+    <table class="search-table rules-table" data-rules-table>
+      <thead>
+        <tr>
+          <th>
+            <span class="helper-text">Pick</span>
+          </th>
+          <th>
+            <button type="button" class="search-sort-header" data-rules-sort-field="rule_name">
+              Rule
+              <span class="search-sort-glyph" data-rules-sort-glyph="rule_name">↕</span>
+            </button>
+          </th>
+          <th>
+            <button type="button" class="search-sort-header" data-rules-sort-field="media_type">
+              Media
+              <span class="search-sort-glyph" data-rules-sort-glyph="media_type">↕</span>
+            </button>
+          </th>
+          <th>
+            <button type="button" class="search-sort-header" data-rules-sort-field="release_state">
+              Release
+              <span class="search-sort-glyph" data-rules-sort-glyph="release_state">↕</span>
+            </button>
+          </th>
+          <th>
+            <button type="button" class="search-sort-header" data-rules-sort-field="combined_filtered_count">
+              Matches
+              <span class="search-sort-glyph" data-rules-sort-glyph="combined_filtered_count">↕</span>
+            </button>
+          </th>
+          <th>
+            <button type="button" class="search-sort-header" data-rules-sort-field="last_snapshot_at">
+              Snapshot
+              <span class="search-sort-glyph" data-rules-sort-glyph="last_snapshot_at">↕</span>
+            </button>
+          </th>
+          <th>
+            <button type="button" class="search-sort-header" data-rules-sort-field="last_sync_status">
+              Sync
+              <span class="search-sort-glyph" data-rules-sort-glyph="last_sync_status">↕</span>
+            </button>
+          </th>
+          <th>
+            <button type="button" class="search-sort-header" data-rules-sort-field="enabled">
+              Enabled
+              <span class="search-sort-glyph" data-rules-sort-glyph="enabled">↕</span>
+            </button>
+          </th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody data-rules-table-body>
+        {% for item in rules %}
+        {% set rule = item.rule %}
+        {% set release = item.release %}
+        <tr
+          data-rules-row
+          data-rule-id="{{ rule.id }}"
+          data-rule-name="{{ rule.rule_name }}"
+          data-rule-media-type="{{ rule.media_type.value }}"
+          data-rule-release-state="{{ release.state }}"
+          data-rule-release-rank="{{ release.rank }}"
+          data-rule-filtered-count="{{ release.combined_filtered_count }}"
+          data-rule-fetched-count="{{ release.combined_fetched_count }}"
+          data-rule-last-snapshot-at="{{ release.snapshot_fetched_at.isoformat() if release.snapshot_fetched_at else '' }}"
+          data-rule-last-sync-status="{{ rule.last_sync_status.value }}"
+          data-rule-enabled="{{ '1' if rule.enabled else '0' }}"
+          data-rule-updated-at="{{ rule.updated_at.isoformat() if rule.updated_at else '' }}"
+          data-rule-poster-url="{{ rule.poster_url or '' }}"
+          data-rule-poster-title="{{ rule.rule_name }}"
+        >
+          <td>
+            <input type="checkbox" data-rules-select-rule value="{{ rule.id }}" />
+          </td>
+          <td>
+            <div class="rules-title-cell">
+              <strong>{{ rule.rule_name }}</strong>
+              <p class="helper-text">
+                {{ rule.imdb_id or 'No IMDb ID' }}
+                {% if rule.normalized_title %}
+                | {{ rule.normalized_title }}
+                {% endif %}
+              </p>
+            </div>
+          </td>
+          <td>{{ media_type_labels.get(rule.media_type.value, rule.media_type.value) }}</td>
+          <td>
+            <span class="status-chip status-{{ release.state|replace('_', '-') }}">{{ release.label }}</span>
+          </td>
+          <td>
+            {{ release.combined_filtered_count }} / {{ release.combined_fetched_count }}
+          </td>
+          <td>
+            {% if release.snapshot_fetched_at %}
+            {{ release.snapshot_fetched_at.strftime('%Y-%m-%d %H:%M UTC') }}
+            {% else %}
+            Never
+            {% endif %}
+          </td>
+          <td>
+            <span class="status-chip status-{{ rule.last_sync_status.value }}">{{ rule.last_sync_status.value }}</span>
+          </td>
+          <td>{{ 'Yes' if rule.enabled else 'No' }}</td>
+          <td>
+            <div class="search-row-actions">
+              <a class="button-link" href="/rules/{{ rule.id }}">Edit</a>
+              <a class="button-link" href="/rules/{{ rule.id }}/search">Run Search</a>
+              <a class="button-link muted" href="/search?rule_id={{ rule.id }}">Adjust Search</a>
+              <form method="post" action="/api/rules/{{ rule.id }}/sync">
+                <button type="submit">Sync</button>
+              </form>
+              <form method="post" action="/api/rules/{{ rule.id }}/delete" onsubmit="return confirm('Delete this rule locally and remotely?');">
+                <button type="submit" class="danger">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="rule-grid rules-card-grid" data-rules-cards-wrap hidden>
+    {% for item in rules %}
+    {% set rule = item.rule %}
+    {% set release = item.release %}
+    <article
+      class="rule-card rules-card"
+      data-rules-card
+      data-rule-id="{{ rule.id }}"
+      data-rule-name="{{ rule.rule_name }}"
+      data-rule-media-type="{{ rule.media_type.value }}"
+      data-rule-release-state="{{ release.state }}"
+      data-rule-release-rank="{{ release.rank }}"
+      data-rule-filtered-count="{{ release.combined_filtered_count }}"
+      data-rule-fetched-count="{{ release.combined_fetched_count }}"
+      data-rule-last-snapshot-at="{{ release.snapshot_fetched_at.isoformat() if release.snapshot_fetched_at else '' }}"
+      data-rule-last-sync-status="{{ rule.last_sync_status.value }}"
+      data-rule-enabled="{{ '1' if rule.enabled else '0' }}"
+      data-rule-updated-at="{{ rule.updated_at.isoformat() if rule.updated_at else '' }}"
+      data-rule-poster-url="{{ rule.poster_url or '' }}"
+      data-rule-poster-title="{{ rule.rule_name }}"
+    >
+      <div class="rules-card-poster-shell">
+        {% if rule.poster_url %}
+        <img class="rules-card-poster" src="{{ rule.poster_url }}" alt="{{ rule.rule_name }} poster" loading="lazy" />
+        {% else %}
+        <div class="rules-card-poster-placeholder">No poster</div>
+        {% endif %}
+      </div>
+      <div class="rule-card-top">
+        <div>
+          <p class="eyebrow">{{ media_type_labels.get(rule.media_type.value, rule.media_type.value) }}</p>
+          <h3>{{ rule.rule_name }}</h3>
+        </div>
+        <span class="status-chip status-{{ rule.last_sync_status.value }}">{{ rule.last_sync_status.value }}</span>
+      </div>
+      <dl class="detail-list">
+        <div>
+          <dt>Release</dt>
+          <dd>{{ release.label }}</dd>
+        </div>
+        <div>
+          <dt>Matches</dt>
+          <dd>{{ release.combined_filtered_count }} / {{ release.combined_fetched_count }}</dd>
+        </div>
+        <div>
+          <dt>Snapshot</dt>
+          <dd>{% if release.snapshot_fetched_at %}{{ release.snapshot_fetched_at.strftime('%Y-%m-%d %H:%M UTC') }}{% else %}Never{% endif %}</dd>
+        </div>
+        <div>
+          <dt>Enabled</dt>
+          <dd>{{ 'Yes' if rule.enabled else 'No' }}</dd>
+        </div>
+      </dl>
+      <div class="card-actions">
+        <label class="toggle rules-card-select">
+          <input type="checkbox" data-rules-select-rule value="{{ rule.id }}" />
+          <span>Select</span>
+        </label>
+        <a class="button-link" href="/rules/{{ rule.id }}">Edit</a>
+        <a class="button-link" href="/rules/{{ rule.id }}/search">Run Search</a>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+
+  <aside class="rules-hover-poster" data-rules-hover-poster hidden>
+    <img src="" alt="" data-rules-hover-image loading="lazy" />
+    <p class="helper-text" data-rules-hover-title></p>
+  </aside>
+  {% endif %}
 </section>
-{% endif %}
 {% endblock %}

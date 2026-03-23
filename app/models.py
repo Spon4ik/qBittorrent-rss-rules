@@ -67,6 +67,7 @@ class Rule(Base):
     content_name: Mapped[str] = mapped_column(String(255), nullable=False)
     imdb_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     normalized_title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    poster_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     media_type: Mapped[MediaType] = mapped_column(
         Enum(MediaType, name="media_type"),
         nullable=False,
@@ -123,6 +124,9 @@ class RuleSearchSnapshot(Base):
     )
     payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
     inline_search: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    release_filter_cache_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    release_filtered_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    release_fetched_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -189,6 +193,30 @@ class AppSettings(Base):
         nullable=False,
         default=list,
     )
+    rules_fetch_schedule_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    rules_fetch_schedule_interval_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=360,
+    )
+    rules_fetch_schedule_scope: Mapped[str] = mapped_column(String(32), nullable=False, default="enabled")
+    rules_fetch_schedule_last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    rules_fetch_schedule_next_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    rules_fetch_schedule_last_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="idle",
+    )
+    rules_fetch_schedule_last_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    rules_page_view_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="table")
+    rules_page_sort_field: Mapped[str] = mapped_column(String(64), nullable=False, default="updated_at")
+    rules_page_sort_direction: Mapped[str] = mapped_column(String(8), nullable=False, default="desc")
     default_quality_profile: Mapped[QualityProfile] = mapped_column(
         Enum(QualityProfile, name="default_quality_profile"),
         nullable=False,

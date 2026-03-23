@@ -20,6 +20,7 @@ def test_metadata_client_omdb_supports_title_lookup() -> None:
                 "Type": "movie",
                 "Year": "2024",
                 "imdbID": "tt15239678",
+                "Poster": "https://img.omdbapi.com/dune-part-two.jpg",
             },
         )
 
@@ -36,6 +37,7 @@ def test_metadata_client_omdb_supports_title_lookup() -> None:
     assert result.imdb_id == "tt15239678"
     assert result.media_type == MediaType.MOVIE
     assert result.year == "2024"
+    assert result.poster_url == "https://img.omdbapi.com/dune-part-two.jpg"
 
 
 def test_metadata_client_omdb_supports_id_lookup() -> None:

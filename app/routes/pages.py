@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import unquote, urlencode, urlsplit
@@ -10,11 +11,18 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session, load_only
 
 from app.db import get_db_session
-from app.models import MediaType, QualityProfile, Rule, media_type_choices, media_type_label
+from app.models import (
+    MediaType,
+    QualityProfile,
+    Rule,
+    RuleSearchSnapshot,
+    media_type_choices,
+    media_type_label,
+)
 from app.schemas import JackettSearchRequest
 from app.services.category_catalog import (
     resolve_category_labels,
@@ -33,6 +41,9 @@ from app.services.jackett import (
     quality_search_term_map,
 )
 from app.services.metadata import (
+    MetadataClient,
+    MetadataLookupError,
+    MetadataLookupProvider,
     default_metadata_lookup_provider,
     metadata_lookup_provider_catalog,
     metadata_lookup_provider_choices,
@@ -52,6 +63,12 @@ from app.services.quality_filters import (
     recent_quality_taxonomy_audit_entries,
     resolve_quality_profile_rules,
 )
+from app.services.rule_fetch_ops import (
+    refresh_snapshot_release_cache,
+    release_state_from_snapshot,
+    run_due_scheduled_fetch,
+    schedule_payload,
+)
 from app.services.rule_search_snapshots import (
     build_inline_search_payload,
     get_rule_search_snapshot,
@@ -62,6 +79,9 @@ from app.services.settings_service import (
     DEFAULT_SEARCH_RESULT_VIEW_MODE,
     DEFAULT_SEARCH_SORT_CRITERIA,
     SettingsService,
+    normalize_rules_page_sort_direction,
+    normalize_rules_page_sort_field,
+    normalize_rules_page_view_mode,
     normalize_search_result_view_mode,
     normalize_search_sort_criteria,
 )
@@ -75,6 +95,10 @@ JACKETT_FEED_INDEXER_PATH_RE = re.compile(
     r"/api/v2\.0/indexers/(?P<indexer>[^/]+)/results/torznab(?:/api)?/?$",
     re.IGNORECASE,
 )
+RULE_POSTER_BACKFILL_LIMIT = 2
+RULE_POSTER_BACKFILL_COOLDOWN = timedelta(hours=6)
+RULE_POSTER_BACKFILL_TIMEOUT_SECONDS = 2.0
+_RULE_POSTER_BACKFILL_RETRY_AFTER: dict[str, datetime] = {}
 
 
 def _base_context(request: Request, page_title: str) -> dict[str, object]:
@@ -105,6 +129,76 @@ def _safe_feed_options(session: Session, selected_urls: list[str] | None = None)
     return feed_options
 
 
+def _backfill_missing_rule_posters(
+    session: Session,
+    *,
+    rules: Sequence[Rule],
+    settings: Any,
+) -> None:
+    metadata_config = SettingsService.resolve_metadata(settings)
+    if not metadata_config.enabled or not metadata_config.api_key:
+        return
+
+    now = datetime.now(UTC)
+    candidates: list[Rule] = []
+    for rule in rules:
+        if rule.media_type not in {MediaType.MOVIE, MediaType.SERIES}:
+            continue
+        if str(rule.poster_url or "").strip():
+            _RULE_POSTER_BACKFILL_RETRY_AFTER.pop(rule.id, None)
+            continue
+        retry_after = _RULE_POSTER_BACKFILL_RETRY_AFTER.get(rule.id)
+        if retry_after is not None and retry_after > now:
+            continue
+        candidates.append(rule)
+        if len(candidates) >= RULE_POSTER_BACKFILL_LIMIT:
+            break
+    if not candidates:
+        return
+
+    client = MetadataClient(
+        metadata_config.provider,
+        metadata_config.api_key,
+        timeout=RULE_POSTER_BACKFILL_TIMEOUT_SECONDS,
+    )
+    updated = False
+    for rule in candidates:
+        lookup_title = (
+            str(rule.normalized_title or "").strip()
+            or str(rule.content_name or "").strip()
+            or str(rule.rule_name or "").strip()
+        )
+        if not lookup_title and not str(rule.imdb_id or "").strip():
+            _RULE_POSTER_BACKFILL_RETRY_AFTER[rule.id] = now + RULE_POSTER_BACKFILL_COOLDOWN
+            continue
+        try:
+            if str(rule.imdb_id or "").strip():
+                metadata_result = client.lookup_by_imdb_id(str(rule.imdb_id))
+            else:
+                metadata_result = client.lookup(
+                    MetadataLookupProvider.OMDB,
+                    lookup_title,
+                    rule.media_type if rule.media_type in {MediaType.MOVIE, MediaType.SERIES} else MediaType.SERIES,
+                )
+        except MetadataLookupError:
+            _RULE_POSTER_BACKFILL_RETRY_AFTER[rule.id] = now + RULE_POSTER_BACKFILL_COOLDOWN
+            continue
+        poster_url = str(metadata_result.poster_url or "").strip()
+        if not poster_url:
+            _RULE_POSTER_BACKFILL_RETRY_AFTER[rule.id] = now + RULE_POSTER_BACKFILL_COOLDOWN
+            continue
+        _RULE_POSTER_BACKFILL_RETRY_AFTER.pop(rule.id, None)
+        rule.poster_url = poster_url
+        updated = True
+
+    if not updated:
+        return
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+
+
 def _rule_to_form_data(rule: Rule) -> dict[str, object]:
     include_tokens = list(rule.quality_include_tokens or [])
     exclude_tokens = list(rule.quality_exclude_tokens or [])
@@ -113,6 +207,7 @@ def _rule_to_form_data(rule: Rule) -> dict[str, object]:
         "content_name": rule.content_name,
         "imdb_id": rule.imdb_id or "",
         "normalized_title": rule.normalized_title,
+        "poster_url": rule.poster_url or "",
         "media_type": rule.media_type.value,
         "quality_profile": rule.quality_profile.value,
         "filter_profile_key": "",
@@ -493,41 +588,181 @@ def _apply_catalog_category_labels(session: Session, results: list[Any]) -> None
         result_record.category_labels = []
 
 
+SYNC_STATUS_SORT_RANK = {
+    "ok": 0,
+    "never": 1,
+    "drift": 2,
+    "error": 3,
+}
+
+
+def _safe_datetime_for_sort(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.fromtimestamp(0, tz=UTC)
+    return value.astimezone(UTC)
+
+
+def _rule_list_sort_value(item: dict[str, Any], field: str) -> Any:
+    rule = cast(Rule, item["rule"])
+    if field == "rule_name":
+        return rule.rule_name.casefold()
+    if field == "media_type":
+        return rule.media_type.value
+    if field == "last_sync_status":
+        return SYNC_STATUS_SORT_RANK.get(rule.last_sync_status.value, 9)
+    if field == "enabled":
+        return 1 if rule.enabled else 0
+    if field == "release_state":
+        release = cast(dict[str, Any], item.get("release") or {})
+        return int(release.get("rank") or 99)
+    if field == "combined_filtered_count":
+        release = cast(dict[str, Any], item.get("release") or {})
+        return int(release.get("combined_filtered_count") or 0)
+    if field == "combined_fetched_count":
+        release = cast(dict[str, Any], item.get("release") or {})
+        return int(release.get("combined_fetched_count") or 0)
+    if field == "last_snapshot_at":
+        release = cast(dict[str, Any], item.get("release") or {})
+        snapshot_fetched_at = cast(datetime | None, release.get("snapshot_fetched_at"))
+        return _safe_datetime_for_sort(snapshot_fetched_at)
+    return _safe_datetime_for_sort(rule.updated_at)
+
+
+def _sorted_rule_rows(
+    rows: list[dict[str, Any]],
+    *,
+    sort_field: str,
+    sort_direction: str,
+) -> list[dict[str, Any]]:
+    reverse = sort_direction == "desc"
+    sorted_rows = sorted(
+        rows,
+        key=lambda item: _rule_list_sort_value(item, sort_field),
+        reverse=reverse,
+    )
+    return sorted_rows
+
+
 @router.get("/", response_class=HTMLResponse)
 def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLResponse:
-    rules = session.scalars(select(Rule).order_by(Rule.updated_at.desc())).all()
-    search = request.query_params.get("search", "").strip().lower()
+    settings = SettingsService.get_or_create(session)
+    try:
+        run_due_scheduled_fetch(session)
+        settings = SettingsService.get_or_create(session)
+    except Exception:
+        session.rollback()
+        settings = SettingsService.get_or_create(session)
+
+    default_sort_field = normalize_rules_page_sort_field(getattr(settings, "rules_page_sort_field", "updated_at"))
+    default_sort_direction = normalize_rules_page_sort_direction(
+        getattr(settings, "rules_page_sort_direction", "desc")
+    )
+    default_view_mode = normalize_rules_page_view_mode(getattr(settings, "rules_page_view_mode", "table"))
+
+    search = request.query_params.get("search", "").strip()
+    search_lower = search.lower()
     media_filter = request.query_params.get("media", "").strip()
     sync_filter = request.query_params.get("sync", "").strip()
     enabled_filter = request.query_params.get("enabled", "").strip()
+    release_filter = request.query_params.get("release", "").strip()
+    sort_field = normalize_rules_page_sort_field(
+        request.query_params.get("sort", "").strip() or default_sort_field
+    )
+    sort_direction = normalize_rules_page_sort_direction(
+        request.query_params.get("direction", "").strip() or default_sort_direction
+    )
+    view_mode = normalize_rules_page_view_mode(
+        request.query_params.get("view", "").strip() or default_view_mode
+    )
 
-    filtered = []
+    rules_query = select(Rule).order_by(Rule.updated_at.desc())
+    if search_lower:
+        rules_query = rules_query.where(
+            or_(
+                func.lower(Rule.rule_name).contains(search_lower),
+                func.lower(func.coalesce(Rule.imdb_id, "")).contains(search_lower),
+            )
+        )
+    valid_media_values = {item.value for item in MediaType}
+    if media_filter in valid_media_values:
+        rules_query = rules_query.where(Rule.media_type == MediaType(media_filter))
+    if sync_filter in {"never", "ok", "error", "drift"}:
+        rules_query = rules_query.where(func.lower(Rule.last_sync_status) == sync_filter.lower())
+    if enabled_filter in {"true", "false"}:
+        rules_query = rules_query.where(Rule.enabled.is_(enabled_filter == "true"))
+
+    rules = session.scalars(rules_query).all()
+    if not request.query_params:
+        _backfill_missing_rule_posters(session, rules=rules, settings=settings)
+
+    snapshot_by_rule_id: dict[str, RuleSearchSnapshot] = {}
+    if rules:
+        snapshot_query = (
+            select(RuleSearchSnapshot)
+            .options(
+                load_only(
+                    RuleSearchSnapshot.rule_id,
+                    RuleSearchSnapshot.fetched_at,
+                    RuleSearchSnapshot.release_filter_cache_key,
+                    RuleSearchSnapshot.release_filtered_count,
+                    RuleSearchSnapshot.release_fetched_count,
+                )
+            )
+            .where(RuleSearchSnapshot.rule_id.in_([rule.id for rule in rules]))
+        )
+        snapshot_by_rule_id = {
+            item.rule_id: item
+            for item in session.scalars(snapshot_query).all()
+        }
+
+    rows: list[dict[str, Any]] = []
     for rule in rules:
-        if search and search not in rule.rule_name.lower() and search not in (rule.imdb_id or "").lower():
+        snapshot = snapshot_by_rule_id.get(rule.id)
+        release = release_state_from_snapshot(snapshot, rule=rule)
+        if release_filter and str(release.get("state")) != release_filter:
             continue
-        if media_filter and rule.media_type.value != media_filter:
-            continue
-        if sync_filter and rule.last_sync_status.value != sync_filter:
-            continue
-        if enabled_filter:
-            expected = enabled_filter == "true"
-            if rule.enabled != expected:
-                continue
-        filtered.append(rule)
+        rows.append(
+            {
+                "rule": rule,
+                "release": release,
+                "snapshot": snapshot,
+            }
+        )
+    filtered = _sorted_rule_rows(
+        rows,
+        sort_field=sort_field,
+        sort_direction=sort_direction,
+    )
 
     context = _base_context(request, "Rules")
     context.update(
         {
             "rules": filtered,
             "filters": {
-                "search": request.query_params.get("search", ""),
+                "search": search,
                 "media": media_filter,
                 "sync": sync_filter,
                 "enabled": enabled_filter,
+                "release": release_filter,
+                "sort": sort_field,
+                "direction": sort_direction,
+                "view": view_mode,
             },
             "media_choices": media_type_choices(),
             "media_type_labels": {item.value: media_type_label(item) for item in MediaType},
             "sync_choices": ["never", "ok", "error", "drift"],
+            "release_choices": [
+                {"value": "matches", "label": "Matches found"},
+                {"value": "no_matches", "label": "No matches"},
+                {"value": "empty", "label": "No fetched rows"},
+                {"value": "unknown", "label": "No snapshot"},
+            ],
+            "rules_page_defaults": {
+                "view_mode": default_view_mode,
+                "sort_field": default_sort_field,
+                "sort_direction": default_sort_direction,
+            },
+            "schedule": schedule_payload(settings),
             "shell_layout": "wide",
             "content_layout": "wide",
         }
@@ -933,6 +1168,7 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
         "content_name": "",
         "imdb_id": "",
         "normalized_title": "",
+        "poster_url": "",
         "media_type": requested_media_type,
         "quality_profile": (
             default_quality.value
@@ -1014,15 +1250,49 @@ def edit_rule(
 ) -> HTMLResponse:
     rule = session.get(Rule, rule_id)
     if rule is None:
+        settings = SettingsService.get_or_create(session)
         return templates.TemplateResponse(
             "index.html",
             {
                 **_base_context(request, "Rules"),
                 "rules": [],
-                "filters": {"search": "", "media": "", "sync": "", "enabled": ""},
+                "filters": {
+                    "search": "",
+                    "media": "",
+                    "sync": "",
+                    "enabled": "",
+                    "release": "",
+                    "sort": normalize_rules_page_sort_field(
+                        getattr(settings, "rules_page_sort_field", "updated_at")
+                    ),
+                    "direction": normalize_rules_page_sort_direction(
+                        getattr(settings, "rules_page_sort_direction", "desc")
+                    ),
+                    "view": normalize_rules_page_view_mode(
+                        getattr(settings, "rules_page_view_mode", "table")
+                    ),
+                },
                 "media_choices": media_type_choices(),
                 "media_type_labels": {item.value: media_type_label(item) for item in MediaType},
                 "sync_choices": ["never", "ok", "error", "drift"],
+                "release_choices": [
+                    {"value": "matches", "label": "Matches found"},
+                    {"value": "no_matches", "label": "No matches"},
+                    {"value": "empty", "label": "No fetched rows"},
+                    {"value": "unknown", "label": "No snapshot"},
+                ],
+                "rules_page_defaults": {
+                    "view_mode": normalize_rules_page_view_mode(
+                        getattr(settings, "rules_page_view_mode", "table")
+                    ),
+                    "sort_field": normalize_rules_page_sort_field(
+                        getattr(settings, "rules_page_sort_field", "updated_at")
+                    ),
+                    "sort_direction": normalize_rules_page_sort_direction(
+                        getattr(settings, "rules_page_sort_direction", "desc")
+                    ),
+                },
+                "schedule": schedule_payload(settings),
                 "message": "Rule not found.",
                 "message_level": "error",
                 "shell_layout": "wide",
@@ -1153,6 +1423,8 @@ def edit_rule(
                             run=result,
                             ignored_full_regex=ignored_full_regex,
                         )
+                        if not effective_feed_scope_override:
+                            refresh_snapshot_release_cache(snapshot, rule=rule)
                         inline_search = inline_search_from_snapshot(snapshot)
                         session.commit()
                         if refresh_inline_snapshot:
@@ -1274,5 +1546,13 @@ def import_page(request: Request, session: Session = Depends(get_db_session)) ->
 
 
 @router.get("/health")
-def health() -> JSONResponse:
-    return JSONResponse({"status": "ok"})
+def health(request: Request) -> JSONResponse:
+    return JSONResponse(
+        {
+            "status": "ok",
+            "app_version": request.app.version,
+            "static_asset_version": getattr(request.app.state, "static_asset_version", request.app.version),
+            "desktop_backend_contract": getattr(request.app.state, "desktop_backend_contract", ""),
+            "capabilities": list(getattr(request.app.state, "desktop_capabilities", ())),
+        }
+    )

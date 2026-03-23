@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from app.config import obfuscate_secret
+from app.main import DESKTOP_BACKEND_CONTRACT
 from app.models import (
     AppSettings,
     IndexerCategoryCatalog,
@@ -25,6 +26,7 @@ from app.schemas import (
     MetadataResult,
 )
 from app.services import quality_filters
+from app.services.hover_debug import clear_hover_events
 from app.services.jackett import JackettClient, clamp_search_query_text
 from app.services.metadata import MetadataClient
 
@@ -51,7 +53,61 @@ def test_health_endpoint(app_client) -> None:
     response = app_client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["app_version"] == "0.6.0"
+    assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
+    assert "hover_debug_telemetry" in payload["capabilities"]
+    assert "search_hidden_result_diagnostics" in payload["capabilities"]
+    assert payload["static_asset_version"]
+
+
+def test_debug_hover_telemetry_api_records_filters_and_clears_events(app_client) -> None:
+    clear_hover_events()
+
+    first_response = app_client.post(
+        "/api/debug/hover-telemetry",
+        json={
+            "session_id": "session-a",
+            "reason": "mouseenter",
+            "row_name": "Rule A",
+            "poster_rect": {"top": 120, "bottom": 300},
+        },
+    )
+    second_response = app_client.post(
+        "/api/debug/hover-telemetry",
+        json={
+            "session_id": "session-b",
+            "reason": "mouseenter",
+            "row_name": "Rule B",
+            "poster_rect": {"top": 240, "bottom": 420},
+        },
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    filtered = app_client.get("/api/debug/hover-telemetry", params={"session_id": "session-b", "limit": 10})
+
+    assert filtered.status_code == 200
+    filtered_payload = filtered.json()
+    assert filtered_payload["count"] == 1
+    assert filtered_payload["events"][0]["session_id"] == "session-b"
+    assert filtered_payload["events"][0]["row_name"] == "Rule B"
+
+    cleared = app_client.get("/api/debug/hover-telemetry", params={"session_id": "session-b", "clear": 1})
+
+    assert cleared.status_code == 200
+    cleared_payload = cleared.json()
+    assert cleared_payload["cleared_count"] == 1
+    assert cleared_payload["count"] == 0
+
+    remaining = app_client.get("/api/debug/hover-telemetry", params={"limit": 10})
+
+    assert remaining.status_code == 200
+    remaining_payload = remaining.json()
+    assert remaining_payload["count"] == 1
+    assert remaining_payload["events"][0]["session_id"] == "session-a"
 
 
 def test_rules_page_header_includes_create_rule_button(app_client) -> None:
@@ -59,6 +115,333 @@ def test_rules_page_header_includes_create_rule_button(app_client) -> None:
 
     assert response.status_code == 200
     assert '>Create Rule</a>' in response.text
+
+
+def test_rules_page_renders_release_status_from_snapshots(app_client, db_session) -> None:
+    rule_with_matches = Rule(
+        rule_name="Rule With Matches",
+        content_name="Rule With Matches",
+        normalized_title="Rule With Matches",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/matches/results/torznab/api"],
+    )
+    rule_without_matches = Rule(
+        rule_name="Rule Without Matches",
+        content_name="Rule Without Matches",
+        normalized_title="Rule Without Matches",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=2,
+        start_episode=1,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/no-matches/results/torznab/api"],
+    )
+    rule_without_snapshot = Rule(
+        rule_name="Rule Without Snapshot",
+        content_name="Rule Without Snapshot",
+        normalized_title="Rule Without Snapshot",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/no-snapshot/results/torznab/api"],
+    )
+    db_session.add_all([rule_with_matches, rule_without_matches, rule_without_snapshot])
+    db_session.flush()
+    db_session.add_all(
+        [
+            RuleSearchSnapshot(
+                rule_id=rule_with_matches.id,
+                payload={"query": "Rule With Matches"},
+                inline_search={
+                    "raw_results": [],
+                    "results": [],
+                    "raw_fallback_results": [],
+                    "fallback_results": [],
+                    "unified_raw_results": [
+                        {
+                            "title": "Rule With Matches S01E01",
+                            "link": "https://example.com/rule-with-matches.torrent",
+                            "indexer": "matches",
+                            "visible": True,
+                        }
+                    ],
+                },
+            ),
+            RuleSearchSnapshot(
+                rule_id=rule_without_matches.id,
+                payload={"query": "Rule Without Matches"},
+                inline_search={
+                    "raw_results": [],
+                    "results": [],
+                    "raw_fallback_results": [],
+                    "fallback_results": [],
+                    "unified_raw_results": [
+                        {
+                            "title": "Rule Without Matches S01E01",
+                            "link": "https://example.com/rule-without-matches.torrent",
+                            "indexer": "no-matches",
+                            "visible": False,
+                        }
+                    ],
+                },
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = app_client.get("/")
+
+    assert response.status_code == 200
+    assert "data-rules-page" in response.text
+    assert "Matches found" in response.text
+    assert "No matches" in response.text
+    assert "No snapshot" in response.text
+    assert "1 / 1" in response.text
+    assert "0 / 1" in response.text
+
+
+def test_rules_page_backfills_missing_posters_from_metadata_lookup(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        omdb_api_key_encrypted=obfuscate_secret("omdb-key"),
+    )
+    rule = Rule(
+        rule_name="Posterless Rule",
+        content_name="Posterless Rule",
+        normalized_title="Posterless Rule",
+        imdb_id="tt13016388",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/posterless"],
+        poster_url=None,
+    )
+    db_session.add(settings)
+    db_session.add(rule)
+    db_session.commit()
+
+    seen_imdb_ids: list[str] = []
+
+    def fake_lookup_by_imdb_id(self, imdb_id):
+        seen_imdb_ids.append(imdb_id)
+        return MetadataResult(
+            title="Posterless Rule",
+            provider=MetadataLookupProvider.OMDB,
+            imdb_id=imdb_id,
+            source_id=imdb_id,
+            media_type=MediaType.SERIES,
+            year="2024",
+            poster_url="https://images.example/posterless-rule.jpg",
+        )
+
+    monkeypatch.setattr(MetadataClient, "lookup_by_imdb_id", fake_lookup_by_imdb_id)
+
+    response = app_client.get("/")
+
+    assert response.status_code == 200
+    assert seen_imdb_ids == ["tt13016388"]
+    db_session.expire_all()
+    updated_rule = db_session.get(Rule, rule.id)
+    assert updated_rule is not None
+    assert updated_rule.poster_url == "https://images.example/posterless-rule.jpg"
+    assert 'data-rule-poster-url="https://images.example/posterless-rule.jpg"' in response.text
+
+
+def test_save_rules_page_preferences_api_persists_defaults(app_client, db_session) -> None:
+    response = app_client.post(
+        "/api/rules/page-preferences",
+        json={
+            "view_mode": "cards",
+            "sort_field": "release_state",
+            "sort_direction": "asc",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["view_mode"] == "cards"
+    assert payload["sort_field"] == "release_state"
+    assert payload["sort_direction"] == "asc"
+    settings = db_session.get(AppSettings, "default")
+    assert settings is not None
+    assert settings.rules_page_view_mode == "cards"
+    assert settings.rules_page_sort_field == "release_state"
+    assert settings.rules_page_sort_direction == "asc"
+
+
+def test_run_rules_fetch_api_runs_selected_rules_and_saves_snapshot(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett:9117",
+        jackett_api_key_encrypted=obfuscate_secret("api-key"),
+    )
+    db_session.add(settings)
+    selected_rule = Rule(
+        rule_name="Selected Rule",
+        content_name="Selected Rule",
+        normalized_title="Selected Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/selected-rule"],
+    )
+    other_rule = Rule(
+        rule_name="Other Rule",
+        content_name="Other Rule",
+        normalized_title="Other Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/other-rule"],
+    )
+    db_session.add_all([selected_rule, other_rule])
+    db_session.commit()
+
+    seen_queries: list[str] = []
+
+    def fake_search(self, payload):
+        seen_queries.append(payload.query)
+        return JackettSearchRun(
+            query_variants=[payload.query],
+            raw_results=[
+                JackettSearchResult(
+                    title=f"{payload.query} S01E01",
+                    link=f"https://example.com/{payload.query}.torrent",
+                )
+            ],
+            results=[
+                JackettSearchResult(
+                    title=f"{payload.query} S01E01",
+                    link=f"https://example.com/{payload.query}.torrent",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "enrich_result_category_labels", lambda self, results: None)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", lambda self: {})
+
+    response = app_client.post(
+        "/api/rules/fetch",
+        json={
+            "run_all": False,
+            "rule_ids": [selected_rule.id],
+            "include_disabled": False,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["attempted"] == 1
+    assert payload["succeeded"] == 1
+    assert payload["failed"] == 0
+    assert seen_queries == ["Selected Rule"]
+    assert db_session.get(RuleSearchSnapshot, selected_rule.id) is not None
+    assert db_session.get(RuleSearchSnapshot, other_rule.id) is None
+
+
+def test_run_rules_fetch_api_returns_error_without_jackett_config(
+    app_client,
+    db_session,
+) -> None:
+    rule = Rule(
+        rule_name="Rule Missing Jackett",
+        content_name="Rule Missing Jackett",
+        normalized_title="Rule Missing Jackett",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/missing-jackett"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    response = app_client.post(
+        "/api/rules/fetch",
+        json={
+            "run_all": False,
+            "rule_ids": [rule.id],
+            "include_disabled": False,
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert "Jackett app search is not configured" in payload["message"]
+
+
+def test_rules_fetch_schedule_api_save_and_run_now(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett:9117",
+        jackett_api_key_encrypted=obfuscate_secret("api-key"),
+        rules_fetch_schedule_enabled=False,
+    )
+    rule = Rule(
+        rule_name="Scheduled Rule",
+        content_name="Scheduled Rule",
+        normalized_title="Scheduled Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/scheduled-rule"],
+    )
+    db_session.add(settings)
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        return JackettSearchRun(
+            query_variants=[payload.query],
+            raw_results=[
+                JackettSearchResult(
+                    title=f"{payload.query} S01E01",
+                    link="https://example.com/scheduled-rule.torrent",
+                )
+            ],
+            results=[
+                JackettSearchResult(
+                    title=f"{payload.query} S01E01",
+                    link="https://example.com/scheduled-rule.torrent",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "enrich_result_category_labels", lambda self, results: None)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", lambda self: {})
+
+    schedule_save = app_client.post(
+        "/api/rules/fetch-schedule",
+        json={
+            "enabled": True,
+            "interval_minutes": 5,
+            "scope": "enabled",
+        },
+    )
+    assert schedule_save.status_code == 200
+    schedule_payload = schedule_save.json()["schedule"]
+    assert schedule_payload["enabled"] is True
+    assert schedule_payload["interval_minutes"] == 5
+    assert schedule_payload["scope"] == "enabled"
+
+    run_now = app_client.post("/api/rules/fetch-schedule/run-now")
+    assert run_now.status_code == 200
+    run_payload = run_now.json()
+    assert run_payload["attempted"] == 1
+    assert run_payload["succeeded"] == 1
+    assert run_payload["failed"] == 0
+    db_session.expire_all()
+    refreshed_settings = db_session.get(AppSettings, "default")
+    assert refreshed_settings is not None
+    assert refreshed_settings.rules_fetch_schedule_last_run_at is not None
+    assert refreshed_settings.rules_fetch_schedule_next_run_at is not None
 
 
 def test_inline_local_generated_pattern_uses_raw_title_surface() -> None:
@@ -104,6 +487,17 @@ def test_inline_feed_scope_indexer_matching_uses_key_variants() -> None:
     assert "indexerKeys: buildIndexerKeyVariants(card.dataset.indexer || \"\")," in app_js_source
     assert "entry.indexerKeys.some((item) => allowedIndexerKeys.has(item))" in app_js_source
     assert "entry.indexerKeys.some((item) => allowedFeedKeys.has(item))" in app_js_source
+
+
+def test_inline_local_filters_enforce_query_and_imdb_parity() -> None:
+    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+    app_js_source = app_js_path.read_text(encoding="utf-8")
+
+    assert "const matchesQueryText = (titleSurface, queryValue) => {" in app_js_source
+    assert "const payloadImdbId = normalizeSearchImdbId(filters.imdbId || \"\");" in app_js_source
+    assert "const resultImdbId = normalizeSearchImdbId(entry.imdbId || \"\");" in app_js_source
+    assert "const imdbExactMatch = Boolean(payloadImdbId && resultImdbId && payloadImdbId === resultImdbId);" in app_js_source
+    assert "if (!imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {" in app_js_source
 
 
 def test_run_rule_search_route_redirects_to_inline_rule_page(app_client, db_session) -> None:
@@ -500,6 +894,11 @@ def test_search_page_renders_single_result_view_panel_for_unified_results(app_cl
     assert response.status_code == 200
     assert response.text.count('data-search-controls') == 1
     assert response.text.count('data-search-save-defaults') == 1
+    assert response.text.count('data-search-show-hidden-toggle') == 1
+    assert 'data-search-scope-summary="combined"' in response.text
+    assert 'data-search-hidden-summary="combined"' in response.text
+    assert 'data-search-visibility-status' in response.text
+    assert "<th>Visibility</th>" in response.text
 
 
 def test_search_page_unified_results_do_not_render_filter_impact_panels(app_client, monkeypatch) -> None:
@@ -1178,10 +1577,15 @@ def test_edit_rule_page_can_render_inline_search_results(app_client, db_session,
     assert 'data-search-table-wrap="combined"' in response.text
     assert 'data-search-table-sort-field="title"' in response.text
     assert 'data-search-view-mode' not in response.text
+    assert 'data-search-show-hidden-toggle' in response.text
     assert 'data-search-multiselect="indexers"' in response.text
     assert 'data-search-multiselect="categories"' in response.text
     assert 'data-search-source-summary="primary"' in response.text
     assert 'data-search-source-filtered-count' in response.text
+    assert 'data-search-scope-summary="combined"' in response.text
+    assert 'data-search-hidden-summary="combined"' in response.text
+    assert 'data-search-visibility-status' in response.text
+    assert "<th>Visibility</th>" in response.text
     assert 'data-query-source-key="primary"' in response.text
     assert 'data-filter-impact-list=' not in response.text
     snapshot = db_session.get(RuleSearchSnapshot, rule.id)

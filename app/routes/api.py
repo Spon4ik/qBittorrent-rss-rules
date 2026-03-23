@@ -25,10 +25,19 @@ from app.schemas import (
     ImportMode,
     JackettSearchRequest,
     MetadataLookupRequest,
+    RuleBatchFetchRequest,
+    RuleFetchSchedulePayload,
     RuleFormPayload,
+    RulesPagePreferencesPayload,
     SearchQueueRequest,
     SearchViewPreferencesPayload,
     SettingsFormPayload,
+)
+from app.services.hover_debug import (
+    clear_hover_events,
+    hover_debug_log_path,
+    list_hover_events,
+    record_hover_event,
 )
 from app.services.importer import Importer
 from app.services.jackett import JackettClient, JackettClientError
@@ -59,6 +68,12 @@ from app.services.quality_filters import (
     slugify_profile_key,
 )
 from app.services.rule_builder import RuleBuilder
+from app.services.rule_fetch_ops import (
+    run_rules_fetch_batch,
+    run_scheduled_fetch_now,
+    schedule_payload,
+    update_schedule_settings,
+)
 from app.services.settings_service import SettingsService
 from app.services.sync import SyncService, SyncServiceError
 
@@ -81,6 +96,7 @@ def _raw_rule_form_data(form: Any) -> dict[str, Any]:
         "content_name": form.get("content_name", ""),
         "imdb_id": form.get("imdb_id") or None,
         "normalized_title": form.get("normalized_title", ""),
+        "poster_url": form.get("poster_url") or None,
         "media_type": form.get("media_type", MediaType.SERIES.value),
         "quality_profile": form.get("quality_profile", QualityProfile.PLAIN.value),
         "filter_profile_key": form.get("filter_profile_key", ""),
@@ -323,6 +339,7 @@ def _apply_rule_payload_to_model(
     rule.content_name = payload.content_name
     rule.imdb_id = payload.imdb_id
     rule.normalized_title = payload.normalized_title or payload.content_name
+    rule.poster_url = payload.poster_url
     rule.media_type = payload.media_type
     rule.quality_profile = payload.quality_profile
     rule.release_year = payload.release_year
@@ -375,6 +392,26 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
         default_feed_urls=settings.default_feed_urls,
         search_result_view_mode=settings.search_result_view_mode,
         search_sort_criteria=settings.search_sort_criteria,
+        rules_fetch_schedule_enabled=bool(
+            getattr(settings, "rules_fetch_schedule_enabled", False)
+        ),
+        rules_fetch_schedule_interval_minutes=int(
+            getattr(settings, "rules_fetch_schedule_interval_minutes", 360)
+        ),
+        rules_fetch_schedule_scope=str(
+            getattr(settings, "rules_fetch_schedule_scope", "enabled")
+        ),
+        rules_fetch_schedule_last_run_at=getattr(settings, "rules_fetch_schedule_last_run_at", None),
+        rules_fetch_schedule_next_run_at=getattr(settings, "rules_fetch_schedule_next_run_at", None),
+        rules_fetch_schedule_last_status=str(
+            getattr(settings, "rules_fetch_schedule_last_status", "idle")
+        ),
+        rules_fetch_schedule_last_message=str(
+            getattr(settings, "rules_fetch_schedule_last_message", "")
+        ),
+        rules_page_view_mode=str(getattr(settings, "rules_page_view_mode", "table")),
+        rules_page_sort_field=str(getattr(settings, "rules_page_sort_field", "updated_at")),
+        rules_page_sort_direction=str(getattr(settings, "rules_page_sort_direction", "desc")),
         default_quality_profile=settings.default_quality_profile,
     )
 
@@ -481,6 +518,108 @@ def save_search_preferences(
             "default_first_last_piece_prio": bool(getattr(settings, "default_first_last_piece_prio", True)),
         }
     )
+
+
+@router.post("/debug/hover-telemetry")
+async def record_debug_hover_telemetry(request: Request) -> JSONResponse:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        return JSONResponse({"error": "Hover telemetry payload must be a JSON object."}, status_code=400)
+    event = record_hover_event(payload)
+    return JSONResponse({"status": "ok", "event": event})
+
+
+@router.get("/debug/hover-telemetry")
+def read_debug_hover_telemetry(
+    limit: int = 50,
+    session_id: str | None = None,
+    clear: bool = False,
+) -> JSONResponse:
+    cleared_count = 0
+    if clear:
+        cleared_count = clear_hover_events(session_id=session_id)
+    events = list_hover_events(limit=limit, session_id=session_id)
+    return JSONResponse(
+        {
+            "events": events,
+            "count": len(events),
+            "cleared_count": cleared_count,
+            "log_path": str(hover_debug_log_path()),
+        }
+    )
+
+
+@router.post("/rules/page-preferences")
+def save_rules_page_preferences(
+    payload: RulesPagePreferencesPayload,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    settings = SettingsService.get_or_create(session)
+    settings.rules_page_view_mode = payload.view_mode
+    settings.rules_page_sort_field = payload.sort_field
+    settings.rules_page_sort_direction = payload.sort_direction
+    session.add(settings)
+    session.commit()
+    return JSONResponse(
+        {
+            "view_mode": settings.rules_page_view_mode,
+            "sort_field": settings.rules_page_sort_field,
+            "sort_direction": settings.rules_page_sort_direction,
+        }
+    )
+
+
+@router.post("/rules/fetch")
+def run_rules_fetch(
+    payload: RuleBatchFetchRequest,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    batch = run_rules_fetch_batch(
+        session,
+        run_all=payload.run_all,
+        rule_ids=payload.rule_ids,
+        include_disabled=payload.include_disabled,
+    )
+    status_code = 200
+    if batch.get("status") == "error":
+        status_code = 400
+    elif batch.get("status") == "busy":
+        status_code = 409
+    return JSONResponse(batch, status_code=status_code)
+
+
+@router.post("/rules/fetch-schedule")
+def save_rules_fetch_schedule(
+    payload: RuleFetchSchedulePayload,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    schedule = update_schedule_settings(
+        session,
+        enabled=payload.enabled,
+        interval_minutes=payload.interval_minutes,
+        scope=payload.scope,
+    )
+    return JSONResponse({"status": "ok", "schedule": schedule})
+
+
+@router.post("/rules/fetch-schedule/run-now")
+def run_rules_fetch_schedule_now(session: Session = Depends(get_db_session)) -> JSONResponse:
+    settings = SettingsService.get_or_create(session)
+    if not bool(getattr(settings, "rules_fetch_schedule_enabled", False)):
+        return JSONResponse(
+            {
+                "error": "Rule fetch schedule is disabled. Enable and save schedule first.",
+                "schedule": schedule_payload(settings),
+            },
+            status_code=400,
+        )
+    batch = run_scheduled_fetch_now(session)
+    status_code = 200
+    if batch.get("status") == "error":
+        status_code = 400
+    elif batch.get("status") == "busy":
+        status_code = 409
+    return JSONResponse(batch, status_code=status_code)
 
 
 @router.post("/feeds/refresh")

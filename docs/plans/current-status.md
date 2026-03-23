@@ -2,12 +2,171 @@
 
 ## Current focus
 
-- `v0.4.0` release synchronization is complete (version fields, changelog, roadmap release handoff, and full release-gate validation).
-- Phase 8 is closed and release-validated (`P8-01`..`P8-10`) as the delivered `v0.4.0` slice.
-- Current focus is phase-9 planning/execution kickoff for rules main-page release operations (`table-first defaults`, poster presentation, on-demand/scheduled Jackett runs, release-availability sorting).
+- `v0.6.0` release implementation and validation are complete (code, migrations, tests, browser closeout, desktop build, and release-doc synchronization).
+- Phase 10 is closed and release-validated (`P10-01`..`P10-12`) as the delivered `v0.6.0` slice.
+- The retained desktop direction for `v0.6.0` is the WinUI WebView-shell + companion-process lifecycle baseline.
+- Current focus is post-release stabilization, cross-machine desktop validation, and shaping the next implementation phase.
 
 ## Implemented
 
+- Completed `v0.6.0` release closeout on 2026-03-23:
+  - synchronized version touchpoints to `0.6.0` (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`) and transitioned roadmap/planning docs to post-release `v0.6.1` stabilization plus next-phase shaping (`ROADMAP.md`, `docs/plans/README.md`, `docs/plans/phase-10-winui-desktop-bootstrap.md`);
+  - validation evidence:
+    - `cmd.exe /c "scripts\check.bat"` (`All checks passed`; `190 passed`, `52 warnings`; artifacts: `logs/tests/pytest-last.{log,xml}`);
+    - `cmd.exe /c "scripts\closeout_qa.bat"` (`All browser closeout checks passed`; artifacts: `logs/qa/phase-closeout-20260323T210528Z/closeout-report.{md,json}`);
+    - `cmd.exe /v:on /c "scripts\run_dev.bat desktop-build & echo EXITCODE:!ERRORLEVEL!"` (`Build succeeded`, `EXITCODE:0`).
+- Completed post-release rules-page local performance follow-up on 2026-03-22:
+  - moved per-rule release cache state into dedicated `RuleSearchSnapshot` columns (`release_filter_cache_key`, `release_filtered_count`, `release_fetched_count`) and kept the JSON payload fields as compatibility mirrors, so the rules index can load tiny cached values instead of deserializing the full inline-search blob for every rule render (`app/models.py`, `app/db.py`, `alembic/versions/0006_rule_snapshot_release_cache_columns.py`, `app/services/rule_fetch_ops.py`);
+  - the rules index now prefilters the `Rule` query before snapshot loading, limits snapshot fetches to the surviving rule IDs, and only falls back to the large `inline_search` JSON path on an actual cache miss (`app/routes/pages.py`, `app/services/rule_fetch_ops.py`);
+  - limited poster backfill to plain unfiltered page loads, capped it to two candidates per pass, added a six-hour retry cooldown for failed/no-poster lookups, and cut poster lookup timeout to two seconds so routine filter/sort requests no longer block on repeated OMDb retries (`app/routes/pages.py`);
+  - added a one-shot cache warmer at `scripts/backfill_rule_release_cache.py` and ran it against the live `data/qb_rules.db` (`Updated 75 snapshot release caches out of 75 snapshots`);
+  - measured local improvements on the live database after backfill:
+    - direct release-state loop across `75` saved rules dropped from roughly `9.64s` before optimization to `0.012s` after dedicated cache-column reads;
+    - in-process request timings dropped to about `0.10s` for `/?search=hopper`, `0.24s` for `/?enabled=true`, and `0.21s` for `/?release=matches` (base unfiltered `/` still spends about `1.6s` on the intentionally limited poster backfill pass until missing-poster candidates are exhausted or cooled down);
+  - validation evidence:
+    - `.\.venv\Scripts\python.exe -m pytest tests/test_rule_fetch_ops.py tests/test_routes.py -k "rules_page_renders_release_status_from_snapshots or rules_page_backfills_missing_posters_from_metadata_lookup or test_rule_fetch_ops"` (`4 passed`, `76 deselected`);
+    - `.\.venv\Scripts\python.exe -m ruff check app/db.py app/models.py app/services/rule_fetch_ops.py app/routes/pages.py scripts/backfill_rule_release_cache.py tests/test_rule_fetch_ops.py` (`All checks passed`).
+- Completed phase-10 stale-backend guard + hidden-fetched-row diagnostics follow-up on 2026-03-22:
+  - `/health` now returns desktop compatibility metadata (`app_version`, static-asset fingerprint, desktop backend contract, capabilities), and the WinUI shell now refuses to attach to an incompatible/stale backend that merely happens to be listening on `http://127.0.0.1:8000` (`app/main.py`, `app/routes/pages.py`, `QbRssRulesDesktop/Views/MainPage.xaml.cs`);
+  - when the default local desktop port is occupied by an incompatible backend, the WinUI shell now selects a free loopback fallback port for its managed uvicorn process instead of silently reusing the stale server, which directly addresses the observed "Chrome looks right, desktop still looks old/wrong" split caused by stale backend attachment (`QbRssRulesDesktop/Views/MainPage.xaml.cs`);
+  - unified search results on both `/search` and inline rule results now expose `Show hidden fetched rows`, a scope summary, a hidden-row summary, and a per-row `Visibility` reason so users can inspect why `N fetched` does not equal `N shown` even after clearing visible multiselect controls (`app/templates/search.html`, `app/templates/rule_form.html`, `app/static/app.js`, `app/static/app.css`);
+  - validation evidence:
+    - `.\.venv\Scripts\python.exe -m pytest tests/test_routes.py -k "health_endpoint or debug_hover_telemetry_api_records_filters_and_clears_events or search_page_renders_single_result_view_panel_for_unified_results or edit_rule_page_can_render_inline_search_results"` (`4 passed`, `74 deselected`);
+    - `dotnet build QbRssRulesDesktop/QbRssRulesDesktop.csproj -p:Platform=x64` (`Build succeeded`).
+- Completed phase-10 desktop freshness + managed-backend reload follow-up on 2026-03-22:
+  - desktop-managed backend startup now launches uvicorn with `--reload` and prefers hidden `python.exe` execution so file edits reload automatically without relying on a stale `pythonw` child (`QbRssRulesDesktop/Views/MainPage.xaml.cs`, `scripts/run_dev.bat`);
+  - the desktop shell now appends a launch-specific cache-buster query whenever the WebView navigates, so a reopened desktop instance does not reuse cached HTML/asset state from an older session (`QbRssRulesDesktop/Views/MainPage.xaml.cs`);
+  - managed desktop launches now persist a small backend-owner marker and clean up orphaned managed backend processes on the next launch, which prevents the shell from silently reattaching to an old background server after an incomplete prior shutdown (`QbRssRulesDesktop/Views/MainPage.xaml.cs`);
+  - validation evidence:
+    - `cmd.exe /v:on /c "scripts\run_dev.bat desktop-build & echo EXITCODE:!ERRORLEVEL!"` (`Build succeeded`, `EXITCODE:0`);
+    - custom desktop launch verification on `http://127.0.0.1:8023` confirmed managed backend command line included `--reload`, and closing the WinUI window brought the managed backend down afterward.
+- Completed phase-9/10 live hover-overlay verification and lower-row anchoring follow-up on 2026-03-22:
+  - refined the rules-page hover poster so the preview size is capped more aggressively and the tooltip aligns to the hovered row edge rather than drifting upward from pointer-based math, which keeps lower visible rows visually attached to their poster preview in both browser and WebView runs (`app/static/app.js`, `app/static/app.css`);
+  - extended hover-debug support with QA-only auto-scroll/auto-hover query params plus live telemetry capture, so the WinUI shell can now be exercised against the real WebView surface without manual mouse driving (`app/static/app.js`, `scripts/capture_live_hover_overlay.py`);
+  - tightened deterministic phase-9 hover validation to use an edge-adjacency metric that distinguishes true detached upper-list jumps from acceptable above-row placement near the hovered row, while still producing multiple lower-row screenshots plus optional video evidence (`scripts/closeout_browser_qa.py`);
+  - validation evidence:
+    - `.\.venv\Scripts\python.exe scripts\capture_live_hover_overlay.py --base-url http://127.0.0.1:8017 --desktop-relaunch` (artifacts: `logs/live-hover/live-hover-20260321T233521Z/summary.json`, browser + desktop manifests/screenshots under the same run directory);
+    - `.\.venv\Scripts\python.exe scripts\closeout_browser_qa.py --capture-p9-hover-video` (`All browser closeout checks passed`; artifacts: `logs/qa/phase-closeout-20260321T234004Z/closeout-report.{md,json}`, `logs/qa/phase-closeout-20260321T234004Z/p9-hover-overlay/`);
+    - `.\.venv\Scripts\python.exe -m ruff check scripts\capture_live_hover_overlay.py scripts\closeout_browser_qa.py app\routes\api.py app\services\hover_debug.py tests\test_routes.py` (`All checks passed`);
+    - `.\.venv\Scripts\python.exe -m pytest tests\test_routes.py -k "debug_hover_telemetry_api_records_filters_and_clears_events or save_rules_page_preferences_api_persists_defaults or rules_page_backfills_missing_posters_from_metadata_lookup"` (`3 passed`, `75 deselected`).
+- Completed phase-10 shortcut refresh + rules hover-poster regression follow-up on 2026-03-21:
+  - added `scripts/refresh_winui_shortcuts.ps1` and `scripts/run_dev.bat desktop-shortcuts`, and successful desktop builds now refresh `qB RSS Rules Desktop.lnk` in both the repo root and the user's Windows Desktop for short-path app launching with the EXE icon;
+  - the rules-page hover poster now renders as a viewport-fixed tooltip that tracks the actual hover point, flips above lower rows when needed, and stays adjacent to the hovered rule instead of reusing a detached upper-list slot (`app/static/app.js`, `app/static/app.css`);
+  - tightened deterministic browser closeout coverage for a genuinely long poster-backed rules list, capturing multiple lower-row hover screenshots plus optional video evidence so the poster must stay fully in-viewport and near the hovered rule after scrolling (`scripts/closeout_browser_qa.py`);
+  - validation evidence:
+    - `cmd.exe /c "scripts\run_dev.bat desktop-shortcuts"` (`Updated shortcut ...`, exit `0`);
+    - `.\.venv\Scripts\python.exe scripts\closeout_browser_qa.py --capture-p9-hover-video` (`All browser closeout checks passed`; artifacts: `logs/qa/phase-closeout-20260321T223939Z/closeout-report.{md,json}`, `logs/qa/phase-closeout-20260321T223939Z/p9-hover-overlay/`).
+- Completed phase-10 desktop auto-managed backend start on 2026-03-21:
+  - the WinUI shell now auto-starts the FastAPI backend (using `.venv\Scripts\pythonw.exe` when present, falling back to `python` + hidden window) when it cannot connect, monitors reachability, and tears the process down when the desktop closes (`QbRssRulesDesktop/Views/MainPage.xaml.cs`);
+  - backend-start fallback messaging now points to `scripts\run_dev.bat api`/`full`, and manual `Start Backend` uses the same windowless path;
+  - `scripts/run_dev.bat full` starts uvicorn via `pythonw` (hidden) so the desktop+API combo no longer leaves a console window behind;
+  - `README.md` documents the precise `.exe` path plus the no-console behavior in a new "WinUI desktop quick start" section;
+  - validation: attempted `cmd.exe /c "set DOTNET_CLI_HOME=%CD%\\.dotnet && set APPDATA=%CD%\\data\\appdata && set LOCALAPPDATA=%CD%\\data\\appdata && scripts\\run_dev.bat desktop-build"` but restore was blocked in the sandbox (`Unable to load the service index for source https://api.nuget.org/v3/index.json`), so build verification is pending in an environment with NuGet access.
+- Completed phase-10 backend lifecycle baseline follow-up on 2026-03-17:
+  - fixed desktop reconnect probing to use the configured backend URI (not only the hardcoded default), so `QB_RSS_DESKTOP_URL` and retry behavior stay aligned.
+  - hardened `scripts/run_dev.bat` error propagation in parenthesized blocks (`EnableDelayedExpansion` + `!ERRORLEVEL!`) so failed restore/build/run paths return non-zero reliably.
+  - updated `scripts/run_dev.bat full` to start API in a detached companion process, then build + launch desktop without hanging the invoking shell.
+  - validation evidence:
+    - `cmd.exe /v:on /c "scripts\run_dev.bat desktop-build & echo EXITCODE:!ERRORLEVEL!"` (`Build succeeded`, `EXITCODE:0`).
+    - `cmd.exe /v:on /c "scripts\run_dev.bat full & echo EXITCODE:!ERRORLEVEL!"` (`Build succeeded`, `EXITCODE:0`).
+    - `powershell.exe -NoProfile -Command "Start-Sleep -Seconds 3; (Test-NetConnection -ComputerName 127.0.0.1 -Port 8000 -WarningAction SilentlyContinue).TcpTestSucceeded"` (`True`).
+    - PowerShell process probe confirms running desktop window titled `qB RSS Rules Desktop` with non-zero `MainWindowHandle`.
+- Completed phase-10 WebView desktop shell slice on 2026-03-17:
+  - replaced template counter UI with a `WebView2`-based desktop shell that targets the local app URL (`http://127.0.0.1:8000` by default).
+  - added actionable fallback UI when backend is unreachable:
+    - clear status line (`Backend unavailable`),
+    - contextual failure message,
+    - in-app `Retry` action,
+    - `Open In Browser` action for manual fallback.
+  - added environment override support via `QB_RSS_DESKTOP_URL` for alternate local endpoints.
+  - updated window title to `qB RSS Rules Desktop` for clearer desktop-shell identity.
+  - validation evidence:
+    - `cmd.exe /c "scripts\run_dev.bat desktop-build"` (`Build succeeded`).
+    - `cmd.exe /c "scripts\run_dev.bat desktop-run"` (launch succeeds and returns cleanly).
+    - `curl -I http://127.0.0.1:8000` (`Couldn't connect`) while WinUI process remains healthy with non-zero window handle and title `qB RSS Rules Desktop`.
+- Hardened phase-10 desktop dev loop on 2026-03-17:
+  - added repository-level NuGet source configuration so WinUI restore/build no longer depends on ad hoc `--source` flags in local CLI calls:
+    - `NuGet.config` now includes `nuget.org` and `Microsoft Visual Studio Offline Packages`.
+  - expanded `scripts/run_dev.bat` with explicit multi-mode workflow support while keeping the existing API default path:
+    - `api` (default FastAPI dev server),
+    - `desktop-build` (restore + build WinUI x64),
+    - `desktop-run` (launch WinUI app),
+    - `desktop` (build then launch),
+    - `full` (start API companion process, then build + launch desktop),
+    - `help`.
+  - validation evidence:
+    - `cmd.exe /c "scripts\run_dev.bat help"` (usage output rendered, exit `0`).
+    - `cmd.exe /c "scripts\run_dev.bat desktop-build"` (`Restore` + `Build succeeded` without explicit `--source` args).
+    - `cmd.exe /c "scripts\run_dev.bat desktop-run"` (returns cleanly and launches app).
+    - post-launch verification via PowerShell: process `QbRssRulesDesktop` running with non-zero `MainWindowHandle` and title `qB RSS Rules Desktop`.
+- Completed phase-10 WinUI desktop bootstrap spike on 2026-03-17:
+  - executed the `winui-app` bundled bootstrap flow from `/home/user/.codex/skills/winui-app`:
+    - `winget.exe configure -f config.yaml --accept-configuration-agreements --disable-interactivity` (`Configuration successfully applied`).
+    - validated template availability with `"/mnt/c/Program Files/dotnet/dotnet.exe" new list winui` (initially missing, then available after template remediation).
+  - resolved environment-level template/source blockers:
+    - `dotnet new install Microsoft.WindowsAppSDK.Templates` was unavailable in current feeds.
+    - installed trusted `winui` template package from NuGet.org with explicit source due local feed pinning:
+      - `"/mnt/c/Program Files/dotnet/dotnet.exe" new install VijayAnand.WinUITemplates@5.0.0 --nuget-source https://api.nuget.org/v3/index.json`.
+    - machine default restore source remained `Microsoft Visual Studio Offline Packages`, so WinUI restore/build steps were run with explicit NuGet sources.
+  - scaffolded new desktop project in repo workspace:
+    - `"/mnt/c/Program Files/dotnet/dotnet.exe" new winui -o QbRssRulesDesktop`.
+    - selected **unpackaged** project model (`<WindowsPackageType>None</WindowsPackageType>`) for reliable CLI launch verification in this environment.
+  - validation evidence:
+    - `"/mnt/c/Program Files/dotnet/dotnet.exe" restore QbRssRulesDesktop/QbRssRulesDesktop.csproj --source https://api.nuget.org/v3/index.json --source "C:\Program Files (x86)\Microsoft SDKs\NuGetPackages"` (`Restored`).
+    - `"/mnt/c/Program Files/dotnet/dotnet.exe" build QbRssRulesDesktop/QbRssRulesDesktop.csproj -c Debug --no-restore -p:Platform=x64` (`Build succeeded`).
+    - launch verification via PowerShell `Start-Process` probe: process `QbRssRulesDesktop` running with non-zero `MainWindowHandle` and title `qB RSS Rules Desktop` (final verified instance left running).
+- Fixed post-release `v0.5.0` search relevance regression on 2026-03-16 (query/IMDb local-filter parity):
+  - reproduced rule `Family Guy` (`4f2d973e-9de7-4b4c-a254-17fea10d8d36`) showing unexpected fallback rows such as `Modern Family - S10 - rus 1080p WEBDL (LostFilm)` despite payload query `Family Guy`.
+  - root cause: frontend local recompute in `app/static/app.js` ignored query/IMDb gating, so hidden backend rows (`visible=false`) were re-shown whenever local quality filters matched.
+  - added query/IMDb parity guard in `entryMatchesFilters` so local filtering now mirrors backend behavior (`matchesQueryText`, IMDb exact-match bypass, and query-term enforcement against title surface).
+  - added static regression coverage: `tests/test_routes.py::test_inline_local_filters_enforce_query_and_imdb_parity`.
+  - validation evidence:
+    - `source .venv-linux/bin/activate && ruff check tests/test_routes.py` (`All checks passed`).
+    - `./scripts/test.sh tests/test_routes.py -k "inline_local_generated_pattern_uses_raw_title_surface or inline_feed_scope_indexer_matching_uses_key_variants or inline_local_filters_enforce_query_and_imdb_parity"` (`3 passed`, `74 deselected`).
+    - `./scripts/test.sh tests/test_routes.py` (`77 passed`, `51 warnings`).
+- Addressed post-release `v0.5.0` QA gaps on 2026-03-15 (main-page release counters + poster coverage):
+  - fixed rules main-page release-state counts to apply the same effective local rule filters used by inline rule results (including generated regex fragments/episode-floor constraints, quality token regex groups, release-year checks, and affected-feed indexer scope) before labeling `Matches found` vs `No matches`.
+  - fixed poster coverage by adding OMDb-backed backfill for missing `Rule.poster_url` values on rules page load when metadata lookup is enabled/configured.
+  - added route regressions for both issues:
+    - `tests/test_routes.py::test_rules_page_renders_release_status_from_snapshots` now asserts rule-local-filter-aware counts (`0 / 1` for floor-mismatched snapshot rows).
+    - `tests/test_routes.py::test_rules_page_backfills_missing_posters_from_metadata_lookup` locks poster persistence + rendered `data-rule-poster-url`.
+  - validation evidence:
+    - `source .venv-linux/bin/activate && ruff check app/services/rule_fetch_ops.py app/routes/pages.py tests/test_routes.py` (`All checks passed`).
+    - `source .venv-linux/bin/activate && mypy app/services/rule_fetch_ops.py app/routes/pages.py` (`Success: no issues found in 2 source files`).
+    - `./scripts/test.sh tests/test_routes.py -k "rules_page_renders_release_status_from_snapshots or rules_page_backfills_missing_posters_from_metadata_lookup or run_rules_fetch_api_runs_selected_rules_and_saves_snapshot"` (`3 passed`, `73 deselected`).
+    - `./scripts/test.sh tests/test_routes.py` (`76 passed`).
+    - `./scripts/closeout_qa.sh` (`All browser closeout checks passed`; artifacts: `logs/qa/phase-closeout-20260315T014155Z/closeout-report.{md,json}`).
+    - `source .venv-linux/bin/activate && ./scripts/check.sh` (`All checks passed`).
+- Fixed rules-page hover poster anchoring bug on 2026-03-15:
+  - hover poster now repositions to the currently hovered rule row (including after scrolling/resizing) instead of staying pinned near the first row (`app/static/app.js`, `app/static/app.css`).
+  - deterministic browser closeout `P9-01` now creates poster-backed rules when needed and asserts hover-poster repositioning between different hovered rows, preventing regression (`scripts/closeout_browser_qa.py`).
+  - validation evidence:
+    - `source .venv-linux/bin/activate && ruff check app/routes/pages.py app/services/rule_fetch_ops.py tests/test_routes.py scripts/closeout_browser_qa.py` (`All checks passed`).
+    - `./scripts/test.sh tests/test_routes.py -k "rules_page_renders_release_status_from_snapshots or rules_page_backfills_missing_posters_from_metadata_lookup"` (`2 passed`, `74 deselected`).
+    - `./scripts/closeout_qa.sh` (`All browser closeout checks passed`; artifacts: `logs/qa/phase-closeout-20260315T015957Z/closeout-report.{md,json}`).
+- Revalidated `v0.5.0` release readiness on 2026-03-15 after closeout-report wording cleanup:
+  - updated deterministic browser closeout script wording to reflect phase-9 coverage in CLI/report headers (`scripts/closeout_browser_qa.py`: `4/5/6/7/9`).
+  - reran targeted validations:
+    - `source .venv-linux/bin/activate && ruff check scripts/closeout_browser_qa.py` (`All checks passed`).
+    - `./scripts/test.sh tests/test_routes.py -k "rules_page_renders_release_status_from_snapshots or run_rules_fetch_api_runs_selected_rules_and_saves_snapshot or rules_fetch_schedule_api_save_and_run_now"` (`3 passed`, `72 deselected`).
+    - `./scripts/closeout_qa.sh` (`All browser closeout checks passed`; artifacts: `logs/qa/phase-closeout-20260315T010345Z/closeout-report.{md,json}`).
+- Completed `v0.5.0` release closeout on 2026-03-15:
+  - synchronized version touchpoints to `0.5.0` (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`) and transitioned roadmap target to `v0.6.0` (`ROADMAP.md`).
+  - implemented the phase-9 rules operations workspace:
+    - table-first main page with cards fallback mode, row-hover poster preview, poster rendering in cards view, and compact schedule/operation controls.
+    - centralized release-status chips/counts and release-aware sorting derived from persisted `RuleSearchSnapshot` rows.
+    - on-demand Jackett run orchestration from `/` (`Fetch Selected`, `Fetch All`) with per-rule snapshot persistence.
+    - persisted recurring schedule settings + runtime execution path (API + scheduler thread + due-run fallback path).
+  - added schema/model/migration updates for poster + rule-fetch schedule/defaults:
+    - `Rule.poster_url`
+    - `AppSettings.rules_fetch_schedule_*` + `rules_page_*` defaults
+    - `alembic/versions/0005_rules_main_page_release_ops.py`
+  - extended deterministic browser closeout automation with phase-9 rules workspace assertions (`P9-01`) and updated existing checks for table-only search controls/collapsible rule criteria.
+  - validation evidence:
+    - `source .venv-linux/bin/activate && ./scripts/check.sh` (`All checks passed`)
+    - `./scripts/test.sh tests/test_routes.py` (`75 passed`)
+    - `./scripts/test.sh tests/test_metadata.py tests/test_settings_service.py tests/test_routes.py -k "rules_page or rules_fetch or schedule or save_rules_page_preferences or run_rules_fetch or metadata_client_omdb_supports_title_lookup or get_or_create_normalizes_rules_page_and_schedule_defaults"` (`8 passed`)
+    - `./scripts/closeout_qa.sh` (`All browser closeout checks passed`; artifacts: `logs/qa/phase-closeout-20260315T004048Z/closeout-report.{md,json}`)
 - Completed `v0.4.0` release closeout on 2026-03-15:
   - synchronized version touchpoints to `0.4.0` (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`) and transitioned roadmap target to `v0.5.0` with phase-9 scope (`ROADMAP.md`).
   - captured phase-9 active plan baseline in `docs/plans/phase-9-rules-main-page-release-ops.md` and switched plan index pointer to phase 9 (`docs/plans/README.md`).
@@ -382,21 +541,26 @@
 
 ## In progress
 
-- Phase-8 implementation continues with `P8-04`..`P8-08` pending: unified IMDb/title table rendering, compact rule-page layout, interactive table-header sorting UX, compact queue toolbar, and standalone filter-impact removal.
-- Snapshot replay currently applies on rule-page inline search paths; broader workspace unification and `/search` parity adjustments are still pending.
-- Existing deterministic quality gates from phase 7 remain the baseline release guardrails while phase-8 coverage expands.
+- Post-release stabilization for `v0.6.0` is active while the next implementation phase and `v0.6.1` follow-up scope are being defined.
+- The phase-10 plan is now the release-validated source of truth for what shipped in `v0.6.0`; no post-`v0.6.0` implementation phase plan is active yet.
+- Desktop follow-up is focused on cross-machine confirmation of the retained WinUI companion-process baseline, real WebView hover validation, and single-instance behavior for repeated desktop/API launches.
+- NuGet source behavior is stabilized for this repository via `NuGet.config`, but additional Windows-profile confirmation is still pending.
 
 ## Next actions
 
-- Implement `P8-04` by merging inline primary/fallback rendering into a single query-keyed table payload and template.
-- Implement `P8-08` by removing standalone filter-impact blocks from unified-table rule/search workflows and keeping concise empty-state context.
-- Implement `P8-05`/`P8-06`/`P8-07` UX slices (sticky refinement rail, compact criteria controls, compact queue toolbar, interactive table-header sorting) with desktop/mobile parity.
-- Extend deterministic closeout/browser QA for phase-8 contracts (`P8-09`) and keep docs synchronized for slice completion (`P8-10`).
+- Validate the new `NuGet.config` + `run_dev.bat` desktop/full workflow on at least one additional Windows machine/profile to confirm no hidden source-precedence issues.
+- Re-run live WinUI hover capture against the released desktop shell to confirm the user-facing poster-overlay behavior remains fixed in real WebView sessions.
+- Watch for additional "fetched but not shown" cases and decide whether a future follow-up should persist/export blocker summaries, not just show them inline in the table.
+- Decide whether a post-release performance follow-up should move poster completion fully off the request path for the base rules page.
+- Define single-instance policy for repeated `desktop-run`/`full` execution (reuse existing process vs allow multiple instances) before broader desktop expansion.
+- Define the next implementation phase and target version after `v0.6.0` stabilization evidence is collected.
 
 ## Deferred / future phases
 
 - Phase 6 planning lives in `docs/plans/phase-6-jackett-active-search.md`; implemented scope is in the repo and deeper persistence work remains deferred.
 - Phase 7 planning lives in `docs/plans/phase-7-cached-refinement-and-category-catalog.md`; implementation is complete and serves as the baseline for phase-8 follow-up UX/data-model evolution.
-- Phase 8 planning now lives in `docs/plans/phase-8-persistent-rule-search-snapshots-and-unified-workspace.md`; execution starts with snapshot persistence and unified table rendering.
+- Phase 8 planning lives in `docs/plans/phase-8-persistent-rule-search-snapshots-and-unified-workspace.md`; implementation is complete and release-validated in `v0.4.0`.
+- Phase 9 planning lives in `docs/plans/phase-9-rules-main-page-release-ops.md`; implementation is complete and release-validated in `v0.5.0`.
+- Phase 10 planning lives in `docs/plans/phase-10-winui-desktop-bootstrap.md`; implementation is complete and release-validated in `v0.6.0`, with cross-machine validation and single-instance policy follow-up now tracked as backlog.
 - Follow-up: decide whether remembered feed defaults should also be editable from `/settings`
 - Follow-up: decide whether provider-specific lookup hints or richer search result pickers are needed beyond the current first-match flow

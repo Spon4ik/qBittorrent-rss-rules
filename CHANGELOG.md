@@ -8,6 +8,24 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.6.0] - 2026-03-23
+
+- Released the phase-10 WinUI desktop baseline with `QbRssRulesDesktop`, repo-local desktop build/run commands, shortcut refresh, and hidden companion-backend startup.
+- Added desktop freshness protections so managed backend launches use `--reload`, WebView navigations carry a launch cache-buster, and orphaned managed backend processes are cleaned up on later launches.
+- Added stale-backend compatibility enforcement through `/health` contract metadata plus fallback-port startup, preventing the desktop shell from reattaching to incompatible servers already listening on `:8000`.
+- Added `Show hidden fetched rows` diagnostics and per-row visibility reasons for unified search results and inline rule results.
+- Hardened rules main-page performance with persisted release-cache columns, targeted snapshot loading, and bounded poster backfill retries.
+- Revalidated the release with full Python checks, deterministic browser closeout, and WinUI desktop build evidence for the retained desktop baseline.
+
+## [0.5.0] - 2026-03-15
+
+- Released phase-9 rules main-page operations workspace with table-first defaults, cards fallback mode, and row-hover poster previews.
+- Added poster metadata plumbing end-to-end (`MetadataResult.poster_url`, persisted `Rule.poster_url`, and cards/table rendering fallbacks).
+- Added on-demand rule fetch orchestration from `/` (`Fetch Selected` and `Fetch All`) backed by centralized per-rule snapshot persistence.
+- Added recurring fetch scheduling controls and runtime execution (persisted cadence/scope/status, API endpoints, and background scheduler loop).
+- Added release-availability status/sorting on the rules page using centralized snapshot counts (`Matches found` / `No matches` / `No snapshot`).
+- Added deterministic browser closeout phase-9 coverage (`P9-01`) and updated closeout compatibility checks for table-only search controls and collapsible rule criteria.
+
 ## [0.4.0] - 2026-03-15
 
 - Released the phase-8 persistent rule-search snapshot workflow: saved rules now replay centralized DB-backed unified results by default and support explicit snapshot refresh.

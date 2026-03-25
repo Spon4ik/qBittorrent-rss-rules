@@ -246,7 +246,7 @@ def _render_rule_form(
             context["feed_options"].append({"label": f"Saved feed: {url}", "url": url})
             seen.add(url)
 
-    return templates.TemplateResponse("rule_form.html", context, status_code=status_code)
+    return templates.TemplateResponse(request, "rule_form.html", context, status_code=status_code)
 
 
 def _render_settings_page(
@@ -259,6 +259,7 @@ def _render_settings_page(
     status_code: int = 400,
 ) -> HTMLResponse:
     return templates.TemplateResponse(
+        request,
         "settings.html",
         {
             "request": request,
@@ -308,6 +309,7 @@ def _render_taxonomy_page(
             current_errors.append(str(exc))
 
     return templates.TemplateResponse(
+        request,
         "taxonomy.html",
         {
             "request": request,
@@ -334,6 +336,7 @@ def _render_import_page(
     status_code: int = 400,
 ) -> HTMLResponse:
     return templates.TemplateResponse(
+        request,
         "import.html",
         {
             "request": request,

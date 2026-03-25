@@ -852,7 +852,7 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
             "content_layout": "wide",
         }
     )
-    return templates.TemplateResponse("index.html", context)
+    return templates.TemplateResponse(request, "index.html", context)
 
 
 @router.get("/search", response_class=HTMLResponse)
@@ -1200,7 +1200,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
             "content_layout": "wide",
         }
     )
-    return templates.TemplateResponse("search.html", context)
+    return templates.TemplateResponse(request, "search.html", context)
 
 
 @router.get("/rules/{rule_id}/search")
@@ -1328,7 +1328,7 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
             "content_layout": "wide",
         }
     )
-    return templates.TemplateResponse("rule_form.html", context)
+    return templates.TemplateResponse(request, "rule_form.html", context)
 
 
 @router.get("/rules/{rule_id}", response_class=HTMLResponse)
@@ -1341,6 +1341,7 @@ def edit_rule(
     if rule is None:
         settings = SettingsService.get_or_create(session)
         return templates.TemplateResponse(
+            request,
             "index.html",
             {
                 **_base_context(request, "Rules"),
@@ -1566,7 +1567,7 @@ def edit_rule(
             "content_layout": "wide",
         }
     )
-    return templates.TemplateResponse("rule_form.html", context)
+    return templates.TemplateResponse(request, "rule_form.html", context)
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -1585,7 +1586,7 @@ def settings_page(request: Request, session: Session = Depends(get_db_session)) 
             "metadata_choices": ["omdb", "disabled"],
         }
     )
-    return templates.TemplateResponse("settings.html", context)
+    return templates.TemplateResponse(request, "settings.html", context)
 
 
 @router.get("/taxonomy", response_class=HTMLResponse)
@@ -1616,7 +1617,7 @@ def taxonomy_page(request: Request, session: Session = Depends(get_db_session)) 
     except RuntimeError as exc:
         context["errors"] = [str(exc)]
 
-    return templates.TemplateResponse("taxonomy.html", context)
+    return templates.TemplateResponse(request, "taxonomy.html", context)
 
 
 @router.get("/import", response_class=HTMLResponse)
@@ -1631,7 +1632,7 @@ def import_page(request: Request, session: Session = Depends(get_db_session)) ->
             "result_summary": None,
         }
     )
-    return templates.TemplateResponse("import.html", context)
+    return templates.TemplateResponse(request, "import.html", context)
 
 
 @router.get("/health")

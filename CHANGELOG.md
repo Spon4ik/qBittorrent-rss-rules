@@ -8,6 +8,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.7.2] - 2026-03-25
+
+- Removed the remaining Starlette template deprecation warnings by switching the affected route/template renderers to the request-first `TemplateResponse(...)` signature in both page and API render helpers.
+- Synchronized the patch release touchpoints to `0.7.2`, including the FastAPI app version, the WinUI desktop backend-version guard, and the `/health` route regression assertion.
+- Revalidated the patch with `scripts\\check.bat`, `scripts\\closeout_qa.bat`, and a clean `scripts\\run_dev.bat desktop-build` run (`0 Warning(s)`, `0 Error(s)`).
+- Published the `v0.7.2` release after warning-free validation.
+
 ## [0.7.1] - 2026-03-25
 
 - Released the phase-13 desktop patch so the WinUI shell no longer silently reuses stale backend/app versions and now fails closed into the offline state when a required refresh cannot reach a compatible backend.

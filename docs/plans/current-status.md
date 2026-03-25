@@ -2,14 +2,21 @@
 
 ## Current focus
 
+- Phase 14 is now closed and release-validated as the delivered `v0.7.2` patch release.
+- No new implementation phase is open yet; next planning returns to richer catalog providers, broader watch-history persistence, and targeted large-file/module split work.
 - Phase 13 is closed and release-validated as the delivered `v0.7.1` patch release.
-- No active implementation phase is open yet; the next planning decision is whether to return to post-`v0.7.0` catalog/watch-history follow-up work or continue deeper desktop lifecycle polish.
 - Phase 12 is closed and release-validated as the delivered `v0.7.0` release.
 - Phase 11 remains closed and release-validated as the delivered `v0.6.1` stabilization slice.
 - Phase 10 remains closed and release-validated (`P10-01`..`P10-12`) as the delivered `v0.6.0` baseline.
 - The retained desktop direction remains the WinUI WebView-shell + companion-process lifecycle baseline introduced in `v0.6.0`.
 
 ## Implemented
+
+- Completed `v0.7.2` patch release closeout on 2026-03-25:
+  - synchronized version touchpoints to `0.7.2` (`pyproject.toml`, `app/main.py`, `QbRssRulesDesktop/Views/MainPage.xaml.cs`, `CHANGELOG.md`, and `tests/test_routes.py`) and closed phase 14 as the shipped warning-cleanup/publish slice;
+  - updated the remaining Starlette `TemplateResponse` call sites in `app/routes/pages.py` and `app/routes/api.py` to the request-first signature so route rendering no longer emits the repeated deprecation warning during pytest/check runs;
+  - validated the final `v0.7.2` worktree with `cmd.exe /c scripts\check.bat` (`227 passed`, warning-free pytest output), `cmd.exe /c scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260325T133040Z/`), and `cmd.exe /c scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`);
+  - published `main` plus the `v0.7.2` tag to `origin`.
 
 - Completed `v0.7.1` patch release closeout on 2026-03-25:
   - synchronized version touchpoints to `0.7.1` (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`, `tests/test_routes.py`, and the WinUI shell backend-version guard) and closed phase 13 as the shipped desktop follow-up slice;
@@ -657,27 +664,23 @@
 
 ## In progress
 
-- Phase 12 planning is now documented in `docs/plans/phase-12-v0-7-0-catalog-aware-jellyfin-and-missing-only-queue.md`.
-- The active implementation sequence is:
-  - add remembered Jellyfin episode history plus OMDb-backed season-finale detection so finished seasons jump to `S(next)E00` instead of fake same-season floors;
-  - extend rule/browser floor handling to allow episode `0` safely;
-  - add automatic qB missing/unseen file selection for rule-backed series queue actions when torrent file metadata is available.
+- No active implementation phase is open after the `v0.7.2` release closeout.
+- Current planning backlog focus is richer catalog providers beyond OMDb, broader watch-history/scrobble-compatible persistence decisions, and targeted file/module splits for the largest route/static/service files.
 - NuGet source behavior remains stabilized for this repository via `NuGet.config`, and cross-machine desktop validation is still backlog/follow-up work rather than a release blocker.
 
 ## Next actions
 
-- Complete `P12-01` by teaching Jellyfin sync to merge current episode inventory with remembered per-rule history and to use OMDb season data for finished-season jumps.
-- Complete `P12-02` by allowing episode `0` across stored floors, generated-pattern builders, and browser local-filter parity without reopening the zero-based range leak.
-- Complete `P12-03` by adding qB file-priority plumbing for rule-backed series queue actions so multi-file torrents can prefer only missing/unseen episode files.
-- Revalidate the release path and close out `v0.7.0` docs/version touchpoints once the implementation slices are green.
+- Choose the next release target and open a new active phase plan before the next code change.
+- Decide whether the next catalog step expands beyond OMDb into richer providers or more explicit release-calendar logic.
+- Decide whether deleted-history persistence should remain rule-local or move to a broader watch-history layer.
 - Tackle the highest-payoff codebase cleanup splits after the release work in this order: `app/static/app.js`, `app/routes/pages.py`, `app/routes/api.py`, `app/services/jackett.py`, and `app/services/settings_service.py`.
 - Optionally run one final no-`-SkipShortcuts` installer smoke on a clean validation profile if you want direct Desktop/Start Menu shortcut evidence after the `v0.6.1` release.
-- Watch for additional "fetched but not shown" cases and decide whether any later follow-up should persist/export blocker summaries, not just show them inline in the table.
 - If `Red Alert` is expected to sync, repair the underlying Jellyfin library identity metadata first because the current DB contains no matching root item for `Red Alert` / `tt34888633`.
 
 ## Deferred / future phases
 
-- Phase 12 planning lives in `docs/plans/phase-12-v0-7-0-catalog-aware-jellyfin-and-missing-only-queue.md`; implementation is now active for the upcoming `v0.7.0` release.
+- Phase 14 planning lives in `docs/plans/phase-14-v0-7-2-template-warning-cleanup-and-release-push.md`; implementation is complete and release-validated in `v0.7.2`.
+- Phase 12 planning lives in `docs/plans/phase-12-v0-7-0-catalog-aware-jellyfin-and-missing-only-queue.md`; implementation is complete and release-validated in `v0.7.0`.
 - Phase 11 planning lives in `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md`; implementation is complete and release-validated in `v0.6.1`.
 - Phase 6 planning lives in `docs/plans/phase-6-jackett-active-search.md`; implemented scope is in the repo and deeper persistence work remains deferred.
 - Phase 7 planning lives in `docs/plans/phase-7-cached-refinement-and-category-catalog.md`; implementation is complete and serves as the baseline for phase-8 follow-up UX/data-model evolution.

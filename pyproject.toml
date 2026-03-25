@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "qbittorrent-rss-rule-manager"
-version = "0.7.1"
+version = "0.7.2"
 description = "Local web UI for managing qBittorrent RSS auto-download rules."
 readme = "README.md"
 license = { text = "MIT" }

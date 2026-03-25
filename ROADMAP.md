@@ -1,15 +1,16 @@
 # Roadmap
 
-## Current release target: post-v0.7.1 planning
+## Current release target: post-v0.7.2 planning
 
 ### In progress
 
-- No active implementation phase is open after the `v0.7.1` patch release closeout.
-- Immediate follow-up decisions: whether the next phase returns to post-`v0.7.0` catalog/watch-history planning or continues deeper desktop lifecycle polish.
-- Keep deterministic browser QA, static checks, full pytest, desktop build verification, and real launch verification as release gates for desktop follow-up work.
+- No active implementation phase is currently open.
+- Next planning focus is to return to richer catalog providers, broader watch-history persistence, and large-file/module split work after the `v0.7.2` patch release.
+- Keep deterministic browser QA, static checks, full pytest, and WinUI desktop builds as release gates for the next feature phase.
 
 ### Current phase track
 
+- Phase 14: `v0.7.2` template warning cleanup and release push (implemented and release-validated; `docs/plans/phase-14-v0-7-2-template-warning-cleanup-and-release-push.md`)
 - Phase 13: `v0.7.1` desktop freshness and engine shutdown controls (implemented and release-validated; `docs/plans/phase-13-v0-7-1-desktop-freshness-and-engine-shutdown.md`)
 - Phase 12: `v0.7.0` catalog-aware Jellyfin floors and missing-only queue selection (implemented and release-validated; `docs/plans/phase-12-v0-7-0-catalog-aware-jellyfin-and-missing-only-queue.md`)
 - Phase 11: `v0.6.1` stabilization and desktop hardening (implemented and release-validated; `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md`)
@@ -20,6 +21,9 @@
 - Phase 6: Jackett-backed active search workspace (implemented and release-validated in v0.2.0; follow-up polish completed, deeper persistence still deferred)
 - Phase 4: feed selection UX improvements (implemented, automated closeout validated)
 - Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, automated closeout validated)
+
+Phase 14 detail pointer:
+- Dated checklist, warning-cleanup validation evidence, and release publication notes are tracked in `docs/plans/phase-14-v0-7-2-template-warning-cleanup-and-release-push.md`.
 
 Phase 13 detail pointer:
 - Dated checklist, release validation, and post-release follow-up decisions for WinUI desktop freshness watching, fail-closed backend refresh/reconnect behavior, and in-app managed-backend shutdown/exit controls are tracked in `docs/plans/phase-13-v0-7-1-desktop-freshness-and-engine-shutdown.md`.
@@ -47,13 +51,19 @@ Phase 6 detail pointer:
 
 ### Post-release focus
 
-- Return to post-`v0.7.0` planning on richer catalog providers, broader watch-history persistence, and large-file/module split work once desktop follow-up urgency drops.
 - Decide whether the next Jellyfin/catalog step should expand beyond OMDb-backed season boundaries into richer provider support or more explicit release-calendar reasoning.
 - Decide whether deleted-history persistence should stay rule-local or graduate to a broader watch-history/scrobble-compatible cache.
 - Reduce context and maintenance cost by splitting the largest rule/search/Jellyfin files along real domain boundaries.
 - Keep deterministic browser QA and route/service regressions as release gates for every workflow change.
 
-## Recently released: v0.7.1 (2026-03-25)
+## Recently released: v0.7.2 (2026-03-25)
+
+- Shipped the phase-14 patch so the remaining Starlette `TemplateResponse` request-second call sites are now updated to the request-first signature and no longer emit the repeated deprecation warnings during route/rendering tests.
+- Synchronized the patch release touchpoints to `0.7.2` across the FastAPI app, the WinUI desktop backend-version guard, and the `/health` route regression contract.
+- Revalidated the patch with `scripts\check.bat` (`227 passed`), `scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260325T133040Z/`), and `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`).
+- Published `main` and the `v0.7.2` tag to `origin`.
+
+## Previously released: v0.7.1 (2026-03-25)
 
 - Shipped the phase-13 desktop patch so the WinUI shell now watches local app changes in repo/dev-checkout mode, reloads the WebView when current scripts/templates change, and fails closed into the offline state during required refreshes that cannot reach a compatible backend.
 - Tightened desktop backend compatibility checks so the `0.7.1` desktop shell rejects stale `0.7.0` backends even when they still expose the older desktop contract, and instead starts a managed fallback backend on a fresh loopback port when needed.

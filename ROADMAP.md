@@ -1,15 +1,16 @@
 # Roadmap
 
-## Current release target: post-v0.7.0 planning
+## Current release target: post-v0.7.1 planning
 
 ### In progress
 
-- No active implementation phase is open after the `v0.7.0` release closeout.
-- Immediate follow-up decisions: whether installs without OMDb need a richer catalog source, whether broader watch-history persistence should grow beyond per-rule memory, and whether the largest Jellyfin/search modules should be split before the next feature phase.
-- Keep deterministic browser QA, static checks, full pytest, and desktop build verification as release gates for each new phase.
+- No active implementation phase is open after the `v0.7.1` patch release closeout.
+- Immediate follow-up decisions: whether the next phase returns to post-`v0.7.0` catalog/watch-history planning or continues deeper desktop lifecycle polish.
+- Keep deterministic browser QA, static checks, full pytest, desktop build verification, and real launch verification as release gates for desktop follow-up work.
 
 ### Current phase track
 
+- Phase 13: `v0.7.1` desktop freshness and engine shutdown controls (implemented and release-validated; `docs/plans/phase-13-v0-7-1-desktop-freshness-and-engine-shutdown.md`)
 - Phase 12: `v0.7.0` catalog-aware Jellyfin floors and missing-only queue selection (implemented and release-validated; `docs/plans/phase-12-v0-7-0-catalog-aware-jellyfin-and-missing-only-queue.md`)
 - Phase 11: `v0.6.1` stabilization and desktop hardening (implemented and release-validated; `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md`)
 - Phase 10: WinUI desktop bootstrap baseline + next-version planning (implemented and release-validated in `v0.6.0`)
@@ -19,6 +20,9 @@
 - Phase 6: Jackett-backed active search workspace (implemented and release-validated in v0.2.0; follow-up polish completed, deeper persistence still deferred)
 - Phase 4: feed selection UX improvements (implemented, automated closeout validated)
 - Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, automated closeout validated)
+
+Phase 13 detail pointer:
+- Dated checklist, release validation, and post-release follow-up decisions for WinUI desktop freshness watching, fail-closed backend refresh/reconnect behavior, and in-app managed-backend shutdown/exit controls are tracked in `docs/plans/phase-13-v0-7-1-desktop-freshness-and-engine-shutdown.md`.
 
 Phase 12 detail pointer:
 - Dated checklist, release validation, and post-release follow-up decisions for OMDb-backed season-finale detection, remembered Jellyfin episode history after local file cleanup, episode-`0` floor support, and qB missing/unseen file selection are tracked in `docs/plans/phase-12-v0-7-0-catalog-aware-jellyfin-and-missing-only-queue.md`.
@@ -43,12 +47,20 @@ Phase 6 detail pointer:
 
 ### Post-release focus
 
+- Return to post-`v0.7.0` planning on richer catalog providers, broader watch-history persistence, and large-file/module split work once desktop follow-up urgency drops.
 - Decide whether the next Jellyfin/catalog step should expand beyond OMDb-backed season boundaries into richer provider support or more explicit release-calendar reasoning.
 - Decide whether deleted-history persistence should stay rule-local or graduate to a broader watch-history/scrobble-compatible cache.
 - Reduce context and maintenance cost by splitting the largest rule/search/Jellyfin files along real domain boundaries.
 - Keep deterministic browser QA and route/service regressions as release gates for every workflow change.
 
-## Recently released: v0.7.0 (2026-03-25)
+## Recently released: v0.7.1 (2026-03-25)
+
+- Shipped the phase-13 desktop patch so the WinUI shell now watches local app changes in repo/dev-checkout mode, reloads the WebView when current scripts/templates change, and fails closed into the offline state during required refreshes that cannot reach a compatible backend.
+- Tightened desktop backend compatibility checks so the `0.7.1` desktop shell rejects stale `0.7.0` backends even when they still expose the older desktop contract, and instead starts a managed fallback backend on a fresh loopback port when needed.
+- Added explicit `Shut Down Engine` and `Exit Desktop` controls so stopping the desktop-managed Python backend no longer requires Task Manager.
+- Revalidated the patch with `scripts\check.bat`, `scripts\closeout_qa.bat`, `scripts\run_dev.bat desktop-build`, and live WinUI launch verification against a managed `0.7.1` backend at `http://127.0.0.1:8001/`.
+
+## Previously released: v0.7.0 (2026-03-25)
 
 - Shipped the phase-12 catalog-aware Jellyfin/qB slice with OMDb-backed season-boundary checks, remembered skip history for deleted local episodes, and automatic missing/unseen qB file selection for saved series rules.
 - Jellyfin sync now detects real season finales, advances to `S(next)E00`, and avoids false same-season floors such as `S01E11` when the current season is already complete in the external catalog.
@@ -56,7 +68,7 @@ Phase 6 detail pointer:
 - `Add to queue` now narrows multi-file series torrents to only missing/unseen episode files when torrent metadata is safe enough to parse, with explicit fallback or deferred messaging when it is not.
 - Revalidated the release with `scripts\check.bat`, `scripts\closeout_qa.bat`, and `scripts\run_dev.bat desktop-build`.
 
-## Previously released: v0.6.1 (2026-03-25)
+## Earlier release: v0.6.1 (2026-03-25)
 
 - Shipped the phase-11 stabilization slice with single-instance WinUI desktop enforcement, deferred poster backfill on the base rules page, fresh live WebView hover evidence, and a portable Windows bundle/install flow.
 - Added read-only Jellyfin startup/background sync, explicit Settings sync controls, persisted next-missing series floors, and default movie auto-disable when a matching local Jellyfin item already exists.

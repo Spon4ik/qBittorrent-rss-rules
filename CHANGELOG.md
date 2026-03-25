@@ -8,6 +8,14 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.7.1] - 2026-03-25
+
+- Released the phase-13 desktop patch so the WinUI shell no longer silently reuses stale backend/app versions and now fails closed into the offline state when a required refresh cannot reach a compatible backend.
+- Added desktop-side local app change watching plus debounced WebView refresh handling for repo/dev-checkout runs, keeping desktop behavior aligned with current browser scripts/templates instead of requiring Task Manager resets.
+- Tightened desktop `/health` compatibility checks to require the expected backend app version in addition to the desktop backend contract, so stale `0.7.0` backends are rejected automatically by the `0.7.1` desktop shell.
+- Added explicit `Shut Down Engine` and `Exit Desktop` controls to the WinUI shell so the desktop-managed Python backend can be stopped from inside the app.
+- Revalidated the patch with `scripts\\check.bat`, `scripts\\closeout_qa.bat`, and WinUI desktop build/launch verification.
+
 ## [0.7.0] - 2026-03-25
 
 - Released the phase-12 catalog-aware Jellyfin/qB slice with backward-compatible rule storage updates, OMDb-backed season-boundary checks, and automatic missing-only queue selection for saved series rules.

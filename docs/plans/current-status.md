@@ -2,13 +2,21 @@
 
 ## Current focus
 
+- Phase 13 is closed and release-validated as the delivered `v0.7.1` patch release.
+- No active implementation phase is open yet; the next planning decision is whether to return to post-`v0.7.0` catalog/watch-history follow-up work or continue deeper desktop lifecycle polish.
 - Phase 12 is closed and release-validated as the delivered `v0.7.0` release.
-- No active implementation phase is open yet; the next planning decision is whether to deepen catalog provider support beyond OMDb, broaden persisted watch-history semantics beyond per-rule memory, or split the largest Jellyfin/search modules before the next feature phase.
 - Phase 11 remains closed and release-validated as the delivered `v0.6.1` stabilization slice.
 - Phase 10 remains closed and release-validated (`P10-01`..`P10-12`) as the delivered `v0.6.0` baseline.
 - The retained desktop direction remains the WinUI WebView-shell + companion-process lifecycle baseline introduced in `v0.6.0`.
 
 ## Implemented
+
+- Completed `v0.7.1` patch release closeout on 2026-03-25:
+  - synchronized version touchpoints to `0.7.1` (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`, `tests/test_routes.py`, and the WinUI shell backend-version guard) and closed phase 13 as the shipped desktop follow-up slice;
+  - added desktop-side local app change watching plus debounced refresh/reconnect handling so repo/dev-checkout script/template changes no longer leave the WinUI shell behind the browser;
+  - tightened desktop health validation so the shell now requires both the expected desktop contract and the expected backend app version, which prevented the live `0.7.1` desktop from reusing a stale `0.7.0` backend on `http://127.0.0.1:8000` and instead started a managed `0.7.1` backend at `http://127.0.0.1:8001/`;
+  - added explicit `Shut Down Engine` and `Exit Desktop` controls to the WinUI shell so the desktop-managed backend can be stopped from inside the app instead of through Task Manager;
+  - validated the final `v0.7.1` worktree with `cmd.exe /c scripts\check.bat` (`227 passed`, `57 warnings`), `cmd.exe /c scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260325T123912Z/`), `cmd.exe /c scripts\run_dev.bat desktop-build`, and live launch verification showing `QbRssRulesDesktop` window handle `1182596` plus managed backend state `http://127.0.0.1:8001/` with `/health` reporting `app_version=0.7.1`.
 
 - Completed `v0.7.0` release closeout on 2026-03-25:
   - synchronized version touchpoints to `0.7.0` (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`, `tests/test_routes.py`) and closed phase 12 as the shipped catalog-aware Jellyfin/qB slice;

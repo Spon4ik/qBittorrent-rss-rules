@@ -18,19 +18,27 @@ namespace QbRssRulesDesktop.Views
 
         private const string DefaultBackendUrl = "http://127.0.0.1:8000";
         private const string RequiredDesktopBackendContract = "2026-03-22";
+        private const string RequiredDesktopBackendAppVersion = "0.7.1";
         private const string ManagedBackendStateFileName = "desktop-managed-backend.json";
         private const int ManagedBackendPortSearchLimit = 32;
         private const int ReconnectAttemptLimit = 30;
         private Uri backendUri;
         private readonly DispatcherQueue dispatcherQueue;
         private readonly DispatcherQueueTimer reconnectTimer;
+        private readonly DispatcherQueueTimer localChangeDebounceTimer;
+        private readonly List<FileSystemWatcher> localAppWatchers = new();
         private readonly string? repositoryRoot;
         private readonly bool usesConfiguredBackendUrl;
         private Process? managedBackendProcess;
         private bool autoStartAttempted;
         private bool isDisposing;
         private bool hasAttachedCloseHandlers;
+        private bool hasAttachedWindowActivatedHandler;
         private int remainingReconnectAttempts;
+        private long appliedLocalAppFreshnessTicks;
+        private long requiredLocalAppFreshnessTicks;
+        private long pendingNavigationFreshnessTicks;
+        private string pendingLocalRefreshDetail = "Detected local app changes.";
         private string lastBackendProbeFailure = "";
 
         private sealed record ManagedBackendState(int OwnerPid, int BackendPid, string BackendUrl, string RepositoryRoot, string StartedAtUtc);
@@ -47,6 +55,9 @@ namespace QbRssRulesDesktop.Views
             reconnectTimer = dispatcherQueue.CreateTimer();
             reconnectTimer.Interval = TimeSpan.FromSeconds(2);
             reconnectTimer.Tick += OnReconnectTimerTick;
+            localChangeDebounceTimer = dispatcherQueue.CreateTimer();
+            localChangeDebounceTimer.Interval = TimeSpan.FromMilliseconds(750);
+            localChangeDebounceTimer.Tick += OnLocalChangeDebounceTick;
             Loaded += OnLoaded;
             Unloaded += OnUnloaded;
         }
@@ -99,6 +110,8 @@ namespace QbRssRulesDesktop.Views
         {
             Loaded -= OnLoaded;
             EnsureCloseHandlers();
+            InitializeLocalAppFreshnessTracking();
+            StartLocalAppWatchers();
             CleanupStaleManagedBackend();
 
             if (await IsBackendReachableAsync())
@@ -125,6 +138,7 @@ namespace QbRssRulesDesktop.Views
         private void NavigateToBackend()
         {
             reconnectTimer.Stop();
+            pendingNavigationFreshnessTicks = requiredLocalAppFreshnessTicks;
             ConnectionStatusText.Text = $"Connecting to {backendUri}...";
             OfflinePanel.Visibility = Visibility.Collapsed;
             AppWebView.Visibility = Visibility.Visible;
@@ -143,6 +157,7 @@ namespace QbRssRulesDesktop.Views
         {
             if (args.IsSuccess)
             {
+                appliedLocalAppFreshnessTicks = Math.Max(appliedLocalAppFreshnessTicks, pendingNavigationFreshnessTicks);
                 ConnectionStatusText.Text = $"Connected to {backendUri}";
                 OfflinePanel.Visibility = Visibility.Collapsed;
                 AppWebView.Visibility = Visibility.Visible;
@@ -219,6 +234,17 @@ namespace QbRssRulesDesktop.Views
                     lastBackendProbeFailure = string.IsNullOrWhiteSpace(contract)
                         ? $"An incompatible backend is already listening at {backendUri}; it does not expose desktop contract {RequiredDesktopBackendContract}."
                         : $"An incompatible backend is already listening at {backendUri}; expected desktop contract {RequiredDesktopBackendContract}, got {contract}.";
+                    return false;
+                }
+
+                var appVersion = root.TryGetProperty("app_version", out var appVersionElement)
+                    ? appVersionElement.GetString()
+                    : "";
+                if (!string.Equals(appVersion, RequiredDesktopBackendAppVersion, StringComparison.Ordinal))
+                {
+                    lastBackendProbeFailure = string.IsNullOrWhiteSpace(appVersion)
+                        ? $"An incompatible backend is already listening at {backendUri}; expected app version {RequiredDesktopBackendAppVersion}."
+                        : $"An incompatible backend is already listening at {backendUri}; expected app version {RequiredDesktopBackendAppVersion}, got {appVersion}.";
                     return false;
                 }
 
@@ -350,6 +376,168 @@ namespace QbRssRulesDesktop.Views
                 && File.Exists(Path.Combine(repositoryRoot, "scripts", "run_dev.bat"));
         }
 
+        private bool IsLocalAppWatchEnabled()
+        {
+            return repositoryRoot is not null
+                && HasDevCheckoutScripts()
+                && Directory.Exists(Path.Combine(repositoryRoot, "app"));
+        }
+
+        private void InitializeLocalAppFreshnessTracking()
+        {
+            var freshnessTicks = ComputeLocalAppFreshnessTicks();
+            requiredLocalAppFreshnessTicks = freshnessTicks;
+            appliedLocalAppFreshnessTicks = freshnessTicks;
+            pendingNavigationFreshnessTicks = freshnessTicks;
+        }
+
+        private void StartLocalAppWatchers()
+        {
+            if (!IsLocalAppWatchEnabled() || localAppWatchers.Count > 0 || repositoryRoot is null)
+            {
+                return;
+            }
+
+            var appRoot = Path.Combine(repositoryRoot, "app");
+            var watcher = new FileSystemWatcher(appRoot)
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite,
+                Filter = "*.*",
+                EnableRaisingEvents = true,
+            };
+            watcher.Changed += OnLocalAppFileChanged;
+            watcher.Created += OnLocalAppFileChanged;
+            watcher.Deleted += OnLocalAppFileChanged;
+            watcher.Renamed += OnLocalAppFileRenamed;
+            localAppWatchers.Add(watcher);
+        }
+
+        private void StopLocalAppWatchers()
+        {
+            foreach (var watcher in localAppWatchers)
+            {
+                watcher.EnableRaisingEvents = false;
+                watcher.Changed -= OnLocalAppFileChanged;
+                watcher.Created -= OnLocalAppFileChanged;
+                watcher.Deleted -= OnLocalAppFileChanged;
+                watcher.Renamed -= OnLocalAppFileRenamed;
+                watcher.Dispose();
+            }
+
+            localAppWatchers.Clear();
+        }
+
+        private void OnLocalAppFileChanged(object sender, FileSystemEventArgs args)
+        {
+            HandlePotentialLocalAppChange(args.FullPath);
+        }
+
+        private void OnLocalAppFileRenamed(object sender, RenamedEventArgs args)
+        {
+            HandlePotentialLocalAppChange(args.OldFullPath);
+            HandlePotentialLocalAppChange(args.FullPath);
+        }
+
+        private void HandlePotentialLocalAppChange(string path)
+        {
+            if (!IsRelevantLocalAppPath(path))
+            {
+                return;
+            }
+
+            dispatcherQueue.TryEnqueue(() =>
+            {
+                requiredLocalAppFreshnessTicks = Math.Max(requiredLocalAppFreshnessTicks, ComputeLocalAppFreshnessTicks());
+                pendingLocalRefreshDetail = "Detected local app changes. Reloading desktop session.";
+                localChangeDebounceTimer.Stop();
+                localChangeDebounceTimer.Start();
+            });
+        }
+
+        private static bool IsRelevantLocalAppPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            if (path.Contains($"{Path.DirectorySeparatorChar}__pycache__{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".pyc", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return Path.GetExtension(path) switch
+            {
+                ".css" => true,
+                ".html" => true,
+                ".js" => true,
+                ".json" => true,
+                ".py" => true,
+                _ => false,
+            };
+        }
+
+        private long ComputeLocalAppFreshnessTicks()
+        {
+            if (!IsLocalAppWatchEnabled() || repositoryRoot is null)
+            {
+                return 0;
+            }
+
+            try
+            {
+                return Directory
+                    .EnumerateFiles(Path.Combine(repositoryRoot, "app"), "*.*", SearchOption.AllDirectories)
+                    .Where(IsRelevantLocalAppPath)
+                    .Select(path => new FileInfo(path).LastWriteTimeUtc.Ticks)
+                    .DefaultIfEmpty(0)
+                    .Max();
+            }
+            catch
+            {
+                return requiredLocalAppFreshnessTicks;
+            }
+        }
+
+        private async void OnLocalChangeDebounceTick(DispatcherQueueTimer sender, object args)
+        {
+            localChangeDebounceTimer.Stop();
+            await RefreshForLocalAppChangesAsync(pendingLocalRefreshDetail);
+        }
+
+        private async Task RefreshForLocalAppChangesAsync(string detail)
+        {
+            if (!IsLocalAppWatchEnabled())
+            {
+                return;
+            }
+
+            requiredLocalAppFreshnessTicks = Math.Max(requiredLocalAppFreshnessTicks, ComputeLocalAppFreshnessTicks());
+            if (requiredLocalAppFreshnessTicks <= appliedLocalAppFreshnessTicks)
+            {
+                return;
+            }
+
+            reconnectTimer.Stop();
+            ConnectionStatusText.Text = "Refreshing desktop session...";
+            OfflineMessageText.Text = detail;
+            AppWebView.Visibility = Visibility.Collapsed;
+            OfflinePanel.Visibility = Visibility.Visible;
+
+            if (await IsBackendReachableAsync())
+            {
+                NavigateToBackend();
+                return;
+            }
+
+            remainingReconnectAttempts = ReconnectAttemptLimit;
+            ConnectionStatusText.Text = $"Refreshing desktop session... ({remainingReconnectAttempts})";
+            OfflineMessageText.Text = $"{detail} {LastBackendProbeFailureOrDefault("Waiting for a compatible backend.")}";
+            reconnectTimer.Start();
+        }
+
         private bool IsBundledPythonExecutable(string pythonExecutable)
         {
             if (repositoryRoot is null)
@@ -441,6 +629,29 @@ namespace QbRssRulesDesktop.Views
             _ = TryStartBackendProcess(autoTriggered: false);
         }
 
+        private void OnShutdownEngineClicked(object sender, RoutedEventArgs e)
+        {
+            reconnectTimer.Stop();
+            localChangeDebounceTimer.Stop();
+            if (managedBackendProcess is null || managedBackendProcess.HasExited)
+            {
+                ConnectionStatusText.Text = "Managed backend is not running";
+                if (OfflinePanel.Visibility == Visibility.Visible)
+                {
+                    OfflineMessageText.Text = "No desktop-managed backend is currently running for this session.";
+                }
+                return;
+            }
+
+            StopManagedBackendProcess();
+            ShowOfflineState("Managed backend shut down. Use Start Backend to launch it again.");
+        }
+
+        private void OnExitClicked(object sender, RoutedEventArgs e)
+        {
+            App.MainWindow?.Close();
+        }
+
         private void OnOpenInBrowserClicked(object sender, RoutedEventArgs e)
         {
             try
@@ -520,6 +731,7 @@ namespace QbRssRulesDesktop.Views
 
         private async Task RetryConnectAsync()
         {
+            requiredLocalAppFreshnessTicks = Math.Max(requiredLocalAppFreshnessTicks, ComputeLocalAppFreshnessTicks());
             if (await IsBackendReachableAsync())
             {
                 NavigateToBackend();
@@ -544,10 +756,22 @@ namespace QbRssRulesDesktop.Views
             if (App.MainWindow is not null)
             {
                 App.MainWindow.Closed += OnHostWindowClosed;
+                App.MainWindow.Activated += OnHostWindowActivated;
+                hasAttachedWindowActivatedHandler = true;
             }
 
             AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
             hasAttachedCloseHandlers = true;
+        }
+
+        private async void OnHostWindowActivated(object sender, WindowActivatedEventArgs args)
+        {
+            if (args.WindowActivationState == WindowActivationState.Deactivated)
+            {
+                return;
+            }
+
+            await RefreshForLocalAppChangesAsync("Applying newer local app changes.");
         }
 
         private void OnHostWindowClosed(object sender, WindowEventArgs args)
@@ -569,12 +793,19 @@ namespace QbRssRulesDesktop.Views
 
             isDisposing = true;
             reconnectTimer.Stop();
+            localChangeDebounceTimer.Stop();
+            StopLocalAppWatchers();
             StopManagedBackendProcess();
             if (hasAttachedCloseHandlers)
             {
                 if (App.MainWindow is not null)
                 {
                     App.MainWindow.Closed -= OnHostWindowClosed;
+                    if (hasAttachedWindowActivatedHandler)
+                    {
+                        App.MainWindow.Activated -= OnHostWindowActivated;
+                        hasAttachedWindowActivatedHandler = false;
+                    }
                 }
 
                 AppDomain.CurrentDomain.ProcessExit -= OnProcessExit;

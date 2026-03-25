@@ -188,6 +188,33 @@ function parseJsonData(rawValue, fallback) {
   }
 }
 
+function formatJellyfinEpisodeKey(seasonNumber, episodeNumber) {
+  const normalizedSeason = Math.max(1, Math.min(99, Number(seasonNumber) || 1));
+  const normalizedEpisode = Math.max(1, Math.min(99, Number(episodeNumber) || 1));
+  return `S${String(normalizedSeason).padStart(2, "0")}E${String(normalizedEpisode).padStart(2, "0")}`;
+}
+
+function normalizeJellyfinEpisodeKeys(value) {
+  const normalized = [];
+  const seen = new Set();
+  const candidates = Array.isArray(value)
+    ? value
+    : parseJsonData(String(value || "").trim(), []);
+  for (const item of Array.isArray(candidates) ? candidates : []) {
+    const match = String(item || "").trim().match(/^s(\d{1,2})e(\d{1,2})$/iu);
+    if (!match) {
+      continue;
+    }
+    const episodeKey = formatJellyfinEpisodeKey(match[1], match[2]);
+    if (seen.has(episodeKey)) {
+      continue;
+    }
+    seen.add(episodeKey);
+    normalized.push(episodeKey);
+  }
+  return normalized;
+}
+
 function buildQualityPatternMap(options) {
   const patternMap = {};
   for (const option of options || []) {
@@ -656,12 +683,13 @@ function buildEpisodeProgressRegexFragment(startSeasonValue, startEpisodeValue) 
   const separators = "[\\s._-]*";
   const seasonExact = `0*${startSeason}`;
   const episodeAny = "0*[1-9]\\d?";
+  const episodeRangeAny = "0*\\d{1,2}";
   const episodeGe = buildMinNumericPattern1To99(startEpisode);
   const seasonPrefix = "(?:s(?:eason)?[\\s._:-]*)";
   const episodePrefix = "(?:e(?:p(?:isode)?)?[\\s._:-]*)";
   const fragments = [
     `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeGe}`,
-    `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeAny}${separators}-${separators}(?:${episodePrefix})?${episodeGe}`,
+    `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeRangeAny}${separators}-${separators}(?:${episodePrefix})?${episodeGe}`,
     `${seasonPrefix}${seasonExact}(?!\\d)(?:\\b|$)`,
   ];
   if (startSeason < 99) {
@@ -670,6 +698,96 @@ function buildEpisodeProgressRegexFragment(startSeasonValue, startEpisodeValue) 
     fragments.splice(1, 0, `${seasonPrefix}${seasonAfter}(?!\\d)(?:\\b|$)`);
   }
   return `(?:${fragments.join("|")})`;
+}
+
+function buildSpecificEpisodeRegexFragment(seasonValue, episodeValue) {
+  const seasonNumber = normalizeBoundedPositiveInt(seasonValue, { min: 1, max: 99 });
+  const episodeNumber = normalizeBoundedPositiveInt(episodeValue, { min: 1, max: 99 });
+  if (seasonNumber === null || episodeNumber === null) {
+    return "";
+  }
+  const separators = "[\\s._-]*";
+  const seasonExact = `0*${seasonNumber}`;
+  const episodeExact = `0*${episodeNumber}`;
+  const episodeRangeAny = "0*\\d{1,2}";
+  const seasonPrefix = "(?:s(?:eason)?[\\s._:-]*)";
+  const episodePrefix = "(?:e(?:p(?:isode)?)?[\\s._:-]*)";
+  const fragments = [
+    `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeExact}(?!\\d)`,
+    `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeRangeAny}${separators}-${separators}(?:${episodePrefix})?${episodeExact}(?!\\d)`,
+    `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeExact}(?!\\d)${separators}-${separators}(?:${episodePrefix})?${episodeRangeAny}`,
+  ];
+  return `(?:${fragments.join("|")})`;
+}
+
+function buildBelowFloorEpisodeRegexFragment(seasonValue, episodeValue) {
+  const seasonNumber = normalizeBoundedPositiveInt(seasonValue, { min: 1, max: 99 });
+  const episodeNumber = normalizeBoundedPositiveInt(episodeValue, { min: 1, max: 99 });
+  if (seasonNumber === null || episodeNumber === null) {
+    return "";
+  }
+  const separators = "[\\s._-]*";
+  const seasonExact = `0*${seasonNumber}`;
+  const episodeExact = `0*${episodeNumber}`;
+  const episodeRangeAny = "0*\\d{1,2}";
+  const seasonPrefix = "(?:s(?:eason)?[\\s._:-]*)";
+  const episodePrefix = "(?:e(?:p(?:isode)?)?[\\s._:-]*)";
+  const fragments = [
+    `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeExact}(?!\\d)(?!${separators}-)`,
+    `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeRangeAny}${separators}-${separators}(?:(?:${episodePrefix}))?${episodeExact}(?!\\d)`,
+  ];
+  return `(?:${fragments.join("|")})`;
+}
+
+function buildLowerEpisodeExclusionRegexFragment(startSeasonValue, startEpisodeValue) {
+  const startSeason = normalizeBoundedPositiveInt(startSeasonValue, { min: 1, max: 99 });
+  const startEpisode = normalizeBoundedPositiveInt(startEpisodeValue, { min: 1, max: 99 });
+  if (startSeason === null || startEpisode === null || startEpisode <= 1) {
+    return "";
+  }
+  const fragments = [];
+  for (let episodeNumber = 1; episodeNumber < startEpisode; episodeNumber += 1) {
+    const fragment = buildBelowFloorEpisodeRegexFragment(startSeason, episodeNumber);
+    if (fragment) {
+      fragments.push(fragment);
+    }
+  }
+  if (fragments.length === 0) {
+    return "";
+  }
+  return `(?:${fragments.join("|")})`;
+}
+
+function buildExistingEpisodeExclusionRegexFragment(existingEpisodeKeys) {
+  const fragments = [];
+  for (const episodeKey of normalizeJellyfinEpisodeKeys(existingEpisodeKeys)) {
+    const match = episodeKey.match(/^s(\d{1,2})e(\d{1,2})$/iu);
+    if (!match) {
+      continue;
+    }
+    const fragment = buildSpecificEpisodeRegexFragment(match[1], match[2]);
+    if (fragment) {
+      fragments.push(fragment);
+    }
+  }
+  if (fragments.length === 0) {
+    return "";
+  }
+  return `(?:${fragments.join("|")})`;
+}
+
+function anchorGeneratedPatternAtStart(pattern) {
+  const cleaned = String(pattern || "").trim();
+  if (!cleaned) {
+    return "";
+  }
+  if (cleaned.startsWith("(?i)^") || cleaned.startsWith("^")) {
+    return cleaned;
+  }
+  if (cleaned.startsWith("(?i)")) {
+    return `(?i)^${cleaned.slice(4)}`;
+  }
+  return `^${cleaned}`;
 }
 
 function deriveGeneratedPattern({
@@ -688,6 +806,8 @@ function deriveGeneratedPattern({
   qualityTokenGroupMap = {},
   startSeason = "",
   startEpisode = "",
+  jellyfinSearchExistingUnseen = false,
+  jellyfinExistingEpisodeNumbers = [],
 }) {
   const manualMustContainValue = String(manualMustContain || "").trim();
   const fullManualOverride = looksLikeFullMustContainOverride(manualMustContainValue);
@@ -718,6 +838,10 @@ function deriveGeneratedPattern({
       .filter(Boolean)),
   ];
   const episodeProgressFragment = buildEpisodeProgressRegexFragment(startSeason, startEpisode);
+  const lowerEpisodeExclusion = buildLowerEpisodeExclusionRegexFragment(startSeason, startEpisode);
+  const jellyfinExistingEpisodeExclusion = jellyfinSearchExistingUnseen
+    ? ""
+    : buildExistingEpisodeExclusionRegexFragment(jellyfinExistingEpisodeNumbers);
   const normalizedTitle = String(title || "").trim();
   const titleFragment = normalizedTitle ? buildTitleRegexFragment(normalizedTitle) : "";
   const normalizedYear = normalizeReleaseYear(releaseYear);
@@ -730,6 +854,8 @@ function deriveGeneratedPattern({
       || qualityIncludeGroups.length > 0
       || qualityExclude
       || episodeProgressFragment
+      || lowerEpisodeExclusion
+      || jellyfinExistingEpisodeExclusion
   );
   if (!useRegex && !hasGeneratedConditions) {
     return normalizedTitle;
@@ -758,6 +884,12 @@ function deriveGeneratedPattern({
   const negativeFragments = [];
   if (qualityExclude) {
     negativeFragments.push(qualityExclude);
+  }
+  if (lowerEpisodeExclusion) {
+    negativeFragments.push(lowerEpisodeExclusion);
+  }
+  if (jellyfinExistingEpisodeExclusion) {
+    negativeFragments.push(jellyfinExistingEpisodeExclusion);
   }
   for (const fragment of buildOptionalKeywordGroupRegexFragments(excludeKeywordGroups)) {
     negativeFragments.push(fragment);
@@ -806,6 +938,9 @@ function derivePattern(form, qualityPatternMap, qualityTokenGroupMap = {}) {
   if (looksLikeFullMustContainOverride(manualMustContain)) {
     return manualMustContain;
   }
+  const jellyfinExistingEpisodeNumbers = normalizeJellyfinEpisodeKeys(
+    parseJsonData(form.dataset.jellyfinExistingEpisodeNumbers || "[]", [])
+  );
   return deriveGeneratedPattern({
     title: deriveTitle(form),
     useRegex: Boolean(form.querySelector('input[name="use_regex"]')?.checked),
@@ -818,6 +953,10 @@ function derivePattern(form, qualityPatternMap, qualityTokenGroupMap = {}) {
     manualMustContain,
     startSeason: form.querySelector('input[name="start_season"]')?.value || "",
     startEpisode: form.querySelector('input[name="start_episode"]')?.value || "",
+    jellyfinSearchExistingUnseen: Boolean(
+      form.querySelector('input[name="jellyfin_search_existing_unseen"]')?.checked
+    ),
+    jellyfinExistingEpisodeNumbers,
     qualityIncludeTokens: getCheckedValues(form, "quality_include_tokens"),
     qualityExcludeTokens: getCheckedValues(form, "quality_exclude_tokens"),
     qualityPatternMap,
@@ -1050,6 +1189,12 @@ function initSearchPage(container) {
   const getSearchQueryLabel = () => String(queryInput?.value || container.dataset.searchQuery || "").trim();
   const getSearchQuery = () => normalizeSearchText(getSearchQueryLabel());
   const getSearchImdbId = () => normalizeSearchImdbId(imdbIdInput?.value || "");
+  const getJellyfinExistingEpisodeNumbers = () => normalizeJellyfinEpisodeKeys(
+    parseJsonData(form.dataset.jellyfinExistingEpisodeNumbers || "[]", [])
+  );
+  const getJellyfinSearchExistingUnseen = () => Boolean(
+    form.querySelector('input[name="jellyfin_search_existing_unseen"]')?.checked
+  );
   const DEFAULT_SORT_FIELD = "published_at";
   const DEFAULT_SORT_DIRECTION_BY_FIELD = {
     published_at: "desc",
@@ -1473,6 +1618,8 @@ function initSearchPage(container) {
       additionalIncludeGroups: anyKeywordGroups,
       startSeason: startSeasonInput?.value || "",
       startEpisode: startEpisodeInput?.value || "",
+      jellyfinSearchExistingUnseen: getJellyfinSearchExistingUnseen(),
+      jellyfinExistingEpisodeNumbers: getJellyfinExistingEpisodeNumbers(),
       qualityIncludeTokens: tokenState.includeKeywordTokens,
       qualityExcludeTokens: tokenState.excludeKeywordTokens,
       qualityPatternMap,
@@ -1496,7 +1643,10 @@ function initSearchPage(container) {
     if (!manualMustContainValue && (normalizedStartSeason === null || normalizedStartEpisode === null)) {
       return "";
     }
-    return deriveGeneratedPattern({
+    if (looksLikeFullMustContainOverride(manualMustContainValue)) {
+      return manualMustContainValue;
+    }
+    return anchorGeneratedPatternAtStart(deriveGeneratedPattern({
       title: "",
       useRegex: true,
       includeReleaseYear: false,
@@ -1506,11 +1656,13 @@ function initSearchPage(container) {
       manualMustContain: manualMustContainValue,
       startSeason: startSeasonValue,
       startEpisode: startEpisodeValue,
+      jellyfinSearchExistingUnseen: getJellyfinSearchExistingUnseen(),
+      jellyfinExistingEpisodeNumbers: getJellyfinExistingEpisodeNumbers(),
       qualityIncludeTokens: [],
       qualityExcludeTokens: [],
       qualityPatternMap,
       qualityTokenGroupMap,
-    });
+    }));
   };
 
   const getActiveFilters = () => {

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+import app.config as app_config
 from app.config import get_environment_settings, obfuscate_secret
 from app.models import AppSettings
 from app.services.settings_service import (
@@ -45,6 +48,21 @@ def test_rewrite_localhost_url_for_wsl_is_noop_outside_wsl(monkeypatch: pytest.M
     monkeypatch.setattr("app.services.settings_service.platform.version", lambda: "#1 SMP PREEMPT_DYNAMIC")
 
     assert _rewrite_localhost_url_for_wsl("http://localhost:8080/") == "http://localhost:8080/"
+
+
+def test_ensure_runtime_dirs_touches_relative_sqlite_database(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("QB_RULES_DATABASE_URL", "sqlite:///./data/qb_rules.db")
+    monkeypatch.setattr(app_config, "DATA_DIR", tmp_path / "data")
+    _clear_env_cache()
+
+    app_config.ensure_runtime_dirs()
+
+    assert (tmp_path / "data").is_dir()
+    assert (tmp_path / "data" / "qb_rules.db").exists()
 
 
 def test_resolve_qb_connection_rewrites_settings_localhost_in_wsl(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -91,6 +109,48 @@ def test_resolve_qb_connection_rewrites_env_localhost_in_wsl(monkeypatch: pytest
     assert resolved.base_url == "http://host.docker.internal:18080/"
     assert resolved.username == "env-user"
     assert resolved.password == "env-pass"
+
+
+def test_resolve_jellyfin_prefers_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("QB_RULES_JELLYFIN_DB_PATH", r"D:\Env\jellyfin.db")
+    monkeypatch.setenv("QB_RULES_JELLYFIN_USER_NAME", "EnvUser")
+    _clear_env_cache()
+
+    settings = AppSettings(
+        id="default",
+        jellyfin_db_path=r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db",
+        jellyfin_user_name="SavedUser",
+        jellyfin_auto_sync_enabled=True,
+        jellyfin_auto_sync_interval_seconds=30,
+    )
+
+    resolved = SettingsService.resolve_jellyfin(settings)
+
+    assert resolved.db_path == r"D:\Env\jellyfin.db"
+    assert resolved.user_name == "EnvUser"
+    assert resolved.auto_sync_enabled is True
+    assert resolved.auto_sync_interval_seconds == 30
+
+
+def test_get_or_create_normalizes_jellyfin_settings(db_session) -> None:
+    settings = AppSettings(
+        id="default",
+        jellyfin_db_path="  C:\\ProgramData\\Jellyfin\\Server\\data\\jellyfin.db  ",
+        jellyfin_user_name="  Spon4ik  ",
+        jellyfin_auto_sync_enabled=True,
+        jellyfin_auto_sync_interval_seconds=1,
+        jellyfin_auto_sync_last_status="",
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    normalized = SettingsService.get_or_create(db_session)
+
+    assert normalized.jellyfin_db_path == r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db"
+    assert normalized.jellyfin_user_name == "Spon4ik"
+    assert normalized.jellyfin_auto_sync_enabled is True
+    assert normalized.jellyfin_auto_sync_interval_seconds == 5
+    assert normalized.jellyfin_auto_sync_last_status == "idle"
 
 
 def test_get_or_create_normalizes_rules_page_and_schedule_defaults(db_session) -> None:

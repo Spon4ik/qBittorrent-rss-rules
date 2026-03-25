@@ -4,6 +4,7 @@
 
 - Plan baseline created on 2026-03-17 from a user-requested WinUI desktop app bootstrap.
 - Phase implementation is completed and release-validated on 2026-03-23 as `v0.6.0`.
+- Post-release follow-up scope was promoted on 2026-03-24 into `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md`; this phase now serves as shipped baseline/history rather than the active execution plan.
 - The retained desktop direction for this release is the WinUI WebView-shell + companion-process lifecycle baseline.
 - Bootstrap implementation is completed for the initial spike and immediate dev-loop hardening (`P10-01`..`P10-06`).
 - First WebView-shell integration slice is completed (`P10-07`) and initial backend lifecycle strategy plus launcher convenience follow-ups are now implemented (`P10-08`..`P10-10`).
@@ -93,7 +94,5 @@ Establish a verified WinUI 3 desktop scaffold in the repo so desktop packaging w
 
 ## Next concrete steps
 
-1. Validate `NuGet.config` + `scripts/run_dev.bat` desktop/full workflow on at least one additional Windows machine/profile.
-2. Re-run `scripts/capture_live_hover_overlay.py --desktop-relaunch` against the released desktop shell on another profile or machine to verify the user-facing hover overlay remains fixed in real WebView runs.
-3. Define single-instance policy for desktop + backend companion processes (reuse existing, prompt user, or enforce one-instance lock).
-4. Decide whether any post-release performance follow-up should move poster completion fully off the request path for the base rules page.
+1. Execute active follow-up from `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md`.
+2. Keep this phase document as the source of truth for what shipped in `v0.6.0`, not for new execution beyond that handoff.

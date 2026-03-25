@@ -69,9 +69,22 @@ namespace QbRssRulesDesktop.Views
             var current = new DirectoryInfo(AppContext.BaseDirectory);
             while (current is not null)
             {
-                var scriptsPath = Path.Combine(current.FullName, "scripts", "run_dev.bat");
                 var appPath = Path.Combine(current.FullName, "app", "main.py");
-                if (File.Exists(scriptsPath) && File.Exists(appPath))
+                var devScriptPath = Path.Combine(current.FullName, "scripts", "run_dev.bat");
+                var bundledPythonPath = Path.Combine(current.FullName, "python", "python.exe");
+                var bundledPythonwPath = Path.Combine(current.FullName, "python", "pythonw.exe");
+                var venvPythonPath = Path.Combine(current.FullName, ".venv", "Scripts", "python.exe");
+                var venvPythonwPath = Path.Combine(current.FullName, ".venv", "Scripts", "pythonw.exe");
+                if (
+                    File.Exists(appPath)
+                    && (
+                        File.Exists(devScriptPath)
+                        || File.Exists(bundledPythonPath)
+                        || File.Exists(bundledPythonwPath)
+                        || File.Exists(venvPythonPath)
+                        || File.Exists(venvPythonwPath)
+                    )
+                )
                 {
                     return current.FullName;
                 }
@@ -143,8 +156,10 @@ namespace QbRssRulesDesktop.Views
         {
             ConnectionStatusText.Text = "Backend unavailable";
             var guidance = repositoryRoot is null
-                ? "Clone the repository locally so the desktop app can build and launch the backend for you."
-                : "You can also run scripts\\run_dev.bat api (API only) or scripts\\run_dev.bat full (API + desktop) manually.";
+                ? "Install the full qB RSS Rules Desktop bundle so the desktop app can launch the backend for you."
+                : HasDevCheckoutScripts()
+                    ? "You can also run scripts\\run_dev.bat api (API only) or scripts\\run_dev.bat full (API + desktop) manually."
+                    : "Reinstall the full qB RSS Rules Desktop bundle if the bundled backend runtime is missing or damaged.";
             OfflineMessageText.Text = $"Unable to load {backendUri}. {detail} {guidance}";
             AppWebView.Visibility = Visibility.Collapsed;
             OfflinePanel.Visibility = Visibility.Visible;
@@ -230,7 +245,7 @@ namespace QbRssRulesDesktop.Views
 
             if (repositoryRoot is null)
             {
-                ShowOfflineState("Unable to locate repository root for backend startup. Run scripts\\run_dev.bat api or scripts\\run_dev.bat full.");
+                ShowOfflineState("Unable to locate the app root for backend startup.");
                 return false;
             }
 
@@ -243,7 +258,7 @@ namespace QbRssRulesDesktop.Views
             var pythonExecutable = ResolvePythonExecutable();
             if (pythonExecutable is null)
             {
-                ShowOfflineState("Could not find python/pythonw in .venv or PATH. Run scripts\\run_dev.bat api or containerize the API manually.");
+                ShowOfflineState("Could not find the bundled Python runtime or a repo .venv for backend startup.");
                 return false;
             }
 
@@ -252,7 +267,7 @@ namespace QbRssRulesDesktop.Views
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = pythonExecutable,
-                    Arguments = BuildBackendArguments(),
+                    Arguments = BuildBackendArguments(enableReload: !IsBundledPythonExecutable(pythonExecutable)),
                     WorkingDirectory = repositoryRoot,
                     UseShellExecute = false,
                     CreateNoWindow = true,
@@ -290,11 +305,13 @@ namespace QbRssRulesDesktop.Views
             }
         }
 
-        private string BuildBackendArguments()
+        private string BuildBackendArguments(bool enableReload)
         {
             var host = backendUri.Host;
             var port = backendUri.Port;
-            return $"-m uvicorn app.main:create_app --factory --host {host} --port {port} --reload";
+            return enableReload
+                ? $"-m uvicorn app.main:create_app --factory --host {host} --port {port} --reload"
+                : $"-m uvicorn app.main:create_app --factory --host {host} --port {port}";
         }
 
         private string? ResolvePythonExecutable()
@@ -302,6 +319,16 @@ namespace QbRssRulesDesktop.Views
             if (repositoryRoot is null)
             {
                 return null;
+            }
+
+            var bundledPythonPath = Path.Combine(repositoryRoot, "python");
+            foreach (var executable in new[] { "python.exe", "pythonw.exe" })
+            {
+                var candidate = Path.Combine(bundledPythonPath, executable);
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
             }
 
             var scriptsPath = Path.Combine(repositoryRoot, ".venv", "Scripts");
@@ -315,6 +342,23 @@ namespace QbRssRulesDesktop.Views
             }
 
             return FindExecutableOnPath("python.exe", "pythonw.exe");
+        }
+
+        private bool HasDevCheckoutScripts()
+        {
+            return repositoryRoot is not null
+                && File.Exists(Path.Combine(repositoryRoot, "scripts", "run_dev.bat"));
+        }
+
+        private bool IsBundledPythonExecutable(string pythonExecutable)
+        {
+            if (repositoryRoot is null)
+            {
+                return false;
+            }
+
+            var bundledPythonRoot = Path.Combine(repositoryRoot, "python");
+            return pythonExecutable.StartsWith(bundledPythonRoot, StringComparison.OrdinalIgnoreCase);
         }
 
         private static string? FindExecutableOnPath(params string[] executableNames)

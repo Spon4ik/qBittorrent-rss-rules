@@ -8,6 +8,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.6.1] - 2026-03-25
+
+- Released the phase-11 stabilization slice with single-instance desktop enforcement, deferred poster backfill on the base rules page, fresh live WebView hover evidence, and an end-user Windows bundle/install flow.
+- Added read-only Jellyfin startup/background sync, explicit Settings sync controls, persisted next-missing series floors, and movie auto-disable when a matching local Jellyfin item already exists by default.
+- Fixed generated-pattern parity for season/episode floors so zero-based range titles like `S3E00-07` are rejected consistently in saved qB rules, server-side local filtering, and browser-side local filtering while still allowing ranges that include the requested next episode.
+- Expanded regression coverage with direct builder, server local-filter, and Node-backed browser-pattern checks for the zero-based range leak and validated the release with `scripts\\check.bat`, `scripts\\closeout_qa.bat`, and `scripts\\run_dev.bat desktop-build`.
+
 ## [0.6.0] - 2026-03-23
 
 - Released the phase-10 WinUI desktop baseline with `QbRssRulesDesktop`, repo-local desktop build/run commands, shortcut refresh, and hidden companion-backend startup.

@@ -1,16 +1,17 @@
 # Roadmap
 
-## Current release target: v0.6.1
+## Current release target: post-v0.6.1 planning
 
 ### In progress
 
-- Post-`v0.6.0` stabilization and cross-machine validation for the WinUI desktop companion-process baseline
-- Phase-10 follow-up backlog shaping for single-instance behavior, live hover verification, and remaining rules-page performance polish
-- Define the next implementation phase after `v0.6.0` based on desktop usage feedback and regression data
+- No active implementation phase is open after the `v0.6.1` release closeout.
+- Next planning should formalize the follow-up phase before more behavior changes land.
+- Highest-payoff follow-up candidates are catalog-aware next-episode semantics across season/special boundaries and cleanup/module splits for oversized files (`app/static/app.js`, `app/routes/pages.py`, `app/routes/api.py`, `app/services/jackett.py`, `app/services/settings_service.py`).
+- Continue Jellyfin/qB contract hardening from the now-shipped `v0.6.1` baseline, including any remaining identity-data gaps such as `Red Alert`.
 
 ### Current phase track
 
-- No new implementation phase is active yet; phase 10 shipped in `v0.6.0` and post-release scope is being shaped.
+- Phase 11: `v0.6.1` stabilization and desktop hardening (implemented and release-validated; `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md`)
 - Phase 10: WinUI desktop bootstrap baseline + next-version planning (implemented and release-validated in `v0.6.0`)
 - Phase 9: rules main-page release-aware operations + Jackett fetch orchestration (implemented and release-validated in v0.5.0)
 - Phase 8: persistent rule-search snapshots and unified results workspace UX (implemented and release-validated in v0.4.0)
@@ -18,6 +19,9 @@
 - Phase 6: Jackett-backed active search workspace (implemented and release-validated in v0.2.0; follow-up polish completed, deeper persistence still deferred)
 - Phase 4: feed selection UX improvements (implemented, automated closeout validated)
 - Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, automated closeout validated)
+
+Phase 11 detail pointer:
+- Dated checklist, Jellyfin sync contract decisions, zero-based range leak closeout, and final `v0.6.1` release validation are tracked in `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md`.
 
 Phase 10 detail pointer:
 - Dated checklist, release validation, and post-release follow-up decisions for WinUI desktop phase-10 work (`QbRssRulesDesktop` scaffold, dev-loop hardening, WebView-shell baseline, and retained companion-process direction) are tracked in `docs/plans/phase-10-winui-desktop-bootstrap.md`.
@@ -34,14 +38,21 @@ Phase 7 detail pointer:
 Phase 6 detail pointer:
 - Detailed checklist and dated execution tracker for the latest search/rules UX hardening request is tracked in `docs/plans/phase-6-jackett-active-search.md` under `Request Checklist` and `Dated execution checklist (2026-03-10 baseline)`.
 
-### Release focus
+### Post-release focus
 
-- Observe `v0.6.0` desktop companion-process behavior across additional Windows profiles and machines.
-- Decide the first post-release follow-ups for single-instance policy, live hover verification, and remaining rules-page performance work.
-- Define the next implementation phase and target version after `v0.6.0` stabilization.
+- Formalize the next phase before additional implementation work.
+- Decide whether Jellyfin-driven next-episode selection should become catalog-aware across season boundaries and specials instead of relying only on numeric increment from known library episodes.
+- Reduce context and maintenance cost by splitting the largest rule/search/Jellyfin files along real domain boundaries.
 - Keep deterministic browser QA and route/service regressions as release gates for every workflow change.
 
-## Recently released: v0.6.0 (2026-03-23)
+## Recently released: v0.6.1 (2026-03-25)
+
+- Shipped the phase-11 stabilization slice with single-instance WinUI desktop enforcement, deferred poster backfill on the base rules page, fresh live WebView hover evidence, and a portable Windows bundle/install flow.
+- Added read-only Jellyfin startup/background sync, explicit Settings sync controls, persisted next-missing series floors, and default movie auto-disable when a matching local Jellyfin item already exists.
+- Fixed generated-pattern parity for season/episode minima so zero-based range titles such as `S3E00-07` are rejected consistently in saved rules, server-side local filtering, and browser-side local filtering while still allowing ranges that include the requested next episode.
+- Revalidated the release with `scripts\check.bat`, `scripts\closeout_qa.bat`, and `scripts\run_dev.bat desktop-build`.
+
+## Previously released: v0.6.0 (2026-03-23)
 
 - Shipped the phase-10 WinUI `QbRssRulesDesktop` WebView shell with repo-local build/run flow, shortcut refresh, and hidden companion-backend startup.
 - Added stale-backend contract validation plus managed fallback-port startup so the desktop no longer reuses incompatible local servers already listening on `:8000`.
@@ -50,7 +61,7 @@ Phase 6 detail pointer:
 - Hardened rules main-page performance with persisted release-cache columns, filtered snapshot loading, and bounded poster backfill retries.
 - Revalidated the release with `scripts\check.bat`, `scripts\closeout_qa.bat`, and `scripts\run_dev.bat desktop-build`.
 
-## Previously released: v0.5.0 (2026-03-15)
+## Earlier release: v0.5.0 (2026-03-15)
 
 - Shipped the phase-9 rules main-page workspace redesign with table-first defaults, cards fallback mode, and row-hover poster previews.
 - Added poster metadata plumbing to persisted rules and metadata lookup flows, with graceful no-poster fallbacks in table/cards surfaces.
@@ -98,6 +109,7 @@ Phase 6 detail pointer:
 - Rule export back to normalized JSON
 - Basic DB backup and restore
 - Better category template editor
+- Richer Jellyfin sync controls (per-rule preview/selection beyond the initial bulk sync path)
 
 ## Future / North Star
 

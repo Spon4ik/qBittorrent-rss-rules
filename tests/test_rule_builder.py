@@ -240,6 +240,95 @@ def test_build_generated_pattern_supports_start_season_episode_floor() -> None:
     assert not compiled.search("Shrinking S02E99 1080p")
 
 
+def test_build_generated_pattern_excludes_existing_unseen_jellyfin_episodes_by_default() -> None:
+    builder = RuleBuilder(settings=None)
+    pattern = builder.build_generated_pattern(
+        build_rule(
+            quality_profile=QualityProfile.PLAIN,
+            use_regex=True,
+            normalized_title="Shrinking",
+            content_name="Shrinking",
+            start_season=1,
+            start_episode=2,
+            jellyfin_existing_episode_numbers=["S01E02", "s01e03", "invalid"],
+        )
+    )
+    compiled = re.compile(pattern)
+
+    assert not compiled.search("Shrinking S01E02 1080p")
+    assert not compiled.search("Shrinking S01E03 1080p")
+    assert compiled.search("Shrinking S01E04 1080p")
+
+
+def test_build_generated_pattern_can_keep_searching_existing_unseen_jellyfin_episodes() -> None:
+    builder = RuleBuilder(settings=None)
+    pattern = builder.build_generated_pattern(
+        build_rule(
+            quality_profile=QualityProfile.PLAIN,
+            use_regex=True,
+            normalized_title="Shrinking",
+            content_name="Shrinking",
+            start_season=1,
+            start_episode=2,
+            jellyfin_search_existing_unseen=True,
+            jellyfin_existing_episode_numbers=["S01E02", "S01E03"],
+        )
+    )
+    compiled = re.compile(pattern)
+
+    assert compiled.search("Shrinking S01E02 1080p")
+    assert compiled.search("Shrinking S01E03 1080p")
+
+
+def test_build_generated_pattern_rejects_zero_based_ranges_below_episode_floor() -> None:
+    builder = RuleBuilder(settings=None)
+    pattern = builder.build_generated_pattern(
+        build_rule(
+            quality_profile=QualityProfile.PLAIN,
+            use_regex=True,
+            normalized_title="The Good Ship Murder",
+            content_name="The Good Ship Murder",
+            start_season=3,
+            start_episode=8,
+        )
+    )
+    compiled = re.compile(pattern)
+
+    assert not compiled.search("The Good Ship Murder S03E00-07 1080p Full S3")
+    assert not compiled.search(
+        "Убийство на борту (The Good Ship Murder)S3E00-07 (HD 1080p WEBRip) Полный S3"
+    )
+    assert compiled.search("The Good Ship Murder S03E00-08 1080p")
+    assert compiled.search("The Good Ship Murder S03 1080p season pack")
+
+
+def test_build_generated_pattern_excludes_zero_based_ranges_for_existing_jellyfin_inventory() -> None:
+    builder = RuleBuilder(settings=None)
+    pattern = builder.build_generated_pattern(
+        build_rule(
+            quality_profile=QualityProfile.PLAIN,
+            use_regex=True,
+            normalized_title="The Good Ship Murder",
+            content_name="The Good Ship Murder",
+            start_season=3,
+            start_episode=8,
+            jellyfin_existing_episode_numbers=[
+                "S03E01",
+                "S03E02",
+                "S03E03",
+                "S03E04",
+                "S03E05",
+                "S03E06",
+                "S03E07",
+            ],
+        )
+    )
+    compiled = re.compile(pattern)
+
+    assert not compiled.search("The Good Ship Murder S03E00-07 1080p")
+    assert compiled.search("The Good Ship Murder S03E00-08 1080p")
+
+
 def test_build_generated_pattern_requires_all_selected_quality_groups() -> None:
     builder = RuleBuilder(settings=None)
     pattern = builder.build_generated_pattern(

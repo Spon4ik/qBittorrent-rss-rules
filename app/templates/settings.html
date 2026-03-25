@@ -42,6 +42,61 @@
       <span class="helper-text">Used only for the separate Jackett active-search workspace in this slice. It is not mixed into RSS feed selection.</span>
     </label>
     <label>
+      Jellyfin DB path
+      <input type="text" name="jellyfin_db_path" value="{{ form_data.jellyfin_db_path }}" placeholder="C:\ProgramData\Jellyfin\Server\data\jellyfin.db" />
+      <span class="helper-text">Read-only SQLite path. This app reads watched progress from Jellyfin but does not write back to Jellyfin.</span>
+    </label>
+    <label>
+      Jellyfin username
+      <input type="text" name="jellyfin_user_name" value="{{ form_data.jellyfin_user_name }}" placeholder="{% if form_data.has_env_jellyfin_user_name %}Using environment value{% else %}Optional when the DB has one user{% endif %}" />
+      <span class="helper-text">Leave blank for single-user Jellyfin installs. Set it explicitly when the Jellyfin DB contains multiple users.</span>
+    </label>
+    <div class="full-span stack">
+      <fieldset class="stack">
+        <legend>Jellyfin sync</legend>
+        <p class="helper-text">Automatic Jellyfin sync runs when the app starts and keeps checking the Jellyfin DB for file changes while the app stays open. Use the manual action below any time you want to save the current settings and run a sync immediately.</p>
+        <div class="form-grid">
+          <label class="toggle">
+            <input
+              type="checkbox"
+              name="jellyfin_auto_sync_enabled"
+              {% if form_data.jellyfin_auto_sync_enabled %}checked{% endif %}
+            />
+            <span>Sync on app open and while the app is running</span>
+          </label>
+          <label>
+            Auto-sync check interval (seconds)
+            <input
+              type="number"
+              name="jellyfin_auto_sync_interval_seconds"
+              min="5"
+              max="3600"
+              step="1"
+              value="{{ form_data.jellyfin_auto_sync_interval_seconds }}"
+            />
+            <span class="helper-text">The watcher polls the Jellyfin DB file timestamp on this interval and syncs only when the file changes.</span>
+          </label>
+        </div>
+        <div class="card-actions">
+          <button type="submit" formaction="/api/settings/test-jellyfin">Test Jellyfin</button>
+          <button type="submit" formaction="/api/settings/sync-jellyfin">Save + Sync Jellyfin Now</button>
+        </div>
+        <div class="stack">
+          <p class="helper-text">
+            Auto-sync status:
+            <strong>{{ form_data.jellyfin_auto_sync_last_status or "idle" }}</strong>
+          </p>
+          <p class="helper-text">
+            Last automatic sync:
+            <strong>{% if form_data.jellyfin_auto_sync_last_run_at %}{{ form_data.jellyfin_auto_sync_last_run_at }}{% else %}Not run yet{% endif %}</strong>
+          </p>
+          {% if form_data.jellyfin_auto_sync_last_message %}
+          <p class="helper-text">{{ form_data.jellyfin_auto_sync_last_message }}</p>
+          {% endif %}
+        </div>
+      </fieldset>
+    </div>
+    <label>
       Video metadata provider
       <select name="metadata_provider">
         {% for choice in metadata_choices %}

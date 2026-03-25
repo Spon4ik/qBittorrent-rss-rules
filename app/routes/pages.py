@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,7 +15,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, load_only
 
-from app.db import get_db_session
+from app.db import get_db_session, get_session_factory
 from app.models import (
     MediaType,
     QualityProfile,
@@ -99,6 +100,8 @@ RULE_POSTER_BACKFILL_LIMIT = 2
 RULE_POSTER_BACKFILL_COOLDOWN = timedelta(hours=6)
 RULE_POSTER_BACKFILL_TIMEOUT_SECONDS = 2.0
 _RULE_POSTER_BACKFILL_RETRY_AFTER: dict[str, datetime] = {}
+_RULE_POSTER_BACKFILL_LOCK = threading.Lock()
+_RULE_POSTER_BACKFILL_IN_FLIGHT: set[str] = set()
 
 
 def _base_context(request: Request, page_title: str) -> dict[str, object]:
@@ -145,9 +148,11 @@ def _backfill_missing_rule_posters(
         if rule.media_type not in {MediaType.MOVIE, MediaType.SERIES}:
             continue
         if str(rule.poster_url or "").strip():
-            _RULE_POSTER_BACKFILL_RETRY_AFTER.pop(rule.id, None)
+            with _RULE_POSTER_BACKFILL_LOCK:
+                _RULE_POSTER_BACKFILL_RETRY_AFTER.pop(rule.id, None)
             continue
-        retry_after = _RULE_POSTER_BACKFILL_RETRY_AFTER.get(rule.id)
+        with _RULE_POSTER_BACKFILL_LOCK:
+            retry_after = _RULE_POSTER_BACKFILL_RETRY_AFTER.get(rule.id)
         if retry_after is not None and retry_after > now:
             continue
         candidates.append(rule)
@@ -169,7 +174,8 @@ def _backfill_missing_rule_posters(
             or str(rule.rule_name or "").strip()
         )
         if not lookup_title and not str(rule.imdb_id or "").strip():
-            _RULE_POSTER_BACKFILL_RETRY_AFTER[rule.id] = now + RULE_POSTER_BACKFILL_COOLDOWN
+            with _RULE_POSTER_BACKFILL_LOCK:
+                _RULE_POSTER_BACKFILL_RETRY_AFTER[rule.id] = now + RULE_POSTER_BACKFILL_COOLDOWN
             continue
         try:
             if str(rule.imdb_id or "").strip():
@@ -181,13 +187,16 @@ def _backfill_missing_rule_posters(
                     rule.media_type if rule.media_type in {MediaType.MOVIE, MediaType.SERIES} else MediaType.SERIES,
                 )
         except MetadataLookupError:
-            _RULE_POSTER_BACKFILL_RETRY_AFTER[rule.id] = now + RULE_POSTER_BACKFILL_COOLDOWN
+            with _RULE_POSTER_BACKFILL_LOCK:
+                _RULE_POSTER_BACKFILL_RETRY_AFTER[rule.id] = now + RULE_POSTER_BACKFILL_COOLDOWN
             continue
         poster_url = str(metadata_result.poster_url or "").strip()
         if not poster_url:
-            _RULE_POSTER_BACKFILL_RETRY_AFTER[rule.id] = now + RULE_POSTER_BACKFILL_COOLDOWN
+            with _RULE_POSTER_BACKFILL_LOCK:
+                _RULE_POSTER_BACKFILL_RETRY_AFTER[rule.id] = now + RULE_POSTER_BACKFILL_COOLDOWN
             continue
-        _RULE_POSTER_BACKFILL_RETRY_AFTER.pop(rule.id, None)
+        with _RULE_POSTER_BACKFILL_LOCK:
+            _RULE_POSTER_BACKFILL_RETRY_AFTER.pop(rule.id, None)
         rule.poster_url = poster_url
         updated = True
 
@@ -197,6 +206,74 @@ def _backfill_missing_rule_posters(
         session.commit()
     except Exception:
         session.rollback()
+
+
+def _select_rule_poster_backfill_candidate_ids(rules: Sequence[Rule]) -> list[str]:
+    now = datetime.now(UTC)
+    candidate_ids: list[str] = []
+    with _RULE_POSTER_BACKFILL_LOCK:
+        for rule in rules:
+            if rule.media_type not in {MediaType.MOVIE, MediaType.SERIES}:
+                continue
+            if str(rule.poster_url or "").strip():
+                _RULE_POSTER_BACKFILL_RETRY_AFTER.pop(rule.id, None)
+                _RULE_POSTER_BACKFILL_IN_FLIGHT.discard(rule.id)
+                continue
+            retry_after = _RULE_POSTER_BACKFILL_RETRY_AFTER.get(rule.id)
+            if retry_after is not None and retry_after > now:
+                continue
+            if rule.id in _RULE_POSTER_BACKFILL_IN_FLIGHT:
+                continue
+            _RULE_POSTER_BACKFILL_IN_FLIGHT.add(rule.id)
+            candidate_ids.append(rule.id)
+            if len(candidate_ids) >= RULE_POSTER_BACKFILL_LIMIT:
+                break
+    return candidate_ids
+
+
+def _clear_rule_poster_backfill_in_flight(rule_ids: Sequence[str]) -> None:
+    with _RULE_POSTER_BACKFILL_LOCK:
+        for rule_id in rule_ids:
+            _RULE_POSTER_BACKFILL_IN_FLIGHT.discard(rule_id)
+
+
+def _run_rule_poster_backfill(rule_ids: Sequence[str]) -> None:
+    session = get_session_factory()()
+    try:
+        normalized_rule_ids = [
+            candidate
+            for candidate in (str(rule_id or "").strip() for rule_id in rule_ids)
+            if candidate
+        ]
+        if not normalized_rule_ids:
+            return
+        settings = SettingsService.get_or_create(session)
+        rules_by_id = {
+            rule.id: rule
+            for rule in session.scalars(select(Rule).where(Rule.id.in_(normalized_rule_ids))).all()
+        }
+        ordered_rules = [rules_by_id[rule_id] for rule_id in normalized_rule_ids if rule_id in rules_by_id]
+        if ordered_rules:
+            _backfill_missing_rule_posters(session, rules=ordered_rules, settings=settings)
+    finally:
+        session.close()
+        _clear_rule_poster_backfill_in_flight(rule_ids)
+
+
+def _queue_rule_poster_backfill(rules: Sequence[Rule]) -> None:
+    candidate_ids = _select_rule_poster_backfill_candidate_ids(rules)
+    if not candidate_ids:
+        return
+    worker = threading.Thread(
+        target=_run_rule_poster_backfill,
+        args=(candidate_ids,),
+        daemon=True,
+        name="rule-poster-backfill",
+    )
+    try:
+        worker.start()
+    except Exception:
+        _clear_rule_poster_backfill_in_flight(candidate_ids)
 
 
 def _rule_to_form_data(rule: Rule) -> dict[str, object]:
@@ -221,6 +298,14 @@ def _rule_to_form_data(rule: Rule) -> dict[str, object]:
         "must_not_contain": rule.must_not_contain,
         "start_season": rule.start_season or "",
         "start_episode": rule.start_episode or "",
+        "jellyfin_search_existing_unseen": bool(getattr(rule, "jellyfin_search_existing_unseen", False)),
+        "jellyfin_auto_disabled": bool(getattr(rule, "jellyfin_auto_disabled", False)),
+        "jellyfin_existing_episode_numbers": list(
+            getattr(rule, "jellyfin_existing_episode_numbers", []) or []
+        ),
+        "jellyfin_existing_episode_count": len(
+            list(getattr(rule, "jellyfin_existing_episode_numbers", []) or [])
+        ),
         "episode_filter": rule.episode_filter,
         "ignore_days": rule.ignore_days,
         "add_paused": rule.add_paused,
@@ -693,7 +778,7 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
 
     rules = session.scalars(rules_query).all()
     if not request.query_params:
-        _backfill_missing_rule_posters(session, rules=rules, settings=settings)
+        _queue_rule_poster_backfill(rules)
 
     snapshot_by_rule_id: dict[str, RuleSearchSnapshot] = {}
     if rules:
@@ -1186,6 +1271,10 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
         "must_not_contain": "",
         "start_season": "",
         "start_episode": "",
+        "jellyfin_search_existing_unseen": False,
+        "jellyfin_auto_disabled": False,
+        "jellyfin_existing_episode_numbers": [],
+        "jellyfin_existing_episode_count": 0,
         "episode_filter": "",
         "ignore_days": 0,
         "add_paused": settings.default_add_paused,

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
+import threading
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
@@ -29,6 +34,13 @@ from app.services import quality_filters
 from app.services.hover_debug import clear_hover_events
 from app.services.jackett import JackettClient, clamp_search_query_text
 from app.services.metadata import MetadataClient
+from tests.jellyfin_test_utils import (
+    add_jellyfin_episode,
+    add_jellyfin_series,
+    add_jellyfin_user,
+    add_jellyfin_userdata,
+    create_jellyfin_test_db,
+)
 
 
 def _use_temp_taxonomy(tmp_path: Path, monkeypatch):
@@ -55,7 +67,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "0.6.0"
+    assert payload["app_version"] == "0.6.1"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -199,7 +211,7 @@ def test_rules_page_renders_release_status_from_snapshots(app_client, db_session
     assert "0 / 1" in response.text
 
 
-def test_rules_page_backfills_missing_posters_from_metadata_lookup(
+def test_rules_page_defers_missing_poster_backfill_from_response_render(
     app_client,
     db_session,
     monkeypatch,
@@ -223,9 +235,13 @@ def test_rules_page_backfills_missing_posters_from_metadata_lookup(
     db_session.commit()
 
     seen_imdb_ids: list[str] = []
+    lookup_started = threading.Event()
+    release_lookup = threading.Event()
 
     def fake_lookup_by_imdb_id(self, imdb_id):
         seen_imdb_ids.append(imdb_id)
+        lookup_started.set()
+        assert release_lookup.wait(timeout=1)
         return MetadataResult(
             title="Posterless Rule",
             provider=MetadataLookupProvider.OMDB,
@@ -241,12 +257,21 @@ def test_rules_page_backfills_missing_posters_from_metadata_lookup(
     response = app_client.get("/")
 
     assert response.status_code == 200
+    assert lookup_started.wait(timeout=1)
     assert seen_imdb_ids == ["tt13016388"]
-    db_session.expire_all()
-    updated_rule = db_session.get(Rule, rule.id)
+    assert 'data-rule-poster-url="https://images.example/posterless-rule.jpg"' not in response.text
+
+    release_lookup.set()
+    updated_rule = None
+    for _ in range(20):
+        db_session.expire_all()
+        updated_rule = db_session.get(Rule, rule.id)
+        if updated_rule is not None and updated_rule.poster_url == "https://images.example/posterless-rule.jpg":
+            break
+        time.sleep(0.05)
+
     assert updated_rule is not None
     assert updated_rule.poster_url == "https://images.example/posterless-rule.jpg"
-    assert 'data-rule-poster-url="https://images.example/posterless-rule.jpg"' in response.text
 
 
 def test_save_rules_page_preferences_api_persists_defaults(app_client, db_session) -> None:
@@ -462,6 +487,93 @@ def test_inline_local_generated_pattern_uses_raw_title_surface() -> None:
         in app_js_source
     )
     assert 'cleaned.includes("title fallback")' in app_js_source
+
+
+def test_inline_local_generated_pattern_supports_jellyfin_existing_episode_exclusions() -> None:
+    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+    app_js_source = app_js_path.read_text(encoding="utf-8")
+
+    assert 'const episodeRangeAny = "0*\\\\d{1,2}";' in app_js_source
+    assert "function buildLowerEpisodeExclusionRegexFragment(startSeasonValue, startEpisodeValue) {" in app_js_source
+    assert "function buildExistingEpisodeExclusionRegexFragment(existingEpisodeKeys) {" in app_js_source
+    assert "function anchorGeneratedPatternAtStart(pattern) {" in app_js_source
+    assert "const lowerEpisodeExclusion = buildLowerEpisodeExclusionRegexFragment(startSeason, startEpisode);" in app_js_source
+    assert 'form.dataset.jellyfinExistingEpisodeNumbers || "[]"' in app_js_source
+    assert "return anchorGeneratedPatternAtStart(deriveGeneratedPattern({" in app_js_source
+    assert 'jellyfinSearchExistingUnseen: getJellyfinSearchExistingUnseen(),' in app_js_source
+    assert 'jellyfinExistingEpisodeNumbers: getJellyfinExistingEpisodeNumbers(),' in app_js_source
+
+
+def test_inline_local_generated_pattern_rejects_zero_based_ranges_with_empty_title() -> None:
+    node_executable = shutil.which("node")
+    if not node_executable:
+        pytest.skip("node is required for inline JS pattern validation")
+
+    repo_root = Path(__file__).resolve().parents[1]
+    app_js_path = repo_root / "app" / "static" / "app.js"
+    leaked_title = "Убийство на борту (The Good Ship Murder)S3E00-07 (HD 1080p WEBRip) Полный S3"
+    allowed_title = "The Good Ship Murder S03E08 1080p"
+    node_script = f"""
+const fs = require("fs");
+const vm = require("vm");
+
+global.document = {{
+  addEventListener() {{}},
+  querySelector() {{ return null; }},
+  querySelectorAll() {{ return []; }},
+}};
+global.window = {{
+  addEventListener() {{}},
+  removeEventListener() {{}},
+  setTimeout() {{}},
+  clearTimeout() {{}},
+  requestAnimationFrame() {{ return 0; }},
+  cancelAnimationFrame() {{}},
+  location: {{ href: "http://127.0.0.1:8000/" }},
+}};
+global.Event = class Event {{}};
+global.CustomEvent = class CustomEvent {{}};
+global.FormData = class FormData {{}};
+global.URLSearchParams = URLSearchParams;
+global.fetch = async () => {{ throw new Error("not used"); }};
+
+const source = fs.readFileSync({json.dumps(str(app_js_path))}, "utf8");
+vm.runInThisContext(source, {{ filename: "app/static/app.js" }});
+
+const generated = deriveGeneratedPattern({{
+  title: "",
+  useRegex: true,
+  startSeason: 3,
+  startEpisode: 8,
+  jellyfinSearchExistingUnseen: false,
+  jellyfinExistingEpisodeNumbers: ["S03E01", "S03E02", "S03E03", "S03E04", "S03E05", "S03E06", "S03E07"],
+}});
+const local = anchorGeneratedPatternAtStart(generated);
+let sourcePattern = local;
+let flags = "u";
+if (sourcePattern.startsWith("(?i)")) {{
+  sourcePattern = sourcePattern.slice(4);
+  flags = "iu";
+}}
+const regex = new RegExp(sourcePattern, flags);
+console.log(JSON.stringify({{
+  local,
+  leakedMatches: regex.test({json.dumps(leaked_title)}),
+  allowedMatches: regex.test({json.dumps(allowed_title)}),
+}}));
+"""
+    completed = subprocess.run(
+        [node_executable, "-e", node_script],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+    payload = json.loads(completed.stdout.strip())
+
+    assert payload["local"].startswith("(?i)^")
+    assert payload["leakedMatches"] is False
+    assert payload["allowedMatches"] is True
 
 
 def test_inline_clear_local_filters_resets_regex_and_episode_floor_inputs() -> None:
@@ -2395,6 +2507,44 @@ def test_settings_uses_taxonomy_bundle_labels_for_builtin_profiles(app_client, t
     assert "<legend>At Least Full HD include</legend>" in response.text
 
 
+def test_settings_page_renders_jellyfin_controls(app_client) -> None:
+    response = app_client.get("/settings")
+
+    assert response.status_code == 200
+    assert 'name="jellyfin_db_path"' in response.text
+    assert 'name="jellyfin_user_name"' in response.text
+    assert 'name="jellyfin_auto_sync_enabled"' in response.text
+    assert 'name="jellyfin_auto_sync_interval_seconds"' in response.text
+    assert 'formaction="/api/settings/test-jellyfin"' in response.text
+    assert 'formaction="/api/settings/sync-jellyfin"' in response.text
+    assert "Automatic Jellyfin sync runs when the app starts" in response.text
+    assert "Save + Sync Jellyfin Now" in response.text
+    assert "Auto-sync status:" in response.text
+
+
+def test_edit_movie_rule_page_renders_jellyfin_movie_sync_copy(app_client, db_session) -> None:
+    rule = Rule(
+        rule_name="Movie Jellyfin Rule",
+        content_name="The Rip",
+        normalized_title="The Rip",
+        imdb_id="tt32642706",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=False,
+        jellyfin_auto_disabled=True,
+        feed_urls=["http://feed.example/the-rip"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    response = app_client.get(f"/rules/{rule.id}")
+
+    assert response.status_code == 200
+    assert "Keep searching this movie for better quality" in response.text
+    assert "Jellyfin sync disables this rule if the movie already exists in your library." in response.text
+    assert "disabled automatically because Jellyfin already has a matching library item" in response.text
+
+
 def test_new_rule_uses_ultra_hd_hdr_defaults(app_client) -> None:
     response = app_client.get("/rules/new")
 
@@ -2552,6 +2702,8 @@ def test_save_settings_persists_profile_management_tokens(app_client, db_session
             "jackett_api_url": "http://jackett:9117",
             "jackett_qb_url": "http://docker-host:9117",
             "jackett_api_key": "secret-key",
+            "jellyfin_db_path": r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db",
+            "jellyfin_user_name": "Spon4ik",
             "metadata_provider": "disabled",
             "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
             "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
@@ -2575,6 +2727,8 @@ def test_save_settings_persists_profile_management_tokens(app_client, db_session
     assert settings.jackett_api_url == "http://jackett:9117"
     assert settings.jackett_qb_url == "http://docker-host:9117"
     assert settings.jackett_api_key_encrypted is not None
+    assert settings.jellyfin_db_path == r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db"
+    assert settings.jellyfin_user_name == "Spon4ik"
     assert settings.default_quality_profile.value == "2160p_hdr"
     assert settings.default_sequential_download is True
     assert settings.default_first_last_piece_prio is True
@@ -2582,6 +2736,190 @@ def test_save_settings_persists_profile_management_tokens(app_client, db_session
     assert settings.quality_profile_rules["1080p"]["exclude_tokens"] == ["360p"]
     assert settings.quality_profile_rules["2160p_hdr"]["include_tokens"] == ["ultra_hd", "2160p"]
     assert settings.quality_profile_rules["2160p_hdr"]["exclude_tokens"] == ["bdremux", "ts"]
+
+
+def test_test_jellyfin_settings_reports_success(app_client, tmp_path) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id="USER-1", username="Spon4ik")
+
+    response = app_client.post(
+        "/api/settings/test-jellyfin",
+        data={
+            "jellyfin_db_path": str(db_path),
+            "jellyfin_auto_sync_enabled": "on",
+            "metadata_provider": "disabled",
+            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
+            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
+            "save_path_template": "",
+            "default_enabled": "on",
+            "default_add_paused": "on",
+            "default_sequential_download": "on",
+            "default_first_last_piece_prio": "on",
+            "default_quality_profile": "2160p_hdr",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Jellyfin read-only connection test succeeded." in response.text
+    assert "Spon4ik" in response.text
+    assert "Users found: Spon4ik." in response.text
+
+
+def test_sync_jellyfin_settings_updates_matching_rules(app_client, db_session, tmp_path) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id="USER-1", username="Spon4ik")
+    add_jellyfin_series(
+        db_path,
+        series_id="SERIES-1",
+        title="Shrinking",
+        clean_name="Shrinking",
+        production_year=2023,
+    )
+    add_jellyfin_episode(
+        db_path,
+        episode_id="EP-1",
+        series_id="SERIES-1",
+        title="Coin Flip",
+        season_number=1,
+        episode_number=1,
+        tvdb_id="1001",
+    )
+    add_jellyfin_episode(
+        db_path,
+        episode_id="EP-2",
+        series_id="SERIES-1",
+        title="Fortress of Solitude",
+        season_number=1,
+        episode_number=2,
+        tvdb_id="1002",
+    )
+    add_jellyfin_userdata(
+        db_path,
+        item_id="EP-1",
+        user_id="USER-1",
+        custom_data_key="ep-1",
+        play_count=1,
+    )
+    rule = Rule(
+        rule_name="Shrinking Rule",
+        content_name="Shrinking",
+        normalized_title="Shrinking",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/shrinking"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    response = app_client.post(
+        "/api/settings/sync-jellyfin",
+        data={
+            "jellyfin_db_path": str(db_path),
+            "jellyfin_user_name": "Spon4ik",
+            "jellyfin_auto_sync_enabled": "on",
+            "metadata_provider": "disabled",
+            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
+            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
+            "save_path_template": "",
+            "default_enabled": "on",
+            "default_add_paused": "on",
+            "default_sequential_download": "on",
+            "default_first_last_piece_prio": "on",
+            "default_quality_profile": "2160p_hdr",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Jellyfin sync completed for" in response.text
+    assert "Spon4ik" in response.text
+    assert "1 updated, 0 unchanged, 0 skipped, 0 errors" in response.text
+    db_session.refresh(rule)
+    assert (rule.start_season, rule.start_episode) == (1, 3)
+
+
+def test_sync_jellyfin_settings_pushes_changed_rules_to_qb_when_configured(
+    app_client,
+    db_session,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id="USER-1", username="Spon4ik")
+    add_jellyfin_series(
+        db_path,
+        series_id="SERIES-QB-1",
+        title="Shrinking",
+        clean_name="Shrinking",
+        production_year=2023,
+    )
+    add_jellyfin_episode(
+        db_path,
+        episode_id="QB-EP-1",
+        series_id="SERIES-QB-1",
+        title="Coin Flip",
+        season_number=1,
+        episode_number=1,
+        tvdb_id="2001",
+    )
+    add_jellyfin_episode(
+        db_path,
+        episode_id="QB-EP-2",
+        series_id="SERIES-QB-1",
+        title="Fortress of Solitude",
+        season_number=1,
+        episode_number=2,
+        tvdb_id="2002",
+    )
+    add_jellyfin_userdata(
+        db_path,
+        item_id="QB-EP-1",
+        user_id="USER-1",
+        custom_data_key="qb-ep-1",
+        play_count=1,
+    )
+    rule = Rule(
+        rule_name="Shrinking Rule",
+        content_name="Shrinking",
+        normalized_title="Shrinking",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/shrinking"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    pushed_rule_ids: list[str] = []
+
+    def fake_sync_rule(self, rule_id):
+        pushed_rule_ids.append(rule_id)
+        return SimpleNamespace(success=True, message="Rule synced to qBittorrent.")
+
+    monkeypatch.setattr("app.routes.api.SyncService.sync_rule", fake_sync_rule)
+
+    response = app_client.post(
+        "/api/settings/sync-jellyfin",
+        data={
+            "qb_base_url": "http://127.0.0.1:8080",
+            "qb_username": "admin",
+            "qb_password": "secret",
+            "jellyfin_db_path": str(db_path),
+            "jellyfin_user_name": "Spon4ik",
+            "jellyfin_auto_sync_enabled": "on",
+            "metadata_provider": "disabled",
+            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
+            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
+            "save_path_template": "",
+            "default_enabled": "on",
+            "default_add_paused": "on",
+            "default_sequential_download": "on",
+            "default_first_last_piece_prio": "on",
+            "default_quality_profile": "2160p_hdr",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "1 pushed to qB" in response.text
+    assert pushed_rule_ids == [rule.id]
 
 
 def test_save_filter_profile_creates_custom_profile(app_client, db_session) -> None:

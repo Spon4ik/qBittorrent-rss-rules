@@ -88,6 +88,13 @@ class Rule(Base):
     must_not_contain: Mapped[str] = mapped_column(Text, nullable=False, default="")
     start_season: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     start_episode: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    jellyfin_search_existing_unseen: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    jellyfin_auto_disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    jellyfin_existing_episode_numbers: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
     episode_filter: Mapped[str] = mapped_column(Text, nullable=False, default="")
     ignore_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     add_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -147,6 +154,24 @@ class AppSettings(Base):
     jackett_api_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     jackett_qb_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     jackett_api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    jellyfin_db_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    jellyfin_user_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    jellyfin_auto_sync_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    jellyfin_auto_sync_interval_seconds: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=30,
+    )
+    jellyfin_auto_sync_last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    jellyfin_auto_sync_last_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="idle",
+    )
+    jellyfin_auto_sync_last_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
     metadata_provider: Mapped[MetadataProvider] = mapped_column(
         Enum(MetadataProvider, name="metadata_provider"),
         nullable=False,

@@ -57,12 +57,26 @@ The app binds to `127.0.0.1` by default and creates its SQLite DB under `./data`
 ## WinUI desktop quick start (Windows)
 
 1. From the repository root, run `scripts\run_dev.bat desktop` to restore/build the WinUI shell (use `desktop-build` + `desktop-run` if you want separate steps).
+   If the desktop app is already open, `desktop` reuses the existing instance instead of forcing a rebuild into a locked EXE.
 2. Each successful desktop build refreshes two clickable shortcuts that use the app icon: `qB RSS Rules Desktop.lnk` in the repo root and `qB RSS Rules Desktop.lnk` on your Windows Desktop.
 3. If you ever need to recreate those shortcuts without rebuilding, run `scripts\run_dev.bat desktop-shortcuts`.
 4. You can still launch the GUI directly via `QbRssRulesDesktop\bin\x64\Debug\net10.0-windows10.0.19041.0\win-x64\QbRssRulesDesktop.exe`.
 5. When the desktop starts, it automatically launches the FastAPI backend in the background (hidden `pythonw` process). Closing the desktop shuts down the backend it started.
-6. Manual fallback commands: `scripts\run_dev.bat api` (API only) or `scripts\run_dev.bat full` (start hidden API + desktop together).
+6. Manual fallback commands: `scripts\run_dev.bat api` (API only). `scripts\run_dev.bat full` is now a compatibility alias for `desktop`, because the desktop app handles backend auto-start itself.
 7. To point the desktop at a different backend (including one running in Docker), set `QB_RSS_DESKTOP_URL` before launching the app.
+
+## Windows bundle / install flow
+
+1. Run `scripts\run_dev.bat desktop-package` to publish the desktop app and stage a portable Windows bundle under `dist\qB RSS Rules Desktop-win-x64\`.
+2. The bundle includes:
+   - `QbRssRulesDesktop.exe` at the bundle root as the direct launcher;
+   - `Install qB RSS Rules Desktop.cmd` for end-user installation;
+   - a private Python runtime under `python\`, so the installed app does not require a separate Python install.
+3. End users can either:
+   - run `QbRssRulesDesktop.exe` directly from the extracted bundle for a portable launch, or
+   - double-click `Install qB RSS Rules Desktop.cmd`, which installs the app to `%LOCALAPPDATA%\Programs\qB RSS Rules Desktop` and creates Desktop + Start Menu shortcuts.
+4. Re-running the installer from a newer bundle updates the app files while preserving the existing `data\` and `logs\` folders in the install location.
+5. If you also want a zip artifact for distribution, run `powershell -File scripts\package_desktop_bundle.ps1 -CreateZip`.
 
 ## Environment variables
 

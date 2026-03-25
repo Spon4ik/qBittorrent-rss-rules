@@ -34,8 +34,11 @@ from app.services.quality_filters import (
 )
 from app.services.rule_builder import (
     build_episode_progress_fragment,
+    build_existing_episode_exclusion_fragment,
+    build_lower_episode_exclusion_fragment,
     build_manual_must_contain_fragments,
     looks_like_full_must_contain_override,
+    normalize_jellyfin_episode_keys,
     normalize_release_year,
     parse_additional_include_groups,
 )
@@ -247,7 +250,23 @@ def _dedupe_terms(terms: list[str]) -> list[str]:
 def _rule_local_generated_pattern(rule: Rule) -> str:
     manual_must_contain = str(rule.must_contain_override or "").strip()
     has_episode_floor = rule.start_season is not None and rule.start_episode is not None
-    if not manual_must_contain and not has_episode_floor:
+    lower_episode_exclusion = build_lower_episode_exclusion_fragment(
+        rule.start_season,
+        rule.start_episode,
+    )
+    jellyfin_existing_episode_exclusion = ""
+    if not bool(getattr(rule, "jellyfin_search_existing_unseen", False)):
+        jellyfin_existing_episode_exclusion = build_existing_episode_exclusion_fragment(
+            normalize_jellyfin_episode_keys(
+                list(getattr(rule, "jellyfin_existing_episode_numbers", []) or [])
+            )
+        )
+    if (
+        not manual_must_contain
+        and not has_episode_floor
+        and not lower_episode_exclusion
+        and not jellyfin_existing_episode_exclusion
+    ):
         return ""
     if looks_like_full_must_contain_override(manual_must_contain):
         return manual_must_contain
@@ -257,8 +276,18 @@ def _rule_local_generated_pattern(rule: Rule) -> str:
         fragments.append(episode_floor_fragment)
     fragments.extend(build_manual_must_contain_fragments(manual_must_contain))
     if not fragments:
-        return ""
-    return "(?i)" + "".join(f"(?=.*{fragment})" for fragment in fragments if fragment)
+        pattern = "(?i)^"
+        if lower_episode_exclusion:
+            pattern += f"(?!.*{lower_episode_exclusion})"
+        if jellyfin_existing_episode_exclusion:
+            pattern += f"(?!.*{jellyfin_existing_episode_exclusion})"
+        return pattern if pattern != "(?i)^" else ""
+    pattern = "(?i)^" + "".join(f"(?=.*{fragment})" for fragment in fragments if fragment)
+    if lower_episode_exclusion:
+        pattern += f"(?!.*{lower_episode_exclusion})"
+    if jellyfin_existing_episode_exclusion:
+        pattern += f"(?!.*{jellyfin_existing_episode_exclusion})"
+    return pattern
 
 
 def _rule_local_filter_state(rule: Rule) -> dict[str, Any]:
@@ -327,6 +356,12 @@ def _rule_local_filter_cache_key(rule: Rule) -> str:
             "must_contain_override": str(rule.must_contain_override or "").strip(),
             "start_season": rule.start_season,
             "start_episode": rule.start_episode,
+            "jellyfin_search_existing_unseen": bool(
+                getattr(rule, "jellyfin_search_existing_unseen", False)
+            ),
+            "jellyfin_existing_episode_numbers": normalize_jellyfin_episode_keys(
+                list(getattr(rule, "jellyfin_existing_episode_numbers", []) or [])
+            ),
             "include_release_year": bool(rule.include_release_year),
             "release_year": normalize_release_year(rule.release_year) if bool(rule.include_release_year) else "",
             "feed_urls": _normalize_feed_url_list(list(rule.feed_urls or [])),

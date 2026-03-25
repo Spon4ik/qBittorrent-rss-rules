@@ -381,6 +381,7 @@ class RuleFormPayload(BaseModel):
     must_not_contain: str = ""
     start_season: int | None = Field(default=None, ge=1, le=99)
     start_episode: int | None = Field(default=None, ge=1, le=99)
+    jellyfin_search_existing_unseen: bool = False
     episode_filter: str = ""
     ignore_days: int = Field(default=0, ge=0)
     add_paused: bool = True
@@ -472,6 +473,10 @@ class SettingsFormPayload(BaseModel):
     jackett_api_url: str | None = None
     jackett_qb_url: str | None = None
     jackett_api_key: str | None = None
+    jellyfin_db_path: str | None = None
+    jellyfin_user_name: str | None = None
+    jellyfin_auto_sync_enabled: bool = True
+    jellyfin_auto_sync_interval_seconds: int = Field(default=30, ge=5, le=3600)
     metadata_provider: MetadataProvider = MetadataProvider.OMDB
     omdb_api_key: str | None = None
     series_category_template: str = "Series/{title} [imdbid-{imdb_id}]"

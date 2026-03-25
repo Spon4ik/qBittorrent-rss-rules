@@ -29,6 +29,9 @@ class EnvironmentSettings:
     jackett_api_url: str | None
     jackett_qb_url: str | None
     jackett_api_key: str | None
+    jellyfin_db_path: str | None
+    jellyfin_user_name: str | None
+    enable_jellyfin_auto_sync_scheduler: bool
     omdb_api_key: str | None
     save_secrets_to_db: bool
     enable_rule_fetch_scheduler: bool
@@ -49,6 +52,12 @@ def get_environment_settings() -> EnvironmentSettings:
         jackett_api_url=os.getenv("QB_RULES_JACKETT_API_URL") or None,
         jackett_qb_url=os.getenv("QB_RULES_JACKETT_QB_URL") or None,
         jackett_api_key=os.getenv("QB_RULES_JACKETT_API_KEY") or None,
+        jellyfin_db_path=os.getenv("QB_RULES_JELLYFIN_DB_PATH") or None,
+        jellyfin_user_name=os.getenv("QB_RULES_JELLYFIN_USER_NAME") or None,
+        enable_jellyfin_auto_sync_scheduler=_get_bool(
+            os.getenv("QB_RULES_ENABLE_JELLYFIN_AUTO_SYNC_SCHEDULER"),
+            True,
+        ),
         omdb_api_key=os.getenv("QB_RULES_OMDB_API_KEY") or None,
         save_secrets_to_db=_get_bool(os.getenv("QB_RULES_SAVE_SECRETS_TO_DB"), False),
         enable_rule_fetch_scheduler=_get_bool(os.getenv("QB_RULES_ENABLE_RULE_FETCH_SCHEDULER"), True),
@@ -60,6 +69,20 @@ def get_environment_settings() -> EnvironmentSettings:
 
 def ensure_runtime_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    settings = get_environment_settings()
+    database_url = str(settings.database_url or "").strip()
+    if not database_url.startswith("sqlite:///"):
+        return
+
+    raw_path = database_url.removeprefix("sqlite:///").strip()
+    if not raw_path or raw_path == ":memory:" or raw_path.startswith("file:"):
+        return
+
+    database_path = Path(raw_path)
+    if not database_path.is_absolute():
+        database_path = (Path.cwd() / database_path).resolve()
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    database_path.touch(exist_ok=True)
 
 
 def obfuscate_secret(value: str) -> str:

@@ -60,6 +60,10 @@ DEFAULT_RULE_FETCH_SCHEDULE_SCOPE = "enabled"
 DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 360
 MIN_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 5
 MAX_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 10080
+DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED = True
+DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS = 30
+MIN_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS = 5
+MAX_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS = 3600
 
 
 def _is_wsl_runtime() -> bool:
@@ -180,6 +184,19 @@ def normalize_rule_fetch_schedule_interval_minutes(value: object | None) -> int:
     )
 
 
+def normalize_jellyfin_auto_sync_interval_seconds(value: object | None) -> int:
+    if value is None:
+        return DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS
+    try:
+        numeric = int(str(value).strip())
+    except (TypeError, ValueError):
+        return DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS
+    return max(
+        MIN_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS,
+        min(MAX_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS, numeric),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedQbConnection:
     base_url: str | None
@@ -216,6 +233,18 @@ class ResolvedJackettConfig:
         return bool((self.qb_url or self.api_url) and self.api_key)
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedJellyfinConfig:
+    db_path: str | None
+    user_name: str | None
+    auto_sync_enabled: bool
+    auto_sync_interval_seconds: int
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.db_path)
+
+
 class SettingsService:
     @staticmethod
     def get_or_create(session: Session) -> AppSettings:
@@ -226,6 +255,10 @@ class SettingsService:
                 quality_profile_rules=deepcopy(DEFAULT_QUALITY_PROFILE_RULES),
                 saved_quality_profiles={},
                 default_quality_profile=QualityProfile.UHD_2160P_HDR,
+                jellyfin_auto_sync_enabled=DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED,
+                jellyfin_auto_sync_interval_seconds=DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS,
+                jellyfin_auto_sync_last_status="idle",
+                jellyfin_auto_sync_last_message="",
                 default_sequential_download=True,
                 default_first_last_piece_prio=True,
                 search_result_view_mode=DEFAULT_SEARCH_RESULT_VIEW_MODE,
@@ -278,6 +311,56 @@ class SettingsService:
         normalized_default_feeds = [str(url).strip() for url in (settings.default_feed_urls or []) if str(url).strip()]
         if normalized_default_feeds != (settings.default_feed_urls or []):
             settings.default_feed_urls = normalized_default_feeds
+            changed = True
+        normalized_jellyfin_db_path = str(getattr(settings, "jellyfin_db_path", "") or "").strip() or None
+        if normalized_jellyfin_db_path != getattr(settings, "jellyfin_db_path", None):
+            settings.jellyfin_db_path = normalized_jellyfin_db_path
+            changed = True
+        normalized_jellyfin_user_name = str(getattr(settings, "jellyfin_user_name", "") or "").strip() or None
+        if normalized_jellyfin_user_name != getattr(settings, "jellyfin_user_name", None):
+            settings.jellyfin_user_name = normalized_jellyfin_user_name
+            changed = True
+        normalized_jellyfin_auto_sync_enabled = bool(
+            getattr(settings, "jellyfin_auto_sync_enabled", DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED)
+        )
+        if normalized_jellyfin_auto_sync_enabled != getattr(settings, "jellyfin_auto_sync_enabled", None):
+            settings.jellyfin_auto_sync_enabled = normalized_jellyfin_auto_sync_enabled
+            changed = True
+        normalized_jellyfin_auto_sync_interval = normalize_jellyfin_auto_sync_interval_seconds(
+            getattr(
+                settings,
+                "jellyfin_auto_sync_interval_seconds",
+                DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS,
+            )
+        )
+        if normalized_jellyfin_auto_sync_interval != getattr(
+            settings,
+            "jellyfin_auto_sync_interval_seconds",
+            None,
+        ):
+            settings.jellyfin_auto_sync_interval_seconds = normalized_jellyfin_auto_sync_interval
+            changed = True
+        normalized_jellyfin_auto_sync_status = str(
+            getattr(settings, "jellyfin_auto_sync_last_status", "idle") or "idle"
+        ).strip().lower()
+        if not normalized_jellyfin_auto_sync_status:
+            normalized_jellyfin_auto_sync_status = "idle"
+        if normalized_jellyfin_auto_sync_status != getattr(
+            settings,
+            "jellyfin_auto_sync_last_status",
+            None,
+        ):
+            settings.jellyfin_auto_sync_last_status = normalized_jellyfin_auto_sync_status
+            changed = True
+        normalized_jellyfin_auto_sync_message = str(
+            getattr(settings, "jellyfin_auto_sync_last_message", "") or ""
+        )
+        if normalized_jellyfin_auto_sync_message != getattr(
+            settings,
+            "jellyfin_auto_sync_last_message",
+            None,
+        ):
+            settings.jellyfin_auto_sync_last_message = normalized_jellyfin_auto_sync_message
             changed = True
         default_sequential_value = getattr(settings, "default_sequential_download", True)
         normalized_default_sequential = (
@@ -367,6 +450,10 @@ class SettingsService:
         settings.qb_username = payload.qb_username or None
         settings.jackett_api_url = payload.jackett_api_url or None
         settings.jackett_qb_url = payload.jackett_qb_url or None
+        settings.jellyfin_db_path = payload.jellyfin_db_path or None
+        settings.jellyfin_user_name = payload.jellyfin_user_name or None
+        settings.jellyfin_auto_sync_enabled = payload.jellyfin_auto_sync_enabled
+        settings.jellyfin_auto_sync_interval_seconds = payload.jellyfin_auto_sync_interval_seconds
         settings.metadata_provider = payload.metadata_provider
         settings.series_category_template = payload.series_category_template
         settings.movie_category_template = payload.movie_category_template
@@ -427,6 +514,26 @@ class SettingsService:
         )
 
     @staticmethod
+    def resolve_jellyfin(settings: AppSettings | None) -> ResolvedJellyfinConfig:
+        env = get_environment_settings()
+        db_path = env.jellyfin_db_path or (settings.jellyfin_db_path if settings else None)
+        user_name = env.jellyfin_user_name or (settings.jellyfin_user_name if settings else None)
+        return ResolvedJellyfinConfig(
+            db_path=str(db_path).strip() or None if db_path is not None else None,
+            user_name=str(user_name).strip() or None if user_name is not None else None,
+            auto_sync_enabled=bool(
+                getattr(settings, "jellyfin_auto_sync_enabled", DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED)
+            ) if settings is not None else DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED,
+            auto_sync_interval_seconds=normalize_jellyfin_auto_sync_interval_seconds(
+                getattr(
+                    settings,
+                    "jellyfin_auto_sync_interval_seconds",
+                    DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS,
+                ) if settings is not None else DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS
+            ),
+        )
+
+    @staticmethod
     def to_form_dict(settings: AppSettings) -> dict[str, object]:
         profile_rules = resolve_quality_profile_rules(settings)
         saved_profiles = normalize_saved_quality_profiles(settings.saved_quality_profiles)
@@ -437,6 +544,31 @@ class SettingsService:
             "qb_username": settings.qb_username or "",
             "jackett_api_url": settings.jackett_api_url or "",
             "jackett_qb_url": settings.jackett_qb_url or "",
+            "jellyfin_db_path": getattr(settings, "jellyfin_db_path", None) or "",
+            "jellyfin_user_name": getattr(settings, "jellyfin_user_name", None) or "",
+            "jellyfin_auto_sync_enabled": bool(
+                getattr(settings, "jellyfin_auto_sync_enabled", DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED)
+            ),
+            "jellyfin_auto_sync_interval_seconds": normalize_jellyfin_auto_sync_interval_seconds(
+                getattr(
+                    settings,
+                    "jellyfin_auto_sync_interval_seconds",
+                    DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS,
+                )
+            ),
+            "jellyfin_auto_sync_last_run_at": getattr(
+                settings,
+                "jellyfin_auto_sync_last_run_at",
+                None,
+            ),
+            "jellyfin_auto_sync_last_status": str(
+                getattr(settings, "jellyfin_auto_sync_last_status", "idle")
+                or "idle"
+            ),
+            "jellyfin_auto_sync_last_message": str(
+                getattr(settings, "jellyfin_auto_sync_last_message", "")
+                or ""
+            ),
             "metadata_provider": settings.metadata_provider.value,
             "series_category_template": settings.series_category_template,
             "movie_category_template": settings.movie_category_template,
@@ -458,6 +590,8 @@ class SettingsService:
             "has_env_qb_password": bool(get_environment_settings().qb_password),
             "has_env_jackett_key": bool(get_environment_settings().jackett_api_key),
             "has_env_omdb_key": bool(get_environment_settings().omdb_api_key),
+            "has_env_jellyfin_db_path": bool(get_environment_settings().jellyfin_db_path),
+            "has_env_jellyfin_user_name": bool(get_environment_settings().jellyfin_user_name),
             "search_result_view_mode": normalize_search_result_view_mode(settings.search_result_view_mode),
             "search_sort_criteria": normalize_search_sort_criteria(settings.search_sort_criteria),
             "rules_page_view_mode": normalize_rules_page_view_mode(

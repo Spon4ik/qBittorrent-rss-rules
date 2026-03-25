@@ -41,6 +41,8 @@ from app.services.hover_debug import (
 )
 from app.services.importer import Importer
 from app.services.jackett import JackettClient, JackettClientError
+from app.services.jellyfin import JellyfinError, JellyfinService
+from app.services.jellyfin_sync_ops import JellyfinSyncBusyError, execute_jellyfin_sync
 from app.services.metadata import (
     MetadataClient,
     MetadataLookupError,
@@ -110,6 +112,7 @@ def _raw_rule_form_data(form: Any) -> dict[str, Any]:
         "must_not_contain": form.get("must_not_contain", ""),
         "start_season": form.get("start_season") or None,
         "start_episode": form.get("start_episode") or None,
+        "jellyfin_search_existing_unseen": _bool_from_form(form, "jellyfin_search_existing_unseen"),
         "episode_filter": form.get("episode_filter", ""),
         "ignore_days": form.get("ignore_days", 0),
         "add_paused": _bool_from_form(form, "add_paused"),
@@ -135,6 +138,10 @@ def _raw_settings_form_data(form: Any) -> dict[str, Any]:
         "jackett_api_url": form.get("jackett_api_url") or None,
         "jackett_qb_url": form.get("jackett_qb_url") or None,
         "jackett_api_key": form.get("jackett_api_key") or None,
+        "jellyfin_db_path": form.get("jellyfin_db_path") or None,
+        "jellyfin_user_name": form.get("jellyfin_user_name") or None,
+        "jellyfin_auto_sync_enabled": _bool_from_form(form, "jellyfin_auto_sync_enabled"),
+        "jellyfin_auto_sync_interval_seconds": form.get("jellyfin_auto_sync_interval_seconds", 30),
         "metadata_provider": form.get("metadata_provider", "omdb"),
         "omdb_api_key": form.get("omdb_api_key") or None,
         "series_category_template": form.get(
@@ -175,6 +182,15 @@ def _render_rule_form(
     rule_id: str | None = None,
     status_code: int = 400,
 ) -> HTMLResponse:
+    form_data.setdefault("jellyfin_search_existing_unseen", False)
+    form_data.setdefault("jellyfin_auto_disabled", False)
+    form_data.setdefault("jellyfin_existing_episode_numbers", [])
+    if "jellyfin_existing_episode_count" not in form_data:
+        existing_episode_numbers = form_data.get("jellyfin_existing_episode_numbers", []) or []
+        if isinstance(existing_episode_numbers, list):
+            form_data["jellyfin_existing_episode_count"] = len(existing_episode_numbers)
+        else:
+            form_data["jellyfin_existing_episode_count"] = 0
     settings = SettingsService.get_or_create(session)
     profile_rules = resolve_quality_profile_rules(settings)
     current_media_type = str(form_data.get("media_type", MediaType.SERIES.value) or MediaType.SERIES.value)
@@ -352,6 +368,7 @@ def _apply_rule_payload_to_model(
     rule.must_not_contain = payload.must_not_contain
     rule.start_season = payload.start_season
     rule.start_episode = payload.start_episode
+    rule.jellyfin_search_existing_unseen = payload.jellyfin_search_existing_unseen
     rule.episode_filter = payload.episode_filter
     rule.ignore_days = payload.ignore_days
     rule.add_paused = payload.add_paused
@@ -378,6 +395,21 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
         jackett_api_url=settings.jackett_api_url,
         jackett_qb_url=settings.jackett_qb_url,
         jackett_api_key_encrypted=settings.jackett_api_key_encrypted,
+        jellyfin_db_path=getattr(settings, "jellyfin_db_path", None),
+        jellyfin_user_name=getattr(settings, "jellyfin_user_name", None),
+        jellyfin_auto_sync_enabled=bool(
+            getattr(settings, "jellyfin_auto_sync_enabled", True)
+        ),
+        jellyfin_auto_sync_interval_seconds=int(
+            getattr(settings, "jellyfin_auto_sync_interval_seconds", 30)
+        ),
+        jellyfin_auto_sync_last_run_at=getattr(settings, "jellyfin_auto_sync_last_run_at", None),
+        jellyfin_auto_sync_last_status=str(
+            getattr(settings, "jellyfin_auto_sync_last_status", "idle")
+        ),
+        jellyfin_auto_sync_last_message=str(
+            getattr(settings, "jellyfin_auto_sync_last_message", "")
+        ),
         metadata_provider=settings.metadata_provider,
         omdb_api_key_encrypted=settings.omdb_api_key_encrypted,
         series_category_template=settings.series_category_template,
@@ -1224,5 +1256,89 @@ async def test_metadata_settings(
         errors=[],
         message="Metadata lookup test succeeded.",
         message_level="success",
+        status_code=200,
+    )
+
+
+@router.post("/settings/test-jellyfin", response_class=HTMLResponse)
+async def test_jellyfin_settings(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> HTMLResponse:
+    form = await request.form()
+    raw_form = _raw_settings_form_data(form)
+    try:
+        payload = SettingsFormPayload.model_validate(raw_form)
+    except ValidationError as exc:
+        return _render_settings_page(
+            request,
+            form_data=raw_form,
+            errors=[error["msg"] for error in exc.errors()],
+        )
+
+    settings = SettingsService.get_or_create(session)
+    temp_settings = _clone_settings(settings)
+    SettingsService.apply_payload(temp_settings, payload)
+
+    try:
+        result = JellyfinService(temp_settings).test_connection()
+    except JellyfinError as exc:
+        return _render_settings_page(
+            request,
+            form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
+            errors=[str(exc)],
+        )
+
+    discovered_users = ", ".join(user.username for user in result.users) or "none"
+    return _render_settings_page(
+        request,
+        form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
+        errors=[],
+        message=(
+            "Jellyfin read-only connection test succeeded. "
+            f'Selected user "{result.selected_user.username}". '
+            f"Users found: {discovered_users}."
+        ),
+        message_level="success",
+        status_code=200,
+    )
+
+
+@router.post("/settings/sync-jellyfin", response_class=HTMLResponse)
+async def sync_jellyfin_rule_progress(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> HTMLResponse:
+    form = await request.form()
+    raw_form = _raw_settings_form_data(form)
+    try:
+        payload = SettingsFormPayload.model_validate(raw_form)
+    except ValidationError as exc:
+        return _render_settings_page(
+            request,
+            form_data=raw_form,
+            errors=[error["msg"] for error in exc.errors()],
+        )
+
+    settings = SettingsService.get_or_create(session)
+    SettingsService.apply_payload(settings, payload)
+    session.add(settings)
+    session.commit()
+
+    try:
+        execution = execute_jellyfin_sync(session, settings=settings)
+    except (JellyfinError, JellyfinSyncBusyError) as exc:
+        return _render_settings_page(
+            request,
+            form_data=SettingsService.to_form_dict(settings),
+            errors=[str(exc)],
+        )
+
+    return _render_settings_page(
+        request,
+        form_data=SettingsService.to_form_dict(settings),
+        errors=execution.top_errors(),
+        message=execution.render_message(),
+        message_level=execution.message_level,
         status_code=200,
     )

@@ -2,13 +2,113 @@
 
 ## Current focus
 
-- `v0.6.0` release implementation and validation are complete (code, migrations, tests, browser closeout, desktop build, and release-doc synchronization).
-- Phase 10 is closed and release-validated (`P10-01`..`P10-12`) as the delivered `v0.6.0` slice.
-- The retained desktop direction for `v0.6.0` is the WinUI WebView-shell + companion-process lifecycle baseline.
-- Current focus is post-release stabilization, cross-machine desktop validation, and shaping the next implementation phase.
+- `v0.6.1` release implementation and validation are complete.
+- Phase 11 is closed and release-validated as the delivered `v0.6.1` stabilization slice.
+- No post-`v0.6.1` implementation phase is active yet; the next session should start by formalizing the next phase plan before making more behavioral changes.
+- Phase 10 remains closed and release-validated (`P10-01`..`P10-12`) as the delivered `v0.6.0` baseline.
+- The retained desktop direction remains the WinUI WebView-shell + companion-process lifecycle baseline introduced in `v0.6.0`.
 
 ## Implemented
 
+- Completed `v0.6.1` release closeout on 2026-03-25:
+  - synchronized version touchpoints to `0.6.1` (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`, `tests/test_routes.py`) and closed phase 11 as the shipped stabilization slice;
+  - fixed the remaining zero-based range leak for season/episode minima so titles like `Убийство на борту (The Good Ship Murder)S3E00-07 ... Полный S3` are rejected consistently in saved-rule generation, server-side local filtering, and browser-side local filtering while still allowing ranges that include the requested next episode such as `S03E00-08`;
+  - added direct regressions for the leak across the builder, server local-filter state, and browser-side local pattern path, including a Node-backed pytest that executes the real `app/static/app.js` helper contract with an empty local-filter title;
+  - validated the final release worktree with `cmd.exe /c scripts\check.bat` (`215 passed`, `57 warnings`), `cmd.exe /c scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260325T004632Z/`), and `cmd.exe /v:on /c "scripts\run_dev.bat desktop-build & echo EXITCODE:!ERRORLEVEL!"` (`EXITCODE:0`);
+  - verified against the live `data\qb_rules.db` rule row `3506a56d-f2e3-47da-8fe6-352911fdbf45` that the stored `The Good Ship Murder` floor remains `S03E08`, the leaked `S3E00-07 ... Полный S3` title is rejected, and `S03E08` still matches.
+
+- Completed a live Jellyfin operator repair slice on 2026-03-24:
+  - identified the real active Jellyfin DB as `C:\ProgramData\Jellyfin\Server\data\jellyfin.db` and confirmed the local library breakage was not raw corruption (`PRAGMA integrity_check` / `quick_check` both `ok`), but repeated cleanup failures caused by duplicate `UserData` business-key rows during stale-item removal;
+  - created a timestamped backup at `C:\ProgramData\Jellyfin\Server\data\SQLiteBackups\codex-20260324T213411\`, repaired the duplicate `UserData` collisions (`duplicate_groups_before=2`, `duplicate_groups_after=0`, `repaired_groups=2`), and then removed `19` stale missing-path library rows from `BaseItems` after validating cascade behavior (`missing_rows_before=19`, `missing_rows_after=0`);
+  - relaunched Jellyfin directly against `C:\ProgramData\Jellyfin\Server\` with the real data/config/cache/log roots, triggered a real library monitor scan, and verified that the current series directories were re-imported (`db_series_rows 12`, `missing_in_db 0`, `http://127.0.0.1:8096/health` returned `200`);
+  - schema inspection for the upcoming integration established two key contracts:
+    - Jellyfin `BaseItems.Type` values are fully-qualified entity names such as `MediaBrowser.Controller.Entities.TV.Series` and `MediaBrowser.Controller.Entities.TV.Episode`, not short labels like `Series` or `Episode`;
+    - watched progress must be resolved per Jellyfin user and by multiple alias keys, because `UserData` can be stored on the current item ID or on alias `CustomDataKey` rows after library maintenance.
+- Completed the phase-11 Jellyfin integration slice on 2026-03-24:
+  - app settings now persist a Jellyfin DB path plus optional Jellyfin username, with matching environment overrides in `app/config.py`, normalized settings resolution in `app/services/settings_service.py`, and `/settings` buttons for read-only connection tests plus bulk rule sync (`app/models.py`, `app/db.py`, `app/routes/api.py`, `app/templates/settings.html`);
+  - added `app/services/jellyfin.py`, a read-only Jellyfin service that matches saved series rules by IMDb first and normalized title fallback, resolves watched state per Jellyfin user, treats alias-key `UserData` rows as valid watched progress, records existing library episode inventory, and advances local rule floors from Jellyfin-derived progress (`Rule.start_season` / `Rule.start_episode`);
+  - clarified and then refined the watched-vs-library contract after follow-up operator feedback:
+    - Jellyfin sync records existing unseen library episodes separately in `Rule.jellyfin_existing_episode_numbers`, so the rule can distinguish watched progress from already-present-but-unwatched files;
+    - by default the saved rule floor now advances to one past the latest existing Jellyfin library episode, so the visible rule state matches the actual default search target instead of relying on hidden filtering alone;
+    - the per-rule `Keep searching existing unseen episodes` toggle (`Rule.jellyfin_search_existing_unseen`) preserves optional upgrade hunting for better-quality replacements by keeping the watched-progress floor behavior for that rule;
+    - `Save + Sync Jellyfin Now` remains available as an explicit operator action, and when qBittorrent is configured that settings action immediately pushes changed rules through `SyncService` so local rule state and qB stay aligned;
+  - added focused regressions in `tests/test_jellyfin.py`, `tests/test_settings_service.py`, and `tests/test_routes.py` covering single-user auto-selection, multi-user fail-closed behavior, alias-key watch history joins, title-only fallback matching, settings persistence, and the `/api/settings/test-jellyfin` / `/api/settings/sync-jellyfin` flows;
+  - validation evidence:
+    - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_jellyfin.py tests\\test_settings_service.py tests\\test_routes.py -k "jellyfin or save_settings_persists_profile_management_tokens or settings_page_renders_jellyfin_controls"` (`10 passed`, `84 deselected`, `3 warnings`);
+    - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_jellyfin.py tests\\test_settings_service.py tests\\test_routes.py -k "jellyfin"` (`9 passed`, `85 deselected`, `3 warnings`);
+    - `.\\.venv\\Scripts\\python.exe -m ruff check app\\config.py app\\db.py app\\models.py app\\routes\\api.py app\\services\\jellyfin.py app\\services\\settings_service.py tests\\conftest.py tests\\jellyfin_test_utils.py tests\\test_jellyfin.py tests\\test_routes.py tests\\test_settings_service.py` (`All checks passed`);
+    - `.\\.venv\\Scripts\\python.exe -m mypy app\\services\\jellyfin.py app\\services\\settings_service.py app\\routes\\api.py` (`Success: no issues found in 3 source files`);
+    - backed up the live app DB to `data\\backups\\qb_rules-before-jellyfin-sync-20260324T215755.db`, then synced the real `data\\qb_rules.db` against `C:\ProgramData\Jellyfin\Server\data\jellyfin.db` for user `Spon4ik` with first-run results `synced=6`, `unchanged=0`, `skipped=55`, `errors=0`; a verification rerun then reported the same matched rules as stable (`synced=0`, `unchanged=6`, `skipped=55`, `errors=0`);
+    - the matched rules now held at Jellyfin-derived floors include `Fauda` (`S03E02`), `Ghosts: Fantomes en Heritage` (`S01E04`), `Rick and Morty` (`S01E02`), `The Hack` (`S01E05`), and `Yaffa` (`S01E08`); later follow-up verification advanced `Shrinking` to `S03E08` and `Ted` to `S01E08` once the stored-floor contract switched from hidden filtering to “one past the latest existing library episode” by default.
+  - completed the Jellyfin follow-up contract slice on 2026-03-24:
+    - rule forms and generated-pattern previews now receive synced `jellyfin_existing_episode_numbers` inventory and expose the per-rule `Keep searching existing unseen episodes` toggle so the exclusion/upgrade policy is explicit on the rule itself (`app/routes/pages.py`, `app/templates/rule_form.html`, `app/static/app.js`);
+    - the Jellyfin service now treats ahead-of-progress rules as still updateable when their existing-unseen episode inventory changes, which keeps default exclusions current even if the operator has manually moved the floor further ahead (`app/services/jellyfin.py`);
+    - `/api/settings/sync-jellyfin` now pushes all Jellyfin-changed rules to qB immediately when qBittorrent is configured, and warns clearly when the action remains local-only because qB is not configured (`app/routes/api.py`, `tests/test_routes.py`);
+    - validation evidence:
+      - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_jellyfin.py tests\\test_rule_builder.py tests\\test_routes.py -k "jellyfin or generated_pattern_excludes_existing_unseen_jellyfin_episodes_by_default or generated_pattern_can_keep_searching_existing_unseen_jellyfin_episodes or inline_local_generated_pattern_supports_jellyfin_existing_episode_exclusions or settings_page_renders_jellyfin_controls"` (`12 passed`, `96 deselected`, `4 warnings`);
+      - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_rule_fetch_ops.py` (`2 passed`, `1 warning`);
+      - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py -k "inline_local_generated_pattern_uses_raw_title_surface or inline_clear_local_filters_resets_regex_and_episode_floor_inputs"` (`2 passed`, `81 deselected`);
+      - `.\\.venv\\Scripts\\python.exe -m ruff check app\\routes\\api.py app\\routes\\pages.py app\\services\\jellyfin.py app\\services\\rule_builder.py app\\services\\rule_fetch_ops.py tests\\test_jellyfin.py tests\\test_rule_builder.py tests\\test_routes.py` (`All checks passed`);
+    - `.\\.venv\\Scripts\\python.exe -m mypy app\\services\\jellyfin.py app\\routes\\api.py` (`Success: no issues found in 2 source files`).
+- Completed the phase-11 Jellyfin auto-sync follow-up on 2026-03-25:
+  - `/settings` now surfaces a dedicated Jellyfin sync panel directly beside the Jellyfin configuration fields, with visible `Test Jellyfin` and `Save + Sync Jellyfin Now` actions, an auto-sync enable toggle, a configurable polling interval, and persisted last-run status/message (`app/templates/settings.html`);
+  - the backend now starts a Jellyfin auto-sync service on app startup when schedulers are enabled, performs an initial forced sync on startup, and then re-runs only when the configured Jellyfin DB file timestamp changes while the app remains open (`app/main.py`, `app/services/jellyfin_auto_sync.py`);
+  - Jellyfin auto-sync settings/state are now persisted in `AppSettings`, normalized through `SettingsService`, and covered by test-only scheduler disablement so unrelated pytest runs remain deterministic (`app/models.py`, `app/db.py`, `app/config.py`, `app/schemas.py`, `app/services/settings_service.py`, `tests/conftest.py`);
+  - Jellyfin sync now records existing library episodes even when Jellyfin has no watched `UserData` yet for the matched series, so default rule generation can still suppress already-present unseen episodes such as `Shrinking S03E07` instead of re-searching them (`app/services/jellyfin.py`, `tests/test_jellyfin.py`);
+  - added focused regressions for visible settings controls plus the watcher contract: startup sync, no-op when the Jellyfin DB has not changed, and a rerun after DB timestamp change (`tests/test_jellyfin_auto_sync.py`, `tests/test_routes.py`, `tests/test_settings_service.py`);
+  - validation evidence:
+    - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_jellyfin_auto_sync.py tests\\test_settings_service.py tests\\test_routes.py -k "jellyfin_auto_sync or settings_page_renders_jellyfin_controls or test_jellyfin or sync_jellyfin or get_or_create_normalizes_jellyfin_settings or resolve_jellyfin_prefers_env_overrides"` (`7 passed`, `86 deselected`, `4 warnings`);
+    - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_jellyfin.py tests\\test_jellyfin_auto_sync.py tests\\test_settings_service.py tests\\test_routes.py -k "jellyfin or settings_page_renders_jellyfin_controls"` (`13 passed`, `85 deselected`, `4 warnings`);
+    - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_jellyfin.py tests\\test_rule_builder.py tests\\test_routes.py -k "jellyfin or generated_pattern_excludes_existing_unseen_jellyfin_episodes_by_default or generated_pattern_can_keep_searching_existing_unseen_jellyfin_episodes or settings_page_renders_jellyfin_controls"` (`13 passed`, `96 deselected`, `4 warnings`);
+    - `.\\.venv\\Scripts\\python.exe -m ruff check app\\services\\jellyfin_auto_sync.py tests\\conftest.py tests\\test_jellyfin_auto_sync.py tests\\test_routes.py tests\\test_settings_service.py` (`All checks passed`);
+    - `.\\.venv\\Scripts\\python.exe -m ruff check app\\services\\jellyfin.py tests\\test_jellyfin.py tests\\test_rule_builder.py tests\\test_routes.py` (`All checks passed`);
+    - `.\\.venv\\Scripts\\python.exe -m mypy app\\services\\jellyfin_auto_sync.py app\\services\\settings_service.py app\\routes\\api.py` (`Success: no issues found in 3 source files`).
+  - live verification on 2026-03-25 against `data\\qb_rules.db` and the running local app:
+    - repo DB settings showed `jellyfin_auto_sync_enabled=1`, `jellyfin_auto_sync_interval_seconds=30`, and a fresh automatic-sync timestamp at `2026-03-24 22:43:05.282615` UTC, later advancing again after the floor-contract fix;
+    - the `Shrinking` rule now holds `start_season=3`, `start_episode=8`, and `jellyfin_existing_episode_numbers=["S03E07"]`, while `Ted` now holds `start_season=1`, `start_episode=8`, and `jellyfin_existing_episode_numbers=["S01E02","S01E03","S01E04","S01E05","S01E06","S01E07"]`;
+    - the running `/settings` page on `http://127.0.0.1:8000/settings` rendered both `Save + Sync Jellyfin Now` and the automatic-sync helper text;
+    - the generated patterns built from the live saved rules rejected `Shrinking S03E07 2160p HDR10+ DV WEB-DL` and `Ted S01E07 2160p HDR10+ DV WEB-DL`, while matching `Shrinking S03E08 2160p HDR10+ DV WEB-DL` and `Ted S01E08 2160p HDR10+ DV WEB-DL`.
+- Completed the 2026-03-25 Jellyfin contract follow-up for stored series minima and movie auto-disable behavior:
+  - matched series continue to persist the effective next-missing floor on the saved rule itself, and the live app DB now shows `Shrinking` at `S03E09` with `["S03E07","S03E08"]` recorded as existing library inventory while `Ted` remains at `S01E08`;
+  - matched movie rules now participate in Jellyfin sync, with explicit `Rule.jellyfin_auto_disabled` state so Jellyfin can disable an existing-library movie rule by default without conflating that with the user's own manual enabled/disabled choice;
+  - the rule form now uses movie-specific Jellyfin copy (`Keep searching this movie for better quality`) and can surface an explicit banner when a movie rule is disabled automatically by Jellyfin;
+  - targeted validation for this follow-up:
+    - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_jellyfin.py -q` (`9 passed`);
+    - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py -k "settings_page_renders_jellyfin_controls or edit_movie_rule_page_renders_jellyfin_movie_sync_copy or edit_rule_page_can_render_inline_search_results" -q` (`3 passed`, `3 warnings`);
+    - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_jellyfin.py tests\\test_routes.py -k "jellyfin or movie_sync_copy or settings_page_renders_jellyfin_controls" -q` (`15 passed`, `5 warnings`);
+    - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_jellyfin_auto_sync.py -q` (`1 passed`);
+    - `.\\.venv\\Scripts\\python.exe -m ruff check app\\services\\jellyfin.py app\\services\\jellyfin_sync_ops.py app\\services\\jellyfin_auto_sync.py app\\models.py app\\db.py app\\routes\\pages.py app\\routes\\api.py tests\\jellyfin_test_utils.py tests\\test_jellyfin.py tests\\test_jellyfin_auto_sync.py tests\\test_routes.py` (`All checks passed`);
+    - `.\\.venv\\Scripts\\python.exe -m mypy app\\services\\jellyfin.py app\\services\\jellyfin_sync_ops.py app\\routes\\api.py` (`Success: no issues found in 3 source files`);
+  - live verification after backup `data\\backups\\qb_rules-before-jellyfin-contract-20260325T001121Z.db` and a real `execute_jellyfin_sync(...)` run reported `0 updated`, `12 unchanged`, `61 skipped`, `0 errors` because the matched live movies `The Rip` and `Michael McIntyre: Showman` were already disabled locally, while `Red Alert` still had no sync target because the Jellyfin DB currently contains no matching root item by title or IMDb ID `tt34888633`.
+- Completed the fourth phase-11 stabilization slice on 2026-03-24:
+  - the desktop shell now supports a packaged app root with `app\` plus a bundled `python\` runtime, prefers bundled `python.exe` for backend auto-start, and disables dev-only `--reload` when launched from that packaged runtime (`QbRssRulesDesktop/Views/MainPage.xaml.cs`);
+  - `scripts\package_desktop_bundle.ps1`, `scripts\install_desktop_bundle.ps1`, `scripts\install_desktop_bundle.cmd`, and `scripts\run_dev.bat desktop-package` now produce and install a portable Windows bundle with `QbRssRulesDesktop.exe` at the bundle root, a private Python runtime, and a local install/update flow that preserves `data\` and `logs\` (`scripts/run_dev.bat`, `README.md`);
+  - `ensure_runtime_dirs()` now pre-creates the SQLite file path for relative sqlite URLs so first-run packaged launches do not fail on DB creation (`app/config.py`, `tests/test_settings_service.py`);
+  - validation evidence:
+    - `cmd.exe /v:on /c "scripts\run_dev.bat desktop-package & echo EXITCODE:!ERRORLEVEL!"` (`Bundle ready`, `EXITCODE:0`);
+    - portable bundle smoke: `dist\qB RSS Rules Desktop-win-x64\QbRssRulesDesktop.exe` reached `http://127.0.0.1:8037/health` with one bundled Python backend process;
+    - install-root smoke: `powershell.exe -File scripts\install_desktop_bundle.ps1 -SourceRoot "dist\qB RSS Rules Desktop-win-x64" -InstallRoot "dist\install-smoke" -SkipShortcuts` completed, and `dist\install-smoke\QbRssRulesDesktop.exe` reached `http://127.0.0.1:8041/health`;
+    - installer re-run preserved `dist\install-smoke\data\preserve.txt`;
+    - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_settings_service.py -k "ensure_runtime_dirs_touches_relative_sqlite_database or rewrite_localhost_url_for_wsl"` (`4 passed`);
+    - `.\\.venv\\Scripts\\python.exe -m ruff check app\\config.py tests\\test_settings_service.py` (`All checks passed`).
+- Completed the third phase-11 stabilization slice on 2026-03-24:
+  - re-ran live browser + WinUI hover evidence with `.\\.venv\\Scripts\\python.exe scripts\\capture_live_hover_overlay.py --desktop-relaunch`, producing fresh artifacts under `logs/live-hover/live-hover-20260324T074139Z/`;
+  - both browser and desktop manifests captured four lower-row samples, and the telemetry confirms the hover poster remains side-adjacent with the expected below/above flips near bottom rows instead of reusing a detached upper-list placement (`logs/live-hover/live-hover-20260324T074139Z/summary.json`, `logs/live-hover/live-hover-20260324T074139Z/browser/manifest.json`, `logs/live-hover/live-hover-20260324T074139Z/desktop/manifest.json`).
+- Completed the second phase-11 stabilization slice on 2026-03-24:
+  - the base unfiltered `/` rules-page request no longer performs poster completion inline; it now queues candidate rule IDs onto a detached worker with its own DB session, cooldown tracking, and in-flight dedupe so OMDb latency is off the request thread (`app/routes/pages.py`);
+  - the rules-page poster contract is now explicit: the first render uses current persisted poster state, while deferred completion updates the DB for subsequent loads instead of blocking the page render to enrich the current response;
+  - validation evidence:
+    - `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py -k "rules_page_renders_release_status_from_snapshots or rules_page_defers_missing_poster_backfill_from_response_render"` (`2 passed`, `76 deselected`, `2 warnings`);
+    - `.\\.venv\\Scripts\\python.exe -m ruff check app\\routes\\pages.py tests\\test_routes.py` (`All checks passed`).
+- Completed the first phase-11 desktop hardening slice on 2026-03-24:
+  - `QbRssRulesDesktop` now enforces a single local desktop instance via a named mutex and best-effort foregrounds the existing window before a duplicate instance exits, so repeated launches no longer leave multiple desktop owners competing for managed-backend ownership (`QbRssRulesDesktop/App.xaml.cs`);
+  - `scripts/run_dev.bat desktop` now detects a running desktop instance and skips rebuilds into a locked EXE, while `scripts/run_dev.bat full` now acts as a compatibility alias for desktop-managed startup instead of prelaunching a separate hidden API process (`scripts/run_dev.bat`, `README.md`);
+  - validation evidence:
+    - `cmd.exe /v:on /c "scripts\run_dev.bat desktop-build & echo EXITCODE:!ERRORLEVEL!"` (`Build succeeded`, `EXITCODE:0`) after closing a stale repo-built desktop instance that had the EXE locked;
+    - clean relaunch verification from a zero-process state confirmed `BeforeCount=1`, `AfterCount=1` for `QbRssRulesDesktop`, while `cmd.exe /c scripts\run_dev.bat full` reported reuse (`"full" now delegates ...`, `WinUI desktop app is already running; skipping rebuild ...`) instead of rebuilding.
+- Added the active phase-11 implementation plan on 2026-03-24:
+  - created `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md` with explicit `v0.6.1` scope for desktop single-instance behavior, poster request-path hardening, cross-machine workflow validation, live WebView hover recapture, and release gates;
+  - updated `ROADMAP.md` and `docs/plans/README.md` so phase 11 is the active track and `v0.6.1` is now framed as a narrow stabilization release rather than an undefined post-release bucket.
 - Completed `v0.6.0` release closeout on 2026-03-23:
   - synchronized version touchpoints to `0.6.0` (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`) and transitioned roadmap/planning docs to post-release `v0.6.1` stabilization plus next-phase shaping (`ROADMAP.md`, `docs/plans/README.md`, `docs/plans/phase-10-winui-desktop-bootstrap.md`);
   - validation evidence:
@@ -541,22 +641,22 @@
 
 ## In progress
 
-- Post-release stabilization for `v0.6.0` is active while the next implementation phase and `v0.6.1` follow-up scope are being defined.
-- The phase-10 plan is now the release-validated source of truth for what shipped in `v0.6.0`; no post-`v0.6.0` implementation phase plan is active yet.
-- Desktop follow-up is focused on cross-machine confirmation of the retained WinUI companion-process baseline, real WebView hover validation, and single-instance behavior for repeated desktop/API launches.
-- NuGet source behavior is stabilized for this repository via `NuGet.config`, but additional Windows-profile confirmation is still pending.
+- No active implementation slice is open after the `v0.6.1` release closeout.
+- The next session should start by choosing and documenting the post-`v0.6.1` phase instead of continuing ad hoc changes.
+- NuGet source behavior remains stabilized for this repository via `NuGet.config`, and cross-machine desktop validation is still backlog/follow-up work rather than a release blocker.
 
 ## Next actions
 
-- Validate the new `NuGet.config` + `run_dev.bat` desktop/full workflow on at least one additional Windows machine/profile to confirm no hidden source-precedence issues.
-- Re-run live WinUI hover capture against the released desktop shell to confirm the user-facing poster-overlay behavior remains fixed in real WebView sessions.
-- Watch for additional "fetched but not shown" cases and decide whether a future follow-up should persist/export blocker summaries, not just show them inline in the table.
-- Decide whether a post-release performance follow-up should move poster completion fully off the request path for the base rules page.
-- Define single-instance policy for repeated `desktop-run`/`full` execution (reuse existing process vs allow multiple instances) before broader desktop expansion.
-- Define the next implementation phase and target version after `v0.6.0` stabilization evidence is collected.
+- Formalize the next phase plan before more code changes; the highest-payoff candidate tracks are catalog-aware next-episode semantics across season/special boundaries and the cleanup/module-split pass for oversized files.
+- Tackle the highest-payoff codebase cleanup splits in this order: `app/static/app.js`, `app/routes/pages.py`, `app/routes/api.py`, `app/services/jackett.py`, and `app/services/settings_service.py`.
+- Decide whether to add catalog-aware episode ordering so Jellyfin-driven floors can advance across season boundaries and specials instead of relying only on numeric increment from known library episodes.
+- Optionally run one final no-`-SkipShortcuts` installer smoke on a clean validation profile if you want direct Desktop/Start Menu shortcut evidence after the `v0.6.1` release.
+- Watch for additional "fetched but not shown" cases and decide whether any later follow-up should persist/export blocker summaries, not just show them inline in the table.
+- If `Red Alert` is expected to sync, repair the underlying Jellyfin library identity metadata first because the current DB contains no matching root item for `Red Alert` / `tt34888633`.
 
 ## Deferred / future phases
 
+- Phase 11 planning lives in `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md`; implementation is complete and release-validated in `v0.6.1`.
 - Phase 6 planning lives in `docs/plans/phase-6-jackett-active-search.md`; implemented scope is in the repo and deeper persistence work remains deferred.
 - Phase 7 planning lives in `docs/plans/phase-7-cached-refinement-and-category-catalog.md`; implementation is complete and serves as the baseline for phase-8 follow-up UX/data-model evolution.
 - Phase 8 planning lives in `docs/plans/phase-8-persistent-rule-search-snapshots-and-unified-workspace.md`; implementation is complete and release-validated in `v0.4.0`.

@@ -107,6 +107,7 @@
   data-rule-form
   {% if mode == 'edit' and inline_search %}data-search-form{% endif %}
   {% if mode == 'edit' %}data-initial-feed-urls='{{ form_data.feed_urls | tojson }}'{% endif %}
+  data-jellyfin-existing-episode-numbers='{{ form_data.jellyfin_existing_episode_numbers | tojson }}'
   data-series-template="{{ settings_form.series_category_template }}"
   data-movie-template="{{ settings_form.movie_category_template }}"
   data-save-path-template="{{ settings_form.save_path_template }}"
@@ -195,8 +196,25 @@
       <span class="helper-text">Example: season 3 + episode 7 keeps `S03E07` and later variants like `S03E01-07`.</span>
     </label>
     <label class="toggle">
+      <input type="checkbox" name="jellyfin_search_existing_unseen" {% if form_data.jellyfin_search_existing_unseen %}checked{% endif %} />
+      <span>{% if form_data.media_type == "movie" %}Keep searching this movie for better quality{% else %}Keep searching existing unseen episodes{% endif %}</span>
+      <span class="helper-text">
+        {% if form_data.media_type == "movie" %}
+        When off, Jellyfin sync disables this rule if the movie already exists in your library. Turn it on to keep searching for upgrades or better-quality copies.
+        {% else %}
+        Jellyfin sync stores the next missing season+episode floor on the rule itself. When off, it also excludes unseen episodes already present in the library.
+        {% if form_data.jellyfin_existing_episode_count %}
+        Current synced exclusions: {{ form_data.jellyfin_existing_episode_count }} episode(s).
+        {% endif %}
+        {% endif %}
+      </span>
+    </label>
+    <label class="toggle">
       <input type="checkbox" name="enabled" {% if form_data.enabled %}checked{% endif %} />
       <span>Enabled</span>
+      {% if form_data.media_type == "movie" and form_data.jellyfin_auto_disabled %}
+      <span class="helper-text">This movie rule is currently disabled automatically because Jellyfin already has a matching library item.</span>
+      {% endif %}
     </label>
     <label class="toggle">
       <input type="checkbox" name="add_paused" {% if form_data.add_paused %}checked{% endif %} />

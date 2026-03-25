@@ -17,6 +17,7 @@ YEAR_TOKEN_RE = re.compile(r"\b(\d{4})\b")
 EXTRA_INCLUDE_SPLIT_RE = re.compile(r"[\n,;]+")
 MANUAL_MUST_CONTAIN_SPLIT_RE = re.compile(r"\r?\n")
 REGEX_META_RE = re.compile(r"[\\.^$*+?{}\[\]|()]")
+JELLYFIN_EPISODE_KEY_RE = re.compile(r"^s(?P<season>\d{1,2})e(?P<episode>\d{1,2})$", re.IGNORECASE)
 FULL_MUST_CONTAIN_OVERRIDE_PREFIXES: tuple[str, ...] = (
     "(?i",
     "(?m",
@@ -202,6 +203,7 @@ def build_episode_progress_fragment(start_season: int | None, start_episode: int
     episode_value = max(1, min(99, int(start_episode)))
     season_exact = rf"0*{season_value}"
     episode_any = r"0*[1-9]\d?"
+    episode_range_any = r"0*\d{1,2}"
     episode_ge = _build_min_numeric_pattern_1_to_99(episode_value)
     separators = r"[\s._-]*"
     season_prefix = r"(?:s(?:eason)?[\s._:-]*)"
@@ -209,13 +211,99 @@ def build_episode_progress_fragment(start_season: int | None, start_episode: int
 
     fragments = [
         rf"{season_prefix}{season_exact}(?!\d){separators}{episode_prefix}{episode_ge}",
-        rf"{season_prefix}{season_exact}(?!\d){separators}{episode_prefix}{episode_any}{separators}-{separators}(?:{episode_prefix})?{episode_ge}",
+        rf"{season_prefix}{season_exact}(?!\d){separators}{episode_prefix}{episode_range_any}{separators}-{separators}(?:{episode_prefix})?{episode_ge}",
         rf"{season_prefix}{season_exact}(?!\d)(?:\b|$)",
     ]
     if season_value < 99:
         season_after = _build_min_numeric_pattern_1_to_99(season_value + 1)
         fragments.insert(0, rf"{season_prefix}{season_after}(?!\d){separators}{episode_prefix}{episode_any}")
         fragments.insert(1, rf"{season_prefix}{season_after}(?!\d)(?:\b|$)")
+    return f"(?:{'|'.join(fragments)})"
+
+
+def _format_jellyfin_episode_key(season_number: int, episode_number: int) -> str:
+    return f"S{season_number:02d}E{episode_number:02d}"
+
+
+def normalize_jellyfin_episode_keys(value: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_item in list(value or []):
+        match = JELLYFIN_EPISODE_KEY_RE.match(str(raw_item or "").strip())
+        if not match:
+            continue
+        season_number = max(1, min(99, int(match.group("season"))))
+        episode_number = max(1, min(99, int(match.group("episode"))))
+        episode_key = _format_jellyfin_episode_key(season_number, episode_number)
+        if episode_key in seen:
+            continue
+        seen.add(episode_key)
+        normalized.append(episode_key)
+    return normalized
+
+
+def build_specific_episode_fragment(season_number: int, episode_number: int) -> str:
+    season_value = max(1, min(99, int(season_number)))
+    episode_value = max(1, min(99, int(episode_number)))
+    season_exact = rf"0*{season_value}"
+    episode_exact = rf"0*{episode_value}"
+    episode_range_any = r"0*\d{1,2}"
+    separators = r"[\s._-]*"
+    season_prefix = r"(?:s(?:eason)?[\s._:-]*)"
+    episode_prefix = r"(?:e(?:p(?:isode)?)?[\s._:-]*)"
+    fragments = [
+        rf"{season_prefix}{season_exact}(?!\d){separators}{episode_prefix}{episode_exact}(?!\d)",
+        rf"{season_prefix}{season_exact}(?!\d){separators}{episode_prefix}{episode_range_any}{separators}-{separators}(?:{episode_prefix})?{episode_exact}(?!\d)",
+        rf"{season_prefix}{season_exact}(?!\d){separators}{episode_prefix}{episode_exact}(?!\d){separators}-{separators}(?:{episode_prefix})?{episode_range_any}",
+    ]
+    return f"(?:{'|'.join(fragments)})"
+
+
+def build_below_floor_episode_fragment(season_number: int, episode_number: int) -> str:
+    season_value = max(1, min(99, int(season_number)))
+    episode_value = max(1, min(99, int(episode_number)))
+    season_exact = rf"0*{season_value}"
+    episode_exact = rf"0*{episode_value}"
+    episode_range_any = r"0*\d{1,2}"
+    separators = r"[\s._-]*"
+    season_prefix = r"(?:s(?:eason)?[\s._:-]*)"
+    episode_prefix = r"(?:e(?:p(?:isode)?)?[\s._:-]*)"
+    fragments = [
+        rf"{season_prefix}{season_exact}(?!\d){separators}{episode_prefix}{episode_exact}(?!\d)(?!{separators}-)",
+        rf"{season_prefix}{season_exact}(?!\d){separators}{episode_prefix}{episode_range_any}{separators}-{separators}(?:(?:{episode_prefix}))?{episode_exact}(?!\d)",
+    ]
+    return f"(?:{'|'.join(fragments)})"
+
+
+def build_lower_episode_exclusion_fragment(start_season: int | None, start_episode: int | None) -> str:
+    if start_season is None or start_episode is None:
+        return ""
+
+    season_value = max(1, min(99, int(start_season)))
+    episode_value = max(1, min(99, int(start_episode)))
+    fragments = [
+        build_below_floor_episode_fragment(season_value, episode_number)
+        for episode_number in range(1, episode_value)
+    ]
+    if not fragments:
+        return ""
+    return f"(?:{'|'.join(fragments)})"
+
+
+def build_existing_episode_exclusion_fragment(existing_episode_keys: list[str]) -> str:
+    fragments: list[str] = []
+    for episode_key in normalize_jellyfin_episode_keys(existing_episode_keys):
+        match = JELLYFIN_EPISODE_KEY_RE.match(episode_key)
+        if match is None:
+            continue
+        fragments.append(
+            build_specific_episode_fragment(
+                int(match.group("season")),
+                int(match.group("episode")),
+            )
+        )
+    if not fragments:
+        return ""
     return f"(?:{'|'.join(fragments)})"
 
 
@@ -289,6 +377,17 @@ class RuleBuilder:
             positive_fragments.append(episode_progress_fragment)
 
         quality_include_fragments, quality_exclude = self._resolve_quality_filters(rule)
+        lower_episode_exclusion = build_lower_episode_exclusion_fragment(
+            rule.start_season,
+            rule.start_episode,
+        )
+        jellyfin_existing_episode_exclusion = ""
+        if not bool(getattr(rule, "jellyfin_search_existing_unseen", False)):
+            jellyfin_existing_episode_exclusion = build_existing_episode_exclusion_fragment(
+                normalize_jellyfin_episode_keys(
+                    list(getattr(rule, "jellyfin_existing_episode_numbers", []) or [])
+                )
+            )
         if quality_include_fragments:
             positive_fragments.extend(quality_include_fragments)
         positive_fragments.extend(build_manual_must_contain_fragments(rule.must_contain_override))
@@ -297,6 +396,10 @@ class RuleBuilder:
         pattern += "".join(f"(?=.*{fragment})" for fragment in positive_fragments if fragment)
         if quality_exclude:
             pattern += f"(?!.*{quality_exclude})"
+        if lower_episode_exclusion:
+            pattern += f"(?!.*{lower_episode_exclusion})"
+        if jellyfin_existing_episode_exclusion:
+            pattern += f"(?!.*{jellyfin_existing_episode_exclusion})"
         return pattern
 
     def build_qb_rule(self, rule: Rule) -> dict[str, object]:
@@ -336,6 +439,14 @@ class RuleBuilder:
             or quality_include_fragments
             or quality_exclude
             or build_manual_must_contain_fragments(rule.must_contain_override)
+            or (
+                not bool(getattr(rule, "jellyfin_search_existing_unseen", False))
+                and build_existing_episode_exclusion_fragment(
+                    normalize_jellyfin_episode_keys(
+                        list(getattr(rule, "jellyfin_existing_episode_numbers", []) or [])
+                    )
+                )
+            )
         )
 
     def _resolve_quality_filters(self, rule: Rule) -> tuple[list[str], str]:

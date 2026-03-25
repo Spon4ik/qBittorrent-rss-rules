@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import re
+
 from app.models import MediaType, QualityProfile, Rule, RuleSearchSnapshot, utcnow
 from app.services import rule_fetch_ops
-from app.services.rule_fetch_ops import refresh_snapshot_release_cache, release_state_from_snapshot
+from app.services.rule_fetch_ops import (
+    _rule_local_filtered_count_from_rows,
+    _rule_local_generated_pattern,
+    refresh_snapshot_release_cache,
+    release_state_from_snapshot,
+)
 
 
 def test_release_state_from_snapshot_reuses_cached_local_count_after_non_filter_rule_update(
@@ -89,3 +96,48 @@ def test_rules_page_skips_poster_backfill_on_filtered_requests(
 
     assert response.status_code == 200
     assert called is False
+
+
+def test_rule_local_filter_excludes_zero_based_ranges_below_episode_floor() -> None:
+    rule = Rule(
+        rule_name="The Good Ship Murder",
+        content_name="The Good Ship Murder",
+        normalized_title="The Good Ship Murder",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=3,
+        start_episode=8,
+        jellyfin_existing_episode_numbers=[
+            "S03E01",
+            "S03E02",
+            "S03E03",
+            "S03E04",
+            "S03E05",
+            "S03E06",
+            "S03E07",
+        ],
+    )
+
+    pattern = _rule_local_generated_pattern(rule)
+    compiled = re.compile(pattern[4:], re.IGNORECASE | re.UNICODE)
+    leaked_title = "Убийство на борту (The Good Ship Murder)S3E00-07 (HD 1080p WEBRip) Полный S3"
+    allowed_title = "The Good Ship Murder S03E08 1080p"
+
+    assert compiled.search(leaked_title) is None
+    assert compiled.search(allowed_title) is not None
+    assert (
+        _rule_local_filtered_count_from_rows(
+            rule,
+            [
+                {
+                    "title": leaked_title,
+                    "text_surface": leaked_title.lower(),
+                },
+                {
+                    "title": allowed_title,
+                    "text_surface": allowed_title.lower(),
+                },
+            ],
+        )
+        == 1
+    )

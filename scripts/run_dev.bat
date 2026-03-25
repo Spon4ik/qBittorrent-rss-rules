@@ -11,6 +11,7 @@ set "WINUI_CONFIG=Debug"
 set "WINUI_PLATFORM=x64"
 set "WINUI_EXE=QbRssRulesDesktop\bin\%WINUI_PLATFORM%\%WINUI_CONFIG%\net10.0-windows10.0.19041.0\win-%WINUI_PLATFORM%\QbRssRulesDesktop.exe"
 set "WINUI_SHORTCUT_SCRIPT=scripts\refresh_winui_shortcuts.ps1"
+set "WINUI_PACKAGE_SCRIPT=scripts\package_desktop_bundle.ps1"
 set "API_HOST=127.0.0.1"
 set "API_PORT=8000"
 set "API_VENV_PYTHON=.venv\Scripts\python.exe"
@@ -30,9 +31,13 @@ pushd "%PROJECT_DIR%" >nul
 if /I "%MODE%"=="api" goto :run_api
 if /I "%MODE%"=="desktop-build" goto :desktop_build
 if /I "%MODE%"=="desktop-shortcuts" goto :desktop_shortcuts
+if /I "%MODE%"=="desktop-package" goto :desktop_package
 if /I "%MODE%"=="desktop-run" goto :desktop_run
 if /I "%MODE%"=="desktop" goto :desktop
-if /I "%MODE%"=="full" goto :full
+if /I "%MODE%"=="full" (
+  echo "full" now delegates to the desktop shell, which auto-starts the backend as needed.
+  goto :desktop
+)
 if /I "%MODE%"=="help" goto :usage
 if /I "%MODE%"=="--help" goto :usage
 if /I "%MODE%"=="-h" goto :usage
@@ -95,6 +100,18 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%WINUI_SHORTCUT_SCRIPT%
 set "EXIT_CODE=!ERRORLEVEL!"
 goto :finish
 
+:desktop_package
+if not exist "%WINUI_PACKAGE_SCRIPT%" (
+  echo Desktop bundle script not found: %WINUI_PACKAGE_SCRIPT%
+  set "EXIT_CODE=1"
+  goto :finish
+)
+
+echo Building Windows desktop bundle...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%WINUI_PACKAGE_SCRIPT%" -ProjectRoot "%PROJECT_DIR%"
+set "EXIT_CODE=!ERRORLEVEL!"
+goto :finish
+
 :desktop_run
 if not exist "%WINUI_EXE%" (
   echo WinUI executable not found: %WINUI_EXE%
@@ -113,24 +130,21 @@ set "EXIT_CODE=0"
 goto :finish
 
 :desktop
+powershell.exe -NoProfile -Command "$exe = [System.IO.Path]::GetFullPath('%PROJECT_DIR%\%WINUI_EXE%'); $running = Get-Process -Name 'QbRssRulesDesktop' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }; if ($running) { exit 0 } else { exit 1 }"
+if errorlevel 1 goto :desktop_build_and_run
+
+echo WinUI desktop app is already running; skipping rebuild and reusing the existing instance.
+call "%~f0" desktop-run
+set "EXIT_CODE=!ERRORLEVEL!"
+goto :finish
+
+:desktop_build_and_run
 call "%~f0" desktop-build
 if errorlevel 1 (
   set "EXIT_CODE=!ERRORLEVEL!"
   goto :finish
 )
 call "%~f0" desktop-run
-set "EXIT_CODE=!ERRORLEVEL!"
-goto :finish
-
-:full
-echo Starting API server in a separate process...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%API_PYTHON_WINDOWLESS%' -ArgumentList '-m','uvicorn','app.main:create_app','--factory','--host','%API_HOST%','--port','%API_PORT%','--reload' -WorkingDirectory '%PROJECT_DIR%' -WindowStyle Hidden"
-if errorlevel 1 (
-  set "EXIT_CODE=!ERRORLEVEL!"
-  goto :finish
-)
-ping 127.0.0.1 -n 3 >nul
-call "%~f0" desktop
 set "EXIT_CODE=!ERRORLEVEL!"
 goto :finish
 
@@ -141,9 +155,10 @@ echo Modes:
 echo   api           Run FastAPI dev server (default)
 echo   desktop-build Restore and build WinUI desktop app
 echo   desktop-shortcuts Refresh Desktop/repo shortcuts for the WinUI app
+echo   desktop-package Build a portable Windows bundle with install script under dist\
 echo   desktop-run   Launch previously built WinUI desktop app
-echo   desktop       Build then launch WinUI desktop app
-echo   full          Start API server in separate process, then build and launch desktop app
+echo   desktop       Build then launch WinUI desktop app; if already running, reuse the current instance
+echo   full          Compatibility alias for "desktop"; backend auto-start is handled by the desktop app
 echo   help          Show this help
 set "EXIT_CODE=0"
 goto :finish

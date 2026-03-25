@@ -90,6 +90,16 @@ class Rule(Base):
     start_episode: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     jellyfin_search_existing_unseen: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     jellyfin_auto_disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    jellyfin_known_episode_numbers: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+    jellyfin_watched_episode_numbers: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
     jellyfin_existing_episode_numbers: Mapped[list[str]] = mapped_column(
         JSON,
         nullable=False,

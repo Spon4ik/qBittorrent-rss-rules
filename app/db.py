@@ -71,6 +71,8 @@ def _ensure_rule_columns() -> None:
         "start_episode": "INTEGER",
         "jellyfin_search_existing_unseen": "BOOLEAN NOT NULL DEFAULT 0",
         "jellyfin_auto_disabled": "BOOLEAN NOT NULL DEFAULT 0",
+        "jellyfin_known_episode_numbers": "JSON NOT NULL DEFAULT '[]'",
+        "jellyfin_watched_episode_numbers": "JSON NOT NULL DEFAULT '[]'",
         "jellyfin_existing_episode_numbers": "JSON NOT NULL DEFAULT '[]'",
         "poster_url": "VARCHAR(512)",
     }

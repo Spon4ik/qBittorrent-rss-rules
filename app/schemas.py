@@ -380,7 +380,7 @@ class RuleFormPayload(BaseModel):
     must_contain_override: str | None = None
     must_not_contain: str = ""
     start_season: int | None = Field(default=None, ge=1, le=99)
-    start_episode: int | None = Field(default=None, ge=1, le=99)
+    start_episode: int | None = Field(default=None, ge=0, le=99)
     jellyfin_search_existing_unseen: bool = False
     episode_filter: str = ""
     ignore_days: int = Field(default=0, ge=0)

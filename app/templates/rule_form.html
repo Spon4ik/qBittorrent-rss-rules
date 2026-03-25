@@ -192,8 +192,8 @@
     </label>
     <label>
       Start episode
-      <input type="number" min="1" max="99" name="start_episode" value="{{ form_data.start_episode }}" placeholder="7" />
-      <span class="helper-text">Example: season 3 + episode 7 keeps `S03E07` and later variants like `S03E01-07`.</span>
+      <input type="number" min="0" max="99" name="start_episode" value="{{ form_data.start_episode }}" placeholder="7" />
+      <span class="helper-text">Example: season 3 + episode 7 keeps `S03E07` and later variants like `S03E01-07`; use `0` to catch `E00` specials when the next season begins.</span>
     </label>
     <label class="toggle">
       <input type="checkbox" name="jellyfin_search_existing_unseen" {% if form_data.jellyfin_search_existing_unseen %}checked{% endif %} />

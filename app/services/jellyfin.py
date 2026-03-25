@@ -5,6 +5,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -12,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import AppSettings, MediaType, Rule
+from app.services.metadata import MetadataClient, MetadataLookupError, MetadataLookupProvider
 from app.services.rule_builder import normalize_jellyfin_episode_keys, normalize_release_year
 from app.services.settings_service import SettingsService
 
@@ -57,13 +59,21 @@ class JellyfinEpisodeProgress:
 
 @dataclass(frozen=True, slots=True)
 class JellyfinDerivedFloor:
-    start_season: int | None
-    start_episode: int | None
+    watched_start_season: int | None
+    watched_start_episode: int | None
+    known_start_season: int | None
+    known_start_episode: int | None
     last_watched_season: int | None
     last_watched_episode: int | None
-    latest_existing_season: int
-    latest_existing_episode: int
+    latest_existing_season: int | None
+    latest_existing_episode: int | None
+    latest_known_season: int | None
+    latest_known_episode: int | None
     existing_unseen_episode_numbers: list[str]
+    known_episode_numbers: list[str]
+    watched_episode_numbers: list[str]
+    watched_floor_reason: str
+    known_floor_reason: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,14 +117,14 @@ def _normalize_year(value: object | None) -> str | None:
     return cleaned or None
 
 
-def _as_positive_int(value: object | None) -> int | None:
+def _as_nonnegative_int(value: object | None) -> int | None:
     if value in {None, ""}:
         return None
     try:
         numeric = int(str(value).strip())
     except (TypeError, ValueError):
         return None
-    if numeric <= 0:
+    if numeric < 0:
         return None
     return numeric
 
@@ -133,9 +143,50 @@ def _floor_tuple(season_number: int | None, episode_number: int | None) -> tuple
     return int(season_number), int(episode_number)
 
 
+def _episode_key_tuple(value: str | None) -> tuple[int, int] | None:
+    match = re.match(r"^s(?P<season>\d{1,2})e(?P<episode>\d{1,2})$", str(value or "").strip(), re.IGNORECASE)
+    if match is None:
+        return None
+    return int(match.group("season")), int(match.group("episode"))
+
+
+def _episode_key_from_tuple(value: tuple[int, int]) -> str:
+    return f"S{value[0]:02d}E{value[1]:02d}"
+
+
+def _sort_episode_keys(values: list[str]) -> list[str]:
+    keyed: list[tuple[tuple[int, int], str]] = []
+    for item in normalize_jellyfin_episode_keys(values):
+        episode_tuple = _episode_key_tuple(item)
+        if episode_tuple is None:
+            continue
+        keyed.append((episode_tuple, item))
+    keyed.sort(key=lambda item: item[0])
+    return [item[1] for item in keyed]
+
+
+def _merge_episode_key_lists(*lists: list[str]) -> list[str]:
+    return _sort_episode_keys([item for current in lists for item in current])
+
+
+def _latest_episode_tuple(values: list[str]) -> tuple[int, int] | None:
+    latest: tuple[int, int] | None = None
+    for item in values:
+        episode_tuple = _episode_key_tuple(item)
+        if episode_tuple is None:
+            continue
+        if latest is None or episode_tuple > latest:
+            latest = episode_tuple
+    return latest
+
+
 class JellyfinService:
     def __init__(self, settings: AppSettings | None) -> None:
         self.config = SettingsService.resolve_jellyfin(settings)
+        self.metadata_config = SettingsService.resolve_metadata(settings)
+        self._metadata_client: MetadataClient | None = None
+        self._catalog_imdb_id_cache: dict[str, str | None] = {}
+        self._catalog_season_cache: dict[tuple[str, int], list[int] | None] = {}
 
     def test_connection(self) -> JellyfinConnectionSummary:
         db_path = self._resolve_db_path()
@@ -272,6 +323,8 @@ class JellyfinService:
         derived_floor = self._derive_next_floor(
             connection=connection,
             user=user,
+            matched_series=matched_series,
+            rule=rule,
             series_id=matched_series.item_id,
         )
         if derived_floor is None:
@@ -289,13 +342,28 @@ class JellyfinService:
         current_existing_episode_numbers = normalize_jellyfin_episode_keys(
             list(getattr(rule, "jellyfin_existing_episode_numbers", []) or [])
         )
-        watched_next_floor = _floor_tuple(derived_floor.start_season, derived_floor.start_episode)
-        library_next_floor = _increment_floor(
-            derived_floor.latest_existing_season,
-            derived_floor.latest_existing_episode,
+        current_known_episode_numbers = normalize_jellyfin_episode_keys(
+            list(getattr(rule, "jellyfin_known_episode_numbers", []) or [])
+        )
+        current_watched_episode_numbers = normalize_jellyfin_episode_keys(
+            list(getattr(rule, "jellyfin_watched_episode_numbers", []) or [])
+        )
+        watched_next_floor = _floor_tuple(
+            derived_floor.watched_start_season,
+            derived_floor.watched_start_episode,
+        )
+        known_next_floor = _floor_tuple(
+            derived_floor.known_start_season,
+            derived_floor.known_start_episode,
         )
         next_existing_episode_numbers = normalize_jellyfin_episode_keys(
             derived_floor.existing_unseen_episode_numbers
+        )
+        next_known_episode_numbers = normalize_jellyfin_episode_keys(
+            derived_floor.known_episode_numbers
+        )
+        next_watched_episode_numbers = normalize_jellyfin_episode_keys(
+            derived_floor.watched_episode_numbers
         )
         keep_searching_existing_unseen = bool(
             getattr(rule, "jellyfin_search_existing_unseen", False)
@@ -303,49 +371,13 @@ class JellyfinService:
 
         effective_floor = current_floor
         floor_changed = False
-        floor_detail = (
-            f'Advanced to S{library_next_floor[0]:02d}E{library_next_floor[1]:02d} '
-            f'from latest Jellyfin library episode '
-            f'S{derived_floor.latest_existing_season:02d}E{derived_floor.latest_existing_episode:02d}.'
-        )
-        next_floor: tuple[int, int] | None = library_next_floor
+        floor_detail = derived_floor.known_floor_reason
+        next_floor: tuple[int, int] | None = known_next_floor
         if keep_searching_existing_unseen:
             next_floor = watched_next_floor
             if next_floor is None:
                 next_floor = current_floor
-            floor_detail = (
-                "Kept the current watched-progress floor because this rule allows "
-                "searching existing unseen Jellyfin episodes."
-            )
-            if watched_next_floor is not None:
-                floor_detail = (
-                    f'Advanced to S{watched_next_floor[0]:02d}E{watched_next_floor[1]:02d} '
-                    f'from Jellyfin progress through '
-                    f'S{derived_floor.last_watched_season:02d}E{derived_floor.last_watched_episode:02d}. '
-                    "This rule keeps searching existing unseen Jellyfin episodes."
-                )
-        elif watched_next_floor is not None and watched_next_floor >= library_next_floor:
-            next_floor = watched_next_floor
-            floor_detail = (
-                f'Advanced to S{watched_next_floor[0]:02d}E{watched_next_floor[1]:02d} '
-                f'from Jellyfin progress through '
-                f'S{derived_floor.last_watched_season:02d}E{derived_floor.last_watched_episode:02d}.'
-            )
-        elif watched_next_floor is not None:
-            floor_detail = (
-                f'Advanced to S{library_next_floor[0]:02d}E{library_next_floor[1]:02d} '
-                f'from latest Jellyfin library episode '
-                f'S{derived_floor.latest_existing_season:02d}E{derived_floor.latest_existing_episode:02d}; '
-                f'watched progress is through '
-                f'S{derived_floor.last_watched_season:02d}E{derived_floor.last_watched_episode:02d}.'
-            )
-        else:
-            floor_detail = (
-                f'Advanced to S{library_next_floor[0]:02d}E{library_next_floor[1]:02d} '
-                f'from latest Jellyfin library episode '
-                f'S{derived_floor.latest_existing_season:02d}E{derived_floor.latest_existing_episode:02d}. '
-                "No watched Jellyfin episodes were found."
-            )
+            floor_detail = derived_floor.watched_floor_reason
 
         if next_floor is not None:
             effective_floor = next_floor
@@ -360,7 +392,14 @@ class JellyfinService:
         existing_episode_numbers_changed = (
             current_existing_episode_numbers != next_existing_episode_numbers
         )
-        if not floor_changed and not existing_episode_numbers_changed:
+        known_episode_numbers_changed = current_known_episode_numbers != next_known_episode_numbers
+        watched_episode_numbers_changed = current_watched_episode_numbers != next_watched_episode_numbers
+        if (
+            not floor_changed
+            and not existing_episode_numbers_changed
+            and not known_episode_numbers_changed
+            and not watched_episode_numbers_changed
+        ):
             return JellyfinRuleSyncOutcome(
                 rule_id=rule.id,
                 rule_name=rule.rule_name,
@@ -379,6 +418,8 @@ class JellyfinService:
             rule.start_season = effective_floor[0]
             rule.start_episode = effective_floor[1]
         rule.jellyfin_existing_episode_numbers = next_existing_episode_numbers
+        rule.jellyfin_known_episode_numbers = next_known_episode_numbers
+        rule.jellyfin_watched_episode_numbers = next_watched_episode_numbers
         session.add(rule)
         message_parts = [floor_detail]
         if existing_episode_numbers_changed:
@@ -388,6 +429,17 @@ class JellyfinService:
                 )
             elif current_existing_episode_numbers:
                 message_parts.append("Cleared previously recorded existing unseen Jellyfin episodes.")
+        if known_episode_numbers_changed:
+            if next_known_episode_numbers:
+                message_parts.append(
+                    f"Remembered {len(next_known_episode_numbers)} Jellyfin episode(s) across sync history."
+                )
+            elif current_known_episode_numbers:
+                message_parts.append("Cleared previously remembered Jellyfin episode history.")
+        if watched_episode_numbers_changed and next_watched_episode_numbers:
+            message_parts.append(
+                f"Remembered watched progress across {len(next_watched_episode_numbers)} episode(s)."
+            )
         return JellyfinRuleSyncOutcome(
             rule_id=rule.id,
             rule_name=rule.rule_name,
@@ -513,6 +565,130 @@ class JellyfinService:
             matched_title=matched_movie.title,
             previous_start_season=rule.start_season,
             previous_start_episode=rule.start_episode,
+        )
+
+    def _metadata_client_for_catalog(self) -> MetadataClient | None:
+        if self.metadata_config.provider.value == "disabled":
+            return None
+        if not self.metadata_config.api_key:
+            return None
+        if self._metadata_client is None:
+            self._metadata_client = MetadataClient(
+                self.metadata_config.provider,
+                self.metadata_config.api_key,
+            )
+        return self._metadata_client
+
+    def _resolve_catalog_imdb_id(
+        self,
+        *,
+        matched_series: JellyfinLibraryRecord,
+        rule: Rule,
+    ) -> str | None:
+        existing_imdb_id = _normalize_imdb_id(matched_series.imdb_id or rule.imdb_id)
+        if existing_imdb_id:
+            return existing_imdb_id
+
+        cache_key = matched_series.item_id
+        if cache_key in self._catalog_imdb_id_cache:
+            return self._catalog_imdb_id_cache[cache_key]
+
+        client = self._metadata_client_for_catalog()
+        if client is None:
+            self._catalog_imdb_id_cache[cache_key] = None
+            return None
+
+        lookup_title = str(matched_series.title or rule.normalized_title or rule.content_name or "").strip()
+        if not lookup_title:
+            self._catalog_imdb_id_cache[cache_key] = None
+            return None
+
+        try:
+            result = client.lookup(
+                MetadataLookupProvider.OMDB,
+                lookup_title,
+                MediaType.SERIES,
+            )
+        except MetadataLookupError:
+            self._catalog_imdb_id_cache[cache_key] = None
+            return None
+
+        normalized_imdb_id = _normalize_imdb_id(result.imdb_id)
+        self._catalog_imdb_id_cache[cache_key] = normalized_imdb_id
+        return normalized_imdb_id
+
+    def _released_episode_numbers_for_season(
+        self,
+        *,
+        matched_series: JellyfinLibraryRecord,
+        rule: Rule,
+        season_number: int,
+    ) -> list[int] | None:
+        if season_number < 1 or season_number > 99:
+            return None
+
+        imdb_id = self._resolve_catalog_imdb_id(matched_series=matched_series, rule=rule)
+        if not imdb_id:
+            return None
+
+        cache_key = (imdb_id, season_number)
+        if cache_key in self._catalog_season_cache:
+            return self._catalog_season_cache[cache_key]
+
+        client = self._metadata_client_for_catalog()
+        if client is None:
+            self._catalog_season_cache[cache_key] = None
+            return None
+
+        try:
+            listing = client.lookup_omdb_season(imdb_id, season_number)
+        except MetadataLookupError:
+            self._catalog_season_cache[cache_key] = None
+            return None
+
+        now = datetime.now(UTC)
+        released_episode_numbers = sorted(
+            {
+                episode.episode_number
+                for episode in listing.released_episodes
+                if episode.released_at is not None and episode.released_at <= now
+            }
+        )
+        if not released_episode_numbers:
+            self._catalog_season_cache[cache_key] = None
+            return None
+        self._catalog_season_cache[cache_key] = released_episode_numbers
+        return released_episode_numbers
+
+    def _next_floor_after_episode(
+        self,
+        *,
+        matched_series: JellyfinLibraryRecord,
+        rule: Rule,
+        current_episode: tuple[int, int],
+    ) -> tuple[tuple[int, int], str]:
+        season_number, episode_number = current_episode
+        released_episode_numbers = self._released_episode_numbers_for_season(
+            matched_series=matched_series,
+            rule=rule,
+            season_number=season_number,
+        )
+        if released_episode_numbers:
+            latest_released_episode = max(released_episode_numbers)
+            if episode_number >= latest_released_episode and season_number < 99:
+                next_floor = (season_number + 1, 0)
+                return (
+                    next_floor,
+                    f'Advanced to S{next_floor[0]:02d}E{next_floor[1]:02d} because OMDb reports '
+                    f'S{season_number:02d}E{latest_released_episode:02d} as the latest released '
+                    f"episode in season {season_number}.",
+                )
+
+        next_floor = _increment_floor(season_number, episode_number)
+        return (
+            next_floor,
+            f"Advanced to S{next_floor[0]:02d}E{next_floor[1]:02d} from "
+            f"S{season_number:02d}E{episode_number:02d}.",
         )
 
     def _resolve_db_path(self) -> Path:
@@ -688,11 +864,13 @@ class JellyfinService:
             f'Multiple Jellyfin {item_label} items matched the title "{rule.content_name}".'
         )
 
-    @staticmethod
     def _derive_next_floor(
+        self,
         *,
         connection: sqlite3.Connection,
         user: JellyfinUser,
+        matched_series: JellyfinLibraryRecord,
+        rule: Rule,
         series_id: str,
     ) -> JellyfinDerivedFloor | None:
         rows = connection.execute(
@@ -727,8 +905,8 @@ class JellyfinService:
 
         episodes: list[JellyfinEpisodeProgress] = []
         for row in rows:
-            season_number = _as_positive_int(row["SeasonNumber"])
-            episode_number = _as_positive_int(row["EpisodeNumber"])
+            season_number = _as_nonnegative_int(row["SeasonNumber"])
+            episode_number = _as_nonnegative_int(row["EpisodeNumber"])
             if season_number is None or episode_number is None:
                 continue
             episodes.append(
@@ -739,59 +917,102 @@ class JellyfinService:
                 )
             )
 
-        if not episodes:
-            return None
-
-        last_watched_index: int | None = None
-        for index, episode in enumerate(episodes):
-            if episode.is_watched:
-                last_watched_index = index
-        if last_watched_index is None:
-            return JellyfinDerivedFloor(
-                start_season=None,
-                start_episode=None,
-                last_watched_season=None,
-                last_watched_episode=None,
-                latest_existing_season=episodes[-1].season_number,
-                latest_existing_episode=episodes[-1].episode_number,
-                existing_unseen_episode_numbers=normalize_jellyfin_episode_keys(
-                    [
-                        f"S{episode.season_number:02d}E{episode.episode_number:02d}"
-                        for episode in episodes
-                    ]
-                ),
-            )
-
-        last_watched = episodes[last_watched_index]
-        existing_unseen_episode_numbers = normalize_jellyfin_episode_keys(
+        current_episode_numbers = _sort_episode_keys(
             [
                 f"S{episode.season_number:02d}E{episode.episode_number:02d}"
-                for episode in episodes[last_watched_index + 1 :]
-                if not episode.is_watched
+                for episode in episodes
             ]
         )
-        if last_watched_index + 1 < len(episodes):
-            next_episode = episodes[last_watched_index + 1]
-            return JellyfinDerivedFloor(
-                start_season=next_episode.season_number,
-                start_episode=next_episode.episode_number,
-                last_watched_season=last_watched.season_number,
-                last_watched_episode=last_watched.episode_number,
-                latest_existing_season=episodes[-1].season_number,
-                latest_existing_episode=episodes[-1].episode_number,
-                existing_unseen_episode_numbers=existing_unseen_episode_numbers,
+        current_watched_episode_numbers = _sort_episode_keys(
+            [
+                f"S{episode.season_number:02d}E{episode.episode_number:02d}"
+                for episode in episodes
+                if episode.is_watched
+            ]
+        )
+        remembered_known_episode_numbers = normalize_jellyfin_episode_keys(
+            list(getattr(rule, "jellyfin_known_episode_numbers", []) or [])
+        )
+        remembered_watched_episode_numbers = normalize_jellyfin_episode_keys(
+            list(getattr(rule, "jellyfin_watched_episode_numbers", []) or [])
+        )
+        known_episode_numbers = _merge_episode_key_lists(
+            remembered_known_episode_numbers,
+            current_episode_numbers,
+        )
+        watched_episode_numbers = _merge_episode_key_lists(
+            remembered_watched_episode_numbers,
+            current_watched_episode_numbers,
+        )
+
+        if not known_episode_numbers:
+            return None
+
+        last_watched = _latest_episode_tuple(watched_episode_numbers)
+        latest_existing = _latest_episode_tuple(current_episode_numbers)
+        latest_known = _latest_episode_tuple(known_episode_numbers)
+        watched_floor_reason = "No watched Jellyfin episodes were found."
+        watched_next_floor: tuple[int, int] | None = None
+        if last_watched is not None:
+            next_current_after_watched = next(
+                (
+                    episode_tuple
+                    for episode_tuple in (
+                        _episode_key_tuple(item) for item in current_episode_numbers
+                    )
+                    if episode_tuple is not None and episode_tuple > last_watched
+                ),
+                None,
+            )
+            if next_current_after_watched is not None:
+                watched_next_floor = next_current_after_watched
+                watched_floor_reason = (
+                    f'Advanced to S{watched_next_floor[0]:02d}E{watched_next_floor[1]:02d} '
+                    f'from Jellyfin progress through S{last_watched[0]:02d}E{last_watched[1]:02d}. '
+                    "This rule keeps searching existing unseen Jellyfin episodes."
+                )
+            else:
+                watched_next_floor, watched_base_reason = self._next_floor_after_episode(
+                    matched_series=matched_series,
+                    rule=rule,
+                    current_episode=last_watched,
+                )
+                watched_floor_reason = (
+                    f"{watched_base_reason} This rule keeps searching existing unseen Jellyfin episodes."
+                )
+
+        existing_unseen_episode_numbers: list[str] = []
+        for episode_key in current_episode_numbers:
+            if last_watched is None:
+                existing_unseen_episode_numbers.append(episode_key)
+                continue
+            episode_tuple = _episode_key_tuple(episode_key)
+            if episode_tuple is not None and episode_tuple > last_watched:
+                existing_unseen_episode_numbers.append(episode_key)
+        existing_unseen_episode_numbers = _sort_episode_keys(existing_unseen_episode_numbers)
+        known_floor_reason = "No remembered Jellyfin episode history was found."
+        known_next_floor: tuple[int, int] | None = None
+        if latest_known is not None:
+            known_next_floor, known_floor_reason = self._next_floor_after_episode(
+                matched_series=matched_series,
+                rule=rule,
+                current_episode=latest_known,
             )
 
-        next_season, next_episode_number = _increment_floor(
-            last_watched.season_number,
-            last_watched.episode_number,
-        )
         return JellyfinDerivedFloor(
-            start_season=next_season,
-            start_episode=next_episode_number,
-            last_watched_season=last_watched.season_number,
-            last_watched_episode=last_watched.episode_number,
-            latest_existing_season=episodes[-1].season_number,
-            latest_existing_episode=episodes[-1].episode_number,
+            watched_start_season=watched_next_floor[0] if watched_next_floor is not None else None,
+            watched_start_episode=watched_next_floor[1] if watched_next_floor is not None else None,
+            known_start_season=known_next_floor[0] if known_next_floor is not None else None,
+            known_start_episode=known_next_floor[1] if known_next_floor is not None else None,
+            last_watched_season=last_watched[0] if last_watched is not None else None,
+            last_watched_episode=last_watched[1] if last_watched is not None else None,
+            latest_existing_season=latest_existing[0] if latest_existing is not None else None,
+            latest_existing_episode=latest_existing[1] if latest_existing is not None else None,
+            latest_known_season=latest_known[0] if latest_known is not None else None,
+            latest_known_episode=latest_known[1] if latest_known is not None else None,
             existing_unseen_episode_numbers=existing_unseen_episode_numbers,
+            known_episode_numbers=known_episode_numbers,
+            watched_episode_numbers=watched_episode_numbers,
+            watched_floor_reason=watched_floor_reason,
+            known_floor_reason=known_floor_reason,
         )

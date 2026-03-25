@@ -7,6 +7,41 @@ from app.schemas import MetadataLookupProvider
 from app.services.metadata import MetadataClient
 
 
+def test_metadata_client_omdb_supports_season_lookup() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "www.omdbapi.com"
+        assert request.url.params["i"] == "tt0944947"
+        assert request.url.params["Season"] == "1"
+        return httpx.Response(
+            200,
+            json={
+                "Response": "True",
+                "Title": "Game of Thrones",
+                "Season": "1",
+                "totalSeasons": "8",
+                "Episodes": [
+                    {"Episode": "1", "Released": "17 Apr 2011"},
+                    {"Episode": "2", "Released": "24 Apr 2011"},
+                    {"Episode": "3", "Released": "01 May 2011"},
+                ],
+            },
+        )
+
+    client = MetadataClient(
+        MetadataProvider.OMDB,
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    listing = client.lookup_omdb_season("tt0944947", 1)
+
+    assert listing.imdb_id == "tt0944947"
+    assert listing.season_number == 1
+    assert listing.total_seasons == 8
+    assert [episode.episode_number for episode in listing.released_episodes] == [1, 2, 3]
+    assert listing.released_episodes[0].released_at is not None
+
+
 def test_metadata_client_omdb_supports_title_lookup() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.host == "www.omdbapi.com"

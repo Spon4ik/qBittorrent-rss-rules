@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TypeAlias, TypedDict
 from urllib.parse import parse_qs, urlparse
 
@@ -17,6 +19,20 @@ UUID_RE = re.compile(
 ISBN_RE = re.compile(r"^(?:97[89])?\d{9}[\dXx]$")
 OPENLIBRARY_ID_RE = re.compile(r"^OL\d+[MW]$", re.IGNORECASE)
 YEAR_RE = re.compile(r"\b(\d{4})\b")
+
+
+@dataclass(frozen=True, slots=True)
+class MetadataSeasonEpisode:
+    episode_number: int
+    released_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class MetadataSeasonListing:
+    imdb_id: str
+    season_number: int
+    total_seasons: int | None
+    released_episodes: list[MetadataSeasonEpisode]
 
 class ProviderCatalogEntry(TypedDict):
     value: str
@@ -117,6 +133,16 @@ def _extract_year(value: object) -> str | None:
     return match.group(1)
 
 
+def _parse_omdb_released_at(value: object) -> datetime | None:
+    cleaned = str(value or "").strip()
+    if not cleaned or cleaned.upper() == "N/A":
+        return None
+    try:
+        return datetime.strptime(cleaned, "%d %b %Y").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+
+
 class MetadataClient:
     def __init__(
         self,
@@ -163,6 +189,61 @@ class MetadataClient:
 
     def lookup_by_imdb_id(self, imdb_id: str) -> MetadataResult:
         return self.lookup(MetadataLookupProvider.OMDB, imdb_id, MediaType.SERIES)
+
+    def lookup_omdb_season(self, imdb_id: str, season_number: int) -> MetadataSeasonListing:
+        cleaned_imdb_id = imdb_id.strip()
+        if not IMDB_ID_RE.match(cleaned_imdb_id):
+            raise MetadataLookupError("IMDb ID must look like tt1234567.")
+        if season_number < 1 or season_number > 99:
+            raise MetadataLookupError("Season number must be between 1 and 99.")
+        if self.provider == MetadataProvider.DISABLED or not self.api_key:
+            raise MetadataLookupError("OMDb API key is not configured.")
+
+        payload = self._request_json(
+            "https://www.omdbapi.com/",
+            params={
+                "apikey": self.api_key,
+                "i": cleaned_imdb_id,
+                "Season": str(int(season_number)),
+            },
+            provider_label="OMDb",
+        )
+        if payload.get("Response") == "False":
+            raise MetadataLookupError(str(payload.get("Error", "Metadata lookup failed.")))
+
+        episodes_payload = payload.get("Episodes")
+        if not isinstance(episodes_payload, list):
+            raise MetadataLookupError("OMDb season lookup returned an invalid episode list.")
+
+        released_episodes: list[MetadataSeasonEpisode] = []
+        for raw_episode in episodes_payload:
+            if not isinstance(raw_episode, dict):
+                continue
+            try:
+                episode_number = int(str(raw_episode.get("Episode", "")).strip())
+            except ValueError:
+                continue
+            if episode_number < 0 or episode_number > 99:
+                continue
+            released_episodes.append(
+                MetadataSeasonEpisode(
+                    episode_number=episode_number,
+                    released_at=_parse_omdb_released_at(raw_episode.get("Released")),
+                )
+            )
+
+        total_seasons_raw = str(payload.get("totalSeasons", "")).strip()
+        try:
+            total_seasons = int(total_seasons_raw) if total_seasons_raw else None
+        except ValueError:
+            total_seasons = None
+
+        return MetadataSeasonListing(
+            imdb_id=cleaned_imdb_id,
+            season_number=int(season_number),
+            total_seasons=total_seasons,
+            released_episodes=released_episodes,
+        )
 
     def _request_json(
         self,

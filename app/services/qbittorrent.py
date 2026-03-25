@@ -147,6 +147,59 @@ class QbittorrentClient:
             expect_json=False,
         )
 
+    def add_torrent_file(
+        self,
+        *,
+        torrent_bytes: bytes,
+        filename: str = "queued-result.torrent",
+        category: str = "",
+        save_path: str = "",
+        paused: bool = True,
+        sequential_download: bool = False,
+        first_last_piece_prio: bool = False,
+    ) -> None:
+        payload: dict[str, str] = {
+            "paused": "true" if paused else "false",
+            "stopped": "true" if paused else "false",
+            "sequentialDownload": "true" if sequential_download else "false",
+            "firstLastPiecePrio": "true" if first_last_piece_prio else "false",
+        }
+        if category.strip():
+            payload["category"] = category.strip()
+        if save_path.strip():
+            payload["savepath"] = save_path.strip()
+        self._request(
+            "POST",
+            "/api/v2/torrents/add",
+            data=payload,
+            files={"torrents": (filename, torrent_bytes, "application/x-bittorrent")},
+            expect_json=False,
+        )
+
+    def get_torrent_files(self, info_hash: str) -> list[dict[str, object]]:
+        payload = self._request(
+            "GET",
+            "/api/v2/torrents/files",
+            params={"hash": info_hash},
+        )
+        if not isinstance(payload, list):
+            raise QbittorrentClientError("Unexpected qBittorrent torrent files payload.")
+        return [item for item in payload if isinstance(item, dict)]
+
+    def set_file_priority(self, info_hash: str, file_ids: list[int], priority: int) -> None:
+        if not file_ids:
+            return
+        self._request(
+            "POST",
+            "/api/v2/torrents/filePrio",
+            data={
+                "hash": info_hash,
+                "id": "|".join(str(file_id) for file_id in file_ids),
+                "priority": str(int(priority)),
+            },
+            expect_json=False,
+        )
+
     def _request(
         self,
         method: str,

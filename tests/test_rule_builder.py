@@ -240,6 +240,27 @@ def test_build_generated_pattern_supports_start_season_episode_floor() -> None:
     assert not compiled.search("Shrinking S02E99 1080p")
 
 
+def test_build_generated_pattern_supports_episode_zero_floor() -> None:
+    builder = RuleBuilder(settings=None)
+    pattern = builder.build_generated_pattern(
+        build_rule(
+            quality_profile=QualityProfile.PLAIN,
+            use_regex=True,
+            normalized_title="Shrinking",
+            content_name="Shrinking",
+            start_season=2,
+            start_episode=0,
+        )
+    )
+    compiled = re.compile(pattern)
+
+    assert compiled.search("Shrinking S02E00 1080p")
+    assert compiled.search("Shrinking S02E01 1080p")
+    assert compiled.search("Shrinking S03E00 1080p")
+    assert compiled.search("Shrinking S02 1080p season pack")
+    assert not compiled.search("Shrinking S01E99 1080p")
+
+
 def test_build_generated_pattern_excludes_existing_unseen_jellyfin_episodes_by_default() -> None:
     builder = RuleBuilder(settings=None)
     pattern = builder.build_generated_pattern(

@@ -67,7 +67,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "0.6.1"
+    assert payload["app_version"] == "0.7.0"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -2344,6 +2344,57 @@ def test_queue_search_result_api_uses_settings_default_pause_when_no_rule(
     assert payload["save_path"] == ""
     assert payload["add_paused"] is False
     assert captured["paused"] is False
+
+
+def test_queue_search_result_api_reports_missing_only_selection_details(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        default_add_paused=True,
+    )
+    rule = Rule(
+        rule_name="Queue Missing Only Rule",
+        content_name="Queue Missing Only Rule",
+        normalized_title="Queue Missing Only Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=3,
+        start_episode=8,
+        feed_urls=["http://feed.example/queue-missing-only"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    monkeypatch.setattr(
+        "app.routes.api.queue_result_with_optional_file_selection",
+        lambda **kwargs: SimpleNamespace(
+            message="Queued only missing/unseen episode files (2 selected, 1 skipped).",
+            selected_file_count=2,
+            skipped_file_count=1,
+            deferred_file_selection=False,
+            queued_via_torrent_file=True,
+        ),
+    )
+
+    response = app_client.post(
+        "/api/search/queue",
+        json={
+            "link": "https://example.com/shrinking-s03.torrent",
+            "rule_id": rule.id,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["message"] == "Queued only missing/unseen episode files (2 selected, 1 skipped)."
+    assert payload["selected_file_count"] == 2
+    assert payload["skipped_file_count"] == 1
+    assert payload["queued_via_torrent_file"] is True
+    assert payload["deferred_file_selection"] is False
 
 
 def test_save_search_preferences_api_persists_defaults(app_client, db_session) -> None:

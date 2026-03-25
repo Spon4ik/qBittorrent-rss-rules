@@ -172,6 +172,16 @@ def build_keyword_group_fragments(groups: list[list[str]]) -> list[str]:
     return fragments
 
 
+def _bounded_season_number(value: int, *, allow_zero: bool = False) -> int:
+    minimum = 0 if allow_zero else 1
+    return max(minimum, min(99, int(value)))
+
+
+def _bounded_episode_number(value: int, *, allow_zero: bool = False) -> int:
+    minimum = 0 if allow_zero else 1
+    return max(minimum, min(99, int(value)))
+
+
 def _build_min_numeric_pattern_1_to_99(value: int) -> str:
     bounded_value = max(1, min(99, int(value)))
     if bounded_value == 99:
@@ -195,16 +205,23 @@ def _build_min_numeric_pattern_1_to_99(value: int) -> str:
     return f"(?:{'|'.join(parts)})"
 
 
+def _build_min_numeric_pattern_0_to_99(value: int) -> str:
+    bounded_value = _bounded_episode_number(value, allow_zero=True)
+    if bounded_value <= 0:
+        return r"0*\d{1,2}"
+    return _build_min_numeric_pattern_1_to_99(bounded_value)
+
+
 def build_episode_progress_fragment(start_season: int | None, start_episode: int | None) -> str:
     if start_season is None or start_episode is None:
         return ""
 
-    season_value = max(1, min(99, int(start_season)))
-    episode_value = max(1, min(99, int(start_episode)))
+    season_value = _bounded_season_number(int(start_season))
+    episode_value = _bounded_episode_number(int(start_episode), allow_zero=True)
     season_exact = rf"0*{season_value}"
-    episode_any = r"0*[1-9]\d?"
+    episode_any = r"0*\d{1,2}"
     episode_range_any = r"0*\d{1,2}"
-    episode_ge = _build_min_numeric_pattern_1_to_99(episode_value)
+    episode_ge = _build_min_numeric_pattern_0_to_99(episode_value)
     separators = r"[\s._-]*"
     season_prefix = r"(?:s(?:eason)?[\s._:-]*)"
     episode_prefix = r"(?:e(?:p(?:isode)?)?[\s._:-]*)"
@@ -232,8 +249,8 @@ def normalize_jellyfin_episode_keys(value: list[str] | None) -> list[str]:
         match = JELLYFIN_EPISODE_KEY_RE.match(str(raw_item or "").strip())
         if not match:
             continue
-        season_number = max(1, min(99, int(match.group("season"))))
-        episode_number = max(1, min(99, int(match.group("episode"))))
+        season_number = _bounded_season_number(int(match.group("season")), allow_zero=True)
+        episode_number = _bounded_episode_number(int(match.group("episode")), allow_zero=True)
         episode_key = _format_jellyfin_episode_key(season_number, episode_number)
         if episode_key in seen:
             continue
@@ -243,8 +260,8 @@ def normalize_jellyfin_episode_keys(value: list[str] | None) -> list[str]:
 
 
 def build_specific_episode_fragment(season_number: int, episode_number: int) -> str:
-    season_value = max(1, min(99, int(season_number)))
-    episode_value = max(1, min(99, int(episode_number)))
+    season_value = _bounded_season_number(int(season_number), allow_zero=True)
+    episode_value = _bounded_episode_number(int(episode_number), allow_zero=True)
     season_exact = rf"0*{season_value}"
     episode_exact = rf"0*{episode_value}"
     episode_range_any = r"0*\d{1,2}"
@@ -260,8 +277,8 @@ def build_specific_episode_fragment(season_number: int, episode_number: int) -> 
 
 
 def build_below_floor_episode_fragment(season_number: int, episode_number: int) -> str:
-    season_value = max(1, min(99, int(season_number)))
-    episode_value = max(1, min(99, int(episode_number)))
+    season_value = _bounded_season_number(int(season_number))
+    episode_value = _bounded_episode_number(int(episode_number), allow_zero=True)
     season_exact = rf"0*{season_value}"
     episode_exact = rf"0*{episode_value}"
     episode_range_any = r"0*\d{1,2}"
@@ -279,11 +296,11 @@ def build_lower_episode_exclusion_fragment(start_season: int | None, start_episo
     if start_season is None or start_episode is None:
         return ""
 
-    season_value = max(1, min(99, int(start_season)))
-    episode_value = max(1, min(99, int(start_episode)))
+    season_value = _bounded_season_number(int(start_season))
+    episode_value = _bounded_episode_number(int(start_episode), allow_zero=True)
     fragments = [
         build_below_floor_episode_fragment(season_value, episode_number)
-        for episode_number in range(1, episode_value)
+        for episode_number in range(0, episode_value)
     ]
     if not fragments:
         return ""

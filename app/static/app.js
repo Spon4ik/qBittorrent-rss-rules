@@ -189,8 +189,8 @@ function parseJsonData(rawValue, fallback) {
 }
 
 function formatJellyfinEpisodeKey(seasonNumber, episodeNumber) {
-  const normalizedSeason = Math.max(1, Math.min(99, Number(seasonNumber) || 1));
-  const normalizedEpisode = Math.max(1, Math.min(99, Number(episodeNumber) || 1));
+  const normalizedSeason = Math.max(0, Math.min(99, Number(seasonNumber) || 0));
+  const normalizedEpisode = Math.max(0, Math.min(99, Number(episodeNumber) || 0));
   return `S${String(normalizedSeason).padStart(2, "0")}E${String(normalizedEpisode).padStart(2, "0")}`;
 }
 
@@ -674,17 +674,25 @@ function buildMinNumericPattern1To99(value) {
   return `(?:${parts.join("|")})`;
 }
 
+function buildMinNumericPattern0To99(value) {
+  const boundedValue = Math.min(99, Math.max(0, Number(value) || 0));
+  if (boundedValue <= 0) {
+    return "0*\\d{1,2}";
+  }
+  return buildMinNumericPattern1To99(boundedValue);
+}
+
 function buildEpisodeProgressRegexFragment(startSeasonValue, startEpisodeValue) {
   const startSeason = normalizeBoundedPositiveInt(startSeasonValue, { min: 1, max: 99 });
-  const startEpisode = normalizeBoundedPositiveInt(startEpisodeValue, { min: 1, max: 99 });
+  const startEpisode = normalizeBoundedPositiveInt(startEpisodeValue, { min: 0, max: 99 });
   if (startSeason === null || startEpisode === null) {
     return "";
   }
   const separators = "[\\s._-]*";
   const seasonExact = `0*${startSeason}`;
-  const episodeAny = "0*[1-9]\\d?";
+  const episodeAny = "0*\\d{1,2}";
   const episodeRangeAny = "0*\\d{1,2}";
-  const episodeGe = buildMinNumericPattern1To99(startEpisode);
+  const episodeGe = buildMinNumericPattern0To99(startEpisode);
   const seasonPrefix = "(?:s(?:eason)?[\\s._:-]*)";
   const episodePrefix = "(?:e(?:p(?:isode)?)?[\\s._:-]*)";
   const fragments = [
@@ -701,8 +709,8 @@ function buildEpisodeProgressRegexFragment(startSeasonValue, startEpisodeValue) 
 }
 
 function buildSpecificEpisodeRegexFragment(seasonValue, episodeValue) {
-  const seasonNumber = normalizeBoundedPositiveInt(seasonValue, { min: 1, max: 99 });
-  const episodeNumber = normalizeBoundedPositiveInt(episodeValue, { min: 1, max: 99 });
+  const seasonNumber = normalizeBoundedPositiveInt(seasonValue, { min: 0, max: 99 });
+  const episodeNumber = normalizeBoundedPositiveInt(episodeValue, { min: 0, max: 99 });
   if (seasonNumber === null || episodeNumber === null) {
     return "";
   }
@@ -722,7 +730,7 @@ function buildSpecificEpisodeRegexFragment(seasonValue, episodeValue) {
 
 function buildBelowFloorEpisodeRegexFragment(seasonValue, episodeValue) {
   const seasonNumber = normalizeBoundedPositiveInt(seasonValue, { min: 1, max: 99 });
-  const episodeNumber = normalizeBoundedPositiveInt(episodeValue, { min: 1, max: 99 });
+  const episodeNumber = normalizeBoundedPositiveInt(episodeValue, { min: 0, max: 99 });
   if (seasonNumber === null || episodeNumber === null) {
     return "";
   }
@@ -741,12 +749,12 @@ function buildBelowFloorEpisodeRegexFragment(seasonValue, episodeValue) {
 
 function buildLowerEpisodeExclusionRegexFragment(startSeasonValue, startEpisodeValue) {
   const startSeason = normalizeBoundedPositiveInt(startSeasonValue, { min: 1, max: 99 });
-  const startEpisode = normalizeBoundedPositiveInt(startEpisodeValue, { min: 1, max: 99 });
-  if (startSeason === null || startEpisode === null || startEpisode <= 1) {
+  const startEpisode = normalizeBoundedPositiveInt(startEpisodeValue, { min: 0, max: 99 });
+  if (startSeason === null || startEpisode === null || startEpisode <= 0) {
     return "";
   }
   const fragments = [];
-  for (let episodeNumber = 1; episodeNumber < startEpisode; episodeNumber += 1) {
+  for (let episodeNumber = 0; episodeNumber < startEpisode; episodeNumber += 1) {
     const fragment = buildBelowFloorEpisodeRegexFragment(startSeason, episodeNumber);
     if (fragment) {
       fragments.push(fragment);
@@ -1639,7 +1647,7 @@ function initSearchPage(container) {
     const startSeasonValue = String(startSeasonInput?.value || "").trim();
     const startEpisodeValue = String(startEpisodeInput?.value || "").trim();
     const normalizedStartSeason = normalizeBoundedPositiveInt(startSeasonValue, { min: 1, max: 99 });
-    const normalizedStartEpisode = normalizeBoundedPositiveInt(startEpisodeValue, { min: 1, max: 99 });
+    const normalizedStartEpisode = normalizeBoundedPositiveInt(startEpisodeValue, { min: 0, max: 99 });
     if (!manualMustContainValue && (normalizedStartSeason === null || normalizedStartEpisode === null)) {
       return "";
     }
@@ -1714,7 +1722,7 @@ function initSearchPage(container) {
       generatedPatternRegex: compileGeneratedPatternRegex(getLocalPatternForFilters()),
       manualMustContain: String(mustContainOverrideInput?.value || "").trim(),
       startSeason: normalizeBoundedPositiveInt(startSeasonInput?.value || "", { min: 1, max: 99 }),
-      startEpisode: normalizeBoundedPositiveInt(startEpisodeInput?.value || "", { min: 1, max: 99 }),
+      startEpisode: normalizeBoundedPositiveInt(startEpisodeInput?.value || "", { min: 0, max: 99 }),
       sizeMinMb: parseSearchMb(sizeMinInput?.value || ""),
       sizeMaxMb: parseSearchMb(sizeMaxInput?.value || ""),
       feedScopeBlocksAll,
@@ -3148,6 +3156,7 @@ function initResultQueueActions(root = document) {
         }
         const queueSummary = [
           "Queued in qBittorrent.",
+          payload?.message ? String(payload.message) : "",
           payload?.category ? `Category: ${payload.category}.` : "",
           payload?.save_path ? `Save path: ${payload.save_path}.` : "",
         ]

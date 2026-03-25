@@ -76,6 +76,10 @@ from app.services.rule_fetch_ops import (
     schedule_payload,
     update_schedule_settings,
 )
+from app.services.selective_queue import (
+    SelectiveQueueError,
+    queue_result_with_optional_file_selection,
+)
 from app.services.settings_service import SettingsService
 from app.services.sync import SyncService, SyncServiceError
 
@@ -491,6 +495,7 @@ def queue_search_result(
     category = ""
     save_path = ""
     add_paused = payload.add_paused
+    rule: Rule | None = None
     if payload.rule_id:
         rule = session.get(Rule, payload.rule_id)
         if rule is None:
@@ -504,15 +509,20 @@ def queue_search_result(
         add_paused = settings.default_add_paused
 
     try:
-        with QbittorrentClient(connection.base_url, connection.username, connection.password) as client:
-            client.add_torrent_url(
-                link=payload.link,
-                category=category,
-                save_path=save_path,
-                paused=add_paused,
-                sequential_download=payload.sequential_download,
-                first_last_piece_prio=payload.first_last_piece_prio,
-            )
+        queue_result = queue_result_with_optional_file_selection(
+            qb_base_url=connection.base_url or "",
+            qb_username=connection.username or "",
+            qb_password=connection.password or "",
+            link=payload.link,
+            category=category,
+            save_path=save_path,
+            paused=bool(add_paused),
+            sequential_download=payload.sequential_download,
+            first_last_piece_prio=payload.first_last_piece_prio,
+            rule=rule,
+        )
+    except SelectiveQueueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
     except QbittorrentClientError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -524,6 +534,11 @@ def queue_search_result(
             "add_paused": add_paused,
             "sequential_download": payload.sequential_download,
             "first_last_piece_prio": payload.first_last_piece_prio,
+            "message": queue_result.message,
+            "selected_file_count": queue_result.selected_file_count,
+            "skipped_file_count": queue_result.skipped_file_count,
+            "deferred_file_selection": queue_result.deferred_file_selection,
+            "queued_via_torrent_file": queue_result.queued_via_torrent_file,
         }
     )
 

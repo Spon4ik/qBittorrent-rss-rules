@@ -8,6 +8,15 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.7.0] - 2026-03-25
+
+- Released the phase-12 catalog-aware Jellyfin/qB slice with backward-compatible rule storage updates, OMDb-backed season-boundary checks, and automatic missing-only queue selection for saved series rules.
+- Added OMDb season episode lookup support so Jellyfin sync can detect real season finales, avoid fake same-season floors like `S01E11`, and advance to `S(next)E00` so specials remain searchable.
+- Persisted remembered Jellyfin known/watched episode history on each rule so deleting watched or already-known local files no longer regresses skip behavior, without introducing a separate scrobbling subsystem.
+- Extended stored floors, generated regex, and browser/local filtering parity to support episode `0` safely for season specials while preserving the prior zero-based range protections.
+- Added qBittorrent torrent-file inspection and file-priority updates so `Add to queue` can automatically select only missing/unseen episode files when a multi-file series result exposes safe episode metadata, while still falling back clearly for ambiguous or metadata-light results.
+- Revalidated the release with `scripts\\check.bat`, `scripts\\closeout_qa.bat`, and `scripts\\run_dev.bat desktop-build`.
+
 ## [0.6.1] - 2026-03-25
 
 - Released the phase-11 stabilization slice with single-instance desktop enforcement, deferred poster backfill on the base rules page, fresh live WebView hover evidence, and an end-user Windows bundle/install flow.

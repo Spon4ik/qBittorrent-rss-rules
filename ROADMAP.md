@@ -1,16 +1,16 @@
 # Roadmap
 
-## Current release target: post-v0.6.1 planning
+## Current release target: post-v0.7.0 planning
 
 ### In progress
 
-- No active implementation phase is open after the `v0.6.1` release closeout.
-- Next planning should formalize the follow-up phase before more behavior changes land.
-- Highest-payoff follow-up candidates are catalog-aware next-episode semantics across season/special boundaries and cleanup/module splits for oversized files (`app/static/app.js`, `app/routes/pages.py`, `app/routes/api.py`, `app/services/jackett.py`, `app/services/settings_service.py`).
-- Continue Jellyfin/qB contract hardening from the now-shipped `v0.6.1` baseline, including any remaining identity-data gaps such as `Red Alert`.
+- No active implementation phase is open after the `v0.7.0` release closeout.
+- Immediate follow-up decisions: whether installs without OMDb need a richer catalog source, whether broader watch-history persistence should grow beyond per-rule memory, and whether the largest Jellyfin/search modules should be split before the next feature phase.
+- Keep deterministic browser QA, static checks, full pytest, and desktop build verification as release gates for each new phase.
 
 ### Current phase track
 
+- Phase 12: `v0.7.0` catalog-aware Jellyfin floors and missing-only queue selection (implemented and release-validated; `docs/plans/phase-12-v0-7-0-catalog-aware-jellyfin-and-missing-only-queue.md`)
 - Phase 11: `v0.6.1` stabilization and desktop hardening (implemented and release-validated; `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md`)
 - Phase 10: WinUI desktop bootstrap baseline + next-version planning (implemented and release-validated in `v0.6.0`)
 - Phase 9: rules main-page release-aware operations + Jackett fetch orchestration (implemented and release-validated in v0.5.0)
@@ -19,6 +19,9 @@
 - Phase 6: Jackett-backed active search workspace (implemented and release-validated in v0.2.0; follow-up polish completed, deeper persistence still deferred)
 - Phase 4: feed selection UX improvements (implemented, automated closeout validated)
 - Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, automated closeout validated)
+
+Phase 12 detail pointer:
+- Dated checklist, release validation, and post-release follow-up decisions for OMDb-backed season-finale detection, remembered Jellyfin episode history after local file cleanup, episode-`0` floor support, and qB missing/unseen file selection are tracked in `docs/plans/phase-12-v0-7-0-catalog-aware-jellyfin-and-missing-only-queue.md`.
 
 Phase 11 detail pointer:
 - Dated checklist, Jellyfin sync contract decisions, zero-based range leak closeout, and final `v0.6.1` release validation are tracked in `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md`.
@@ -40,19 +43,27 @@ Phase 6 detail pointer:
 
 ### Post-release focus
 
-- Formalize the next phase before additional implementation work.
-- Decide whether Jellyfin-driven next-episode selection should become catalog-aware across season boundaries and specials instead of relying only on numeric increment from known library episodes.
+- Decide whether the next Jellyfin/catalog step should expand beyond OMDb-backed season boundaries into richer provider support or more explicit release-calendar reasoning.
+- Decide whether deleted-history persistence should stay rule-local or graduate to a broader watch-history/scrobble-compatible cache.
 - Reduce context and maintenance cost by splitting the largest rule/search/Jellyfin files along real domain boundaries.
 - Keep deterministic browser QA and route/service regressions as release gates for every workflow change.
 
-## Recently released: v0.6.1 (2026-03-25)
+## Recently released: v0.7.0 (2026-03-25)
+
+- Shipped the phase-12 catalog-aware Jellyfin/qB slice with OMDb-backed season-boundary checks, remembered skip history for deleted local episodes, and automatic missing/unseen qB file selection for saved series rules.
+- Jellyfin sync now detects real season finales, advances to `S(next)E00`, and avoids false same-season floors such as `S01E11` when the current season is already complete in the external catalog.
+- Saved rules now retain remembered Jellyfin known/watched episode history so deleting watched or already-known local files does not re-open them for later searches, while keeping Jellyfin read-only and avoiding a separate scrobbling subsystem.
+- `Add to queue` now narrows multi-file series torrents to only missing/unseen episode files when torrent metadata is safe enough to parse, with explicit fallback or deferred messaging when it is not.
+- Revalidated the release with `scripts\check.bat`, `scripts\closeout_qa.bat`, and `scripts\run_dev.bat desktop-build`.
+
+## Previously released: v0.6.1 (2026-03-25)
 
 - Shipped the phase-11 stabilization slice with single-instance WinUI desktop enforcement, deferred poster backfill on the base rules page, fresh live WebView hover evidence, and a portable Windows bundle/install flow.
 - Added read-only Jellyfin startup/background sync, explicit Settings sync controls, persisted next-missing series floors, and default movie auto-disable when a matching local Jellyfin item already exists.
 - Fixed generated-pattern parity for season/episode minima so zero-based range titles such as `S3E00-07` are rejected consistently in saved rules, server-side local filtering, and browser-side local filtering while still allowing ranges that include the requested next episode.
 - Revalidated the release with `scripts\check.bat`, `scripts\closeout_qa.bat`, and `scripts\run_dev.bat desktop-build`.
 
-## Previously released: v0.6.0 (2026-03-23)
+## Earlier release: v0.6.0 (2026-03-23)
 
 - Shipped the phase-10 WinUI `QbRssRulesDesktop` WebView shell with repo-local build/run flow, shortcut refresh, and hidden companion-backend startup.
 - Added stale-backend contract validation plus managed fallback-port startup so the desktop no longer reuses incompatible local servers already listening on `:8000`.
@@ -99,7 +110,7 @@ Phase 6 detail pointer:
 - Taxonomy-driven quality filtering and media-aware rule form
 - Baseline docs, ADRs, and automated test suite
 
-## Planned after v0.6.x
+## Planned after v0.7.0
 
 - Bulk rule creation from list or CSV
 - Rule clone/duplicate flows

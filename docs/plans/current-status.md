@@ -2,13 +2,21 @@
 
 ## Current focus
 
-- `v0.6.1` release implementation and validation are complete.
-- Phase 11 is closed and release-validated as the delivered `v0.6.1` stabilization slice.
-- No post-`v0.6.1` implementation phase is active yet; the next session should start by formalizing the next phase plan before making more behavioral changes.
+- Phase 12 is closed and release-validated as the delivered `v0.7.0` release.
+- No active implementation phase is open yet; the next planning decision is whether to deepen catalog provider support beyond OMDb, broaden persisted watch-history semantics beyond per-rule memory, or split the largest Jellyfin/search modules before the next feature phase.
+- Phase 11 remains closed and release-validated as the delivered `v0.6.1` stabilization slice.
 - Phase 10 remains closed and release-validated (`P10-01`..`P10-12`) as the delivered `v0.6.0` baseline.
 - The retained desktop direction remains the WinUI WebView-shell + companion-process lifecycle baseline introduced in `v0.6.0`.
 
 ## Implemented
+
+- Completed `v0.7.0` release closeout on 2026-03-25:
+  - synchronized version touchpoints to `0.7.0` (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`, `tests/test_routes.py`) and closed phase 12 as the shipped catalog-aware Jellyfin/qB slice;
+  - added OMDb-backed season lookups, remembered Jellyfin known/watched episode history, and cross-season `S(next)E00` floor jumps so deleted local files stay skipped and season-only packs stop collapsing onto fake same-season episodes;
+  - extended start-episode and generated/local pattern handling to support `E00` specials safely across the backend and browser while keeping the earlier zero-based range protections intact;
+  - added automatic qB missing/unseen file selection for rule-backed series queue actions, including torrent-file inspection, qB file-priority updates, deferred magnet handling, and explicit fallback/no-match messaging when episode metadata is unavailable or ambiguous;
+  - kept Jellyfin read-only and did not add a separate scrobbling subsystem because remembered rule-side episode history now covers the delete-local-files skip case;
+  - validated the final `v0.7.0` worktree with `cmd.exe /c scripts\check.bat` (`227 passed`, `57 warnings`), `cmd.exe /c scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260325T024210Z/`), and `cmd.exe /v:on /c "scripts\run_dev.bat desktop-build & echo EXITCODE:!ERRORLEVEL!"` (`EXITCODE:0`).
 
 - Completed `v0.6.1` release closeout on 2026-03-25:
   - synchronized version touchpoints to `0.6.1` (`pyproject.toml`, `app/main.py`, `CHANGELOG.md`, `tests/test_routes.py`) and closed phase 11 as the shipped stabilization slice;
@@ -641,21 +649,27 @@
 
 ## In progress
 
-- No active implementation slice is open after the `v0.6.1` release closeout.
-- The next session should start by choosing and documenting the post-`v0.6.1` phase instead of continuing ad hoc changes.
+- Phase 12 planning is now documented in `docs/plans/phase-12-v0-7-0-catalog-aware-jellyfin-and-missing-only-queue.md`.
+- The active implementation sequence is:
+  - add remembered Jellyfin episode history plus OMDb-backed season-finale detection so finished seasons jump to `S(next)E00` instead of fake same-season floors;
+  - extend rule/browser floor handling to allow episode `0` safely;
+  - add automatic qB missing/unseen file selection for rule-backed series queue actions when torrent file metadata is available.
 - NuGet source behavior remains stabilized for this repository via `NuGet.config`, and cross-machine desktop validation is still backlog/follow-up work rather than a release blocker.
 
 ## Next actions
 
-- Formalize the next phase plan before more code changes; the highest-payoff candidate tracks are catalog-aware next-episode semantics across season/special boundaries and the cleanup/module-split pass for oversized files.
-- Tackle the highest-payoff codebase cleanup splits in this order: `app/static/app.js`, `app/routes/pages.py`, `app/routes/api.py`, `app/services/jackett.py`, and `app/services/settings_service.py`.
-- Decide whether to add catalog-aware episode ordering so Jellyfin-driven floors can advance across season boundaries and specials instead of relying only on numeric increment from known library episodes.
+- Complete `P12-01` by teaching Jellyfin sync to merge current episode inventory with remembered per-rule history and to use OMDb season data for finished-season jumps.
+- Complete `P12-02` by allowing episode `0` across stored floors, generated-pattern builders, and browser local-filter parity without reopening the zero-based range leak.
+- Complete `P12-03` by adding qB file-priority plumbing for rule-backed series queue actions so multi-file torrents can prefer only missing/unseen episode files.
+- Revalidate the release path and close out `v0.7.0` docs/version touchpoints once the implementation slices are green.
+- Tackle the highest-payoff codebase cleanup splits after the release work in this order: `app/static/app.js`, `app/routes/pages.py`, `app/routes/api.py`, `app/services/jackett.py`, and `app/services/settings_service.py`.
 - Optionally run one final no-`-SkipShortcuts` installer smoke on a clean validation profile if you want direct Desktop/Start Menu shortcut evidence after the `v0.6.1` release.
 - Watch for additional "fetched but not shown" cases and decide whether any later follow-up should persist/export blocker summaries, not just show them inline in the table.
 - If `Red Alert` is expected to sync, repair the underlying Jellyfin library identity metadata first because the current DB contains no matching root item for `Red Alert` / `tt34888633`.
 
 ## Deferred / future phases
 
+- Phase 12 planning lives in `docs/plans/phase-12-v0-7-0-catalog-aware-jellyfin-and-missing-only-queue.md`; implementation is now active for the upcoming `v0.7.0` release.
 - Phase 11 planning lives in `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md`; implementation is complete and release-validated in `v0.6.1`.
 - Phase 6 planning lives in `docs/plans/phase-6-jackett-active-search.md`; implemented scope is in the repo and deeper persistence work remains deferred.
 - Phase 7 planning lives in `docs/plans/phase-7-cached-refinement-and-category-catalog.md`; implementation is complete and serves as the baseline for phase-8 follow-up UX/data-model evolution.

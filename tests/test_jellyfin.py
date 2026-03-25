@@ -408,6 +408,120 @@ def test_jellyfin_sync_series_rules_keeps_watched_floor_when_rule_allows_existin
     assert rule.jellyfin_existing_episode_numbers == ["S01E02", "S01E03"]
 
 
+def test_jellyfin_sync_series_rules_jump_to_next_season_episode_zero_when_catalog_marks_finale(
+    tmp_path: Path,
+    db_session,
+    monkeypatch,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_series(
+        db_path,
+        series_id="SERIES-FINALE",
+        title="The Last of Us",
+        clean_name="The Last of Us",
+        production_year=2023,
+        imdb_id="tt3581920",
+    )
+    for episode_number in range(1, 11):
+        add_jellyfin_episode(
+            db_path,
+            episode_id=f"FINALE-EP-{episode_number}",
+            series_id="SERIES-FINALE",
+            title=f"Episode {episode_number}",
+            season_number=1,
+            episode_number=episode_number,
+            tvdb_id=f"990{episode_number:02d}",
+        )
+    add_jellyfin_userdata(
+        db_path,
+        item_id="FINALE-EP-10",
+        user_id=PRIMARY_USER_ID,
+        custom_data_key="finale-ep-10",
+        play_count=1,
+    )
+
+    settings = AppSettings(id="default", jellyfin_db_path=str(db_path))
+    rule = Rule(
+        rule_name="The Last of Us Rule",
+        content_name="The Last of Us",
+        normalized_title="The Last of Us",
+        imdb_id="tt3581920",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=1,
+        start_episode=10,
+        feed_urls=["http://feed.example/the-last-of-us"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    service = JellyfinService(settings)
+    monkeypatch.setattr(
+        service,
+        "_released_episode_numbers_for_season",
+        lambda **kwargs: list(range(1, 11)) if kwargs["season_number"] == 1 else None,
+    )
+
+    summary = service.sync_series_rules(db_session)
+
+    assert summary.synced_count == 1
+    db_session.refresh(rule)
+    assert (rule.start_season, rule.start_episode) == (2, 0)
+    assert rule.jellyfin_known_episode_numbers[-1] == "S01E10"
+    assert rule.jellyfin_watched_episode_numbers[-1] == "S01E10"
+
+
+def test_jellyfin_sync_series_rules_preserve_remembered_history_after_episode_cleanup(
+    tmp_path: Path,
+    db_session,
+    monkeypatch,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_series(
+        db_path,
+        series_id="SERIES-REMEMBERED",
+        title="The Last of Us",
+        clean_name="The Last of Us",
+        production_year=2023,
+        imdb_id="tt3581920",
+    )
+
+    settings = AppSettings(id="default", jellyfin_db_path=str(db_path))
+    rule = Rule(
+        rule_name="Remembered History Rule",
+        content_name="The Last of Us",
+        normalized_title="The Last of Us",
+        imdb_id="tt3581920",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=1,
+        start_episode=1,
+        jellyfin_known_episode_numbers=["S01E10"],
+        jellyfin_watched_episode_numbers=["S01E10"],
+        feed_urls=["http://feed.example/remembered-history"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    service = JellyfinService(settings)
+    monkeypatch.setattr(
+        service,
+        "_released_episode_numbers_for_season",
+        lambda **kwargs: list(range(1, 11)) if kwargs["season_number"] == 1 else None,
+    )
+
+    summary = service.sync_series_rules(db_session)
+
+    assert summary.synced_count == 1
+    db_session.refresh(rule)
+    assert (rule.start_season, rule.start_episode) == (2, 0)
+    assert rule.jellyfin_existing_episode_numbers == []
+    assert rule.jellyfin_known_episode_numbers == ["S01E10"]
+    assert rule.jellyfin_watched_episode_numbers == ["S01E10"]
+
+
 def test_jellyfin_sync_rules_disables_existing_library_movies_by_default(
     tmp_path: Path,
     db_session,

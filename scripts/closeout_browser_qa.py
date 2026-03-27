@@ -1373,6 +1373,80 @@ def main() -> int:
                 page=page,
             )
 
+            def check_phase18_filter_profile_selection_updates_immediately() -> None:
+                page.goto(f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms)
+                matching_section = page.locator("details:has-text('Matching And Quality')").first
+                if not matching_section.evaluate("node => Boolean(node.open)"):
+                    matching_section.locator("summary").click()
+                page.wait_for_selector('select[name="filter_profile_key"]', timeout=args.timeout_ms)
+                page.wait_for_selector("#pattern-preview", timeout=args.timeout_ms)
+                profile_select = page.locator('select[name="filter_profile_key"]').first
+                preview = page.locator("#pattern-preview").first
+                quality_profile_input = page.locator('input[name="quality_profile"]').first
+                initial_preview = preview.input_value()
+                initial_quality_profile = quality_profile_input.input_value()
+                target_profile = profile_select.evaluate(
+                    """
+                    (node) => {
+                      const form = node.form;
+                      const visibleKeys = Array.from(node.options).map((option) => option.value).filter(Boolean);
+                      const profiles = JSON.parse(form.dataset.availableFilterProfiles || "[]");
+                      const currentKey = node.value || "";
+                      const currentQualityProfile = form.querySelector('input[name="quality_profile"]').value || "";
+                      return profiles.find((profile) => (
+                        visibleKeys.includes(profile.key)
+                        && profile.key !== currentKey
+                        && profile.quality_profile_value
+                        && profile.quality_profile_value !== "custom"
+                        && profile.quality_profile_value !== currentQualityProfile
+                      )) || null;
+                    }
+                    """
+                )
+                _expect(target_profile is not None, "Expected at least one alternate visible filter profile.")
+                profile_select.evaluate(
+                    """
+                    (node, profile) => {
+                      node.value = profile.key;
+                      node.dispatchEvent(new Event("input", { bubbles: true }));
+                    }
+                    """,
+                    target_profile,
+                )
+                page.wait_for_timeout(100)
+                updated_preview = preview.input_value()
+                updated_quality_profile = quality_profile_input.input_value()
+                _expect(
+                    updated_quality_profile == target_profile["quality_profile_value"],
+                    (
+                        "Filter profile input should update immediately after the select changes; "
+                        f"initial={initial_quality_profile!r} target={target_profile['quality_profile_value']!r} "
+                        f"current={updated_quality_profile!r}"
+                    ),
+                )
+                _expect(
+                    updated_preview != initial_preview,
+                    (
+                        "Pattern preview should change immediately after filter profile selection; "
+                        f"preview={updated_preview!r}"
+                    ),
+                )
+                _expect(
+                    target_profile["quality_profile_value"] in updated_preview,
+                    (
+                        "Updated preview should reflect the new filter profile's quality floor; "
+                        f"preview={updated_preview!r}"
+                    ),
+                )
+
+            run_check(
+                "P18-01",
+                "Phase 18",
+                "Rule filter profile selection updates derived quality state immediately",
+                check_phase18_filter_profile_selection_updates_immediately,
+                page=page,
+            )
+
             search_url = (
                 f"{app_base_url}/search?query=Young+Sherlock&media_type=series&indexer=all"
                 "&imdb_id=tt8599532&include_release_year=on&release_year=2026"

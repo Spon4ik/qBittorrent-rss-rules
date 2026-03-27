@@ -1,15 +1,17 @@
 # Roadmap
 
-## Current release target: post-v0.7.4 planning
+## Current release target: post-v0.7.5 planning
 
 ### In progress
 
-- Phase 17 is now closed and release-validated as the shared watch-state arbitration foundation slice, with Stremio sync intentionally deferred to a later phase.
-- Next planning focus is to return to richer catalog providers, broader watch-history persistence, and large-file/module split work after the `v0.7.4` patch release.
+- Phase 18 is now closed and release-validated as the rule-form filter-profile live-update patch slice.
+- Phase 17 remains closed and release-validated as the shared watch-state arbitration foundation slice, with Stremio sync intentionally deferred to a later phase.
+- Next planning focus is to return to richer catalog providers, broader watch-history persistence, and large-file/module split work after the `v0.7.5` patch release.
 - Keep deterministic browser QA, static checks, full pytest, and WinUI desktop builds as release gates for the next feature phase.
 
 ### Current phase track
 
+- Phase 18: rule-form filter-profile live recompute and patch release (implemented and release-validated in `v0.7.5`; `docs/plans/phase-18-rule-form-filter-profile-live-recompute-and-patch-release.md`)
 - Phase 17: shared watch-state arbitration foundation (implemented and release-validated in `v0.7.4`; `docs/plans/phase-17-shared-watch-state-arbitration-foundation.md`)
 - Phase 16: desktop build portability and NuGet source cleanup (implemented and release-validated; `docs/plans/phase-16-desktop-build-portability-and-nuget-source-cleanup.md`)
 - Phase 15: repo-local backend startup portability maintenance (implemented and manually validated; `docs/plans/phase-15-repo-local-backend-startup-portability.md`)
@@ -33,6 +35,9 @@ Phase 16 detail pointer:
 
 Phase 17 detail pointer:
 - Dated checklist, shared watch-state arbitration decisions, Jellyfin parity validation, and the later Stremio split are tracked in `docs/plans/phase-17-shared-watch-state-arbitration-foundation.md`.
+
+Phase 18 detail pointer:
+- Dated checklist, filter-profile live-update bug fix decisions, browser regression coverage, and patch-release publication notes are tracked in `docs/plans/phase-18-rule-form-filter-profile-live-recompute-and-patch-release.md`.
 
 Phase 14 detail pointer:
 - Dated checklist, warning-cleanup validation evidence, and release publication notes are tracked in `docs/plans/phase-14-v0-7-2-template-warning-cleanup-and-release-push.md`.
@@ -74,6 +79,13 @@ Phase 6 detail pointer:
 - Jellyfin sync now routes through the shared arbitration layer without changing existing floor or history behavior, while Stremio sync remains a later follow-up phase.
 - Revalidated the patch with `scripts\check.bat` (`229 passed`, `1 skipped`), `scripts\closeout_qa.bat` (`15/15` browser checks passed), and `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`).
 - Published `main` and the `v0.7.4` tag to `origin`.
+
+## Recently released: v0.7.5 (2026-03-27)
+
+- Shipped the phase-18 rule-form patch so choosing a filter profile now immediately applies the selected minimum-quality state and regenerates the derived pattern preview without waiting for another field edit.
+- Added a dedicated regression check for the immediate profile-application path in both the pytest source assertions and the live browser closeout QA flow.
+- Revalidated the patch with `scripts\check.bat` (`230 passed`, `1 skipped`), `scripts\closeout_qa.bat` (`all browser closeout checks passed`), and `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)` after clearing a stale locked desktop process).
+- Published `main` and the `v0.7.5` tag to `origin`.
 
 ## Recently released: v0.7.3 (2026-03-27)
 

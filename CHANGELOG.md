@@ -8,6 +8,12 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.7.5] - 2026-03-27
+
+- Fixed the rule-form filter-profile selector so choosing a profile now updates the derived minimum-quality state, token controls, and generated pattern preview immediately instead of waiting for another field change.
+- Added regression coverage for the immediate-update path in the pytest source checks and the live browser closeout QA flow.
+- Revalidated the patch with `scripts\\check.bat`, `scripts\\closeout_qa.bat`, and `scripts\\run_dev.bat desktop-build`, then published `main` and the `v0.7.5` tag to `origin`.
+
 ## [0.7.4] - 2026-03-27
 
 - Extracted a shared watch-state arbitration module so episode-key normalization, merging, and floor selection can be reused outside the Jellyfin adapter.

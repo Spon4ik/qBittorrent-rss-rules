@@ -67,7 +67,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "0.7.4"
+    assert payload["app_version"] == "0.7.5"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -585,6 +585,17 @@ def test_inline_clear_local_filters_resets_regex_and_episode_floor_inputs() -> N
     assert 'startEpisodeInput.value = "";' in app_js_source
     assert 'kind: "manual_must_contain"' in app_js_source
     assert 'kind: "episode_progress_floor"' in app_js_source
+
+
+def test_inline_rule_filter_profile_selection_updates_immediately() -> None:
+    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+    app_js_source = app_js_path.read_text(encoding="utf-8")
+
+    assert 'const handleFilterProfileSelection = () => {' in app_js_source
+    assert 'filterProfileSelect?.addEventListener("input", handleFilterProfileSelection);' in app_js_source
+    assert 'filterProfileSelect?.addEventListener("change", handleFilterProfileSelection);' in app_js_source
+    assert 'if (element === filterProfileSelect) {' in app_js_source
+    assert 'refreshDerivedFields();' in app_js_source
 
 
 def test_inline_feed_scope_indexer_matching_uses_key_variants() -> None:

@@ -22,5 +22,6 @@ Primary documents:
 - `docs/plans/phase-15-repo-local-backend-startup-portability.md`: implemented and manually validated maintenance plan covering project-scope docs cleanup plus repo-local backend startup portability after copied `.venv` breakage
 - `docs/plans/phase-16-desktop-build-portability-and-nuget-source-cleanup.md`: implemented and release-validated maintenance plan covering removal of the machine-specific offline NuGet source and desktop build portability revalidation
 - `docs/plans/phase-17-shared-watch-state-arbitration-foundation.md`: implemented and release-validated foundation plan covering source-agnostic watched-state decisions and the later Stremio split
+- `docs/plans/phase-18-rule-form-filter-profile-live-recompute-and-patch-release.md`: implemented and release-validated patch plan covering the rule-form filter-profile live-update bug fix and release closeout
 
-`ROADMAP.md` remains the high-level product roadmap. The files in `docs/plans/` are the detailed source of truth for work that is actively being implemented or prepared. Phases 5 through 16 are implemented, Phase 17 is release-validated in `v0.7.4`, and the next active phase should be opened before the next code change.
+`ROADMAP.md` remains the high-level product roadmap. The files in `docs/plans/` are the detailed source of truth for work that is actively being implemented or prepared. Phases 5 through 18 are implemented and release-validated, and the next active phase should be opened before the next code change.

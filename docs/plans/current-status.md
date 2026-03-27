@@ -2,6 +2,7 @@
 
 ## Current focus
 
+- Phase 18 is now closed and release-validated as the rule-form filter-profile live-update patch slice.
 - Phase 17 is now closed and release-validated as the shared watch-state arbitration foundation slice, with Stremio sync intentionally deferred to a later phase.
 - Phase 16 is now closed and manually validated as the repo-wide WinUI build portability maintenance slice.
 - Phase 15 is now closed and manually validated as the repo-local backend startup portability maintenance slice.
@@ -14,6 +15,12 @@
 - The retained desktop direction remains the WinUI WebView-shell + companion-process lifecycle baseline introduced in `v0.6.0`.
 
 ## Implemented
+
+- Completed the phase-18 rule-form filter-profile live-update patch on 2026-03-27:
+  - wired the rule-form filter-profile selector to apply immediately on browser input as well as change events so the selected minimum-quality state, token controls, and generated pattern preview now update without waiting for another field edit;
+  - added focused regression coverage in `tests/test_routes.py` plus a live browser closeout check in `scripts/closeout_browser_qa.py` that dispatches an input event on the profile selector and verifies the hidden quality floor and preview update immediately;
+  - validated the patch with `cmd.exe /c scripts\check.bat` (`230 passed`, `1 skipped`), `cmd.exe /c scripts\closeout_qa.bat` (`all browser closeout checks passed`), and `cmd.exe /c scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)` after clearing a stale locked desktop process);
+  - published `main` plus the `v0.7.5` tag to `origin`.
 
 - Completed the phase-17 shared watch-state arbitration foundation on 2026-03-27:
   - extracted `app/services/watch_state.py` as the shared source-agnostic episode-key normalization, merge, sort, and floor-selection module;
@@ -700,6 +707,7 @@
 
 ## Deferred / future phases
 
+- Phase 18 planning lives in `docs/plans/phase-18-rule-form-filter-profile-live-recompute-and-patch-release.md`; implementation is complete and release-validated in `v0.7.5` as the rule-form filter-profile live-update patch slice.
 - Phase 17 planning lives in `docs/plans/phase-17-shared-watch-state-arbitration-foundation.md`; implementation is complete and release-validated in `v0.7.4` as the source-agnostic watched-state foundation.
 - Phase 16 planning lives in `docs/plans/phase-16-desktop-build-portability-and-nuget-source-cleanup.md`; implementation is complete and release-validated in `v0.7.3`.
 - Phase 15 planning lives in `docs/plans/phase-15-repo-local-backend-startup-portability.md`; implementation is complete and manually validated as a maintenance slice.

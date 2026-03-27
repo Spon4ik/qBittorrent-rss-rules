@@ -3403,6 +3403,7 @@ function initRuleForm(form) {
       filterProfileSelect.value = profileKey;
     }
     syncQualityProfileValue();
+    refreshDerivedFields();
   };
 
   const rebuildFilterProfileSelect = (selectedKey, mediaType = getCurrentMediaType()) => {
@@ -3627,16 +3628,17 @@ function initRuleForm(form) {
   mediaField?.addEventListener("change", () => {
     handleMediaTypeSelectionChange(mediaField.value);
   });
-  filterProfileSelect?.addEventListener("change", () => {
-    const selectedKey = filterProfileSelect.value;
+  const handleFilterProfileSelection = () => {
+    const selectedKey = filterProfileSelect?.value || "";
     if (!selectedKey) {
       syncQualityProfileValue();
       refreshDerivedFields();
       return;
     }
     applyFilterProfile(selectedKey);
-    refreshDerivedFields();
-  });
+  };
+  filterProfileSelect?.addEventListener("input", handleFilterProfileSelection);
+  filterProfileSelect?.addEventListener("change", handleFilterProfileSelection);
   saveNewProfileButton?.addEventListener("click", async () => {
     const profileName = window.prompt("New profile name");
     if (!profileName || !profileName.trim()) {
@@ -3665,6 +3667,9 @@ function initRuleForm(form) {
   });
 
   form.querySelectorAll('input, select, textarea').forEach((element) => {
+    if (element === filterProfileSelect) {
+      return;
+    }
     element.addEventListener("input", refreshDerivedFields);
     element.addEventListener("change", refreshDerivedFields);
   });

@@ -2,6 +2,7 @@
 
 ## Current focus
 
+- Phase 17 is now closed and release-validated as the shared watch-state arbitration foundation slice, with Stremio sync intentionally deferred to a later phase.
 - Phase 16 is now closed and manually validated as the repo-wide WinUI build portability maintenance slice.
 - Phase 15 is now closed and manually validated as the repo-local backend startup portability maintenance slice.
 - No new product feature phase is open yet; next planning returns to richer catalog providers, broader watch-history persistence, and targeted large-file/module split work.
@@ -13,6 +14,13 @@
 - The retained desktop direction remains the WinUI WebView-shell + companion-process lifecycle baseline introduced in `v0.6.0`.
 
 ## Implemented
+
+- Completed the phase-17 shared watch-state arbitration foundation on 2026-03-27:
+  - extracted `app/services/watch_state.py` as the shared source-agnostic episode-key normalization, merge, sort, and floor-selection module;
+  - routed Jellyfin sync through the shared module without changing the existing floor/history contract;
+  - added focused regressions in `tests/test_watch_state.py` plus Jellyfin parity coverage in `tests/test_jellyfin.py` and `tests/test_rule_builder.py`;
+  - validated the `v0.7.4` release with `cmd.exe /c scripts\check.bat` (`229 passed`, `1 skipped`), `cmd.exe /c scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`), and `cmd.exe /c scripts\closeout_qa.bat` (`15/15` browser checks passed in `logs/qa/phase-closeout-20260327T112128Z/`);
+  - published `main` plus the `v0.7.4` tag to `origin`.
 
 - Completed the phase-16 repo-wide WinUI build portability cleanup on 2026-03-27:
   - removed the hardcoded Visual Studio offline NuGet source from `NuGet.config`, leaving `nuget.org` as the sole configured restore source so WinUI build/restore no longer depends on the missing `C:\Program Files (x86)\Microsoft SDKs\NuGetPackages\` path;
@@ -678,13 +686,12 @@
 
 ## In progress
 
-- No active implementation phase is open after the phase-16 portability closeout.
 - Current planning backlog focus is richer catalog providers beyond OMDb, broader watch-history/scrobble-compatible persistence decisions, and targeted file/module splits for the largest route/static/service files.
 - NuGet source behavior remains stabilized for this repository via `NuGet.config`, and cross-machine desktop validation is now captured in the phase-16 release slice rather than treated as a blocker.
 
 ## Next actions
 
-- Choose the next release target and open a new active phase plan before the next feature code change.
+- Open a separate Stremio source-adapter phase after the shared arbiter lands.
 - Decide whether the next catalog step expands beyond OMDb into richer providers or more explicit release-calendar logic.
 - Decide whether deleted-history persistence should remain rule-local or move to a broader watch-history layer.
 - Tackle the highest-payoff codebase cleanup splits after the release work in this order: `app/static/app.js`, `app/routes/pages.py`, `app/routes/api.py`, `app/services/jackett.py`, and `app/services/settings_service.py`.
@@ -693,6 +700,7 @@
 
 ## Deferred / future phases
 
+- Phase 17 planning lives in `docs/plans/phase-17-shared-watch-state-arbitration-foundation.md`; implementation is complete and release-validated in `v0.7.4` as the source-agnostic watched-state foundation.
 - Phase 16 planning lives in `docs/plans/phase-16-desktop-build-portability-and-nuget-source-cleanup.md`; implementation is complete and release-validated in `v0.7.3`.
 - Phase 15 planning lives in `docs/plans/phase-15-repo-local-backend-startup-portability.md`; implementation is complete and manually validated as a maintenance slice.
 - Phase 14 planning lives in `docs/plans/phase-14-v0-7-2-template-warning-cleanup-and-release-push.md`; implementation is complete and release-validated in `v0.7.2`.

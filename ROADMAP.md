@@ -1,15 +1,16 @@
 # Roadmap
 
-## Current release target: post-v0.7.3 planning
+## Current release target: post-v0.7.4 planning
 
 ### In progress
 
-- No active implementation phase is currently open after the phase-16 portability closeout.
-- Next planning focus is to return to richer catalog providers, broader watch-history persistence, and large-file/module split work after the `v0.7.3` patch release.
+- Phase 17 is now closed and release-validated as the shared watch-state arbitration foundation slice, with Stremio sync intentionally deferred to a later phase.
+- Next planning focus is to return to richer catalog providers, broader watch-history persistence, and large-file/module split work after the `v0.7.4` patch release.
 - Keep deterministic browser QA, static checks, full pytest, and WinUI desktop builds as release gates for the next feature phase.
 
 ### Current phase track
 
+- Phase 17: shared watch-state arbitration foundation (implemented and release-validated in `v0.7.4`; `docs/plans/phase-17-shared-watch-state-arbitration-foundation.md`)
 - Phase 16: desktop build portability and NuGet source cleanup (implemented and release-validated; `docs/plans/phase-16-desktop-build-portability-and-nuget-source-cleanup.md`)
 - Phase 15: repo-local backend startup portability maintenance (implemented and manually validated; `docs/plans/phase-15-repo-local-backend-startup-portability.md`)
 - Phase 14: `v0.7.2` template warning cleanup and release push (implemented and release-validated; `docs/plans/phase-14-v0-7-2-template-warning-cleanup-and-release-push.md`)
@@ -29,6 +30,9 @@ Phase 15 detail pointer:
 
 Phase 16 detail pointer:
 - Dated checklist, machine-specific NuGet source cleanup, desktop build portability validation, and `v0.7.3` release publication notes are tracked in `docs/plans/phase-16-desktop-build-portability-and-nuget-source-cleanup.md`.
+
+Phase 17 detail pointer:
+- Dated checklist, shared watch-state arbitration decisions, Jellyfin parity validation, and the later Stremio split are tracked in `docs/plans/phase-17-shared-watch-state-arbitration-foundation.md`.
 
 Phase 14 detail pointer:
 - Dated checklist, warning-cleanup validation evidence, and release publication notes are tracked in `docs/plans/phase-14-v0-7-2-template-warning-cleanup-and-release-push.md`.
@@ -63,6 +67,13 @@ Phase 6 detail pointer:
 - Decide whether deleted-history persistence should stay rule-local or graduate to a broader watch-history/scrobble-compatible cache.
 - Reduce context and maintenance cost by splitting the largest rule/search/Jellyfin files along real domain boundaries.
 - Keep deterministic browser QA and route/service regressions as release gates for every workflow change.
+
+## Recently released: v0.7.4 (2026-03-27)
+
+- Shipped the phase-17 shared watch-state arbitration foundation slice so episode-key normalization, merging, sorting, and floor selection now live in a reusable shared module.
+- Jellyfin sync now routes through the shared arbitration layer without changing existing floor or history behavior, while Stremio sync remains a later follow-up phase.
+- Revalidated the patch with `scripts\check.bat` (`229 passed`, `1 skipped`), `scripts\closeout_qa.bat` (`15/15` browser checks passed), and `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`).
+- Published `main` and the `v0.7.4` tag to `origin`.
 
 ## Recently released: v0.7.3 (2026-03-27)
 

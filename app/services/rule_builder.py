@@ -9,6 +9,10 @@ from app.services.quality_filters import (
     normalize_quality_tokens,
     tokens_to_regex,
 )
+from app.services.watch_state import (
+    normalize_watch_state_episode_keys,
+    watch_state_episode_key_tuple,
+)
 
 INVALID_PATH_CHARS_RE = re.compile(r'[<>:"|?*]')
 IMDB_IN_CATEGORY_RE = re.compile(r"\[imdbid-(tt\d+)\]", re.IGNORECASE)
@@ -17,7 +21,6 @@ YEAR_TOKEN_RE = re.compile(r"\b(\d{4})\b")
 EXTRA_INCLUDE_SPLIT_RE = re.compile(r"[\n,;]+")
 MANUAL_MUST_CONTAIN_SPLIT_RE = re.compile(r"\r?\n")
 REGEX_META_RE = re.compile(r"[\\.^$*+?{}\[\]|()]")
-JELLYFIN_EPISODE_KEY_RE = re.compile(r"^s(?P<season>\d{1,2})e(?P<episode>\d{1,2})$", re.IGNORECASE)
 FULL_MUST_CONTAIN_OVERRIDE_PREFIXES: tuple[str, ...] = (
     "(?i",
     "(?m",
@@ -237,26 +240,8 @@ def build_episode_progress_fragment(start_season: int | None, start_episode: int
         fragments.insert(1, rf"{season_prefix}{season_after}(?!\d)(?:\b|$)")
     return f"(?:{'|'.join(fragments)})"
 
-
-def _format_jellyfin_episode_key(season_number: int, episode_number: int) -> str:
-    return f"S{season_number:02d}E{episode_number:02d}"
-
-
 def normalize_jellyfin_episode_keys(value: list[str] | None) -> list[str]:
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for raw_item in list(value or []):
-        match = JELLYFIN_EPISODE_KEY_RE.match(str(raw_item or "").strip())
-        if not match:
-            continue
-        season_number = _bounded_season_number(int(match.group("season")), allow_zero=True)
-        episode_number = _bounded_episode_number(int(match.group("episode")), allow_zero=True)
-        episode_key = _format_jellyfin_episode_key(season_number, episode_number)
-        if episode_key in seen:
-            continue
-        seen.add(episode_key)
-        normalized.append(episode_key)
-    return normalized
+    return normalize_watch_state_episode_keys(value)
 
 
 def build_specific_episode_fragment(season_number: int, episode_number: int) -> str:
@@ -310,13 +295,13 @@ def build_lower_episode_exclusion_fragment(start_season: int | None, start_episo
 def build_existing_episode_exclusion_fragment(existing_episode_keys: list[str]) -> str:
     fragments: list[str] = []
     for episode_key in normalize_jellyfin_episode_keys(existing_episode_keys):
-        match = JELLYFIN_EPISODE_KEY_RE.match(episode_key)
-        if match is None:
+        episode_tuple = watch_state_episode_key_tuple(episode_key)
+        if episode_tuple is None:
             continue
         fragments.append(
             build_specific_episode_fragment(
-                int(match.group("season")),
-                int(match.group("episode")),
+                int(episode_tuple[0]),
+                int(episode_tuple[1]),
             )
         )
     if not fragments:

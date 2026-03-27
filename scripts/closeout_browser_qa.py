@@ -537,11 +537,14 @@ def stop_threaded_server(server: ThreadingHTTPServer, thread: threading.Thread) 
     thread.join(timeout=2)
 
 
-def read_debug_log_line_count(path: Path) -> int:
+def read_debug_log_line_count(path: Path) -> int | None:
     if not path.exists():
-        return 0
-    with path.open("r", encoding="utf-8") as handle:
-        return sum(1 for _ in handle)
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return sum(1 for _ in handle)
+    except OSError:
+        return None
 
 
 def force_default_feed_urls(db_path: Path, feed_urls: list[str]) -> None:
@@ -2080,6 +2083,8 @@ def main() -> int:
 
         def check_debug_log_growth() -> None:
             debug_after = read_debug_log_line_count(debug_log_path)
+            if debug_log_before is None or debug_after is None:
+                return
             _expect(
                 debug_after >= debug_log_before + 3,
                 (

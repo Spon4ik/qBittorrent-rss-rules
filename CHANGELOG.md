@@ -8,6 +8,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.7.4] - 2026-03-27
+
+- Extracted a shared watch-state arbitration module so episode-key normalization, merging, and floor selection can be reused outside the Jellyfin adapter.
+- Routed Jellyfin sync through the shared watch-state layer without changing the existing floor behavior or rule-history persistence contract.
+- Kept Stremio watched-history sync as a separate follow-up phase so the new shared module stays source-agnostic instead of mixing two integration surfaces into one release.
+- Added direct regression coverage for the shared watch-state helpers plus Jellyfin parity, validated the release candidate with `scripts\\check.bat`, `scripts\\run_dev.bat desktop-build`, and `scripts\\closeout_qa.bat`, and published the `v0.7.4` release after the final checks passed.
+
 ## [0.7.3] - 2026-03-27
 
 - Hardened `scripts\\run_dev.bat` so a copied repo-local `.venv` with a stale interpreter path now fails fast with concrete recreate commands instead of the generic `No Python at ...` launcher error.

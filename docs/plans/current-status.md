@@ -2,8 +2,10 @@
 
 ## Current focus
 
+- Phase 16 is now closed and manually validated as the repo-wide WinUI build portability maintenance slice.
+- Phase 15 is now closed and manually validated as the repo-local backend startup portability maintenance slice.
+- No new product feature phase is open yet; next planning returns to richer catalog providers, broader watch-history persistence, and targeted large-file/module split work.
 - Phase 14 is now closed and release-validated as the delivered `v0.7.2` patch release.
-- No new implementation phase is open yet; next planning returns to richer catalog providers, broader watch-history persistence, and targeted large-file/module split work.
 - Phase 13 is closed and release-validated as the delivered `v0.7.1` patch release.
 - Phase 12 is closed and release-validated as the delivered `v0.7.0` release.
 - Phase 11 remains closed and release-validated as the delivered `v0.6.1` stabilization slice.
@@ -11,6 +13,18 @@
 - The retained desktop direction remains the WinUI WebView-shell + companion-process lifecycle baseline introduced in `v0.6.0`.
 
 ## Implemented
+
+- Completed the phase-16 repo-wide WinUI build portability cleanup on 2026-03-27:
+  - removed the hardcoded Visual Studio offline NuGet source from `NuGet.config`, leaving `nuget.org` as the sole configured restore source so WinUI build/restore no longer depends on the missing `C:\Program Files (x86)\Microsoft SDKs\NuGetPackages\` path;
+  - synchronized version touchpoints to `0.7.3` (`pyproject.toml`, `app/main.py`, `QbRssRulesDesktop/Views/MainPage.xaml.cs`, `CHANGELOG.md`, and `tests/test_routes.py`) and closed phase 16 as the shipped build-portability slice;
+  - validated the final `v0.7.3` worktree with `cmd.exe /c scripts\check.bat` (`226 passed`, `1 skipped`), `cmd.exe /c scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260327T093517Z/`), and `cmd.exe /c scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`), after repairing the local Windows toolchain enough to make the release gates runnable again;
+  - published `main` plus the `v0.7.3` tag to `origin`.
+
+- Completed the phase-15 repo-local backend startup portability maintenance slice on 2026-03-27:
+  - realigned project docs to product-only scope by removing unrelated host-operations notes from `README.md`, documenting and closing this maintenance slice in `docs/plans/phase-15-repo-local-backend-startup-portability.md`, and keeping `ROADMAP.md`, `docs/plans/README.md`, and this status handoff focused on project work rather than machine-setup tasks;
+  - deleted the stray non-project helper scripts that had been created in this repo workspace so the project tree no longer carries unrelated host-operation artifacts;
+  - updated `scripts\run_dev.bat` to detect an unusable checked-in `.venv` launcher up front and print concrete recreate commands instead of surfacing a misleading stale `No Python at ...` failure from `pyvenv.cfg`;
+  - recreated the OneDrive workspace `.venv` with `C:\Users\nucc\AppData\Local\Programs\Python\Python312\python.exe -m venv .venv`, reinstalled `-e .[dev]`, and verified `http://127.0.0.1:8000/health` returned `200` with `app_version=0.7.2`.
 
 - Completed `v0.7.2` patch release closeout on 2026-03-25:
   - synchronized version touchpoints to `0.7.2` (`pyproject.toml`, `app/main.py`, `QbRssRulesDesktop/Views/MainPage.xaml.cs`, `CHANGELOG.md`, and `tests/test_routes.py`) and closed phase 14 as the shipped warning-cleanup/publish slice;
@@ -664,13 +678,13 @@
 
 ## In progress
 
-- No active implementation phase is open after the `v0.7.2` release closeout.
+- No active implementation phase is open after the phase-16 portability closeout.
 - Current planning backlog focus is richer catalog providers beyond OMDb, broader watch-history/scrobble-compatible persistence decisions, and targeted file/module splits for the largest route/static/service files.
-- NuGet source behavior remains stabilized for this repository via `NuGet.config`, and cross-machine desktop validation is still backlog/follow-up work rather than a release blocker.
+- NuGet source behavior remains stabilized for this repository via `NuGet.config`, and cross-machine desktop validation is now captured in the phase-16 release slice rather than treated as a blocker.
 
 ## Next actions
 
-- Choose the next release target and open a new active phase plan before the next code change.
+- Choose the next release target and open a new active phase plan before the next feature code change.
 - Decide whether the next catalog step expands beyond OMDb into richer providers or more explicit release-calendar logic.
 - Decide whether deleted-history persistence should remain rule-local or move to a broader watch-history layer.
 - Tackle the highest-payoff codebase cleanup splits after the release work in this order: `app/static/app.js`, `app/routes/pages.py`, `app/routes/api.py`, `app/services/jackett.py`, and `app/services/settings_service.py`.
@@ -679,6 +693,8 @@
 
 ## Deferred / future phases
 
+- Phase 16 planning lives in `docs/plans/phase-16-desktop-build-portability-and-nuget-source-cleanup.md`; implementation is complete and release-validated in `v0.7.3`.
+- Phase 15 planning lives in `docs/plans/phase-15-repo-local-backend-startup-portability.md`; implementation is complete and manually validated as a maintenance slice.
 - Phase 14 planning lives in `docs/plans/phase-14-v0-7-2-template-warning-cleanup-and-release-push.md`; implementation is complete and release-validated in `v0.7.2`.
 - Phase 12 planning lives in `docs/plans/phase-12-v0-7-0-catalog-aware-jellyfin-and-missing-only-queue.md`; implementation is complete and release-validated in `v0.7.0`.
 - Phase 11 planning lives in `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md`; implementation is complete and release-validated in `v0.6.1`.

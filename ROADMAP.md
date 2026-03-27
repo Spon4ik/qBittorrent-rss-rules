@@ -1,15 +1,17 @@
 # Roadmap
 
-## Current release target: post-v0.7.2 planning
+## Current release target: post-v0.7.3 planning
 
 ### In progress
 
-- No active implementation phase is currently open.
-- Next planning focus is to return to richer catalog providers, broader watch-history persistence, and large-file/module split work after the `v0.7.2` patch release.
+- No active implementation phase is currently open after the phase-16 portability closeout.
+- Next planning focus is to return to richer catalog providers, broader watch-history persistence, and large-file/module split work after the `v0.7.3` patch release.
 - Keep deterministic browser QA, static checks, full pytest, and WinUI desktop builds as release gates for the next feature phase.
 
 ### Current phase track
 
+- Phase 16: desktop build portability and NuGet source cleanup (implemented and release-validated; `docs/plans/phase-16-desktop-build-portability-and-nuget-source-cleanup.md`)
+- Phase 15: repo-local backend startup portability maintenance (implemented and manually validated; `docs/plans/phase-15-repo-local-backend-startup-portability.md`)
 - Phase 14: `v0.7.2` template warning cleanup and release push (implemented and release-validated; `docs/plans/phase-14-v0-7-2-template-warning-cleanup-and-release-push.md`)
 - Phase 13: `v0.7.1` desktop freshness and engine shutdown controls (implemented and release-validated; `docs/plans/phase-13-v0-7-1-desktop-freshness-and-engine-shutdown.md`)
 - Phase 12: `v0.7.0` catalog-aware Jellyfin floors and missing-only queue selection (implemented and release-validated; `docs/plans/phase-12-v0-7-0-catalog-aware-jellyfin-and-missing-only-queue.md`)
@@ -21,6 +23,12 @@
 - Phase 6: Jackett-backed active search workspace (implemented and release-validated in v0.2.0; follow-up polish completed, deeper persistence still deferred)
 - Phase 4: feed selection UX improvements (implemented, automated closeout validated)
 - Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, automated closeout validated)
+
+Phase 15 detail pointer:
+- Dated checklist, repo-local `.venv` portability decisions, and manual backend health validation are tracked in `docs/plans/phase-15-repo-local-backend-startup-portability.md`.
+
+Phase 16 detail pointer:
+- Dated checklist, machine-specific NuGet source cleanup, desktop build portability validation, and `v0.7.3` release publication notes are tracked in `docs/plans/phase-16-desktop-build-portability-and-nuget-source-cleanup.md`.
 
 Phase 14 detail pointer:
 - Dated checklist, warning-cleanup validation evidence, and release publication notes are tracked in `docs/plans/phase-14-v0-7-2-template-warning-cleanup-and-release-push.md`.
@@ -56,7 +64,15 @@ Phase 6 detail pointer:
 - Reduce context and maintenance cost by splitting the largest rule/search/Jellyfin files along real domain boundaries.
 - Keep deterministic browser QA and route/service regressions as release gates for every workflow change.
 
-## Recently released: v0.7.2 (2026-03-25)
+## Recently released: v0.7.3 (2026-03-27)
+
+- Shipped the phase-16 build-portability slice so the repo no longer depends on the missing Visual Studio offline NuGet source path and the WinUI build can restore cleanly from a fresh machine.
+- Removed the hardcoded `C:\Program Files (x86)\Microsoft SDKs\NuGetPackages\` source from `NuGet.config`, leaving `nuget.org` as the sole configured restore source for the project.
+- Hardened `scripts\run_dev.bat` so copied repo-local `.venv` launchers fail fast with concrete recreate commands instead of a stale `No Python at ...` error.
+- Revalidated the patch with `scripts\check.bat` (`226 passed`, `1 skipped`), `scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260327T093517Z/`), and `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`).
+- Published `main` and the `v0.7.3` tag to `origin`.
+
+## Previously released: v0.7.2 (2026-03-25)
 
 - Shipped the phase-14 patch so the remaining Starlette `TemplateResponse` request-second call sites are now updated to the request-first signature and no longer emit the repeated deprecation warnings during route/rendering tests.
 - Synchronized the patch release touchpoints to `0.7.2` across the FastAPI app, the WinUI desktop backend-version guard, and the `/health` route regression contract.

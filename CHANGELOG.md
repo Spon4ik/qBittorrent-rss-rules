@@ -8,6 +8,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.7.3] - 2026-03-27
+
+- Hardened `scripts\\run_dev.bat` so a copied repo-local `.venv` with a stale interpreter path now fails fast with concrete recreate commands instead of the generic `No Python at ...` launcher error.
+- Removed the machine-specific Visual Studio offline NuGet source from `NuGet.config`, so WinUI restore and build now work from a fresh machine without `C:\Program Files (x86)\Microsoft SDKs\NuGetPackages\`.
+- Revalidated the portability patch with `scripts\\check.bat`, `scripts\\closeout_qa.bat`, and `scripts\\run_dev.bat desktop-build`.
+- Published the `v0.7.3` maintenance release after cross-machine validation.
+
 ## [0.7.2] - 2026-03-25
 
 - Removed the remaining Starlette template deprecation warnings by switching the affected route/template renderers to the request-first `TemplateResponse(...)` signature in both page and API render helpers.

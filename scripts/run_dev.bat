@@ -16,17 +16,28 @@ set "API_HOST=127.0.0.1"
 set "API_PORT=8000"
 set "API_VENV_PYTHON=.venv\Scripts\python.exe"
 set "API_VENV_PYTHONW=.venv\Scripts\pythonw.exe"
-if exist "%API_VENV_PYTHON%" (
-  set "API_PYTHON=%PROJECT_DIR%\%API_VENV_PYTHON%"
-) else (
-  set "API_PYTHON=python"
-)
+set "API_PYTHON=python"
 set "API_PYTHON_WINDOWLESS=%API_PYTHON%"
 
 set "DOTNET_CMD=%ProgramFiles%\dotnet\dotnet.exe"
 if not exist "%DOTNET_CMD%" set "DOTNET_CMD=dotnet"
 
 pushd "%PROJECT_DIR%" >nul
+
+if exist "%API_VENV_PYTHON%" (
+  "%PROJECT_DIR%\%API_VENV_PYTHON%" -c "import sys" >nul 2>nul
+  if errorlevel 1 (
+    echo Detected an unusable repo virtual environment at ".venv".
+    echo Recreate it with:
+    echo   rmdir /s /q .venv
+    echo   python -m venv .venv
+    echo   .venv\Scripts\python -m pip install -e ".[dev]"
+    set "EXIT_CODE=1"
+    goto :finish
+  )
+  set "API_PYTHON=%PROJECT_DIR%\%API_VENV_PYTHON%"
+  set "API_PYTHON_WINDOWLESS=%API_PYTHON%"
+)
 
 if /I "%MODE%"=="api" goto :run_api
 if /I "%MODE%"=="desktop-build" goto :desktop_build

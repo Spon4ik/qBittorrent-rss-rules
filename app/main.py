@@ -17,6 +17,7 @@ from app.services.rule_fetch_scheduler import (
     start_rule_fetch_scheduler,
     stop_rule_fetch_scheduler,
 )
+from app.services.static_assets import compute_static_asset_version
 
 DESKTOP_BACKEND_CONTRACT = "2026-03-22"
 DESKTOP_BACKEND_CAPABILITIES = (
@@ -24,16 +25,6 @@ DESKTOP_BACKEND_CAPABILITIES = (
     "search_hidden_result_diagnostics",
     "jellyfin_auto_sync",
 )
-
-
-def _static_asset_version(static_dir: Path) -> str:
-    parts: list[str] = []
-    for filename in ("app.css", "app.js"):
-        file_path = static_dir / filename
-        if not file_path.exists():
-            continue
-        parts.append(str(file_path.stat().st_mtime_ns))
-    return "-".join(parts)
 
 
 def create_app() -> FastAPI:
@@ -44,9 +35,9 @@ def create_app() -> FastAPI:
     static_dir = Path(__file__).resolve().parent / "static"
     app = FastAPI(
         title="qBittorrent RSS Rule Manager",
-        version="0.7.5",
+        version="0.7.6",
     )
-    app.state.static_asset_version = _static_asset_version(static_dir) or app.version
+    app.state.static_asset_version = compute_static_asset_version(static_dir) or app.version
     app.state.desktop_backend_contract = DESKTOP_BACKEND_CONTRACT
     app.state.desktop_capabilities = DESKTOP_BACKEND_CAPABILITIES
     app.mount(

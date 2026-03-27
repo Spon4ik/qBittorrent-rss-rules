@@ -23,5 +23,6 @@ Primary documents:
 - `docs/plans/phase-16-desktop-build-portability-and-nuget-source-cleanup.md`: implemented and release-validated maintenance plan covering removal of the machine-specific offline NuGet source and desktop build portability revalidation
 - `docs/plans/phase-17-shared-watch-state-arbitration-foundation.md`: implemented and release-validated foundation plan covering source-agnostic watched-state decisions and the later Stremio split
 - `docs/plans/phase-18-rule-form-filter-profile-live-recompute-and-patch-release.md`: implemented and release-validated patch plan covering the rule-form filter-profile live-update bug fix and release closeout
+- `docs/plans/phase-19-filter-profile-live-apply-and-managed-engine-lifecycle-hardening.md`: implemented and release-validated patch plan covering immediate rule-form filter-profile application, request-time asset versioning, desktop freshness polling, and managed-backend shutdown/restart reliability
 
-`ROADMAP.md` remains the high-level product roadmap. The files in `docs/plans/` are the detailed source of truth for work that is actively being implemented or prepared. Phases 5 through 18 are implemented and release-validated, and the next active phase should be opened before the next code change.
+`ROADMAP.md` remains the high-level product roadmap. The files in `docs/plans/` are the detailed source of truth for work that is actively being implemented or prepared. Phases 5 through 19 are implemented and release-validated, and the next active patch phase will be opened from a fresh plan.

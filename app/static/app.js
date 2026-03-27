@@ -577,9 +577,12 @@ function initUnifiedQualityTokenControls(container, { onChange } = {}) {
   }
 
   return {
-    syncFromStateInputs() {
+    syncFromStateInputs({ notify = false } = {}) {
       for (const tokenItem of tokenItems) {
         syncQualityTokenItemFromStateInputs(tokenItem);
+      }
+      if (notify) {
+        onChange?.();
       }
     },
   };
@@ -3398,12 +3401,10 @@ function initRuleForm(form) {
     const excludeTokens = (profile.exclude_tokens || []).filter((token) => !includeSet.has(token));
     setCheckedValues(form, "quality_include_tokens", includeTokens);
     setCheckedValues(form, "quality_exclude_tokens", excludeTokens);
-    qualityTokenControls.syncFromStateInputs();
     if (filterProfileSelect) {
       filterProfileSelect.value = profileKey;
     }
-    syncQualityProfileValue();
-    refreshDerivedFields();
+    qualityTokenControls.syncFromStateInputs({ notify: true });
   };
 
   const rebuildFilterProfileSelect = (selectedKey, mediaType = getCurrentMediaType()) => {
@@ -3605,7 +3606,11 @@ function initRuleForm(form) {
       savePathInput.value = deriveSavePath(form);
     }
     if (patternPreview) {
-      patternPreview.value = derivePattern(form, qualityPatternMap, qualityTokenGroupMap);
+      const nextPattern = derivePattern(form, qualityPatternMap, qualityTokenGroupMap);
+      if (patternPreview.value !== nextPattern) {
+        patternPreview.value = nextPattern;
+        patternPreview.dispatchEvent(new Event("input", { bubbles: true }));
+      }
     }
   };
 

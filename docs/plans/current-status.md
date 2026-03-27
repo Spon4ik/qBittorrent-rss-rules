@@ -2,11 +2,12 @@
 
 ## Current focus
 
+- Phase 19 is now closed and release-validated as the filter-profile live-apply, request-time asset versioning, and managed-engine lifecycle hardening patch slice.
 - Phase 18 is now closed and release-validated as the rule-form filter-profile live-update patch slice.
 - Phase 17 is now closed and release-validated as the shared watch-state arbitration foundation slice, with Stremio sync intentionally deferred to a later phase.
 - Phase 16 is now closed and manually validated as the repo-wide WinUI build portability maintenance slice.
 - Phase 15 is now closed and manually validated as the repo-local backend startup portability maintenance slice.
-- No new product feature phase is open yet; next planning returns to richer catalog providers, broader watch-history persistence, and targeted large-file/module split work.
+- The next planning focus is to open the Stremio source-adapter phase, then return to richer catalog providers, broader watch-history persistence, and targeted large-file/module split work.
 - Phase 14 is now closed and release-validated as the delivered `v0.7.2` patch release.
 - Phase 13 is closed and release-validated as the delivered `v0.7.1` patch release.
 - Phase 12 is closed and release-validated as the delivered `v0.7.0` release.
@@ -15,6 +16,14 @@
 - The retained desktop direction remains the WinUI WebView-shell + companion-process lifecycle baseline introduced in `v0.6.0`.
 
 ## Implemented
+
+- Completed the phase-19 filter-profile live-apply, request-time asset versioning, and managed-engine lifecycle hardening on 2026-03-27:
+  - wired the rule-form filter-profile selector to apply immediately on browser input as well as change events so the selected minimum-quality state, token controls, generated pattern preview, and inline search results now update without waiting for another field edit;
+  - moved static asset versioning to request time so the rendered HTML picks up changed frontend files on refresh instead of reusing a startup-time cache-busting token;
+  - hardened managed backend shutdown/restart handling so the shell only clears ownership state after the process tree is actually confirmed stopped;
+  - added focused regression coverage in `tests/test_static_assets.py`, `tests/test_routes.py`, and `scripts/closeout_browser_qa.py` for immediate profile application and request-time asset refresh;
+  - validated the patch with `cmd.exe /c scripts\check.bat` (`231 passed`, `1 skipped`), `cmd.exe /c scripts\closeout_qa.bat` (`all browser closeout checks passed`), and `cmd.exe /c scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)` after clearing the locked desktop process);
+  - published `main` plus the `v0.7.6` tag to `origin`.
 
 - Completed the phase-18 rule-form filter-profile live-update patch on 2026-03-27:
   - wired the rule-form filter-profile selector to apply immediately on browser input as well as change events so the selected minimum-quality state, token controls, and generated pattern preview now update without waiting for another field edit;
@@ -693,11 +702,12 @@
 
 ## In progress
 
-- Current planning backlog focus is richer catalog providers beyond OMDb, broader watch-history/scrobble-compatible persistence decisions, and targeted file/module splits for the largest route/static/service files.
+- Current planning backlog focus is the phase-19 frontend refresh and managed-engine lifecycle hardening slice.
 - NuGet source behavior remains stabilized for this repository via `NuGet.config`, and cross-machine desktop validation is now captured in the phase-16 release slice rather than treated as a blocker.
 
 ## Next actions
 
+- Execute phase 19 so the filter-profile live-apply path and desktop-managed backend lifecycle are reliable again.
 - Open a separate Stremio source-adapter phase after the shared arbiter lands.
 - Decide whether the next catalog step expands beyond OMDb into richer providers or more explicit release-calendar logic.
 - Decide whether deleted-history persistence should remain rule-local or move to a broader watch-history layer.
@@ -707,6 +717,7 @@
 
 ## Deferred / future phases
 
+- Phase 19 planning lives in `docs/plans/phase-19-filter-profile-live-apply-and-managed-engine-lifecycle-hardening.md`; implementation is now in progress as the filter-profile live-apply and managed-engine lifecycle hardening patch slice.
 - Phase 18 planning lives in `docs/plans/phase-18-rule-form-filter-profile-live-recompute-and-patch-release.md`; implementation is complete and release-validated in `v0.7.5` as the rule-form filter-profile live-update patch slice.
 - Phase 17 planning lives in `docs/plans/phase-17-shared-watch-state-arbitration-foundation.md`; implementation is complete and release-validated in `v0.7.4` as the source-agnostic watched-state foundation.
 - Phase 16 planning lives in `docs/plans/phase-16-desktop-build-portability-and-nuget-source-cleanup.md`; implementation is complete and release-validated in `v0.7.3`.

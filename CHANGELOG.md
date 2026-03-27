@@ -8,6 +8,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.7.6] - 2026-03-27
+
+- Fixed the rule-form filter-profile selector so choosing a profile now updates the derived minimum-quality state, token controls, and inline search results immediately instead of waiting for another field change.
+- Switched frontend asset versioning to request time so refreshed pages pick up changed `app.css` and `app.js` without needing a backend restart.
+- Hardened managed backend shutdown/restart handling so the desktop shell only clears ownership state after the process tree is confirmed stopped.
+- Added focused regression coverage in the pytest suite, browser closeout QA, and desktop build smoke check, then published `main` and the `v0.7.6` tag to `origin`.
+
 ## [0.7.5] - 2026-03-27
 
 - Fixed the rule-form filter-profile selector so choosing a profile now updates the derived minimum-quality state, token controls, and generated pattern preview immediately instead of waiting for another field change.

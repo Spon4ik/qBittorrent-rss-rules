@@ -86,9 +86,19 @@ from app.services.settings_service import (
     normalize_search_result_view_mode,
     normalize_search_sort_criteria,
 )
+from app.services.static_assets import compute_static_asset_version
 
 router = APIRouter()
-templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
+
+
+def _template_context(_: Request) -> dict[str, object]:
+    return {"static_asset_version": compute_static_asset_version()}
+
+
+templates = Jinja2Templates(
+    directory=str(Path(__file__).resolve().parent.parent / "templates"),
+    context_processors=[_template_context],
+)
 SEARCH_FILTER_SPLIT_RE = re.compile(r"[\n,;]+")
 PLACEHOLDER_CATEGORY_LABEL_RE = re.compile(r"^(?:Unknown \(#[^)]+\)|Category #.+)$")
 UNKNOWN_CATEGORY_LABEL_RE = re.compile(r"^Unknown \(#([^)]+)\)$")
@@ -1641,7 +1651,11 @@ def health(request: Request) -> JSONResponse:
         {
             "status": "ok",
             "app_version": request.app.version,
-            "static_asset_version": getattr(request.app.state, "static_asset_version", request.app.version),
+            "static_asset_version": compute_static_asset_version() or getattr(
+                request.app.state,
+                "static_asset_version",
+                request.app.version,
+            ),
             "desktop_backend_contract": getattr(request.app.state, "desktop_backend_contract", ""),
             "capabilities": list(getattr(request.app.state, "desktop_capabilities", ())),
         }

@@ -18,7 +18,7 @@ namespace QbRssRulesDesktop.Views
 
         private const string DefaultBackendUrl = "http://127.0.0.1:8000";
         private const string RequiredDesktopBackendContract = "2026-03-22";
-        private const string RequiredDesktopBackendAppVersion = "0.7.5";
+        private const string RequiredDesktopBackendAppVersion = "0.7.6";
         private const string ManagedBackendStateFileName = "desktop-managed-backend.json";
         private const int ManagedBackendPortSearchLimit = 32;
         private const int ReconnectAttemptLimit = 30;
@@ -26,6 +26,7 @@ namespace QbRssRulesDesktop.Views
         private readonly DispatcherQueue dispatcherQueue;
         private readonly DispatcherQueueTimer reconnectTimer;
         private readonly DispatcherQueueTimer localChangeDebounceTimer;
+        private readonly DispatcherQueueTimer localAppPollTimer;
         private readonly List<FileSystemWatcher> localAppWatchers = new();
         private readonly string? repositoryRoot;
         private readonly bool usesConfiguredBackendUrl;
@@ -58,6 +59,9 @@ namespace QbRssRulesDesktop.Views
             localChangeDebounceTimer = dispatcherQueue.CreateTimer();
             localChangeDebounceTimer.Interval = TimeSpan.FromMilliseconds(750);
             localChangeDebounceTimer.Tick += OnLocalChangeDebounceTick;
+            localAppPollTimer = dispatcherQueue.CreateTimer();
+            localAppPollTimer.Interval = TimeSpan.FromSeconds(2);
+            localAppPollTimer.Tick += OnLocalAppPollTick;
             Loaded += OnLoaded;
             Unloaded += OnUnloaded;
         }
@@ -112,6 +116,10 @@ namespace QbRssRulesDesktop.Views
             EnsureCloseHandlers();
             InitializeLocalAppFreshnessTracking();
             StartLocalAppWatchers();
+            if (IsLocalAppWatchEnabled())
+            {
+                localAppPollTimer.Start();
+            }
             CleanupStaleManagedBackend();
 
             if (await IsBackendReachableAsync())
@@ -507,6 +515,23 @@ namespace QbRssRulesDesktop.Views
             await RefreshForLocalAppChangesAsync(pendingLocalRefreshDetail);
         }
 
+        private async void OnLocalAppPollTick(DispatcherQueueTimer sender, object args)
+        {
+            if (!IsLocalAppWatchEnabled())
+            {
+                return;
+            }
+
+            var freshnessTicks = ComputeLocalAppFreshnessTicks();
+            if (freshnessTicks <= requiredLocalAppFreshnessTicks)
+            {
+                return;
+            }
+
+            requiredLocalAppFreshnessTicks = freshnessTicks;
+            await RefreshForLocalAppChangesAsync("Detected local app changes. Reloading desktop session.");
+        }
+
         private async Task RefreshForLocalAppChangesAsync(string detail)
         {
             if (!IsLocalAppWatchEnabled())
@@ -597,31 +622,68 @@ namespace QbRssRulesDesktop.Views
             });
         }
 
-        private void StopManagedBackendProcess()
+        private bool StopManagedBackendProcess()
         {
             if (managedBackendProcess is null)
             {
-                return;
+                return false;
             }
+
+            var process = managedBackendProcess;
+            var backendPid = process.Id;
+            var stopped = false;
 
             try
             {
-                if (!managedBackendProcess.HasExited)
+                if (process.HasExited)
                 {
-                    managedBackendProcess.Kill(true);
-                    managedBackendProcess.WaitForExit(TimeSpan.FromSeconds(2));
+                    stopped = true;
+                }
+                else
+                {
+                    try
+                    {
+                        process.Kill(true);
+                    }
+                    catch
+                    {
+                        // Keep going and try the stronger fallback path below.
+                    }
+
+                    stopped = process.WaitForExit(TimeSpan.FromSeconds(3));
+                    if (!stopped)
+                    {
+                        stopped = TryKillProcessTree(backendPid);
+                    }
                 }
             }
             catch
             {
-                // Ignore cleanup failures; the OS will tear down the child process.
+                stopped = false;
             }
-            finally
+
+            if (!stopped && !IsProcessAlive(backendPid))
             {
-                managedBackendProcess.Dispose();
-                managedBackendProcess = null;
-                DeleteManagedBackendState();
+                stopped = true;
             }
+
+            if (!stopped)
+            {
+                return false;
+            }
+
+            try
+            {
+                process.Dispose();
+            }
+            catch
+            {
+                // Ignore cleanup failures; the process is already gone or being torn down.
+            }
+
+            managedBackendProcess = null;
+            DeleteManagedBackendState();
+            return true;
         }
 
         private void OnStartBackendClicked(object sender, RoutedEventArgs e)
@@ -643,8 +705,15 @@ namespace QbRssRulesDesktop.Views
                 return;
             }
 
-            StopManagedBackendProcess();
-            ShowOfflineState("Managed backend shut down. Use Start Backend to launch it again.");
+            if (StopManagedBackendProcess())
+            {
+                ShowOfflineState("Managed backend shut down. Use Start Backend to launch it again.");
+                return;
+            }
+
+            ShowOfflineState(
+                "Managed backend shutdown could not be confirmed yet. The shell kept the ownership marker so a later retry can finish stopping it."
+            );
         }
 
         private void OnExitClicked(object sender, RoutedEventArgs e)
@@ -794,6 +863,7 @@ namespace QbRssRulesDesktop.Views
             isDisposing = true;
             reconnectTimer.Stop();
             localChangeDebounceTimer.Stop();
+            localAppPollTimer.Stop();
             StopLocalAppWatchers();
             StopManagedBackendProcess();
             if (hasAttachedCloseHandlers)
@@ -915,8 +985,10 @@ namespace QbRssRulesDesktop.Views
                     return;
                 }
 
-                TryKillProcessTree(state.BackendPid);
-                DeleteManagedBackendState(force: true);
+                if (TryKillProcessTree(state.BackendPid) || !IsProcessAlive(state.BackendPid))
+                {
+                    DeleteManagedBackendState(force: true);
+                }
             }
             catch
             {
@@ -937,21 +1009,58 @@ namespace QbRssRulesDesktop.Views
             }
         }
 
-        private static void TryKillProcessTree(int pid)
+        private static bool TryKillProcessTree(int pid)
         {
+            if (pid <= 0)
+            {
+                return false;
+            }
+
+            if (!IsProcessAlive(pid))
+            {
+                return true;
+            }
+
             try
             {
                 using var process = Process.GetProcessById(pid);
                 if (!process.HasExited)
                 {
                     process.Kill(true);
-                    process.WaitForExit(TimeSpan.FromSeconds(2));
+                    if (process.WaitForExit(TimeSpan.FromSeconds(3)))
+                    {
+                        return true;
+                    }
                 }
             }
             catch
             {
-                // Ignore stale cleanup failures; the next launch can retry.
+                // Ignore stale cleanup failures and fall back to a stronger termination path.
             }
+
+            try
+            {
+                using var taskkillProcess = Process.Start(
+                    new ProcessStartInfo
+                    {
+                        FileName = "taskkill",
+                        Arguments = $"/PID {pid} /T /F",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                    });
+                if (taskkillProcess is not null)
+                {
+                    taskkillProcess.WaitForExit(5000);
+                }
+            }
+            catch
+            {
+                // Ignore fallback cleanup failures; the next launch can retry.
+            }
+
+            return !IsProcessAlive(pid);
         }
     }
 }

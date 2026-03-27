@@ -81,10 +81,20 @@ from app.services.selective_queue import (
     queue_result_with_optional_file_selection,
 )
 from app.services.settings_service import SettingsService
+from app.services.static_assets import compute_static_asset_version
 from app.services.sync import SyncService, SyncServiceError
 
 router = APIRouter(prefix="/api")
-templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
+
+
+def _template_context(_: Request) -> dict[str, object]:
+    return {"static_asset_version": compute_static_asset_version()}
+
+
+templates = Jinja2Templates(
+    directory=str(Path(__file__).resolve().parent.parent / "templates"),
+    context_processors=[_template_context],
+)
 
 
 def _bool_from_form(form: Any, key: str) -> bool:

@@ -1,16 +1,18 @@
 # Roadmap
 
-## Current release target: post-v0.7.5 planning
+## Current release target: v0.7.7 patch hardening
 
 ### In progress
 
+- Phase 19 is now closed and release-validated as the filter-profile live-apply, request-time asset versioning, and managed-engine lifecycle hardening patch slice.
 - Phase 18 is now closed and release-validated as the rule-form filter-profile live-update patch slice.
 - Phase 17 remains closed and release-validated as the shared watch-state arbitration foundation slice, with Stremio sync intentionally deferred to a later phase.
-- Next planning focus is to return to richer catalog providers, broader watch-history persistence, and large-file/module split work after the `v0.7.5` patch release.
+- Next planning focus is to open the Stremio source-adapter phase, then return to richer catalog providers, broader watch-history persistence, and large-file/module split work.
 - Keep deterministic browser QA, static checks, full pytest, and WinUI desktop builds as release gates for the next feature phase.
 
 ### Current phase track
 
+- Phase 19: filter-profile live-apply, request-time asset versioning, desktop freshness polling, and managed engine lifecycle hardening (implemented and release-validated in `v0.7.6`; `docs/plans/phase-19-filter-profile-live-apply-and-managed-engine-lifecycle-hardening.md`)
 - Phase 18: rule-form filter-profile live recompute and patch release (implemented and release-validated in `v0.7.5`; `docs/plans/phase-18-rule-form-filter-profile-live-recompute-and-patch-release.md`)
 - Phase 17: shared watch-state arbitration foundation (implemented and release-validated in `v0.7.4`; `docs/plans/phase-17-shared-watch-state-arbitration-foundation.md`)
 - Phase 16: desktop build portability and NuGet source cleanup (implemented and release-validated; `docs/plans/phase-16-desktop-build-portability-and-nuget-source-cleanup.md`)
@@ -79,6 +81,13 @@ Phase 6 detail pointer:
 - Jellyfin sync now routes through the shared arbitration layer without changing existing floor or history behavior, while Stremio sync remains a later follow-up phase.
 - Revalidated the patch with `scripts\check.bat` (`229 passed`, `1 skipped`), `scripts\closeout_qa.bat` (`15/15` browser checks passed), and `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`).
 - Published `main` and the `v0.7.4` tag to `origin`.
+
+## Recently released: v0.7.6 (2026-03-27)
+
+- Shipped the phase-19 patch so rule-form filter-profile changes apply immediately, repo-local frontend edits refresh with a request-time asset version token, and managed backend shutdown/restart controls actually stop the process tree when confirmed.
+- Added regression coverage for the live profile-selection path, the request-time asset-version refresh, and the release closeout QA flow.
+- Revalidated the patch with `scripts\check.bat` (`231 passed`, `1 skipped`), `scripts\closeout_qa.bat` (`all browser closeout checks passed`), and `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`).
+- Published `main` and the `v0.7.6` tag to `origin`.
 
 ## Recently released: v0.7.5 (2026-03-27)
 

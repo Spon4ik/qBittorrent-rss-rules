@@ -1404,16 +1404,17 @@ def main() -> int:
                     """
                 )
                 _expect(target_profile is not None, "Expected at least one alternate visible filter profile.")
-                profile_select.evaluate(
+                page.select_option('select[name="filter_profile_key"]', target_profile["key"])
+                page.wait_for_function(
                     """
-                    (node, profile) => {
-                      node.value = profile.key;
-                      node.dispatchEvent(new Event("input", { bubbles: true }));
+                    (expected) => {
+                      const qualityProfile = document.querySelector('input[name="quality_profile"]');
+                      return qualityProfile && qualityProfile.value === expected;
                     }
                     """,
-                    target_profile,
+                    arg=target_profile["quality_profile_value"],
+                    timeout=args.timeout_ms,
                 )
-                page.wait_for_timeout(100)
                 updated_preview = preview.input_value()
                 updated_quality_profile = quality_profile_input.input_value()
                 _expect(
@@ -1444,6 +1445,165 @@ def main() -> int:
                 "Phase 18",
                 "Rule filter profile selection updates derived quality state immediately",
                 check_phase18_filter_profile_selection_updates_immediately,
+                page=page,
+            )
+
+            def check_phase19_inline_search_filter_profile_selection_updates_results_immediately() -> None:
+                from sqlalchemy import create_engine, select
+                from sqlalchemy.orm import Session
+
+                from app.models import MediaType, QualityProfile, Rule, SyncStatus
+
+                target_profile = page.evaluate(
+                    """
+                    async () => {
+                      const response = await fetch('/api/filter-profiles', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          mode: 'create',
+                          profile_name: 'QA No Match Profile',
+                          media_type: 'series',
+                          include_tokens: ['dolby_vision'],
+                          exclude_tokens: [],
+                        }),
+                      });
+                      const payload = await response.json();
+                      if (!response.ok) {
+                        throw new Error(payload.error || 'Unable to create QA filter profile.');
+                      }
+                      return payload;
+                    }
+                    """
+                )
+                target_profile_key = str(target_profile["profile_key"])
+
+                engine = create_engine(
+                    f"sqlite:///{db_path.as_posix()}",
+                    connect_args={"check_same_thread": False},
+                    future=True,
+                )
+                try:
+                    with Session(engine) as session:
+                        rule_name = "QA P19 Inline Search Profile"
+                        existing_rule = session.scalar(select(Rule).where(Rule.rule_name == rule_name))
+                        if existing_rule is None:
+                            existing_rule = Rule(
+                                rule_name=rule_name,
+                                content_name="Young Sherlock",
+                                normalized_title="Young Sherlock",
+                                imdb_id="tt8599532",
+                                media_type=MediaType.SERIES,
+                                quality_profile=QualityProfile.PLAIN,
+                                feed_urls=list(DEFAULT_FEEDS),
+                                enabled=True,
+                                last_sync_status=SyncStatus.OK,
+                            )
+                            session.add(existing_rule)
+                            session.commit()
+                            session.refresh(existing_rule)
+                        rule_id = existing_rule.id
+                finally:
+                    engine.dispose()
+
+                page.goto(f"{app_base_url}/rules/{rule_id}/search", wait_until="networkidle", timeout=args.timeout_ms)
+                page.wait_for_selector("[data-search-page]", timeout=args.timeout_ms)
+                page.wait_for_selector('select[name="filter_profile_key"]', timeout=args.timeout_ms)
+                page.wait_for_selector("[data-search-filtered-count]", timeout=args.timeout_ms)
+
+                def total_inline_filtered_count() -> int:
+                    return int(
+                        page.evaluate(
+                            """
+                            () => Array
+                              .from(document.querySelectorAll('[data-search-filtered-count]'))
+                              .reduce((total, node) => {
+                                const value = Number.parseInt((node.textContent || '0').trim(), 10);
+                                return total + (Number.isFinite(value) ? value : 0);
+                              }, 0)
+                            """
+                        )
+                    )
+
+                initial_count = total_inline_filtered_count()
+                _expect(
+                    initial_count > 0,
+                    f"Expected inline search results before applying the QA profile; count={initial_count}.",
+                )
+
+                quality_profile_input = page.locator('input[name="quality_profile"]').first
+                page.select_option('select[name="filter_profile_key"]', target_profile_key)
+
+                page.wait_for_function(
+                    """
+                    () => {
+                      const count = Array
+                        .from(document.querySelectorAll('[data-search-filtered-count]'))
+                        .reduce((total, node) => total + (Number.parseInt((node.textContent || '0').trim(), 10) || 0), 0);
+                      return count === 0;
+                    }
+                    """,
+                    timeout=args.timeout_ms,
+                )
+                updated_count = total_inline_filtered_count()
+                updated_quality_profile = quality_profile_input.input_value()
+
+                _expect(
+                    updated_count == 0,
+                    f"Expected the QA no-match profile to hide all inline search results immediately; count={updated_count}.",
+                )
+                _expect(
+                    updated_quality_profile == "custom",
+                    (
+                        "Inline search should update the derived quality profile immediately after selecting the QA profile; "
+                        f"current={updated_quality_profile!r}"
+                    ),
+                )
+
+            run_check(
+                "P19-01",
+                "Phase 19",
+                "Inline search results re-filter immediately after choosing a filter profile",
+                check_phase19_inline_search_filter_profile_selection_updates_results_immediately,
+                page=page,
+            )
+
+            def check_phase19_static_asset_version_refreshes_on_file_change() -> None:
+                app_js_path = project_dir / "app" / "static" / "app.js"
+                original_stat = app_js_path.stat()
+
+                def asset_script_src() -> str:
+                    page.goto(f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms)
+                    page.wait_for_selector('script[src*="app.js"]', state="attached", timeout=args.timeout_ms)
+                    src = page.locator('script[src*="app.js"]').first.get_attribute("src")
+                    _expect(bool(src), "Expected the app.js asset URL to be present in the rendered page.")
+                    return str(src)
+
+                initial_src = asset_script_src()
+                bumped_mtime_ns = max(original_stat.st_mtime_ns, time.time_ns()) + 1_000_000_000
+                os.utime(app_js_path, ns=(original_stat.st_atime_ns, bumped_mtime_ns))
+                try:
+                    updated_src = asset_script_src()
+                finally:
+                    os.utime(app_js_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+                _expect(
+                    initial_src != updated_src,
+                    (
+                        "Expected the rendered frontend asset URL to change after the app.js timestamp changed; "
+                        f"initial={initial_src!r} updated={updated_src!r}"
+                    ),
+                )
+                _expect(
+                    "v=" in updated_src,
+                    f"Expected the updated asset URL to include a cache-busting version token; src={updated_src!r}",
+                )
+
+            run_check(
+                "P19-02",
+                "Phase 19",
+                "Frontend asset URLs refresh when local static files change",
+                check_phase19_static_asset_version_refreshes_on_file_change,
                 page=page,
             )
 

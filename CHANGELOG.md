@@ -8,6 +8,27 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.8.2] - 2026-03-28
+
+- Kept the qB RSS Stremio addon variant set instead of collapsing it back to a tiny local-first subset, so known episode pages such as `The Beauty` can render the local `2160p` row alongside multiple `1080p` fallbacks from qB RSS.
+- Sorted the visible qB RSS rows by quality first and seeds second while still upgrading exact locally available variants into fast direct local playback rows.
+- Revalidated the patch with focused pytest/typing/lint checks, addon HTTP/service smokes, real Stremio desktop smoke runs for episodes `tt33517752:1:1` and `tt33517752:1:4`, and a fresh `v0.8.2` desktop/backend contract so stale `0.8.1` processes are no longer reused as the active app runtime.
+
+## [0.8.1] - 2026-03-28
+
+- Re-ranked qB RSS Stremio addon streams so the strongest viable variant is emitted first, keeping `2160p`/4K ahead of weaker fallbacks in the addon payload and real Stremio desktop views.
+- Added qB-backed direct local playback for completed media files, including a local playback route and qB inventory fallback so already-downloaded content can play directly instead of behaving like an ordinary remote torrent.
+- Kept ordinary torrent fallback behavior intact when no safe completed local file is available, while deduping local-vs-search results and preserving Stremio-compatible payloads.
+- Revalidated the patch with `scripts\\check.bat`, `scripts\\closeout_qa.bat`, `scripts\\run_dev.bat desktop-build`, addon HTTP/service smokes, real desktop smokes for episodes `tt33517752:1:1` and `tt33517752:1:4`, and a direct ranged local playback probe against the generated `/stremio/local-playback/...` URL.
+
+## [0.8.0] - 2026-03-28
+
+- Released the phase-20 Stremio integration slice with local desktop auth discovery, authoritative Stremio library sync, Stremio-managed rule creation/linkage, background auto-sync, and centralized completed-movie auto-disable across providers.
+- Added a native qB RSS Stremio addon served directly from this app, including local manifest delivery, movie/series search catalogs, and IMDb-backed stream lookups that reuse the app's own metadata and Jackett search stack.
+- Fixed the final desktop-only addon acceptance bug by simplifying qB RSS stream payloads to the Stremio-compatible contract proven by the real desktop smoke harness, so qB RSS rows now render in the Stremio desktop client for known item pages such as `The Beauty`.
+- Hardened the addon against stale false negatives by avoiding long-lived caching of empty stream responses, so a transient Jackett miss no longer makes the live backend appear broken until a manual restart.
+- Added automated Stremio addon QA with `scripts\\stremio_addon_smoke.py` plus real Windows desktop automation with `scripts\\stremio_desktop_smoke.py`, and revalidated the release with `scripts\\check.bat`, `scripts\\closeout_qa.bat`, `scripts\\run_dev.bat desktop-build`, HTTP/service addon smokes, and real desktop smokes for episodes `tt33517752:1:1` and `tt33517752:1:4`.
+
 ## [0.7.6] - 2026-03-27
 
 - Fixed the rule-form filter-profile selector so choosing a profile now updates the derived minimum-quality state, token controls, and inline search results immediately instead of waiting for another field change.

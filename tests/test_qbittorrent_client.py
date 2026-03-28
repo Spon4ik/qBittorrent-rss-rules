@@ -169,6 +169,32 @@ def test_get_torrent_files_reads_files_endpoint() -> None:
     ]
 
 
+def test_get_torrent_reads_single_hash_from_info_endpoint() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/auth/login":
+            return httpx.Response(200, text="Ok.")
+        if request.url.path == "/api/v2/torrents/info":
+            assert request.url.params["hashes"] == "abc123"
+            return httpx.Response(
+                200,
+                json=[
+                    {"hash": "abc123", "name": "Shrinking.S03", "progress": 1},
+                ],
+            )
+        return httpx.Response(404)
+
+    client = QbittorrentClient(
+        "http://127.0.0.1:8080",
+        "admin",
+        "adminadmin",
+        transport=httpx.MockTransport(handler),
+    )
+
+    torrent = client.get_torrent("abc123")
+
+    assert torrent == {"hash": "abc123", "name": "Shrinking.S03", "progress": 1}
+
+
 def test_set_file_priority_posts_pipe_delimited_ids() -> None:
     captured_body: dict[str, list[str]] = {}
 

@@ -10,9 +10,11 @@ from app.services.selective_queue import (
     QueueResult,
     SelectiveQueueError,
     build_episode_file_selection_plan,
+    find_episode_file_entry,
     parse_torrent_info,
     queue_result_with_optional_file_selection,
     select_missing_episode_file_ids,
+    text_matches_episode,
 )
 
 
@@ -103,6 +105,28 @@ def test_parse_torrent_info_and_select_missing_episode_file_ids() -> None:
     assert selection.selected_file_ids == [1, 2]
     assert selection.parsed_episode_file_count == 3
     assert selection.skipped_episode_file_count == 1
+    assert parsed.tracker_urls == ["https://tracker.example/announce"]
+
+
+def test_text_matches_episode_and_find_episode_file_entry_support_ranges() -> None:
+    torrent_bytes = _build_multi_file_torrent_bytes(
+        "The.Beauty.S01E01-11.2160p.WEB-DL.mkv",
+        "The.Beauty.S01E04.1080p.WEB-DL.mkv",
+    )
+    parsed = parse_torrent_info(torrent_bytes, source_name="the-beauty-s01.torrent")
+
+    assert text_matches_episode(
+        "The Beauty - S1E1-11 - 2026 2160p",
+        season_number=1,
+        episode_number=4,
+    )
+    entry = find_episode_file_entry(
+        parsed.files,
+        season_number=1,
+        episode_number=4,
+    )
+    assert entry is not None
+    assert entry.file_id == 0
 
 
 def test_queue_result_with_optional_file_selection_applies_qb_file_priorities(monkeypatch) -> None:

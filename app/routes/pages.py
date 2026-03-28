@@ -87,6 +87,7 @@ from app.services.settings_service import (
     normalize_search_sort_criteria,
 )
 from app.services.static_assets import compute_static_asset_version
+from app.services.watch_state import format_watch_state_source_labels
 
 router = APIRouter()
 
@@ -289,6 +290,9 @@ def _queue_rule_poster_backfill(rules: Sequence[Rule]) -> None:
 def _rule_to_form_data(rule: Rule) -> dict[str, object]:
     include_tokens = list(rule.quality_include_tokens or [])
     exclude_tokens = list(rule.quality_exclude_tokens or [])
+    movie_completion_sources = list(getattr(rule, "movie_completion_sources", []) or [])
+    movie_completion_auto_disabled = bool(getattr(rule, "movie_completion_auto_disabled", False))
+    legacy_jellyfin_auto_disabled = bool(getattr(rule, "jellyfin_auto_disabled", False))
     return {
         "rule_name": rule.rule_name,
         "content_name": rule.content_name,
@@ -310,6 +314,10 @@ def _rule_to_form_data(rule: Rule) -> dict[str, object]:
         "start_episode": rule.start_episode or "",
         "jellyfin_search_existing_unseen": bool(getattr(rule, "jellyfin_search_existing_unseen", False)),
         "jellyfin_auto_disabled": bool(getattr(rule, "jellyfin_auto_disabled", False)),
+        "movie_completion_sources": movie_completion_sources,
+        "movie_completion_sources_display": format_watch_state_source_labels(movie_completion_sources),
+        "movie_completion_auto_disabled": movie_completion_auto_disabled,
+        "movie_auto_disabled": movie_completion_auto_disabled or legacy_jellyfin_auto_disabled,
         "jellyfin_existing_episode_numbers": list(
             getattr(rule, "jellyfin_existing_episode_numbers", []) or []
         ),
@@ -1283,6 +1291,10 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
         "start_episode": "",
         "jellyfin_search_existing_unseen": False,
         "jellyfin_auto_disabled": False,
+        "movie_completion_sources": [],
+        "movie_completion_sources_display": "",
+        "movie_completion_auto_disabled": False,
+        "movie_auto_disabled": False,
         "jellyfin_existing_episode_numbers": [],
         "jellyfin_existing_episode_count": 0,
         "episode_filter": "",
@@ -1587,6 +1599,7 @@ def settings_page(request: Request, session: Session = Depends(get_db_session)) 
     context.update(
         {
             "form_data": SettingsService.to_form_dict(settings),
+            "stremio_addon_manifest_url": str(request.url_for("stremio_manifest")),
             "errors": [],
             "profile_1080p_label": quality_profile_label(QualityProfile.HD_1080P),
             "profile_2160p_hdr_label": quality_profile_label(QualityProfile.UHD_2160P_HDR),

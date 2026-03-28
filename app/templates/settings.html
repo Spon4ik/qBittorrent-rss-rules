@@ -51,6 +51,11 @@
       <input type="text" name="jellyfin_user_name" value="{{ form_data.jellyfin_user_name }}" placeholder="{% if form_data.has_env_jellyfin_user_name %}Using environment value{% else %}Optional when the DB has one user{% endif %}" />
       <span class="helper-text">Leave blank for single-user Jellyfin installs. Set it explicitly when the Jellyfin DB contains multiple users.</span>
     </label>
+    <label>
+      Stremio local storage path
+      <input type="text" name="stremio_local_storage_path" value="{{ form_data.stremio_local_storage_path }}" placeholder="{% if form_data.has_env_stremio_local_storage_path %}Using environment value{% else %}Auto-discover from desktop WebView storage{% endif %}" />
+      <span class="helper-text">Optional. Leave this blank to auto-discover the local desktop session, or point it at the Stremio WebView `leveldb` folder when auto-discovery is not enough.</span>
+    </label>
     <div class="full-span stack">
       <fieldset class="stack">
         <legend>Jellyfin sync</legend>
@@ -92,6 +97,61 @@
           </p>
           {% if form_data.jellyfin_auto_sync_last_message %}
           <p class="helper-text">{{ form_data.jellyfin_auto_sync_last_message }}</p>
+          {% endif %}
+        </div>
+      </fieldset>
+    </div>
+    <div class="full-span stack">
+      <fieldset class="stack">
+        <legend>Stremio sync</legend>
+        <p class="helper-text">Automatic Stremio sync runs when the app starts and keeps checking the Stremio library while the app stays open. The sync reads your local desktop session, pulls the authoritative library from Stremio's API, creates any missing rules, and keeps Stremio-managed rules updated.</p>
+        <div class="form-grid">
+          <label class="toggle">
+            <input
+              type="checkbox"
+              name="stremio_auto_sync_enabled"
+              {% if form_data.stremio_auto_sync_enabled %}checked{% endif %}
+            />
+            <span>Sync on app open and while the app is running</span>
+          </label>
+          <label>
+            Auto-sync check interval (seconds)
+            <input
+              type="number"
+              name="stremio_auto_sync_interval_seconds"
+              min="5"
+              max="3600"
+              step="1"
+              value="{{ form_data.stremio_auto_sync_interval_seconds }}"
+            />
+            <span class="helper-text">The watcher polls Stremio's lightweight library metadata on this interval and runs a full sync only when the library changes.</span>
+          </label>
+        </div>
+        <div class="card-actions">
+          <button type="submit" formaction="/api/settings/test-stremio">Test Stremio</button>
+          <button type="submit" formaction="/api/settings/sync-stremio">Save + Sync Stremio Now</button>
+        </div>
+        <div class="stack">
+          <label>
+            Stremio add-on manifest URL
+            <input type="text" value="{{ stremio_addon_manifest_url }}" readonly />
+            <span class="helper-text">Use this exact URL in Stremio's Add-on Repository URL box. It reflects the backend port this app is currently using.</span>
+          </label>
+          {% if form_data.has_env_stremio_auth_key %}
+          <p class="helper-text">Environment auth key override is set, so Stremio sync can use that without reading local desktop storage.</p>
+          {% else %}
+          <p class="helper-text">If no path override is set, the app looks for the signed-in Stremio desktop WebView storage automatically.</p>
+          {% endif %}
+          <p class="helper-text">
+            Auto-sync status:
+            <strong>{{ form_data.stremio_auto_sync_last_status or "idle" }}</strong>
+          </p>
+          <p class="helper-text">
+            Last automatic sync:
+            <strong>{% if form_data.stremio_auto_sync_last_run_at %}{{ form_data.stremio_auto_sync_last_run_at }}{% else %}Not run yet{% endif %}</strong>
+          </p>
+          {% if form_data.stremio_auto_sync_last_message %}
+          <p class="helper-text">{{ form_data.stremio_auto_sync_last_message }}</p>
           {% endif %}
         </div>
       </fieldset>

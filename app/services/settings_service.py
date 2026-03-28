@@ -64,6 +64,10 @@ DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED = True
 DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS = 30
 MIN_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS = 5
 MAX_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS = 3600
+DEFAULT_STREMIO_AUTO_SYNC_ENABLED = True
+DEFAULT_STREMIO_AUTO_SYNC_INTERVAL_SECONDS = 30
+MIN_STREMIO_AUTO_SYNC_INTERVAL_SECONDS = 5
+MAX_STREMIO_AUTO_SYNC_INTERVAL_SECONDS = 3600
 
 
 def _is_wsl_runtime() -> bool:
@@ -197,6 +201,19 @@ def normalize_jellyfin_auto_sync_interval_seconds(value: object | None) -> int:
     )
 
 
+def normalize_stremio_auto_sync_interval_seconds(value: object | None) -> int:
+    if value is None:
+        return DEFAULT_STREMIO_AUTO_SYNC_INTERVAL_SECONDS
+    try:
+        numeric = int(str(value).strip())
+    except (TypeError, ValueError):
+        return DEFAULT_STREMIO_AUTO_SYNC_INTERVAL_SECONDS
+    return max(
+        MIN_STREMIO_AUTO_SYNC_INTERVAL_SECONDS,
+        min(MAX_STREMIO_AUTO_SYNC_INTERVAL_SECONDS, numeric),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedQbConnection:
     base_url: str | None
@@ -245,6 +262,22 @@ class ResolvedJellyfinConfig:
         return bool(self.db_path)
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedStremioConfig:
+    local_storage_path: str | None
+    auth_key: str | None
+    auto_sync_enabled: bool
+    auto_sync_interval_seconds: int
+
+    @property
+    def has_explicit_auth_key(self) -> bool:
+        return bool(self.auth_key)
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.auth_key or self.local_storage_path)
+
+
 class SettingsService:
     @staticmethod
     def get_or_create(session: Session) -> AppSettings:
@@ -259,6 +292,10 @@ class SettingsService:
                 jellyfin_auto_sync_interval_seconds=DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS,
                 jellyfin_auto_sync_last_status="idle",
                 jellyfin_auto_sync_last_message="",
+                stremio_auto_sync_enabled=DEFAULT_STREMIO_AUTO_SYNC_ENABLED,
+                stremio_auto_sync_interval_seconds=DEFAULT_STREMIO_AUTO_SYNC_INTERVAL_SECONDS,
+                stremio_auto_sync_last_status="idle",
+                stremio_auto_sync_last_message="",
                 default_sequential_download=True,
                 default_first_last_piece_prio=True,
                 search_result_view_mode=DEFAULT_SEARCH_RESULT_VIEW_MODE,
@@ -362,6 +399,58 @@ class SettingsService:
         ):
             settings.jellyfin_auto_sync_last_message = normalized_jellyfin_auto_sync_message
             changed = True
+        normalized_stremio_storage_path = (
+            str(getattr(settings, "stremio_local_storage_path", "") or "").strip() or None
+        )
+        if normalized_stremio_storage_path != getattr(settings, "stremio_local_storage_path", None):
+            settings.stremio_local_storage_path = normalized_stremio_storage_path
+            changed = True
+        normalized_stremio_auto_sync_enabled = bool(
+            getattr(settings, "stremio_auto_sync_enabled", DEFAULT_STREMIO_AUTO_SYNC_ENABLED)
+        )
+        if normalized_stremio_auto_sync_enabled != getattr(
+            settings,
+            "stremio_auto_sync_enabled",
+            None,
+        ):
+            settings.stremio_auto_sync_enabled = normalized_stremio_auto_sync_enabled
+            changed = True
+        normalized_stremio_auto_sync_interval = normalize_stremio_auto_sync_interval_seconds(
+            getattr(
+                settings,
+                "stremio_auto_sync_interval_seconds",
+                DEFAULT_STREMIO_AUTO_SYNC_INTERVAL_SECONDS,
+            )
+        )
+        if normalized_stremio_auto_sync_interval != getattr(
+            settings,
+            "stremio_auto_sync_interval_seconds",
+            None,
+        ):
+            settings.stremio_auto_sync_interval_seconds = normalized_stremio_auto_sync_interval
+            changed = True
+        normalized_stremio_auto_sync_status = str(
+            getattr(settings, "stremio_auto_sync_last_status", "idle") or "idle"
+        ).strip().lower()
+        if not normalized_stremio_auto_sync_status:
+            normalized_stremio_auto_sync_status = "idle"
+        if normalized_stremio_auto_sync_status != getattr(
+            settings,
+            "stremio_auto_sync_last_status",
+            None,
+        ):
+            settings.stremio_auto_sync_last_status = normalized_stremio_auto_sync_status
+            changed = True
+        normalized_stremio_auto_sync_message = str(
+            getattr(settings, "stremio_auto_sync_last_message", "") or ""
+        )
+        if normalized_stremio_auto_sync_message != getattr(
+            settings,
+            "stremio_auto_sync_last_message",
+            None,
+        ):
+            settings.stremio_auto_sync_last_message = normalized_stremio_auto_sync_message
+            changed = True
         default_sequential_value = getattr(settings, "default_sequential_download", True)
         normalized_default_sequential = (
             True if default_sequential_value is None else bool(default_sequential_value)
@@ -454,6 +543,9 @@ class SettingsService:
         settings.jellyfin_user_name = payload.jellyfin_user_name or None
         settings.jellyfin_auto_sync_enabled = payload.jellyfin_auto_sync_enabled
         settings.jellyfin_auto_sync_interval_seconds = payload.jellyfin_auto_sync_interval_seconds
+        settings.stremio_local_storage_path = payload.stremio_local_storage_path or None
+        settings.stremio_auto_sync_enabled = payload.stremio_auto_sync_enabled
+        settings.stremio_auto_sync_interval_seconds = payload.stremio_auto_sync_interval_seconds
         settings.metadata_provider = payload.metadata_provider
         settings.series_category_template = payload.series_category_template
         settings.movie_category_template = payload.movie_category_template
@@ -534,6 +626,39 @@ class SettingsService:
         )
 
     @staticmethod
+    def resolve_stremio(settings: AppSettings | None) -> ResolvedStremioConfig:
+        env = get_environment_settings()
+        local_storage_path = env.stremio_local_storage_path or (
+            getattr(settings, "stremio_local_storage_path", None) if settings is not None else None
+        )
+        return ResolvedStremioConfig(
+            local_storage_path=(
+                str(local_storage_path).strip() or None
+                if local_storage_path is not None
+                else None
+            ),
+            auth_key=(
+                str(env.stremio_auth_key).strip() or None
+                if env.stremio_auth_key is not None
+                else None
+            ),
+            auto_sync_enabled=bool(
+                getattr(settings, "stremio_auto_sync_enabled", DEFAULT_STREMIO_AUTO_SYNC_ENABLED)
+            )
+            if settings is not None
+            else DEFAULT_STREMIO_AUTO_SYNC_ENABLED,
+            auto_sync_interval_seconds=normalize_stremio_auto_sync_interval_seconds(
+                getattr(
+                    settings,
+                    "stremio_auto_sync_interval_seconds",
+                    DEFAULT_STREMIO_AUTO_SYNC_INTERVAL_SECONDS,
+                )
+                if settings is not None
+                else DEFAULT_STREMIO_AUTO_SYNC_INTERVAL_SECONDS
+            ),
+        )
+
+    @staticmethod
     def to_form_dict(settings: AppSettings) -> dict[str, object]:
         profile_rules = resolve_quality_profile_rules(settings)
         saved_profiles = normalize_saved_quality_profiles(settings.saved_quality_profiles)
@@ -569,6 +694,30 @@ class SettingsService:
                 getattr(settings, "jellyfin_auto_sync_last_message", "")
                 or ""
             ),
+            "stremio_local_storage_path": getattr(settings, "stremio_local_storage_path", None) or "",
+            "stremio_auto_sync_enabled": bool(
+                getattr(settings, "stremio_auto_sync_enabled", DEFAULT_STREMIO_AUTO_SYNC_ENABLED)
+            ),
+            "stremio_auto_sync_interval_seconds": normalize_stremio_auto_sync_interval_seconds(
+                getattr(
+                    settings,
+                    "stremio_auto_sync_interval_seconds",
+                    DEFAULT_STREMIO_AUTO_SYNC_INTERVAL_SECONDS,
+                )
+            ),
+            "stremio_auto_sync_last_run_at": getattr(
+                settings,
+                "stremio_auto_sync_last_run_at",
+                None,
+            ),
+            "stremio_auto_sync_last_status": str(
+                getattr(settings, "stremio_auto_sync_last_status", "idle")
+                or "idle"
+            ),
+            "stremio_auto_sync_last_message": str(
+                getattr(settings, "stremio_auto_sync_last_message", "")
+                or ""
+            ),
             "metadata_provider": settings.metadata_provider.value,
             "series_category_template": settings.series_category_template,
             "movie_category_template": settings.movie_category_template,
@@ -592,6 +741,10 @@ class SettingsService:
             "has_env_omdb_key": bool(get_environment_settings().omdb_api_key),
             "has_env_jellyfin_db_path": bool(get_environment_settings().jellyfin_db_path),
             "has_env_jellyfin_user_name": bool(get_environment_settings().jellyfin_user_name),
+            "has_env_stremio_local_storage_path": bool(
+                get_environment_settings().stremio_local_storage_path
+            ),
+            "has_env_stremio_auth_key": bool(get_environment_settings().stremio_auth_key),
             "search_result_view_mode": normalize_search_result_view_mode(settings.search_result_view_mode),
             "search_sort_criteria": normalize_search_sort_criteria(settings.search_sort_criteria),
             "rules_page_view_mode": normalize_rules_page_view_mode(

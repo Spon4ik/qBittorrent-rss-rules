@@ -186,6 +186,28 @@ class QbittorrentClient:
             raise QbittorrentClientError("Unexpected qBittorrent torrent files payload.")
         return [item for item in payload if isinstance(item, dict)]
 
+    def get_torrent(self, info_hash: str) -> dict[str, object] | None:
+        cleaned_hash = str(info_hash or "").strip()
+        if not cleaned_hash:
+            return None
+        for item in self.get_torrents(hashes=cleaned_hash):
+            return item
+        return None
+
+    def get_torrents(self, *, hashes: str | None = None) -> list[dict[str, object]]:
+        params: dict[str, str] = {}
+        cleaned_hashes = str(hashes or "").strip()
+        if cleaned_hashes:
+            params["hashes"] = cleaned_hashes
+        payload = self._request(
+            "GET",
+            "/api/v2/torrents/info",
+            params=params or None,
+        )
+        if not isinstance(payload, list):
+            raise QbittorrentClientError("Unexpected qBittorrent torrents info payload.")
+        return [item for item in payload if isinstance(item, dict)]
+
     def set_file_priority(self, info_hash: str, file_ids: list[int], priority: int) -> None:
         if not file_ids:
             return

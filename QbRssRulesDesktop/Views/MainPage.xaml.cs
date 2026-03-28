@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.UI.Dispatching;
 using Microsoft.Web.WebView2.Core;
 
@@ -15,13 +16,22 @@ namespace QbRssRulesDesktop.Views
         {
             Timeout = TimeSpan.FromSeconds(2),
         };
+        private static readonly string[] RequiredDesktopBackendCapabilities =
+        {
+            "hover_debug_telemetry",
+            "search_hidden_result_diagnostics",
+            "jellyfin_auto_sync",
+            "stremio_library_sync",
+            "stremio_native_addon",
+        };
 
         private const string DefaultBackendUrl = "http://127.0.0.1:8000";
         private const string RequiredDesktopBackendContract = "2026-03-22";
-        private const string RequiredDesktopBackendAppVersion = "0.7.6";
+        private const string RequiredDesktopBackendAppVersion = "0.8.2";
         private const string ManagedBackendStateFileName = "desktop-managed-backend.json";
         private const int ManagedBackendPortSearchLimit = 32;
         private const int ReconnectAttemptLimit = 30;
+        private static readonly Regex MultiprocessingParentPidRegex = new(@"spawn_main\(parent_pid=(\d+),", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private Uri backendUri;
         private readonly DispatcherQueue dispatcherQueue;
         private readonly DispatcherQueueTimer reconnectTimer;
@@ -44,6 +54,7 @@ namespace QbRssRulesDesktop.Views
 
         private sealed record ManagedBackendState(int OwnerPid, int BackendPid, string BackendUrl, string RepositoryRoot, string StartedAtUtc);
         private sealed record BackendConfiguration(Uri Uri, bool UsesConfiguredUrl);
+        private sealed record PythonProcessInfo(int ProcessId, int ParentProcessId, string CommandLine);
 
         public MainPage()
         {
@@ -253,6 +264,14 @@ namespace QbRssRulesDesktop.Views
                     lastBackendProbeFailure = string.IsNullOrWhiteSpace(appVersion)
                         ? $"An incompatible backend is already listening at {backendUri}; expected app version {RequiredDesktopBackendAppVersion}."
                         : $"An incompatible backend is already listening at {backendUri}; expected app version {RequiredDesktopBackendAppVersion}, got {appVersion}.";
+                    return false;
+                }
+
+                var missingCapabilities = MissingRequiredCapabilities(root);
+                if (missingCapabilities.Length > 0)
+                {
+                    lastBackendProbeFailure =
+                        $"An incompatible backend is already listening at {backendUri}; missing required desktop capabilities: {string.Join(", ", missingCapabilities)}.";
                     return false;
                 }
 
@@ -622,6 +641,26 @@ namespace QbRssRulesDesktop.Views
             });
         }
 
+        private static string[] MissingRequiredCapabilities(JsonElement healthPayload)
+        {
+            if (!healthPayload.TryGetProperty("capabilities", out var capabilitiesElement)
+                || capabilitiesElement.ValueKind != JsonValueKind.Array)
+            {
+                return RequiredDesktopBackendCapabilities;
+            }
+
+            var availableCapabilities = capabilitiesElement
+                .EnumerateArray()
+                .Select(value => value.GetString())
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Cast<string>()
+                .ToHashSet(StringComparer.Ordinal);
+
+            return RequiredDesktopBackendCapabilities
+                .Where(capability => !availableCapabilities.Contains(capability))
+                .ToArray();
+        }
+
         private bool StopManagedBackendProcess()
         {
             if (managedBackendProcess is null)
@@ -686,6 +725,16 @@ namespace QbRssRulesDesktop.Views
             return true;
         }
 
+        private bool HasControllableActiveBackend()
+        {
+            return CollectControllableLocalBackendPids(includeCurrentPort: true).Count > 0;
+        }
+
+        private bool StopActiveBackendProcess()
+        {
+            return StopControllableLocalBackends();
+        }
+
         private void OnStartBackendClicked(object sender, RoutedEventArgs e)
         {
             _ = TryStartBackendProcess(autoTriggered: false);
@@ -695,24 +744,24 @@ namespace QbRssRulesDesktop.Views
         {
             reconnectTimer.Stop();
             localChangeDebounceTimer.Stop();
-            if (managedBackendProcess is null || managedBackendProcess.HasExited)
+            if (!HasControllableActiveBackend())
             {
-                ConnectionStatusText.Text = "Managed backend is not running";
+                ConnectionStatusText.Text = "Backend is not running";
                 if (OfflinePanel.Visibility == Visibility.Visible)
                 {
-                    OfflineMessageText.Text = "No desktop-managed backend is currently running for this session.";
+                    OfflineMessageText.Text = "No controllable local backend is currently running for this desktop session.";
                 }
                 return;
             }
 
-            if (StopManagedBackendProcess())
+            if (StopActiveBackendProcess())
             {
-                ShowOfflineState("Managed backend shut down. Use Start Backend to launch it again.");
+                ShowOfflineState("Backend shut down. Use Start Backend to launch it again.");
                 return;
             }
 
             ShowOfflineState(
-                "Managed backend shutdown could not be confirmed yet. The shell kept the ownership marker so a later retry can finish stopping it."
+                "Backend shutdown could not be confirmed yet. If a stale loopback backend is still running, retry once more or restart the desktop app so it can reconnect to the current engine."
             );
         }
 
@@ -746,6 +795,11 @@ namespace QbRssRulesDesktop.Views
             }
 
             if (IsLoopbackPortAvailable(backendUri.Port))
+            {
+                return;
+            }
+
+            if (TryStopKnownLocalBackendOnPort(backendUri.Port) && IsLoopbackPortAvailable(backendUri.Port))
             {
                 return;
             }
@@ -815,6 +869,275 @@ namespace QbRssRulesDesktop.Views
             return string.IsNullOrWhiteSpace(lastBackendProbeFailure) ? fallback : lastBackendProbeFailure;
         }
 
+        private int? ResolveCurrentBackendPid()
+        {
+            if (usesConfiguredBackendUrl || !backendUri.IsLoopback)
+            {
+                return null;
+            }
+
+            return ResolveListeningProcessId(backendUri.Port);
+        }
+
+        private int[] ControllableLocalBackendPorts(bool includeCurrentPort)
+        {
+            if (usesConfiguredBackendUrl || !backendUri.IsLoopback)
+            {
+                return [];
+            }
+
+            var defaultPort = new Uri(DefaultBackendUrl).Port;
+            var startPort = Math.Min(defaultPort, backendUri.Port);
+            var endExclusive = Math.Max(defaultPort + ManagedBackendPortSearchLimit, backendUri.Port + 1);
+            var ports = new HashSet<int>();
+            for (var port = startPort; port < endExclusive; port++)
+            {
+                ports.Add(port);
+            }
+
+            if (includeCurrentPort)
+            {
+                ports.Add(backendUri.Port);
+            }
+
+            return ports
+                .Where(port => includeCurrentPort || port != backendUri.Port)
+                .OrderBy(port => port)
+                .ToArray();
+        }
+
+        private HashSet<int> CollectControllableLocalBackendPids(bool includeCurrentPort)
+        {
+            var backendPids = new HashSet<int>();
+            if (managedBackendProcess is { HasExited: false })
+            {
+                backendPids.Add(managedBackendProcess.Id);
+            }
+
+            var candidatePorts = ControllableLocalBackendPorts(includeCurrentPort);
+            if (candidatePorts.Length == 0)
+            {
+                return backendPids;
+            }
+
+            var listeningProcessIds = ResolveListeningProcessIds(candidatePorts);
+            foreach (var port in candidatePorts)
+            {
+                if (!listeningProcessIds.TryGetValue(port, out var pid) || pid <= 0)
+                {
+                    continue;
+                }
+
+                if (!IsQbRssDesktopBackend(BuildLoopbackBackendUri(port)))
+                {
+                    continue;
+                }
+
+                backendPids.Add(pid);
+            }
+
+            foreach (var pid in CollectAssociatedPythonWorkerPids(backendPids))
+            {
+                backendPids.Add(pid);
+            }
+
+            return backendPids;
+        }
+
+        private bool StopControllableLocalBackends()
+        {
+            var backendPids = CollectControllableLocalBackendPids(includeCurrentPort: true);
+            if (backendPids.Count == 0)
+            {
+                return false;
+            }
+            var stopped = KillProcessSet(backendPids);
+
+            try
+            {
+                if (managedBackendProcess is not null)
+                {
+                    managedBackendProcess.Dispose();
+                    managedBackendProcess = null;
+                }
+            }
+            catch
+            {
+                managedBackendProcess = null;
+            }
+
+            DeleteManagedBackendState(force: true);
+            return stopped;
+        }
+
+        private bool TryStopKnownLocalBackendOnPort(int port)
+        {
+            if (usesConfiguredBackendUrl || port <= 0)
+            {
+                return false;
+            }
+
+            var listeningProcessIds = ResolveListeningProcessIds([port]);
+            if (!listeningProcessIds.TryGetValue(port, out var pid) || pid <= 0)
+            {
+                return false;
+            }
+
+            if (!IsQbRssDesktopBackend(BuildLoopbackBackendUri(port)))
+            {
+                return false;
+            }
+
+            var candidatePids = new HashSet<int> { pid };
+            foreach (var workerPid in CollectAssociatedPythonWorkerPids(candidatePids))
+            {
+                candidatePids.Add(workerPid);
+            }
+
+            return KillProcessSet(candidatePids);
+        }
+
+        private static HashSet<int> CollectAssociatedPythonWorkerPids(IEnumerable<int> rootPids)
+        {
+            var knownRootPids = rootPids.Where(pid => pid > 0).ToHashSet();
+            if (knownRootPids.Count == 0)
+            {
+                return [];
+            }
+
+            var associatedPids = new HashSet<int>();
+            var pythonProcesses = QueryPythonProcesses();
+            var expanded = true;
+            while (expanded)
+            {
+                expanded = false;
+                foreach (var process in pythonProcesses)
+                {
+                    if (process.ProcessId <= 0 || knownRootPids.Contains(process.ProcessId) || associatedPids.Contains(process.ProcessId))
+                    {
+                        continue;
+                    }
+
+                    var referencedParentPid = ReferencedMultiprocessingParentPid(process.CommandLine);
+                    if (!knownRootPids.Contains(process.ParentProcessId)
+                        && (referencedParentPid is null || !knownRootPids.Contains(referencedParentPid.Value))
+                        && !associatedPids.Contains(process.ParentProcessId)
+                        && (referencedParentPid is null || !associatedPids.Contains(referencedParentPid.Value)))
+                    {
+                        continue;
+                    }
+
+                    associatedPids.Add(process.ProcessId);
+                    expanded = true;
+                }
+            }
+
+            return associatedPids;
+        }
+
+        private static int? ReferencedMultiprocessingParentPid(string? commandLine)
+        {
+            if (string.IsNullOrWhiteSpace(commandLine))
+            {
+                return null;
+            }
+
+            var match = MultiprocessingParentPidRegex.Match(commandLine);
+            if (!match.Success)
+            {
+                return null;
+            }
+
+            return int.TryParse(match.Groups[1].Value, out var pid) && pid > 0 ? pid : null;
+        }
+
+        private static IReadOnlyList<PythonProcessInfo> QueryPythonProcesses()
+        {
+            try
+            {
+                using var process = Process.Start(
+                    new ProcessStartInfo
+                    {
+                        FileName = "powershell",
+                        Arguments = "-NoProfile -Command \"Get-CimInstance Win32_Process -Filter \\\"name = 'python.exe'\\\" | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                    });
+                if (process is null)
+                {
+                    return [];
+                }
+
+                var output = process.StandardOutput.ReadToEnd().Trim();
+                process.WaitForExit(5000);
+                if (string.IsNullOrWhiteSpace(output))
+                {
+                    return [];
+                }
+
+                using var payload = JsonDocument.Parse(output);
+                if (payload.RootElement.ValueKind == JsonValueKind.Array)
+                {
+                    return payload.RootElement
+                        .EnumerateArray()
+                        .Select(ParsePythonProcessInfo)
+                        .Where(info => info is not null)
+                        .Cast<PythonProcessInfo>()
+                        .ToArray();
+                }
+
+                var single = ParsePythonProcessInfo(payload.RootElement);
+                return single is null ? [] : [single];
+            }
+            catch
+            {
+                return [];
+            }
+        }
+
+        private static PythonProcessInfo? ParsePythonProcessInfo(JsonElement element)
+        {
+            if (!element.TryGetProperty("ProcessId", out var processIdElement)
+                || !element.TryGetProperty("ParentProcessId", out var parentProcessIdElement))
+            {
+                return null;
+            }
+
+            var processId = processIdElement.GetInt32();
+            var parentProcessId = parentProcessIdElement.GetInt32();
+            var commandLine = element.TryGetProperty("CommandLine", out var commandLineElement)
+                ? commandLineElement.GetString() ?? ""
+                : "";
+            if (processId <= 0)
+            {
+                return null;
+            }
+
+            return new PythonProcessInfo(processId, parentProcessId, commandLine);
+        }
+
+        private static bool KillProcessSet(IEnumerable<int> pids)
+        {
+            var processIds = pids.Where(pid => pid > 0).Distinct().ToArray();
+            if (processIds.Length == 0)
+            {
+                return false;
+            }
+
+            var allStopped = true;
+            foreach (var pid in processIds)
+            {
+                if (!TryKillProcessTree(pid) && IsProcessAlive(pid))
+                {
+                    allStopped = false;
+                }
+            }
+
+            return allStopped || processIds.All(pid => !IsProcessAlive(pid));
+        }
+
         private void EnsureCloseHandlers()
         {
             if (hasAttachedCloseHandlers)
@@ -865,7 +1188,7 @@ namespace QbRssRulesDesktop.Views
             localChangeDebounceTimer.Stop();
             localAppPollTimer.Stop();
             StopLocalAppWatchers();
-            StopManagedBackendProcess();
+            StopControllableLocalBackends();
             if (hasAttachedCloseHandlers)
             {
                 if (App.MainWindow is not null)
@@ -1002,6 +1325,124 @@ namespace QbRssRulesDesktop.Views
             {
                 using var process = Process.GetProcessById(pid);
                 return !process.HasExited;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static int? ResolveListeningProcessId(int port)
+        {
+            var listeningProcessIds = ResolveListeningProcessIds([port]);
+            return listeningProcessIds.TryGetValue(port, out var pid) ? pid : null;
+        }
+
+        private static Dictionary<int, int> ResolveListeningProcessIds(IEnumerable<int> ports)
+        {
+            var requestedPorts = ports
+                .Where(port => port > 0)
+                .Distinct()
+                .ToHashSet();
+            var listeningProcessIds = new Dictionary<int, int>();
+            if (requestedPorts.Count == 0)
+            {
+                return listeningProcessIds;
+            }
+
+            try
+            {
+                using var netstatProcess = Process.Start(
+                    new ProcessStartInfo
+                    {
+                        FileName = "netstat",
+                        Arguments = "-ano -p tcp",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                    });
+                if (netstatProcess is null)
+                {
+                    return listeningProcessIds;
+                }
+
+                var output = netstatProcess.StandardOutput.ReadToEnd();
+                netstatProcess.WaitForExit(5000);
+                foreach (var rawLine in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var line = rawLine.Trim();
+                    if (!line.StartsWith("TCP", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    var columns = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (columns.Length < 5 || !string.Equals(columns[3], "LISTENING", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (!TryParseEndpointPort(columns[1], out var endpointPort) || !requestedPorts.Contains(endpointPort))
+                    {
+                        continue;
+                    }
+
+                    if (int.TryParse(columns[4], out var pid) && pid > 0)
+                    {
+                        listeningProcessIds[endpointPort] = pid;
+                    }
+                }
+
+                return listeningProcessIds;
+            }
+            catch
+            {
+                return listeningProcessIds;
+            }
+        }
+
+        private static bool TryParseEndpointPort(string endpoint, out int port)
+        {
+            port = 0;
+            var separatorIndex = endpoint.LastIndexOf(':');
+            if (separatorIndex < 0 || separatorIndex >= endpoint.Length - 1)
+            {
+                return false;
+            }
+
+            return int.TryParse(endpoint[(separatorIndex + 1)..], out port) && port > 0;
+        }
+
+        private static bool EndpointMatchesPort(string endpoint, int port)
+        {
+            return TryParseEndpointPort(endpoint, out var endpointPort) && endpointPort == port;
+        }
+
+        private static Uri BuildLoopbackBackendUri(int port)
+        {
+            return new Uri($"http://127.0.0.1:{port}/");
+        }
+
+        private static bool IsQbRssDesktopBackend(Uri backendBaseUri)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(backendBaseUri, "/health"));
+                using var response = BackendProbeClient.SendAsync(request).GetAwaiter().GetResult();
+                if (!response.IsSuccessStatusCode)
+                {
+                    return false;
+                }
+
+                using var payload = JsonDocument.Parse(response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+                var root = payload.RootElement;
+                var status = root.TryGetProperty("status", out var statusElement) ? statusElement.GetString() : "";
+                var contract = root.TryGetProperty("desktop_backend_contract", out var contractElement)
+                    ? contractElement.GetString()
+                    : "";
+                return string.Equals(status, "ok", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(contract);
             }
             catch
             {

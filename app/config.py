@@ -32,6 +32,9 @@ class EnvironmentSettings:
     jellyfin_db_path: str | None
     jellyfin_user_name: str | None
     enable_jellyfin_auto_sync_scheduler: bool
+    stremio_local_storage_path: str | None
+    stremio_auth_key: str | None
+    enable_stremio_auto_sync_scheduler: bool
     omdb_api_key: str | None
     save_secrets_to_db: bool
     enable_rule_fetch_scheduler: bool
@@ -56,6 +59,12 @@ def get_environment_settings() -> EnvironmentSettings:
         jellyfin_user_name=os.getenv("QB_RULES_JELLYFIN_USER_NAME") or None,
         enable_jellyfin_auto_sync_scheduler=_get_bool(
             os.getenv("QB_RULES_ENABLE_JELLYFIN_AUTO_SYNC_SCHEDULER"),
+            True,
+        ),
+        stremio_local_storage_path=os.getenv("QB_RULES_STREMIO_LOCAL_STORAGE_PATH") or None,
+        stremio_auth_key=os.getenv("QB_RULES_STREMIO_AUTH_KEY") or None,
+        enable_stremio_auto_sync_scheduler=_get_bool(
+            os.getenv("QB_RULES_ENABLE_STREMIO_AUTO_SYNC_SCHEDULER"),
             True,
         ),
         omdb_api_key=os.getenv("QB_RULES_OMDB_API_KEY") or None,

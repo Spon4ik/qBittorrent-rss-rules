@@ -1,17 +1,25 @@
 # Roadmap
 
-## Current release target: v0.7.7 patch hardening
+## Current release target: v0.9.0 Global cross-addon stream ordering
 
 ### In progress
 
+- Phase 23 is now the next planned `v0.9.0` minor slice, focused on merging external addon/provider streams into one globally ranked list instead of relying on Stremio's per-addon grouping.
+- Phase 22 is now closed and release-validated in `v0.8.2` as the Stremio patch slice covering full qB RSS variant retention, global quality-first ordering, and exact-variant local playback marking after the `v0.8.1` release still suppressed rows too aggressively.
+- Phase 21 is now closed and release-validated in `v0.8.1` as the Stremio playback follow-up slice covering qB RSS stream ordering and qB-backed local playback acceleration so predownloaded torrents materially improve Stremio playback.
+- Phase 20 is now closed and release-validated in `v0.8.0` as the Stremio library sync and native addon parity slice, including real desktop proof that qB RSS rows render in Stremio for known items such as `The Beauty`.
 - Phase 19 is now closed and release-validated as the filter-profile live-apply, request-time asset versioning, and managed-engine lifecycle hardening patch slice.
 - Phase 18 is now closed and release-validated as the rule-form filter-profile live-update patch slice.
 - Phase 17 remains closed and release-validated as the shared watch-state arbitration foundation slice, with Stremio sync intentionally deferred to a later phase.
-- Next planning focus is to open the Stremio source-adapter phase, then return to richer catalog providers, broader watch-history persistence, and large-file/module split work.
-- Keep deterministic browser QA, static checks, full pytest, and WinUI desktop builds as release gates for the next feature phase.
+- Decide whether the next Stremio-focused phase should prioritize richer catalog providers, watched-progress arbitration, or native addon metadata/configuration expansion.
+- Keep deterministic browser QA, static checks, full pytest, WinUI desktop builds, and the Stremio addon smoke pair as release gates for the next feature phase.
 
 ### Current phase track
 
+- Phase 23: global cross-addon stream ordering (planned next minor; `docs/plans/phase-23-global-cross-addon-stream-ordering.md`)
+- Phase 22: Stremio variant parity and local playback marking (implemented and release-validated in `v0.8.2`; `docs/plans/phase-22-stremio-variant-parity-and-local-marking.md`)
+- Phase 21: Stremio stream ordering and qB-backed local playback acceleration (implemented and release-validated in `v0.8.1`; `docs/plans/phase-21-stremio-stream-ordering-and-local-playback.md`)
+- Phase 20: Stremio library sync and native addon parity (implemented and release-validated in `v0.8.0`; `docs/plans/phase-20-stremio-library-rule-sync.md`)
 - Phase 19: filter-profile live-apply, request-time asset versioning, desktop freshness polling, and managed engine lifecycle hardening (implemented and release-validated in `v0.7.6`; `docs/plans/phase-19-filter-profile-live-apply-and-managed-engine-lifecycle-hardening.md`)
 - Phase 18: rule-form filter-profile live recompute and patch release (implemented and release-validated in `v0.7.5`; `docs/plans/phase-18-rule-form-filter-profile-live-recompute-and-patch-release.md`)
 - Phase 17: shared watch-state arbitration foundation (implemented and release-validated in `v0.7.4`; `docs/plans/phase-17-shared-watch-state-arbitration-foundation.md`)
@@ -28,6 +36,18 @@
 - Phase 6: Jackett-backed active search workspace (implemented and release-validated in v0.2.0; follow-up polish completed, deeper persistence still deferred)
 - Phase 4: feed selection UX improvements (implemented, automated closeout validated)
 - Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, automated closeout validated)
+
+Phase 23 detail pointer:
+- Dated checklist, architectural options, and delivery risks for the planned `v0.9.0` cross-addon ordering slice live in `docs/plans/phase-23-global-cross-addon-stream-ordering.md`.
+
+Phase 22 detail pointer:
+- Dated checklist, variant-retention decisions, and validation evidence for the completed `v0.8.2` Stremio patch slice live in `docs/plans/phase-22-stremio-variant-parity-and-local-marking.md`.
+
+Phase 21 detail pointer:
+- Dated checklist, ranking/local-playback decisions, and validation evidence for the current Stremio follow-up slice live in `docs/plans/phase-21-stremio-stream-ordering-and-local-playback.md`.
+
+Phase 20 detail pointer:
+- Dated checklist, discovery decisions, Stremio-managed rule contract, native addon decisions, and validation evidence are tracked in `docs/plans/phase-20-stremio-library-rule-sync.md`.
 
 Phase 15 detail pointer:
 - Dated checklist, repo-local `.venv` portability decisions, and manual backend health validation are tracked in `docs/plans/phase-15-repo-local-backend-startup-portability.md`.
@@ -70,10 +90,34 @@ Phase 6 detail pointer:
 
 ### Post-release focus
 
-- Decide whether the next Jellyfin/catalog step should expand beyond OMDb-backed season boundaries into richer provider support or more explicit release-calendar reasoning.
+- Decide whether the next catalog/addon step should expand beyond OMDb-backed title search into richer provider support or more explicit release-calendar reasoning.
+- Decide whether the next Stremio follow-up should tackle watched-progress arbitration, richer addon metadata, or provider-side configuration/options.
 - Decide whether deleted-history persistence should stay rule-local or graduate to a broader watch-history/scrobble-compatible cache.
 - Reduce context and maintenance cost by splitting the largest rule/search/Jellyfin files along real domain boundaries.
 - Keep deterministic browser QA and route/service regressions as release gates for every workflow change.
+
+## Release-validated: v0.8.1 (2026-03-28)
+
+## Release-validated: v0.8.2 (2026-03-28)
+
+- Shipped the phase-22 Stremio variant-parity follow-up so qB RSS now keeps the broader viable variant set instead of collapsing back to a tiny local-first subset.
+- qB RSS stream rows now sort by quality first and seeds second while exact locally available variants are upgraded in-place to fast local-playback rows instead of hiding the broader fallback set.
+- Revalidated the patch with `scripts\check.bat` (`270 passed`, `1 skipped`), `scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260328T163220Z/`), `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`), addon service/http smokes, and real desktop smoke artifacts under `logs/qa/stremio-desktop-smoke-20260328T162948Z/` and `logs/qa/stremio-desktop-smoke-20260328T163111Z/`.
+
+## Release-validated: v0.8.1 (2026-03-28)
+
+- Shipped the phase-21 Stremio playback follow-up so qB RSS addon rows now rank best-playable-first, keeping the strongest available qB variant ahead of weaker fallbacks in the addon payload and the real desktop client.
+- Added qB-backed direct local playback for completed media files via `/stremio/local-playback/{token}`, including qB torrent/file inspection helpers, deterministic local-file resolution, and inventory fallback so already-downloaded content can play directly from disk instead of buffering like an ordinary remote torrent.
+- Revalidated the patch with `scripts\check.bat` (`269 passed`, `1 skipped`), `scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260328T154314Z/`), `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`), `.\.venv\Scripts\python.exe scripts\stremio_addon_smoke.py --mode service --min-streams 2 --require-4k --json`, `.\.venv\Scripts\python.exe scripts\stremio_addon_smoke.py --mode http --min-streams 2 --require-4k --base-url http://127.0.0.1:8013 --json`, and real desktop smoke artifacts under `logs/qa/stremio-desktop-smoke-20260328T154722Z/` and `logs/qa/stremio-desktop-smoke-20260328T154802Z/`.
+- Verified the local playback transport directly with a ranged probe against the generated `/stremio/local-playback/...` URL, receiving `206 Partial Content`, `1,048,576` bytes, and about `9.7 ms` response time from the local backend.
+
+## Release-validated: v0.8.0 (2026-03-28)
+
+- Shipped the phase-20 Stremio slice with local desktop auth discovery, authoritative library sync, Stremio-managed rule creation/linkage, background auto-sync, and centralized completed-movie auto-disable shared across providers.
+- Added a native qB RSS Stremio addon served from the local backend, including manifest delivery, movie/series search catalogs, and IMDb-backed stream lookups powered by the app's own metadata and Jackett search stack.
+- Fixed the final desktop-only addon acceptance issue by simplifying qB RSS stream payloads to the Stremio-compatible contract proven by the real desktop smoke harness, so qB RSS rows now render in the Stremio desktop client for episodes such as `tt33517752:1:1` and `tt33517752:1:4`.
+- Hardened the live addon path by avoiding long-lived caching of empty stream responses, so transient Jackett misses no longer leave the running backend looking broken until a manual restart.
+- Revalidated the slice with `scripts\check.bat` (`262 passed`, `1 skipped`), `scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260328T140235Z/`), `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`), addon HTTP/service smokes, and real Stremio desktop smoke artifacts under `logs/qa/stremio-desktop-smoke-20260328T140625Z/` and `logs/qa/stremio-desktop-smoke-20260328T140706Z/`.
 
 ## Recently released: v0.7.4 (2026-03-27)
 

@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from app.services.watch_state import (
     derive_watch_state_floor,
+    format_watch_state_source_labels,
     latest_watch_state_episode_tuple,
     merge_watch_state_episode_key_lists,
     normalize_watch_state_episode_keys,
+    normalize_watch_state_source_labels,
+    select_movie_watch_state,
     select_watch_state_floor,
     sort_watch_state_episode_keys,
     watch_state_episode_key_from_tuple,
@@ -71,3 +74,48 @@ def test_derive_and_select_watch_state_floor_preserves_source_label_and_current_
     assert selection.effective_floor == (1, 5)
     assert selection.floor_changed is False
     assert selection.floor_detail == "Current rule floor is already ahead of Jellyfin-derived progress."
+
+
+def test_normalize_watch_state_source_labels_canonicalizes_and_sorts() -> None:
+    assert normalize_watch_state_source_labels(
+        [" Stremio ", "jellyfin", "Jellyfin", "plex-watch", ""]
+    ) == ["jellyfin", "plex_watch", "stremio"]
+    assert format_watch_state_source_labels(["plex_watch", "stremio"]) == "Plex Watch, Stremio"
+
+
+def test_select_movie_watch_state_disables_on_completed_source() -> None:
+    selection = select_movie_watch_state(
+        source_label="Stremio",
+        source_present=True,
+        source_completed=True,
+        current_completed_sources=[],
+        current_enabled=True,
+        current_auto_disabled=False,
+        keep_searching=False,
+    )
+
+    assert selection.completed_sources == ["stremio"]
+    assert selection.changed is True
+    assert selection.effective_enabled is False
+    assert selection.effective_auto_disabled is True
+    assert selection.detail == "Disabled because completed watch state is reported by Stremio."
+
+
+def test_select_movie_watch_state_reenables_when_completion_clears() -> None:
+    selection = select_movie_watch_state(
+        source_label="Stremio",
+        source_present=False,
+        source_completed=False,
+        current_completed_sources=["stremio"],
+        current_enabled=False,
+        current_auto_disabled=True,
+        keep_searching=False,
+    )
+
+    assert selection.completed_sources == []
+    assert selection.changed is True
+    assert selection.effective_enabled is True
+    assert selection.effective_auto_disabled is False
+    assert selection.detail == (
+        "Re-enabled because no connected source currently reports this movie as completed."
+    )

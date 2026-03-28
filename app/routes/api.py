@@ -82,9 +82,12 @@ from app.services.selective_queue import (
 )
 from app.services.settings_service import SettingsService
 from app.services.static_assets import compute_static_asset_version
+from app.services.stremio import StremioError, StremioService
+from app.services.stremio_sync_ops import StremioSyncBusyError, execute_stremio_sync
 from app.services.sync import SyncService, SyncServiceError
 
 router = APIRouter(prefix="/api")
+compat_router = APIRouter()
 
 
 def _template_context(_: Request) -> dict[str, object]:
@@ -156,6 +159,9 @@ def _raw_settings_form_data(form: Any) -> dict[str, Any]:
         "jellyfin_user_name": form.get("jellyfin_user_name") or None,
         "jellyfin_auto_sync_enabled": _bool_from_form(form, "jellyfin_auto_sync_enabled"),
         "jellyfin_auto_sync_interval_seconds": form.get("jellyfin_auto_sync_interval_seconds", 30),
+        "stremio_local_storage_path": form.get("stremio_local_storage_path") or None,
+        "stremio_auto_sync_enabled": _bool_from_form(form, "stremio_auto_sync_enabled"),
+        "stremio_auto_sync_interval_seconds": form.get("stremio_auto_sync_interval_seconds", 30),
         "metadata_provider": form.get("metadata_provider", "omdb"),
         "omdb_api_key": form.get("omdb_api_key") or None,
         "series_category_template": form.get(
@@ -198,6 +204,14 @@ def _render_rule_form(
 ) -> HTMLResponse:
     form_data.setdefault("jellyfin_search_existing_unseen", False)
     form_data.setdefault("jellyfin_auto_disabled", False)
+    form_data.setdefault("movie_completion_sources", [])
+    form_data.setdefault("movie_completion_sources_display", "")
+    form_data.setdefault("movie_completion_auto_disabled", False)
+    form_data.setdefault(
+        "movie_auto_disabled",
+        bool(form_data.get("movie_completion_auto_disabled", False))
+        or bool(form_data.get("jellyfin_auto_disabled", False)),
+    )
     form_data.setdefault("jellyfin_existing_episode_numbers", [])
     if "jellyfin_existing_episode_count" not in form_data:
         existing_episode_numbers = form_data.get("jellyfin_existing_episode_numbers", []) or []
@@ -275,6 +289,7 @@ def _render_settings_page(
             "request": request,
             "page_title": "Settings",
             "form_data": form_data,
+            "stremio_addon_manifest_url": str(request.url_for("stremio_manifest")),
             "errors": errors,
             "profile_1080p_label": quality_profile_label(QualityProfile.HD_1080P),
             "profile_2160p_hdr_label": quality_profile_label(QualityProfile.UHD_2160P_HDR),
@@ -426,6 +441,20 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
         ),
         jellyfin_auto_sync_last_message=str(
             getattr(settings, "jellyfin_auto_sync_last_message", "")
+        ),
+        stremio_local_storage_path=getattr(settings, "stremio_local_storage_path", None),
+        stremio_auto_sync_enabled=bool(
+            getattr(settings, "stremio_auto_sync_enabled", True)
+        ),
+        stremio_auto_sync_interval_seconds=int(
+            getattr(settings, "stremio_auto_sync_interval_seconds", 30)
+        ),
+        stremio_auto_sync_last_run_at=getattr(settings, "stremio_auto_sync_last_run_at", None),
+        stremio_auto_sync_last_status=str(
+            getattr(settings, "stremio_auto_sync_last_status", "idle")
+        ),
+        stremio_auto_sync_last_message=str(
+            getattr(settings, "stremio_auto_sync_last_message", "")
         ),
         metadata_provider=settings.metadata_provider,
         omdb_api_key_encrypted=settings.omdb_api_key_encrypted,
@@ -1356,6 +1385,97 @@ async def sync_jellyfin_rule_progress(
     try:
         execution = execute_jellyfin_sync(session, settings=settings)
     except (JellyfinError, JellyfinSyncBusyError) as exc:
+        return _render_settings_page(
+            request,
+            form_data=SettingsService.to_form_dict(settings),
+            errors=[str(exc)],
+        )
+
+    return _render_settings_page(
+        request,
+        form_data=SettingsService.to_form_dict(settings),
+        errors=execution.top_errors(),
+        message=execution.render_message(),
+        message_level=execution.message_level,
+        status_code=200,
+    )
+
+
+@router.post("/settings/test-stremio", response_class=HTMLResponse)
+@compat_router.post("/settings/test-stremio", response_class=HTMLResponse)
+async def test_stremio_settings(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> HTMLResponse:
+    form = await request.form()
+    raw_form = _raw_settings_form_data(form)
+    try:
+        payload = SettingsFormPayload.model_validate(raw_form)
+    except ValidationError as exc:
+        return _render_settings_page(
+            request,
+            form_data=raw_form,
+            errors=[error["msg"] for error in exc.errors()],
+        )
+
+    settings = SettingsService.get_or_create(session)
+    temp_settings = _clone_settings(settings)
+    SettingsService.apply_payload(temp_settings, payload)
+
+    try:
+        result = StremioService(temp_settings).test_connection()
+    except StremioError as exc:
+        return _render_settings_page(
+            request,
+            form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
+            errors=[str(exc)],
+        )
+
+    storage_detail = (
+        f" Storage: {result.local_storage_path}."
+        if result.local_storage_path
+        else ""
+    )
+    return _render_settings_page(
+        request,
+        form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
+        errors=[],
+        message=(
+            "Stremio connection test succeeded. "
+            f"Auth source: {result.auth_source}."
+            f"{storage_detail} "
+            f"Active movie/series library items: {result.active_item_count} of {result.total_item_count}."
+        ).strip(),
+        message_level="success",
+        status_code=200,
+    )
+
+
+@router.post("/settings/sync-stremio", response_class=HTMLResponse)
+@compat_router.post("/settings/sync-stremio", response_class=HTMLResponse)
+async def sync_stremio_library_rules(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> HTMLResponse:
+    form = await request.form()
+    raw_form = _raw_settings_form_data(form)
+    try:
+        payload = SettingsFormPayload.model_validate(raw_form)
+    except ValidationError as exc:
+        return _render_settings_page(
+            request,
+            form_data=raw_form,
+            errors=[error["msg"] for error in exc.errors()],
+        )
+
+    settings = SettingsService.get_or_create(session)
+    SettingsService.apply_payload(settings, payload)
+    session.add(settings)
+    session.commit()
+
+    try:
+        execution = execute_stremio_sync(session, settings=settings)
+    except (StremioError, StremioSyncBusyError) as exc:
         return _render_settings_page(
             request,
             form_data=SettingsService.to_form_dict(settings),

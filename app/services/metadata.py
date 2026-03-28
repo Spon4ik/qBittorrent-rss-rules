@@ -190,6 +190,100 @@ class MetadataClient:
     def lookup_by_imdb_id(self, imdb_id: str) -> MetadataResult:
         return self.lookup(MetadataLookupProvider.OMDB, imdb_id, MediaType.SERIES)
 
+    def search_omdb(
+        self,
+        query: str,
+        media_type: MediaType,
+        *,
+        limit: int = 20,
+        skip: int = 0,
+    ) -> list[MetadataResult]:
+        cleaned_query = query.strip()
+        if not cleaned_query:
+            raise MetadataLookupError("Enter a title first.")
+        if media_type not in {MediaType.MOVIE, MediaType.SERIES}:
+            raise MetadataLookupError("OMDb title search is only available for movies and series.")
+        if self.provider == MetadataProvider.DISABLED or not self.api_key:
+            raise MetadataLookupError("OMDb API key is not configured.")
+
+        requested_limit = max(0, min(int(limit), 100))
+        if requested_limit == 0:
+            return []
+        remaining_skip = max(0, int(skip))
+        page_number = max(1, (remaining_skip // 10) + 1)
+        page_offset = remaining_skip % 10
+        collected: list[MetadataResult] = []
+
+        while len(collected) < requested_limit and page_number <= 100:
+            payload = self._request_json(
+                "https://www.omdbapi.com/",
+                params={
+                    "apikey": self.api_key,
+                    "s": cleaned_query,
+                    "type": "movie" if media_type == MediaType.MOVIE else "series",
+                    "page": str(page_number),
+                },
+                provider_label="OMDb",
+            )
+            if payload.get("Response") == "False":
+                error_text = str(payload.get("Error", "")).strip()
+                if error_text in {"Movie not found!", "Series not found!", "Too many results."}:
+                    break
+                raise MetadataLookupError(error_text or "Metadata lookup failed.")
+
+            search_payload = payload.get("Search")
+            if not isinstance(search_payload, list):
+                raise MetadataLookupError("OMDb title search returned an invalid result list.")
+
+            page_results: list[MetadataResult] = []
+            for raw_item in search_payload:
+                if not isinstance(raw_item, dict):
+                    continue
+                imdb_id = str(raw_item.get("imdbID", "")).strip() or None
+                if not imdb_id:
+                    continue
+                raw_type = str(raw_item.get("Type", "")).strip().lower()
+                resolved_media_type = media_type
+                if raw_type == "movie":
+                    resolved_media_type = MediaType.MOVIE
+                elif raw_type == "series":
+                    resolved_media_type = MediaType.SERIES
+                raw_poster_url = str(raw_item.get("Poster", "")).strip()
+                poster_url = (
+                    raw_poster_url if raw_poster_url and raw_poster_url.upper() != "N/A" else None
+                )
+                page_results.append(
+                    MetadataResult(
+                        title=str(raw_item.get("Title", cleaned_query)).strip(),
+                        provider=MetadataLookupProvider.OMDB,
+                        imdb_id=imdb_id,
+                        source_id=imdb_id,
+                        media_type=resolved_media_type,
+                        year=_extract_year(raw_item.get("Year")),
+                        poster_url=poster_url,
+                    )
+                )
+
+            if page_offset:
+                page_results = page_results[page_offset:]
+                page_offset = 0
+            if not page_results:
+                break
+
+            remaining = requested_limit - len(collected)
+            collected.extend(page_results[:remaining])
+
+            total_results_raw = str(payload.get("totalResults", "")).strip()
+            try:
+                total_results = int(total_results_raw) if total_results_raw else None
+            except ValueError:
+                total_results = None
+            if total_results is not None and page_number * 10 >= total_results:
+                break
+            page_number += 1
+
+        return collected
+
     def lookup_omdb_season(self, imdb_id: str, season_number: int) -> MetadataSeasonListing:
         cleaned_imdb_id = imdb_id.strip()
         if not IMDB_ID_RE.match(cleaned_imdb_id):

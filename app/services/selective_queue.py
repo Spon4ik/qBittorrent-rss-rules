@@ -48,6 +48,7 @@ class ParsedTorrentInfo:
     info_hash: str
     filename: str
     files: list[TorrentFileEntry]
+    tracker_urls: list[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +71,41 @@ class QueueResult:
     skipped_file_count: int = 0
     deferred_file_selection: bool = False
     queued_via_torrent_file: bool = False
+
+
+def find_episode_file_entry(
+    files: list[TorrentFileEntry],
+    *,
+    season_number: int,
+    episode_number: int,
+) -> TorrentFileEntry | None:
+    candidates: list[TorrentFileEntry] = []
+    for entry in files:
+        if not _is_video_file(entry.path):
+            continue
+        if text_matches_episode(
+            entry.path,
+            season_number=season_number,
+            episode_number=episode_number,
+        ):
+            candidates.append(entry)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda entry: (entry.file_id, entry.path.casefold()))
+    return candidates[0]
+
+
+def text_matches_episode(
+    text: str,
+    *,
+    season_number: int,
+    episode_number: int,
+) -> bool:
+    episode_matches = list(_episode_matches_for_path(text))
+    return any(
+        matched_season == season_number and start_episode <= episode_number <= end_episode
+        for matched_season, start_episode, end_episode in episode_matches
+    )
 
 
 def build_episode_file_selection_plan(rule: Rule) -> EpisodeFileSelectionPlan | None:
@@ -152,6 +188,7 @@ def parse_torrent_info(torrent_bytes: bytes, *, source_name: str = "queued-resul
         info_hash=info_hash,
         filename=filename,
         files=files,
+        tracker_urls=_extract_torrent_tracker_urls(root),
     )
 
 
@@ -424,6 +461,43 @@ def _extract_torrent_files(info: dict[bytes, Any]) -> list[TorrentFileEntry]:
     if filename:
         return [TorrentFileEntry(file_id=0, path=filename)]
     return []
+
+
+def _extract_torrent_tracker_urls(root: dict[bytes, Any]) -> list[str]:
+    tracker_urls: list[str] = []
+    seen_urls: set[str] = set()
+
+    def _remember_tracker(value: object) -> None:
+        tracker_url = _decode_torrent_text(value)
+        if not tracker_url:
+            return
+        normalized = tracker_url.strip()
+        if not normalized:
+            return
+        casefolded = normalized.casefold()
+        if not (
+            casefolded.startswith("udp://")
+            or casefolded.startswith("http://")
+            or casefolded.startswith("https://")
+        ):
+            return
+        if casefolded in seen_urls:
+            return
+        seen_urls.add(casefolded)
+        tracker_urls.append(normalized)
+
+    _remember_tracker(root.get(b"announce"))
+
+    announce_list = root.get(b"announce-list")
+    if isinstance(announce_list, list):
+        for tier in announce_list:
+            if isinstance(tier, list):
+                for tracker in tier:
+                    _remember_tracker(tracker)
+            else:
+                _remember_tracker(tier)
+
+    return tracker_urls
 
 
 def _best_torrent_filename(root: dict[bytes, Any], info: dict[bytes, Any], source_name: str) -> str:

@@ -8,6 +8,7 @@ WATCH_STATE_EPISODE_KEY_RE = re.compile(
     r"^s(?P<season>\d{1,2})e(?P<episode>\d{1,2})$",
     re.IGNORECASE,
 )
+WATCH_STATE_SOURCE_RE = re.compile(r"[^a-z0-9]+", re.IGNORECASE)
 
 WatchStateNextFloorResolver = Callable[[tuple[int, int]], tuple[tuple[int, int], str]]
 
@@ -94,6 +95,29 @@ def increment_floor(season_number: int, episode_number: int) -> tuple[int, int]:
     return season_number, episode_number
 
 
+def _normalize_watch_state_source_label(value: str | None) -> str | None:
+    cleaned = WATCH_STATE_SOURCE_RE.sub("_", str(value or "").strip().casefold()).strip("_")
+    return cleaned or None
+
+
+def normalize_watch_state_source_labels(value: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_item in list(value or []):
+        normalized_label = _normalize_watch_state_source_label(raw_item)
+        if normalized_label is None or normalized_label in seen:
+            continue
+        seen.add(normalized_label)
+        normalized.append(normalized_label)
+    normalized.sort()
+    return normalized
+
+
+def format_watch_state_source_labels(value: list[str] | None) -> str:
+    normalized = normalize_watch_state_source_labels(value)
+    return ", ".join(label.replace("_", " ").title() for label in normalized)
+
+
 @dataclass(frozen=True, slots=True)
 class WatchStateDerivedFloor:
     watched_start_season: int | None
@@ -118,6 +142,25 @@ class WatchStateFloorSelection:
     effective_floor: tuple[int, int] | None
     floor_changed: bool
     floor_detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class MovieWatchStateSelection:
+    completed_sources: list[str]
+    completion_changed: bool
+    effective_enabled: bool
+    enabled_changed: bool
+    effective_auto_disabled: bool
+    auto_disabled_changed: bool
+    detail: str
+
+    @property
+    def changed(self) -> bool:
+        return (
+            self.completion_changed
+            or self.enabled_changed
+            or self.auto_disabled_changed
+        )
 
 
 def derive_watch_state_floor(
@@ -248,4 +291,79 @@ def select_watch_state_floor(
         effective_floor=effective_floor,
         floor_changed=floor_changed,
         floor_detail=floor_detail,
+    )
+
+
+def select_movie_watch_state(
+    *,
+    source_label: str,
+    source_present: bool,
+    source_completed: bool,
+    current_completed_sources: list[str],
+    current_enabled: bool,
+    current_auto_disabled: bool,
+    keep_searching: bool,
+) -> MovieWatchStateSelection:
+    normalized_source_label = _normalize_watch_state_source_label(source_label)
+    previous_completed_sources = normalize_watch_state_source_labels(current_completed_sources)
+    next_completed_sources = [
+        label
+        for label in previous_completed_sources
+        if label != normalized_source_label
+    ]
+    if normalized_source_label and source_present and source_completed:
+        next_completed_sources.append(normalized_source_label)
+    next_completed_sources = normalize_watch_state_source_labels(next_completed_sources)
+    completion_changed = next_completed_sources != previous_completed_sources
+    completion_sources_display = format_watch_state_source_labels(next_completed_sources)
+
+    if keep_searching:
+        effective_enabled = True if current_auto_disabled else current_enabled
+        effective_auto_disabled = False
+        if next_completed_sources:
+            detail = (
+                f"Completed watch state is reported by {completion_sources_display}. "
+                "Keep-search is enabled, so watch-state sync leaves this rule active."
+                if effective_enabled
+                else f"Completed watch state is reported by {completion_sources_display}. "
+                "Keep-search is enabled, so watch-state sync leaves the current disabled state unchanged."
+            )
+        else:
+            detail = "No connected source currently reports this movie as completed."
+    elif next_completed_sources:
+        if current_enabled:
+            effective_enabled = False
+            effective_auto_disabled = True
+            detail = f"Disabled because completed watch state is reported by {completion_sources_display}."
+        elif current_auto_disabled:
+            effective_enabled = current_enabled
+            effective_auto_disabled = True
+            detail = (
+                f"Movie remains auto-disabled because completed watch state is reported by "
+                f"{completion_sources_display}."
+            )
+        else:
+            effective_enabled = current_enabled
+            effective_auto_disabled = False
+            detail = (
+                f"Completed watch state is reported by {completion_sources_display}, "
+                "but the current disabled state was not set by watch-state sync."
+            )
+    else:
+        effective_auto_disabled = False
+        if current_auto_disabled:
+            effective_enabled = True
+            detail = "Re-enabled because no connected source currently reports this movie as completed."
+        else:
+            effective_enabled = current_enabled
+            detail = "No connected source currently reports this movie as completed."
+
+    return MovieWatchStateSelection(
+        completed_sources=next_completed_sources,
+        completion_changed=completion_changed,
+        effective_enabled=effective_enabled,
+        enabled_changed=effective_enabled != current_enabled,
+        effective_auto_disabled=effective_auto_disabled,
+        auto_disabled_changed=effective_auto_disabled != current_auto_disabled,
+        detail=detail,
     )

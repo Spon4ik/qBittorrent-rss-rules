@@ -15,5 +15,7 @@ htmlcov/
 logs/
 main.ipynb
 *.lnk
+*-DESKTOP-*.py
+*-DESKTOP-*.html
 
 .history/*

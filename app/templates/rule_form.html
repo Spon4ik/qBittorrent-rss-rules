@@ -200,7 +200,7 @@
       <span>{% if form_data.media_type == "movie" %}Keep searching this movie for better quality{% else %}Keep searching existing unseen episodes{% endif %}</span>
       <span class="helper-text">
         {% if form_data.media_type == "movie" %}
-        When off, Jellyfin sync disables this rule if the movie already exists in your library. Turn it on to keep searching for upgrades or better-quality copies.
+        When off, centralized watch-state sync disables this rule after the movie is marked completed in any connected platform. Turn it on to keep searching for upgrades or better-quality copies.
         {% else %}
         Jellyfin sync stores the next missing season+episode floor on the rule itself. When off, it also excludes unseen episodes already present in the library.
         {% if form_data.jellyfin_existing_episode_count %}
@@ -212,8 +212,10 @@
     <label class="toggle">
       <input type="checkbox" name="enabled" {% if form_data.enabled %}checked{% endif %} />
       <span>Enabled</span>
-      {% if form_data.media_type == "movie" and form_data.jellyfin_auto_disabled %}
-      <span class="helper-text">This movie rule is currently disabled automatically because Jellyfin already has a matching library item.</span>
+      {% if form_data.media_type == "movie" and form_data.movie_auto_disabled %}
+      <span class="helper-text">
+        This movie rule is currently disabled automatically because completed watch state was reported{% if form_data.movie_completion_sources_display %} by {{ form_data.movie_completion_sources_display }}{% endif %}.
+      </span>
       {% endif %}
     </label>
     <label class="toggle">

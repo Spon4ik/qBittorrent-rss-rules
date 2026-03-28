@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import select
 
 from app.config import obfuscate_secret
-from app.main import DESKTOP_BACKEND_CONTRACT
+from app.main import DESKTOP_BACKEND_CAPABILITIES, DESKTOP_BACKEND_CONTRACT
 from app.models import (
     AppSettings,
     IndexerCategoryCatalog,
@@ -41,6 +41,7 @@ from tests.jellyfin_test_utils import (
     add_jellyfin_userdata,
     create_jellyfin_test_db,
 )
+from tests.stremio_test_utils import create_stremio_local_storage, stremio_library_item
 
 
 def _use_temp_taxonomy(tmp_path: Path, monkeypatch):
@@ -52,6 +53,24 @@ def _use_temp_taxonomy(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(quality_filters, "QUALITY_TAXONOMY_AUDIT_PATH", audit_path)
     quality_filters._clear_quality_taxonomy_cache()
     return payload, taxonomy_path, audit_path
+
+
+def _install_stremio_api(
+    monkeypatch,
+    *,
+    items: list[dict[str, object]],
+    meta_items: list[list[object]] | None = None,
+) -> None:
+    resolved_meta = meta_items or [[item["_id"], index + 1] for index, item in enumerate(items)]
+
+    def fake_post_api(self, endpoint, payload):
+        if endpoint == "datastoreGet":
+            return items
+        if endpoint == "datastoreMeta":
+            return resolved_meta
+        raise AssertionError(f"Unexpected endpoint: {endpoint}")
+
+    monkeypatch.setattr("app.services.stremio.StremioService._post_api", fake_post_api)
 
 
 @pytest.fixture(autouse=True)
@@ -67,10 +86,11 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "0.7.6"
+    assert payload["app_version"] == "0.8.2"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
+    assert list(payload["capabilities"]) == list(DESKTOP_BACKEND_CAPABILITIES)
     assert payload["static_asset_version"]
 
 
@@ -2584,6 +2604,23 @@ def test_settings_page_renders_jellyfin_controls(app_client) -> None:
     assert "Auto-sync status:" in response.text
 
 
+def test_settings_page_renders_stremio_controls(app_client) -> None:
+    response = app_client.get("/settings")
+
+    assert response.status_code == 200
+    assert 'name="stremio_local_storage_path"' in response.text
+    assert 'name="stremio_auto_sync_enabled"' in response.text
+    assert 'name="stremio_auto_sync_interval_seconds"' in response.text
+    assert 'formaction="/api/settings/test-stremio"' in response.text
+    assert 'formaction="/api/settings/sync-stremio"' in response.text
+    assert 'value="http://testserver/stremio/manifest.json"' in response.text
+    assert "Automatic Stremio sync runs when the app starts" in response.text
+    assert "Save + Sync Stremio Now" in response.text
+    assert "Use this exact URL in Stremio" in response.text
+    assert "Add-on Repository URL box" in response.text
+    assert "Auto-sync status:" in response.text
+
+
 def test_edit_movie_rule_page_renders_jellyfin_movie_sync_copy(app_client, db_session) -> None:
     rule = Rule(
         rule_name="Movie Jellyfin Rule",
@@ -2593,7 +2630,8 @@ def test_edit_movie_rule_page_renders_jellyfin_movie_sync_copy(app_client, db_se
         media_type=MediaType.MOVIE,
         quality_profile=QualityProfile.PLAIN,
         enabled=False,
-        jellyfin_auto_disabled=True,
+        movie_completion_auto_disabled=True,
+        movie_completion_sources=["jellyfin", "stremio"],
         feed_urls=["http://feed.example/the-rip"],
     )
     db_session.add(rule)
@@ -2603,8 +2641,8 @@ def test_edit_movie_rule_page_renders_jellyfin_movie_sync_copy(app_client, db_se
 
     assert response.status_code == 200
     assert "Keep searching this movie for better quality" in response.text
-    assert "Jellyfin sync disables this rule if the movie already exists in your library." in response.text
-    assert "disabled automatically because Jellyfin already has a matching library item" in response.text
+    assert "centralized watch-state sync disables this rule after the movie is marked completed in any connected platform" in response.text
+    assert "disabled automatically because completed watch state was reported by Jellyfin, Stremio" in response.text
 
 
 def test_new_rule_uses_ultra_hd_hdr_defaults(app_client) -> None:
@@ -2766,6 +2804,7 @@ def test_save_settings_persists_profile_management_tokens(app_client, db_session
             "jackett_api_key": "secret-key",
             "jellyfin_db_path": r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db",
             "jellyfin_user_name": "Spon4ik",
+            "stremio_local_storage_path": r"C:\Users\test\AppData\Local\Programs\Stremio\leveldb",
             "metadata_provider": "disabled",
             "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
             "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
@@ -2791,6 +2830,7 @@ def test_save_settings_persists_profile_management_tokens(app_client, db_session
     assert settings.jackett_api_key_encrypted is not None
     assert settings.jellyfin_db_path == r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db"
     assert settings.jellyfin_user_name == "Spon4ik"
+    assert settings.stremio_local_storage_path == r"C:\Users\test\AppData\Local\Programs\Stremio\leveldb"
     assert settings.default_quality_profile.value == "2160p_hdr"
     assert settings.default_sequential_download is True
     assert settings.default_first_last_piece_prio is True
@@ -2825,6 +2865,64 @@ def test_test_jellyfin_settings_reports_success(app_client, tmp_path) -> None:
     assert "Jellyfin read-only connection test succeeded." in response.text
     assert "Spon4ik" in response.text
     assert "Users found: Spon4ik." in response.text
+
+
+def test_test_stremio_settings_reports_success(app_client, monkeypatch, tmp_path) -> None:
+    storage_path = create_stremio_local_storage(tmp_path)
+    _install_stremio_api(
+        monkeypatch,
+        items=[stremio_library_item("tt13016388", "3 Body Problem", item_type="series")],
+    )
+
+    response = app_client.post(
+        "/api/settings/test-stremio",
+        data={
+            "stremio_local_storage_path": str(storage_path),
+            "stremio_auto_sync_enabled": "on",
+            "metadata_provider": "disabled",
+            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
+            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
+            "save_path_template": "",
+            "default_enabled": "on",
+            "default_add_paused": "on",
+            "default_sequential_download": "on",
+            "default_first_last_piece_prio": "on",
+            "default_quality_profile": "2160p_hdr",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Stremio connection test succeeded." in response.text
+    assert "Auth source: local storage." in response.text
+    assert "Active movie/series library items: 1 of 1." in response.text
+
+
+def test_test_stremio_settings_compat_path_reports_success(app_client, monkeypatch, tmp_path) -> None:
+    storage_path = create_stremio_local_storage(tmp_path)
+    _install_stremio_api(
+        monkeypatch,
+        items=[stremio_library_item("tt13016388", "3 Body Problem", item_type="series")],
+    )
+
+    response = app_client.post(
+        "/settings/test-stremio",
+        data={
+            "stremio_local_storage_path": str(storage_path),
+            "stremio_auto_sync_enabled": "on",
+            "metadata_provider": "disabled",
+            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
+            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
+            "save_path_template": "",
+            "default_enabled": "on",
+            "default_add_paused": "on",
+            "default_sequential_download": "on",
+            "default_first_last_piece_prio": "on",
+            "default_quality_profile": "2160p_hdr",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Stremio connection test succeeded." in response.text
 
 
 def test_sync_jellyfin_settings_updates_matching_rules(app_client, db_session, tmp_path) -> None:
@@ -2982,6 +3080,93 @@ def test_sync_jellyfin_settings_pushes_changed_rules_to_qb_when_configured(
     assert response.status_code == 200
     assert "1 pushed to qB" in response.text
     assert pushed_rule_ids == [rule.id]
+
+
+def test_sync_stremio_settings_creates_rules_for_library_titles(
+    app_client,
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    storage_path = create_stremio_local_storage(tmp_path)
+    _install_stremio_api(
+        monkeypatch,
+        items=[stremio_library_item("tt13016388", "3 Body Problem", item_type="series")],
+    )
+
+    response = app_client.post(
+        "/api/settings/sync-stremio",
+        data={
+            "stremio_local_storage_path": str(storage_path),
+            "stremio_auto_sync_enabled": "on",
+            "metadata_provider": "disabled",
+            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
+            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
+            "save_path_template": "",
+            "default_enabled": "on",
+            "default_add_paused": "on",
+            "default_sequential_download": "on",
+            "default_first_last_piece_prio": "on",
+            "default_quality_profile": "2160p_hdr",
+        },
+    )
+
+    created_rule = db_session.scalar(
+        select(Rule).where(Rule.stremio_library_item_id == "tt13016388")
+    )
+    assert response.status_code == 200
+    assert created_rule is not None
+    assert "Stremio sync completed for 1 active title(s)" in response.text
+    assert "1 created" in response.text
+
+
+def test_sync_stremio_settings_pushes_changed_rules_to_qb_when_configured(
+    app_client,
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    storage_path = create_stremio_local_storage(tmp_path)
+    _install_stremio_api(
+        monkeypatch,
+        items=[stremio_library_item("tt13016388", "3 Body Problem", item_type="series")],
+    )
+
+    pushed_rule_ids: list[str] = []
+
+    def fake_sync_rule(self, rule_id):
+        pushed_rule_ids.append(rule_id)
+        return SimpleNamespace(success=True, message="Rule synced to qBittorrent.")
+
+    monkeypatch.setattr("app.services.stremio_sync_ops.SyncService.sync_rule", fake_sync_rule)
+
+    response = app_client.post(
+        "/api/settings/sync-stremio",
+        data={
+            "qb_base_url": "http://127.0.0.1:8080",
+            "qb_username": "admin",
+            "qb_password": "secret",
+            "stremio_local_storage_path": str(storage_path),
+            "stremio_auto_sync_enabled": "on",
+            "metadata_provider": "disabled",
+            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
+            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
+            "save_path_template": "",
+            "default_enabled": "on",
+            "default_add_paused": "on",
+            "default_sequential_download": "on",
+            "default_first_last_piece_prio": "on",
+            "default_quality_profile": "2160p_hdr",
+        },
+    )
+
+    created_rule = db_session.scalar(
+        select(Rule).where(Rule.stremio_library_item_id == "tt13016388")
+    )
+    assert response.status_code == 200
+    assert created_rule is not None
+    assert "1 pushed to qB" in response.text
+    assert pushed_rule_ids == [created_rule.id]
 
 
 def test_save_filter_profile_creates_custom_profile(app_client, db_session) -> None:

@@ -103,6 +103,91 @@ def test_metadata_client_omdb_supports_id_lookup() -> None:
     assert result.year == "2011"
 
 
+def test_metadata_client_omdb_supports_search_lookup() -> None:
+    seen_pages: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_pages.append(str(request.url.params["page"]))
+        assert request.url.params["s"] == "The Beauty"
+        assert request.url.params["type"] == "series"
+        if request.url.params["page"] == "1":
+            return httpx.Response(
+                200,
+                json={
+                    "Response": "True",
+                    "Search": [
+                        {
+                            "Title": "The Beauty",
+                            "Year": "2026-",
+                            "imdbID": "tt33517752",
+                            "Type": "series",
+                            "Poster": "https://img.omdbapi.com/the-beauty.jpg",
+                        },
+                        {
+                            "Title": "The Beauty Inside",
+                            "Year": "2018",
+                            "imdbID": "tt7998242",
+                            "Type": "series",
+                            "Poster": "N/A",
+                        },
+                    ],
+                    "totalResults": "2",
+                },
+            )
+        raise AssertionError(f"Unexpected page request: {request.url}")
+
+    client = MetadataClient(
+        MetadataProvider.OMDB,
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    results = client.search_omdb("The Beauty", MediaType.SERIES)
+
+    assert seen_pages == ["1"]
+    assert [item.imdb_id for item in results] == ["tt33517752", "tt7998242"]
+    assert results[0].title == "The Beauty"
+    assert results[0].media_type == MediaType.SERIES
+    assert results[0].year == "2026"
+    assert results[0].poster_url == "https://img.omdbapi.com/the-beauty.jpg"
+    assert results[1].poster_url is None
+
+
+def test_metadata_client_omdb_search_supports_skip_and_limit() -> None:
+    seen_pages: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_pages.append(str(request.url.params["page"]))
+        return httpx.Response(
+            200,
+            json={
+                "Response": "True",
+                "Search": [
+                    {
+                        "Title": f"Movie {offset}",
+                        "Year": "2024",
+                        "imdbID": f"tt100000{offset}",
+                        "Type": "movie",
+                        "Poster": "N/A",
+                    }
+                    for offset in range(10)
+                ],
+                "totalResults": "25",
+            },
+        )
+
+    client = MetadataClient(
+        MetadataProvider.OMDB,
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    results = client.search_omdb("Movie", MediaType.MOVIE, limit=3, skip=12)
+
+    assert seen_pages == ["2"]
+    assert [item.imdb_id for item in results] == ["tt1000002", "tt1000003", "tt1000004"]
+
+
 def test_metadata_client_musicbrainz_supports_search_lookup() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.host == "musicbrainz.org"

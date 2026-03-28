@@ -21,6 +21,8 @@ from app.services.watch_state import (
 )
 from app.services.watch_state import (
     derive_watch_state_floor,
+    normalize_watch_state_source_labels,
+    select_movie_watch_state,
     select_watch_state_floor,
 )
 from app.services.watch_state import (
@@ -236,6 +238,8 @@ class JellyfinService:
             )
         if rule.media_type == MediaType.MOVIE:
             return self._sync_movie_rule(
+                connection=connection,
+                user=user,
                 movie_catalog=movie_catalog,
                 session=session,
                 rule=rule,
@@ -385,17 +389,39 @@ class JellyfinService:
     def _sync_movie_rule(
         self,
         *,
+        connection: sqlite3.Connection,
+        user: JellyfinUser,
         movie_catalog: list[JellyfinLibraryRecord],
         session: Session,
         rule: Rule,
     ) -> JellyfinRuleSyncOutcome:
         matched_movie = self._match_library_item(rule, movie_catalog, item_label="movie")
         keep_searching_existing = bool(getattr(rule, "jellyfin_search_existing_unseen", False))
-        current_auto_disabled = bool(getattr(rule, "jellyfin_auto_disabled", False))
+        previous_completed_sources = normalize_watch_state_source_labels(
+            list(getattr(rule, "movie_completion_sources", []) or [])
+        )
+        legacy_auto_disabled = bool(getattr(rule, "jellyfin_auto_disabled", False))
+        current_auto_disabled = bool(getattr(rule, "movie_completion_auto_disabled", False)) or legacy_auto_disabled
         current_enabled = bool(rule.enabled)
+        source_completed = (
+            self._movie_is_completed(connection=connection, user=user, movie_id=matched_movie.item_id)
+            if matched_movie is not None
+            else False
+        )
+        selection = select_movie_watch_state(
+            source_label="Jellyfin",
+            source_present=matched_movie is not None,
+            source_completed=source_completed,
+            current_completed_sources=previous_completed_sources,
+            current_enabled=current_enabled,
+            current_auto_disabled=current_auto_disabled,
+            keep_searching=keep_searching_existing,
+        )
+        had_jellyfin_completion = "jellyfin" in previous_completed_sources
+        has_jellyfin_completion = "jellyfin" in selection.completed_sources
 
         if matched_movie is None:
-            if not current_auto_disabled:
+            if not selection.changed and not legacy_auto_disabled:
                 return JellyfinRuleSyncOutcome(
                     rule_id=rule.id,
                     rule_name=rule.rule_name,
@@ -404,98 +430,73 @@ class JellyfinService:
                     previous_start_season=rule.start_season,
                     previous_start_episode=rule.start_episode,
                 )
-            rule.enabled = True
-            rule.jellyfin_auto_disabled = False
-            session.add(rule)
-            return JellyfinRuleSyncOutcome(
-                rule_id=rule.id,
-                rule_name=rule.rule_name,
-                status="synced",
-                message="Re-enabled because the previous Jellyfin movie match is no longer present.",
-                previous_start_season=rule.start_season,
-                previous_start_episode=rule.start_episode,
-            )
-
-        if keep_searching_existing:
-            if current_auto_disabled:
-                rule.enabled = True
-                rule.jellyfin_auto_disabled = False
-                session.add(rule)
-                return JellyfinRuleSyncOutcome(
-                    rule_id=rule.id,
-                    rule_name=rule.rule_name,
-                    status="synced",
-                    message=(
-                        "Movie already exists in Jellyfin, but this rule keeps searching for "
-                        "better quality, so it was re-enabled."
-                    ),
-                    matched_title=matched_movie.title,
-                    previous_start_season=rule.start_season,
-                    previous_start_episode=rule.start_episode,
-                )
-            if current_enabled:
-                return JellyfinRuleSyncOutcome(
-                    rule_id=rule.id,
-                    rule_name=rule.rule_name,
-                    status="unchanged",
-                    message=(
-                        "Movie already exists in Jellyfin, but this rule keeps searching for "
-                        "better quality."
-                    ),
-                    matched_title=matched_movie.title,
-                    previous_start_season=rule.start_season,
-                    previous_start_episode=rule.start_episode,
-                )
+        if not selection.changed and not legacy_auto_disabled:
             return JellyfinRuleSyncOutcome(
                 rule_id=rule.id,
                 rule_name=rule.rule_name,
                 status="unchanged",
-                message=(
-                    "Movie already exists in Jellyfin, and keep-search is enabled, so Jellyfin "
-                    "sync left the current disabled state unchanged."
-                ),
-                matched_title=matched_movie.title,
+                message=selection.detail,
+                matched_title=matched_movie.title if matched_movie is not None else None,
                 previous_start_season=rule.start_season,
                 previous_start_episode=rule.start_episode,
             )
 
-        if current_enabled:
-            rule.enabled = False
-            rule.jellyfin_auto_disabled = True
-            session.add(rule)
-            return JellyfinRuleSyncOutcome(
-                rule_id=rule.id,
-                rule_name=rule.rule_name,
-                status="synced",
-                message="Disabled because the movie already exists in Jellyfin library.",
-                matched_title=matched_movie.title,
-                previous_start_season=rule.start_season,
-                previous_start_episode=rule.start_episode,
-            )
-
-        if current_auto_disabled:
-            return JellyfinRuleSyncOutcome(
-                rule_id=rule.id,
-                rule_name=rule.rule_name,
-                status="unchanged",
-                message="Movie already exists in Jellyfin library and this rule remains auto-disabled.",
-                matched_title=matched_movie.title,
-                previous_start_season=rule.start_season,
-                previous_start_episode=rule.start_episode,
-            )
-
+        rule.enabled = selection.effective_enabled
+        rule.movie_completion_sources = selection.completed_sources
+        rule.movie_completion_auto_disabled = selection.effective_auto_disabled
+        rule.jellyfin_auto_disabled = False
+        session.add(rule)
+        message_parts: list[str] = []
+        if matched_movie is None and had_jellyfin_completion and not has_jellyfin_completion:
+            message_parts.append("Cleared Jellyfin completion evidence because no matching movie was found.")
+        elif matched_movie is not None and source_completed and not had_jellyfin_completion:
+            message_parts.append(f'Jellyfin reports "{matched_movie.title}" as completed.')
+        elif matched_movie is not None and not source_completed and had_jellyfin_completion:
+            message_parts.append(f'Jellyfin no longer reports "{matched_movie.title}" as completed.')
+        message_parts.append(selection.detail)
         return JellyfinRuleSyncOutcome(
             rule_id=rule.id,
             rule_name=rule.rule_name,
-            status="unchanged",
-            message=(
-                "Movie already exists in Jellyfin library, and the rule was already disabled "
-                "outside Jellyfin sync."
-            ),
-            matched_title=matched_movie.title,
+            status="synced",
+            message=" ".join(message_parts),
+            matched_title=matched_movie.title if matched_movie is not None else None,
             previous_start_season=rule.start_season,
             previous_start_episode=rule.start_episode,
         )
+
+    @staticmethod
+    def _movie_is_completed(
+        *,
+        connection: sqlite3.Connection,
+        user: JellyfinUser,
+        movie_id: str,
+    ) -> bool:
+        row = connection.execute(
+            """
+            SELECT
+                MAX(COALESCE(u.Played, 0)) AS Played,
+                MAX(COALESCE(u.PlayCount, 0)) AS PlayCount
+            FROM BaseItems b
+            LEFT JOIN UserData u
+              ON u.UserId = ?
+             AND (
+                u.ItemId = b.Id
+                OR lower(COALESCE(u.CustomDataKey, '')) = lower(b.Id)
+                OR EXISTS (
+                    SELECT 1
+                    FROM BaseItemProviders p
+                    WHERE p.ItemId = b.Id
+                      AND lower(COALESCE(p.ProviderValue, '')) = lower(COALESCE(u.CustomDataKey, ''))
+                )
+             )
+            WHERE b.Id = ?
+              AND b.Type = ?
+            """,
+            (user.user_id, movie_id, JELLYFIN_MOVIE_TYPE),
+        ).fetchone()
+        if row is None:
+            return False
+        return int(row["Played"] or 0) > 0 or int(row["PlayCount"] or 0) > 0
 
     def _metadata_client_for_catalog(self) -> MetadataClient | None:
         if self.metadata_config.provider.value == "disabled":

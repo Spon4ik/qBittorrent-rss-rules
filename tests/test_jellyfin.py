@@ -522,7 +522,7 @@ def test_jellyfin_sync_series_rules_preserve_remembered_history_after_episode_cl
     assert rule.jellyfin_watched_episode_numbers == ["S01E10"]
 
 
-def test_jellyfin_sync_rules_disables_existing_library_movies_by_default(
+def test_jellyfin_sync_rules_disables_completed_movies_via_shared_watch_state(
     tmp_path: Path,
     db_session,
 ) -> None:
@@ -535,6 +535,14 @@ def test_jellyfin_sync_rules_disables_existing_library_movies_by_default(
         clean_name="Michael McIntyre: Showman",
         production_year=2020,
         imdb_id="tt11860624",
+    )
+    add_jellyfin_userdata(
+        db_path,
+        item_id="MOVIE-SHOWMAN",
+        user_id=PRIMARY_USER_ID,
+        custom_data_key=None,
+        played=1,
+        play_count=1,
     )
 
     settings = AppSettings(id="default", jellyfin_db_path=str(db_path))
@@ -558,7 +566,9 @@ def test_jellyfin_sync_rules_disables_existing_library_movies_by_default(
     assert summary.skipped_count == 0
     db_session.refresh(rule)
     assert rule.enabled is False
-    assert rule.jellyfin_auto_disabled is True
+    assert rule.jellyfin_auto_disabled is False
+    assert rule.movie_completion_auto_disabled is True
+    assert rule.movie_completion_sources == ["jellyfin"]
 
 
 def test_jellyfin_sync_rules_reenables_auto_disabled_movie_when_keep_search_is_enabled(
@@ -575,6 +585,14 @@ def test_jellyfin_sync_rules_reenables_auto_disabled_movie_when_keep_search_is_e
         production_year=2026,
         imdb_id="tt32642706",
     )
+    add_jellyfin_userdata(
+        db_path,
+        item_id="MOVIE-RIP",
+        user_id=PRIMARY_USER_ID,
+        custom_data_key=None,
+        played=1,
+        play_count=1,
+    )
 
     settings = AppSettings(id="default", jellyfin_db_path=str(db_path))
     rule = Rule(
@@ -587,6 +605,8 @@ def test_jellyfin_sync_rules_reenables_auto_disabled_movie_when_keep_search_is_e
         jellyfin_search_existing_unseen=True,
         enabled=False,
         jellyfin_auto_disabled=True,
+        movie_completion_auto_disabled=True,
+        movie_completion_sources=["jellyfin"],
         feed_urls=["http://feed.example/the-rip"],
     )
     db_session.add_all([settings, rule])
@@ -599,3 +619,44 @@ def test_jellyfin_sync_rules_reenables_auto_disabled_movie_when_keep_search_is_e
     db_session.refresh(rule)
     assert rule.enabled is True
     assert rule.jellyfin_auto_disabled is False
+    assert rule.movie_completion_auto_disabled is False
+    assert rule.movie_completion_sources == ["jellyfin"]
+
+
+def test_jellyfin_sync_rules_leaves_unfinished_movie_rule_enabled(
+    tmp_path: Path,
+    db_session,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_movie(
+        db_path,
+        movie_id="MOVIE-HOPPERS",
+        title="Hoppers",
+        clean_name="Hoppers",
+        production_year=2026,
+        imdb_id="tt26443616",
+    )
+
+    settings = AppSettings(id="default", jellyfin_db_path=str(db_path))
+    rule = Rule(
+        rule_name="Hoppers Rule",
+        content_name="Hoppers",
+        normalized_title="Hoppers",
+        imdb_id="tt26443616",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=True,
+        feed_urls=["http://feed.example/hoppers"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    summary = JellyfinService(settings).sync_rules(db_session)
+
+    assert summary.synced_count == 0
+    assert summary.unchanged_count == 1
+    db_session.refresh(rule)
+    assert rule.enabled is True
+    assert rule.movie_completion_auto_disabled is False
+    assert rule.movie_completion_sources == []

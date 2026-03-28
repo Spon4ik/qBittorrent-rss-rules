@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "qbittorrent-rss-rule-manager"
-version = "0.7.6"
+version = "0.8.2"
 description = "Local web UI for managing qBittorrent RSS auto-download rules."
 readme = "README.md"
 license = { text = "MIT" }
@@ -42,11 +42,12 @@ packages = ["app"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --ignore-glob=*-DESKTOP-*.py"
 
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+extend-exclude = ["*-DESKTOP-*.py"]
 
 [tool.ruff.lint]
 select = [
@@ -75,3 +76,4 @@ disallow_untyped_defs = true
 disallow_incomplete_defs = true
 strict_equality = true
 plugins = []
+exclude = '(^|[/\\\\]).*-DESKTOP-[^/\\\\]+\\.py$'

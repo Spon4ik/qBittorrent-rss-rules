@@ -105,6 +105,20 @@ class Rule(Base):
         nullable=False,
         default=list,
     )
+    movie_completion_sources: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+    movie_completion_auto_disabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+    stremio_library_item_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    stremio_library_item_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    stremio_managed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    stremio_auto_disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     episode_filter: Mapped[str] = mapped_column(Text, nullable=False, default="")
     ignore_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     add_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -182,6 +196,23 @@ class AppSettings(Base):
         default="idle",
     )
     jellyfin_auto_sync_last_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    stremio_local_storage_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    stremio_auto_sync_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    stremio_auto_sync_interval_seconds: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=30,
+    )
+    stremio_auto_sync_last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    stremio_auto_sync_last_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="idle",
+    )
+    stremio_auto_sync_last_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
     metadata_provider: Mapped[MetadataProvider] = mapped_column(
         Enum(MetadataProvider, name="metadata_provider"),
         nullable=False,

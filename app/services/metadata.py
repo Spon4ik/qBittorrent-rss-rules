@@ -34,6 +34,7 @@ class MetadataSeasonListing:
     total_seasons: int | None
     released_episodes: list[MetadataSeasonEpisode]
 
+
 class ProviderCatalogEntry(TypedDict):
     value: str
     label: str
@@ -106,14 +107,16 @@ def metadata_lookup_provider_catalog() -> list[ProviderCatalogEntry]:
     ]
 
 
-def metadata_lookup_provider_choices(media_type: MediaType | str | None) -> list[ProviderCatalogEntry]:
-    raw_media_type = media_type.value if isinstance(media_type, MediaType) else str(media_type or "")
+def metadata_lookup_provider_choices(
+    media_type: MediaType | str | None,
+) -> list[ProviderCatalogEntry]:
+    raw_media_type = (
+        media_type.value if isinstance(media_type, MediaType) else str(media_type or "")
+    )
     if not raw_media_type or raw_media_type == MediaType.OTHER.value:
         return metadata_lookup_provider_catalog()
     return [
-        item
-        for item in metadata_lookup_provider_catalog()
-        if raw_media_type in item["media_types"]
+        item for item in metadata_lookup_provider_catalog() if raw_media_type in item["media_types"]
     ]
 
 
@@ -154,7 +157,9 @@ class MetadataClient:
     ) -> None:
         self.provider = provider
         self.api_key = normalize_omdb_api_key(api_key)
-        self.timeout = timeout if timeout is not None else get_environment_settings().request_timeout
+        self.timeout = (
+            timeout if timeout is not None else get_environment_settings().request_timeout
+        )
         self.transport = transport
 
     def lookup(

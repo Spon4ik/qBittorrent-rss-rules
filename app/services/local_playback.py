@@ -203,7 +203,10 @@ def _torrent_is_complete(torrent: dict[str, object]) -> bool:
 
 
 def _qb_file_is_complete(file_entry: dict[str, object]) -> bool:
-    return _coerce_bool(file_entry.get("is_seed")) or _coerce_float(file_entry.get("progress")) >= 0.999
+    return (
+        _coerce_bool(file_entry.get("is_seed"))
+        or _coerce_float(file_entry.get("progress")) >= 0.999
+    )
 
 
 def _match_qb_file_entry(
@@ -213,11 +216,7 @@ def _match_qb_file_entry(
     filename_hint: str | None,
 ) -> dict[str, object] | None:
     cleaned_filename_hint = str(filename_hint or "").strip().casefold()
-    video_files = [
-        item
-        for item in torrent_files
-        if _is_video_path(str(item.get("name") or ""))
-    ]
+    video_files = [item for item in torrent_files if _is_video_path(str(item.get("name") or ""))]
     if not video_files:
         return None
 
@@ -233,7 +232,10 @@ def _match_qb_file_entry(
                 continue
             if raw_name.casefold() == cleaned_filename_hint:
                 return item
-            if PurePosixPath(raw_name).name.casefold() == PurePosixPath(cleaned_filename_hint).name.casefold():
+            if (
+                PurePosixPath(raw_name).name.casefold()
+                == PurePosixPath(cleaned_filename_hint).name.casefold()
+            ):
                 return item
 
     if len(video_files) == 1:
@@ -247,11 +249,7 @@ def _match_qb_library_file_entry(
     season_number: int | None,
     episode_number: int | None,
 ) -> dict[str, object] | None:
-    video_files = [
-        item
-        for item in torrent_files
-        if _is_video_path(str(item.get("name") or ""))
-    ]
+    video_files = [item for item in torrent_files if _is_video_path(str(item.get("name") or ""))]
     if not video_files:
         return None
 
@@ -269,7 +267,9 @@ def _match_qb_library_file_entry(
             return None
         matching_files.sort(
             key=lambda item: (
-                _coerce_int(item.get("index")) if _coerce_int(item.get("index")) is not None else 10_000,
+                _coerce_int(item.get("index"))
+                if _coerce_int(item.get("index")) is not None
+                else 10_000,
                 str(item.get("name") or "").casefold(),
             )
         )

@@ -13,8 +13,7 @@ def main() -> int:
     try:
         rules = session.scalars(select(Rule)).all()
         snapshots = {
-            item.rule_id: item
-            for item in session.scalars(select(RuleSearchSnapshot)).all()
+            item.rule_id: item for item in session.scalars(select(RuleSearchSnapshot)).all()
         }
         updated = 0
         for rule in rules:

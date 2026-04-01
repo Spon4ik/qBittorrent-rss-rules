@@ -452,8 +452,13 @@ def _summarize_failures(report: dict[str, Any]) -> list[str]:
         failures.append(
             f"Expected visible source {report['expect_source']!r} was not found on the detail page."
         )
-    if not any("/stremio/stream/" in str(event.get("url") or "") for event in detail_result.get("network_events") or []):
-        failures.append("No Stremio addon stream response was captured during the detail-page load.")
+    if not any(
+        "/stremio/stream/" in str(event.get("url") or "")
+        for event in detail_result.get("network_events") or []
+    ):
+        failures.append(
+            "No Stremio addon stream response was captured during the detail-page load."
+        )
     return failures
 
 

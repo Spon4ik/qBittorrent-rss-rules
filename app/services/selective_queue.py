@@ -154,7 +154,9 @@ def parse_magnet_info_hash(link: str) -> str | None:
     return None
 
 
-def parse_torrent_info(torrent_bytes: bytes, *, source_name: str = "queued-result.torrent") -> ParsedTorrentInfo:
+def parse_torrent_info(
+    torrent_bytes: bytes, *, source_name: str = "queued-result.torrent"
+) -> ParsedTorrentInfo:
     if not torrent_bytes:
         raise SelectiveQueueError("Torrent response was empty.")
 
@@ -292,10 +294,7 @@ def queue_result_with_optional_file_selection(
             )
         )
 
-    if (
-        selection_result.parsed_episode_file_count > 0
-        and not selection_result.selected_file_ids
-    ):
+    if selection_result.parsed_episode_file_count > 0 and not selection_result.selected_file_ids:
         raise SelectiveQueueError("No missing/unseen episode files were detected in this torrent.")
 
     with QbittorrentClient(qb_base_url, qb_username, qb_password) as client:
@@ -311,7 +310,9 @@ def queue_result_with_optional_file_selection(
         if selection_result.parsed_episode_file_count > 0 and selection_result.selected_file_ids:
             all_file_ids = [entry.file_id for entry in parsed_torrent.files]
             client.set_file_priority(parsed_torrent.info_hash, all_file_ids, 0)
-            client.set_file_priority(parsed_torrent.info_hash, selection_result.selected_file_ids, 1)
+            client.set_file_priority(
+                parsed_torrent.info_hash, selection_result.selected_file_ids, 1
+            )
             return QueueResult(
                 message=(
                     f"Queued only missing/unseen episode files ({len(selection_result.selected_file_ids)} selected, "
@@ -405,7 +406,11 @@ def _download_torrent_bytes(link: str) -> tuple[bytes, str]:
     with httpx.Client(timeout=timeout, follow_redirects=True) as client:
         response = client.get(link)
         response.raise_for_status()
-        final_name = PurePosixPath(response.url.path).name or PurePosixPath(urlsplit(link).path).name or "queued-result.torrent"
+        final_name = (
+            PurePosixPath(response.url.path).name
+            or PurePosixPath(urlsplit(link).path).name
+            or "queued-result.torrent"
+        )
         return response.content, final_name
 
 
@@ -503,8 +508,12 @@ def _extract_torrent_tracker_urls(root: dict[bytes, Any]) -> list[str]:
 def _best_torrent_filename(root: dict[bytes, Any], info: dict[bytes, Any], source_name: str) -> str:
     if source_name and source_name.casefold().endswith(".torrent"):
         return source_name
-    root_name = _decode_torrent_text(root.get(b"name")) or _decode_torrent_text(root.get(b"name.utf-8"))
-    info_name = _decode_torrent_text(info.get(b"name.utf-8")) or _decode_torrent_text(info.get(b"name"))
+    root_name = _decode_torrent_text(root.get(b"name")) or _decode_torrent_text(
+        root.get(b"name.utf-8")
+    )
+    info_name = _decode_torrent_text(info.get(b"name.utf-8")) or _decode_torrent_text(
+        info.get(b"name")
+    )
     base_name = root_name or info_name or source_name or "queued-result.torrent"
     if base_name.casefold().endswith(".torrent"):
         return base_name

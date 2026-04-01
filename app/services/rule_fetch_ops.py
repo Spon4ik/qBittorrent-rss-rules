@@ -88,9 +88,15 @@ def schedule_next_run_at(*, from_time: datetime | None = None, interval_minutes:
 
 def schedule_payload(settings: Any) -> dict[str, Any]:
     interval_minutes = normalize_schedule_interval_minutes(
-        getattr(settings, "rules_fetch_schedule_interval_minutes", DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES)
+        getattr(
+            settings,
+            "rules_fetch_schedule_interval_minutes",
+            DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES,
+        )
     )
-    scope = normalize_schedule_scope(getattr(settings, "rules_fetch_schedule_scope", DEFAULT_RULE_FETCH_SCHEDULE_SCOPE))
+    scope = normalize_schedule_scope(
+        getattr(settings, "rules_fetch_schedule_scope", DEFAULT_RULE_FETCH_SCHEDULE_SCOPE)
+    )
     return {
         "enabled": bool(getattr(settings, "rules_fetch_schedule_enabled", False)),
         "interval_minutes": interval_minutes,
@@ -308,15 +314,16 @@ def _rule_local_filter_state(rule: Rule) -> dict[str, Any]:
     include_quality_patterns = [
         compiled
         for compiled in (
-            _compile_pattern(fragment)
-            for fragment in grouped_tokens_to_regex(include_tokens)
+            _compile_pattern(fragment) for fragment in grouped_tokens_to_regex(include_tokens)
         )
         if compiled is not None
     ]
     exclude_quality_pattern = _compile_pattern(tokens_to_regex(exclude_tokens))
     generated_pattern = _compile_generated_pattern(_rule_local_generated_pattern(rule))
 
-    release_year = normalize_release_year(rule.release_year) if bool(rule.include_release_year) else ""
+    release_year = (
+        normalize_release_year(rule.release_year) if bool(rule.include_release_year) else ""
+    )
     feed_urls = _normalize_feed_url_list(list(rule.feed_urls or []))
     feed_indexers: list[str] = []
     seen_indexers: set[str] = set()
@@ -328,9 +335,7 @@ def _rule_local_filter_state(rule: Rule) -> dict[str, Any]:
         feed_indexers.append(indexer_slug)
     feed_scope_blocks_all = bool(feed_urls) and not feed_indexers
     allowed_feed_indexer_keys = {
-        key
-        for item in feed_indexers
-        for key in _build_indexer_key_variants(item)
+        key for item in feed_indexers for key in _build_indexer_key_variants(item)
     }
 
     return {
@@ -363,7 +368,9 @@ def _rule_local_filter_cache_key(rule: Rule) -> str:
                 list(getattr(rule, "jellyfin_existing_episode_numbers", []) or [])
             ),
             "include_release_year": bool(rule.include_release_year),
-            "release_year": normalize_release_year(rule.release_year) if bool(rule.include_release_year) else "",
+            "release_year": normalize_release_year(rule.release_year)
+            if bool(rule.include_release_year)
+            else "",
             "feed_urls": _normalize_feed_url_list(list(rule.feed_urls or [])),
         },
         separators=(",", ":"),
@@ -464,13 +471,17 @@ def refresh_snapshot_release_cache(snapshot: RuleSearchSnapshot, *, rule: Rule) 
     state = _rule_local_filter_state(rule)
     filtered_count = _rule_local_filtered_count_from_rows(rule, typed_rows, state=state)
     cache_key = _rule_local_filter_cache_key(rule)
-    current_key = str(snapshot.release_filter_cache_key or inline_search.get("rule_local_filter_cache_key") or "")
+    current_key = str(
+        snapshot.release_filter_cache_key or inline_search.get("rule_local_filter_cache_key") or ""
+    )
     current_count = (
         snapshot.release_filtered_count
         if snapshot.release_filtered_count is not None
         else inline_search.get("rule_local_filtered_count")
     )
-    count_matches = current_count is not None and _coerce_int(current_count, default=-1) == filtered_count
+    count_matches = (
+        current_count is not None and _coerce_int(current_count, default=-1) == filtered_count
+    )
     fetched_count = len(typed_rows)
     if (
         current_key == cache_key
@@ -510,7 +521,10 @@ def _apply_rule_feed_scope(
 
     if not feed_indexers:
         if effective_feed_urls:
-            return payload, "Affected feeds could not be mapped to Jackett indexers; using default scope."
+            return (
+                payload,
+                "Affected feeds could not be mapped to Jackett indexers; using default scope.",
+            )
         return payload, None
 
     if len(feed_indexers) == 1:
@@ -824,7 +838,9 @@ def run_rules_fetch_batch(
                     "failed": 0,
                     "results": [],
                 }
-            selected_rules = session.scalars(select(Rule).where(Rule.id.in_(normalized_rule_ids))).all()
+            selected_rules = session.scalars(
+                select(Rule).where(Rule.id.in_(normalized_rule_ids))
+            ).all()
             by_id = {rule.id: rule for rule in selected_rules}
             rules = [by_id[rule_id] for rule_id in normalized_rule_ids if rule_id in by_id]
             if not include_disabled:
@@ -914,7 +930,11 @@ def run_scheduled_fetch_now(session: Session) -> dict[str, Any]:
     )
     completed_at = utcnow()
     interval_minutes = normalize_schedule_interval_minutes(
-        getattr(settings, "rules_fetch_schedule_interval_minutes", DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES)
+        getattr(
+            settings,
+            "rules_fetch_schedule_interval_minutes",
+            DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES,
+        )
     )
     settings.rules_fetch_schedule_last_run_at = completed_at
     settings.rules_fetch_schedule_next_run_at = (
@@ -938,7 +958,11 @@ def run_due_scheduled_fetch(session: Session) -> dict[str, Any] | None:
     now = utcnow()
     next_run_at = getattr(settings, "rules_fetch_schedule_next_run_at", None)
     interval_minutes = normalize_schedule_interval_minutes(
-        getattr(settings, "rules_fetch_schedule_interval_minutes", DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES)
+        getattr(
+            settings,
+            "rules_fetch_schedule_interval_minutes",
+            DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES,
+        )
     )
     if next_run_at is None:
         settings.rules_fetch_schedule_next_run_at = schedule_next_run_at(

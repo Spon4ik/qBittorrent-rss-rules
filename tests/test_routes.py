@@ -86,7 +86,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "0.8.2"
+    assert payload["app_version"] == "0.8.3"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -119,7 +119,9 @@ def test_debug_hover_telemetry_api_records_filters_and_clears_events(app_client)
     assert first_response.status_code == 200
     assert second_response.status_code == 200
 
-    filtered = app_client.get("/api/debug/hover-telemetry", params={"session_id": "session-b", "limit": 10})
+    filtered = app_client.get(
+        "/api/debug/hover-telemetry", params={"session_id": "session-b", "limit": 10}
+    )
 
     assert filtered.status_code == 200
     filtered_payload = filtered.json()
@@ -127,7 +129,9 @@ def test_debug_hover_telemetry_api_records_filters_and_clears_events(app_client)
     assert filtered_payload["events"][0]["session_id"] == "session-b"
     assert filtered_payload["events"][0]["row_name"] == "Rule B"
 
-    cleared = app_client.get("/api/debug/hover-telemetry", params={"session_id": "session-b", "clear": 1})
+    cleared = app_client.get(
+        "/api/debug/hover-telemetry", params={"session_id": "session-b", "clear": 1}
+    )
 
     assert cleared.status_code == 200
     cleared_payload = cleared.json()
@@ -146,7 +150,7 @@ def test_rules_page_header_includes_create_rule_button(app_client) -> None:
     response = app_client.get("/")
 
     assert response.status_code == 200
-    assert '>Create Rule</a>' in response.text
+    assert ">Create Rule</a>" in response.text
 
 
 def test_rules_page_renders_release_status_from_snapshots(app_client, db_session) -> None:
@@ -286,7 +290,10 @@ def test_rules_page_defers_missing_poster_backfill_from_response_render(
     for _ in range(20):
         db_session.expire_all()
         updated_rule = db_session.get(Rule, rule.id)
-        if updated_rule is not None and updated_rule.poster_url == "https://images.example/posterless-rule.jpg":
+        if (
+            updated_rule is not None
+            and updated_rule.poster_url == "https://images.example/posterless-rule.jpg"
+        ):
             break
         time.sleep(0.05)
 
@@ -514,14 +521,23 @@ def test_inline_local_generated_pattern_supports_jellyfin_existing_episode_exclu
     app_js_source = app_js_path.read_text(encoding="utf-8")
 
     assert 'const episodeRangeAny = "0*\\\\d{1,2}";' in app_js_source
-    assert "function buildLowerEpisodeExclusionRegexFragment(startSeasonValue, startEpisodeValue) {" in app_js_source
-    assert "function buildExistingEpisodeExclusionRegexFragment(existingEpisodeKeys) {" in app_js_source
+    assert (
+        "function buildLowerEpisodeExclusionRegexFragment(startSeasonValue, startEpisodeValue) {"
+        in app_js_source
+    )
+    assert (
+        "function buildExistingEpisodeExclusionRegexFragment(existingEpisodeKeys) {"
+        in app_js_source
+    )
     assert "function anchorGeneratedPatternAtStart(pattern) {" in app_js_source
-    assert "const lowerEpisodeExclusion = buildLowerEpisodeExclusionRegexFragment(startSeason, startEpisode);" in app_js_source
+    assert (
+        "const lowerEpisodeExclusion = buildLowerEpisodeExclusionRegexFragment(startSeason, startEpisode);"
+        in app_js_source
+    )
     assert 'form.dataset.jellyfinExistingEpisodeNumbers || "[]"' in app_js_source
     assert "return anchorGeneratedPatternAtStart(deriveGeneratedPattern({" in app_js_source
-    assert 'jellyfinSearchExistingUnseen: getJellyfinSearchExistingUnseen(),' in app_js_source
-    assert 'jellyfinExistingEpisodeNumbers: getJellyfinExistingEpisodeNumbers(),' in app_js_source
+    assert "jellyfinSearchExistingUnseen: getJellyfinSearchExistingUnseen()," in app_js_source
+    assert "jellyfinExistingEpisodeNumbers: getJellyfinExistingEpisodeNumbers()," in app_js_source
 
 
 def test_inline_local_generated_pattern_rejects_zero_based_ranges_with_empty_title() -> None:
@@ -611,11 +627,17 @@ def test_inline_rule_filter_profile_selection_updates_immediately() -> None:
     app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
     app_js_source = app_js_path.read_text(encoding="utf-8")
 
-    assert 'const handleFilterProfileSelection = () => {' in app_js_source
-    assert 'filterProfileSelect?.addEventListener("input", handleFilterProfileSelection);' in app_js_source
-    assert 'filterProfileSelect?.addEventListener("change", handleFilterProfileSelection);' in app_js_source
-    assert 'if (element === filterProfileSelect) {' in app_js_source
-    assert 'refreshDerivedFields();' in app_js_source
+    assert "const handleFilterProfileSelection = () => {" in app_js_source
+    assert (
+        'filterProfileSelect?.addEventListener("input", handleFilterProfileSelection);'
+        in app_js_source
+    )
+    assert (
+        'filterProfileSelect?.addEventListener("change", handleFilterProfileSelection);'
+        in app_js_source
+    )
+    assert "if (element === filterProfileSelect) {" in app_js_source
+    assert "refreshDerivedFields();" in app_js_source
 
 
 def test_inline_feed_scope_indexer_matching_uses_key_variants() -> None:
@@ -624,10 +646,16 @@ def test_inline_feed_scope_indexer_matching_uses_key_variants() -> None:
 
     assert "function buildIndexerKeyVariants(value) {" in app_js_source
     assert "const getSelectedFeedIndexerSlugs = () => {" in app_js_source
-    assert "const feedScopeBlocksAll = hasFeedSelectionConstraint() && feedScopedIndexers.length === 0;" in app_js_source
+    assert (
+        "const feedScopeBlocksAll = hasFeedSelectionConstraint() && feedScopedIndexers.length === 0;"
+        in app_js_source
+    )
     assert "indexerVariantKeys: mergeUniqueIndexerVariantKeys(selectedIndexers)," in app_js_source
-    assert "feedScopedIndexerVariantKeys: mergeUniqueIndexerVariantKeys(feedScopedIndexers)," in app_js_source
-    assert "indexerKeys: buildIndexerKeyVariants(card.dataset.indexer || \"\")," in app_js_source
+    assert (
+        "feedScopedIndexerVariantKeys: mergeUniqueIndexerVariantKeys(feedScopedIndexers),"
+        in app_js_source
+    )
+    assert 'indexerKeys: buildIndexerKeyVariants(card.dataset.indexer || ""),' in app_js_source
     assert "entry.indexerKeys.some((item) => allowedIndexerKeys.has(item))" in app_js_source
     assert "entry.indexerKeys.some((item) => allowedFeedKeys.has(item))" in app_js_source
 
@@ -637,10 +665,16 @@ def test_inline_local_filters_enforce_query_and_imdb_parity() -> None:
     app_js_source = app_js_path.read_text(encoding="utf-8")
 
     assert "const matchesQueryText = (titleSurface, queryValue) => {" in app_js_source
-    assert "const payloadImdbId = normalizeSearchImdbId(filters.imdbId || \"\");" in app_js_source
-    assert "const resultImdbId = normalizeSearchImdbId(entry.imdbId || \"\");" in app_js_source
-    assert "const imdbExactMatch = Boolean(payloadImdbId && resultImdbId && payloadImdbId === resultImdbId);" in app_js_source
-    assert "if (!imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {" in app_js_source
+    assert 'const payloadImdbId = normalizeSearchImdbId(filters.imdbId || "");' in app_js_source
+    assert 'const resultImdbId = normalizeSearchImdbId(entry.imdbId || "");' in app_js_source
+    assert (
+        "const imdbExactMatch = Boolean(payloadImdbId && resultImdbId && payloadImdbId === resultImdbId);"
+        in app_js_source
+    )
+    assert (
+        "if (!imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {"
+        in app_js_source
+    )
 
 
 def test_run_rule_search_route_redirects_to_inline_rule_page(app_client, db_session) -> None:
@@ -677,8 +711,14 @@ def test_run_rule_search_route_preserves_feed_url_overrides(app_client, db_sessi
         f"/rules/{rule.id}/search",
         params=[
             ("feed_scope_override", "1"),
-            ("feed_urls", "http://jackett:9117/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc"),
-            ("feed_urls", "http://jackett:9117/api/v2.0/indexers/kinozal/results/torznab/api?apikey=abc"),
+            (
+                "feed_urls",
+                "http://jackett:9117/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc",
+            ),
+            (
+                "feed_urls",
+                "http://jackett:9117/api/v2.0/indexers/kinozal/results/torznab/api?apikey=abc",
+            ),
         ],
         follow_redirects=False,
     )
@@ -803,9 +843,9 @@ def test_search_page_embeds_raw_cache_payload_for_local_refinement(app_client, m
     assert 'id="search-run-cache"' in response.text
     assert 'data-search-card="combined"' in response.text
     assert 'data-search-row="combined"' in response.text
-    assert 'data-search-view-mode' not in response.text
+    assert "data-search-view-mode" not in response.text
     assert 'data-search-table-sort-field="title"' in response.text
-    assert 'data-filter-impact-list=' not in response.text
+    assert "data-filter-impact-list=" not in response.text
     assert 'data-search-filtered-count="combined"' in response.text
     assert 'data-search-fetched-count="combined"' in response.text
     assert "data-search-category-scope-status" in response.text
@@ -843,7 +883,9 @@ def test_search_page_persists_indexer_category_catalog_entries(
         return {"rutracker": {"101279": ["Audiobooks", "Audio/Audiobooks"]}}
 
     monkeypatch.setattr(JackettClient, "search", fake_search)
-    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", fake_configured_indexer_labels)
+    monkeypatch.setattr(
+        JackettClient, "configured_indexer_category_labels", fake_configured_indexer_labels
+    )
 
     response = app_client.get(
         "/search",
@@ -909,7 +951,9 @@ def test_search_page_resolves_colliding_category_ids_per_indexer(
         }
 
     monkeypatch.setattr(JackettClient, "search", fake_search)
-    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", fake_configured_indexer_labels)
+    monkeypatch.setattr(
+        JackettClient, "configured_indexer_category_labels", fake_configured_indexer_labels
+    )
 
     response = app_client.get(
         "/search",
@@ -958,7 +1002,9 @@ def test_search_page_uses_saved_result_view_defaults(app_client, db_session, mon
     assert '"field": "seeders"' in response.text
 
 
-def test_search_page_auto_enforces_imdb_and_renders_unified_results_table(app_client, monkeypatch) -> None:
+def test_search_page_auto_enforces_imdb_and_renders_unified_results_table(
+    app_client, monkeypatch
+) -> None:
     def fake_search(self, payload):
         assert payload.query == "Ghosts"
         assert payload.imdb_id == "tt11379026"
@@ -969,9 +1015,7 @@ def test_search_page_auto_enforces_imdb_and_renders_unified_results_table(app_cl
             query_variants=["Ghosts"],
             request_variants=["t=tvsearch imdbid=tt11379026 cat=5000"],
             results=[],
-            fallback_request_variants=[
-                't=tvsearch q="Ghosts full hd" cat=5000'
-            ],
+            fallback_request_variants=['t=tvsearch q="Ghosts full hd" cat=5000'],
             fallback_results=[
                 JackettSearchResult(
                     title="Ghosts S03E01 1080p",
@@ -1003,7 +1047,9 @@ def test_search_page_auto_enforces_imdb_and_renders_unified_results_table(app_cl
     assert "Ghosts S03E01 1080p" in response.text
 
 
-def test_search_page_renders_single_result_view_panel_for_unified_results(app_client, monkeypatch) -> None:
+def test_search_page_renders_single_result_view_panel_for_unified_results(
+    app_client, monkeypatch
+) -> None:
     def fake_search(self, payload):
         return JackettSearchRun(
             query_variants=["Ghosts"],
@@ -1035,16 +1081,18 @@ def test_search_page_renders_single_result_view_panel_for_unified_results(app_cl
     )
 
     assert response.status_code == 200
-    assert response.text.count('data-search-controls') == 1
-    assert response.text.count('data-search-save-defaults') == 1
-    assert response.text.count('data-search-show-hidden-toggle') == 1
+    assert response.text.count("data-search-controls") == 1
+    assert response.text.count("data-search-save-defaults") == 1
+    assert response.text.count("data-search-show-hidden-toggle") == 1
     assert 'data-search-scope-summary="combined"' in response.text
     assert 'data-search-hidden-summary="combined"' in response.text
-    assert 'data-search-visibility-status' in response.text
+    assert "data-search-visibility-status" in response.text
     assert "<th>Visibility</th>" in response.text
 
 
-def test_search_page_unified_results_do_not_render_filter_impact_panels(app_client, monkeypatch) -> None:
+def test_search_page_unified_results_do_not_render_filter_impact_panels(
+    app_client, monkeypatch
+) -> None:
     def fake_search(self, payload):
         return JackettSearchRun(
             query_variants=["Ghosts"],
@@ -1097,7 +1145,9 @@ def test_search_page_skips_release_year_when_toggle_is_unchecked(app_client, mon
     assert response.status_code == 200
 
 
-def test_search_page_hides_availability_columns_when_metrics_absent(app_client, monkeypatch) -> None:
+def test_search_page_hides_availability_columns_when_metrics_absent(
+    app_client, monkeypatch
+) -> None:
     def fake_search(self, payload):
         return JackettSearchRun(
             query_variants=["Dune Part Two"],
@@ -1164,7 +1214,9 @@ def test_search_page_parses_pipe_delimited_any_keyword_groups(app_client, monkey
     assert "The Rip (2026) 4K HDR10" in response.text
 
 
-def test_search_page_expands_quality_token_terms_for_search_payload(app_client, monkeypatch) -> None:
+def test_search_page_expands_quality_token_terms_for_search_payload(
+    app_client, monkeypatch
+) -> None:
     def fake_search(self, payload):
         assert payload.query == "The Rip"
         assert payload.keywords_any_groups == [["hevc", "x265", "h265"]]
@@ -1197,7 +1249,9 @@ def test_search_page_expands_quality_token_terms_for_search_payload(app_client, 
     assert "mustNotContain" in response.text
 
 
-def test_search_page_groups_quality_include_tokens_by_quality_group(app_client, monkeypatch) -> None:
+def test_search_page_groups_quality_include_tokens_by_quality_group(
+    app_client, monkeypatch
+) -> None:
     def fake_search(self, payload):
         assert payload.query == "3 Body Problem"
         assert payload.keywords_any_groups == [["4k"], ["hdr", "hdr10"]]
@@ -1330,7 +1384,9 @@ def test_search_page_renders_search_warnings(app_client, monkeypatch) -> None:
     assert "No IMDb-first matches" not in response.text
 
 
-def test_search_page_from_rule_uses_structured_terms_not_raw_regex(app_client, db_session, monkeypatch) -> None:
+def test_search_page_from_rule_uses_structured_terms_not_raw_regex(
+    app_client, db_session, monkeypatch
+) -> None:
     rule = Rule(
         rule_name="Andrew Michael Blues Band",
         content_name="Andrew Michael Blues Band",
@@ -1466,6 +1522,42 @@ def test_search_page_from_rule_skips_release_year_when_not_enabled(
     assert "Derived from rule: Ghosts Rule" in response.text
 
 
+def test_search_page_from_rule_carries_series_episode_floor_into_imdb_search(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    rule = Rule(
+        rule_name="Shrinking Rule",
+        content_name="Shrinking",
+        normalized_title="Shrinking",
+        imdb_id="tt15677150",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=3,
+        start_episode=7,
+        feed_urls=["http://feed.example/shrinking"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        assert payload.query == "Shrinking"
+        assert payload.imdb_id == "tt15677150"
+        assert payload.imdb_id_only is True
+        assert payload.season_number == 3
+        assert payload.episode_number == 7
+        return JackettSearchRun(query_variants=["Shrinking"], results=[])
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get("/search", params={"rule_id": rule.id})
+
+    assert response.status_code == 200
+    assert "series floor S03E07" in response.text
+    assert "IMDb-enforced Jackett lookup" in response.text
+
+
 def test_search_page_falls_back_to_title_when_rule_derivation_validation_fails(
     app_client,
     db_session,
@@ -1516,7 +1608,9 @@ def test_search_page_falls_back_to_title_when_rule_derivation_validation_fails(
         )
 
     monkeypatch.setattr("app.routes.pages.build_search_request_from_rule", fake_build)
-    monkeypatch.setattr("app.routes.pages.build_reduced_search_request_from_rule", fake_reduced_build)
+    monkeypatch.setattr(
+        "app.routes.pages.build_reduced_search_request_from_rule", fake_reduced_build
+    )
     monkeypatch.setattr(JackettClient, "search", fake_search)
 
     response = app_client.get("/search", params={"rule_id": rule.id})
@@ -1564,7 +1658,9 @@ def test_search_page_handles_unexpected_rule_derivation_error_without_500(
         )
 
     monkeypatch.setattr("app.routes.pages.build_search_request_from_rule", fake_build)
-    monkeypatch.setattr("app.routes.pages.build_reduced_search_request_from_rule", fake_reduced_build)
+    monkeypatch.setattr(
+        "app.routes.pages.build_reduced_search_request_from_rule", fake_reduced_build
+    )
     monkeypatch.setattr(JackettClient, "search", fake_search)
 
     response = app_client.get("/search", params={"rule_id": rule.id})
@@ -1619,7 +1715,9 @@ def test_search_page_uses_clamped_title_only_fallback_when_reduction_still_fails
         )
 
     monkeypatch.setattr("app.routes.pages.build_search_request_from_rule", fake_build)
-    monkeypatch.setattr("app.routes.pages.build_reduced_search_request_from_rule", fake_reduced_build)
+    monkeypatch.setattr(
+        "app.routes.pages.build_reduced_search_request_from_rule", fake_reduced_build
+    )
     monkeypatch.setattr(JackettClient, "search", fake_search)
 
     response = app_client.get("/search", params={"rule_id": rule.id})
@@ -1659,16 +1757,18 @@ def test_rule_pages_expose_run_search_actions(app_client, db_session) -> None:
     edit_response = app_client.get(f"/rules/{rule.id}")
 
     assert index_response.status_code == 200
-    assert f'/rules/{rule.id}/search' in index_response.text
+    assert f"/rules/{rule.id}/search" in index_response.text
     assert ">Run Search</a>" in index_response.text
     assert edit_response.status_code == 200
-    assert f'/rules/{rule.id}/search' in edit_response.text
+    assert f"/rules/{rule.id}/search" in edit_response.text
     assert ">Run Search Here</a>" in edit_response.text
     assert ">Refresh Search Snapshot</a>" in edit_response.text
     assert ">Advanced Search Workspace</a>" in edit_response.text
 
 
-def test_edit_rule_page_can_render_inline_search_results(app_client, db_session, monkeypatch) -> None:
+def test_edit_rule_page_can_render_inline_search_results(
+    app_client, db_session, monkeypatch
+) -> None:
     settings = AppSettings(
         id="default",
         jackett_api_url="http://jackett:9117",
@@ -1719,18 +1819,18 @@ def test_edit_rule_page_can_render_inline_search_results(app_client, db_session,
     assert "Advanced queue options" in response.text
     assert 'data-search-table-wrap="combined"' in response.text
     assert 'data-search-table-sort-field="title"' in response.text
-    assert 'data-search-view-mode' not in response.text
-    assert 'data-search-show-hidden-toggle' in response.text
+    assert "data-search-view-mode" not in response.text
+    assert "data-search-show-hidden-toggle" in response.text
     assert 'data-search-multiselect="indexers"' in response.text
     assert 'data-search-multiselect="categories"' in response.text
     assert 'data-search-source-summary="primary"' in response.text
-    assert 'data-search-source-filtered-count' in response.text
+    assert "data-search-source-filtered-count" in response.text
     assert 'data-search-scope-summary="combined"' in response.text
     assert 'data-search-hidden-summary="combined"' in response.text
-    assert 'data-search-visibility-status' in response.text
+    assert "data-search-visibility-status" in response.text
     assert "<th>Visibility</th>" in response.text
     assert 'data-query-source-key="primary"' in response.text
-    assert 'data-filter-impact-list=' not in response.text
+    assert "data-filter-impact-list=" not in response.text
     snapshot = db_session.get(RuleSearchSnapshot, rule.id)
     assert snapshot is not None
     assert snapshot.inline_search["raw_results"][0]["title"] == "Shrinking S01E01"
@@ -1921,7 +2021,9 @@ def test_edit_rule_inline_search_ignores_feed_override_when_selection_matches_ru
     db_session.commit()
 
     def fail_search(self, payload):
-        raise AssertionError("Jackett search should not run when feed override matches saved rule feeds.")
+        raise AssertionError(
+            "Jackett search should not run when feed override matches saved rule feeds."
+        )
 
     monkeypatch.setattr(JackettClient, "search", fail_search)
 
@@ -2124,7 +2226,10 @@ def test_edit_rule_inline_search_uses_feed_url_override_scope(
     )
 
     assert response.status_code == 200
-    assert "Inline search used current affected-feed selection from the form (not yet saved)." in response.text
+    assert (
+        "Inline search used current affected-feed selection from the form (not yet saved)."
+        in response.text
+    )
     assert "Search scoped to affected feed indexer: rutracker." in response.text
     snapshot = db_session.get(RuleSearchSnapshot, rule.id)
     assert snapshot is not None
@@ -2211,7 +2316,10 @@ def test_edit_rule_inline_search_warns_when_feed_scope_not_derivable(
     response = app_client.get(f"/rules/{rule.id}", params={"run_search": "1"})
 
     assert response.status_code == 200
-    assert "Affected feeds could not be mapped to Jackett indexers; using default indexer scope." in response.text
+    assert (
+        "Affected feeds could not be mapped to Jackett indexers; using default indexer scope."
+        in response.text
+    )
 
 
 def test_jackett_search_api_returns_results(app_client, monkeypatch) -> None:
@@ -2485,7 +2593,10 @@ def test_apply_taxonomy_updates_source_and_records_audit(app_client, tmp_path, m
     )
 
     assert response.status_code == 303
-    assert json.loads(taxonomy_path.read_text(encoding="utf-8"))["bundles"][0]["label"] == "At Least HD Revised"
+    assert (
+        json.loads(taxonomy_path.read_text(encoding="utf-8"))["bundles"][0]["label"]
+        == "At Least HD Revised"
+    )
     assert "rename bundle label" in audit_path.read_text(encoding="utf-8")
 
 
@@ -2522,11 +2633,16 @@ def test_apply_taxonomy_allows_label_rename_when_invalid_tokens_already_exist(
     )
 
     assert response.status_code == 303
-    assert json.loads(taxonomy_path.read_text(encoding="utf-8"))["bundles"][0]["label"] == "At Least Full HD"
+    assert (
+        json.loads(taxonomy_path.read_text(encoding="utf-8"))["bundles"][0]["label"]
+        == "At Least Full HD"
+    )
     assert "rename bundle label with legacy token present" in audit_path.read_text(encoding="utf-8")
 
 
-def test_apply_taxonomy_rejects_orphaning_rule_tokens(app_client, db_session, tmp_path, monkeypatch) -> None:
+def test_apply_taxonomy_rejects_orphaning_rule_tokens(
+    app_client, db_session, tmp_path, monkeypatch
+) -> None:
     payload, taxonomy_path, audit_path = _use_temp_taxonomy(tmp_path, monkeypatch)
     rule = Rule(
         rule_name="Rule Beta",
@@ -2557,11 +2673,16 @@ def test_apply_taxonomy_rejects_orphaning_rule_tokens(app_client, db_session, tm
 
     assert response.status_code == 400
     assert "Cannot apply a taxonomy update that would orphan persisted tokens." in response.text
-    assert any(item["value"] == "hevc" for item in json.loads(taxonomy_path.read_text(encoding="utf-8"))["options"])
+    assert any(
+        item["value"] == "hevc"
+        for item in json.loads(taxonomy_path.read_text(encoding="utf-8"))["options"]
+    )
     assert not audit_path.exists()
 
 
-def test_new_rule_uses_taxonomy_bundle_labels_for_builtin_profiles(app_client, tmp_path, monkeypatch) -> None:
+def test_new_rule_uses_taxonomy_bundle_labels_for_builtin_profiles(
+    app_client, tmp_path, monkeypatch
+) -> None:
     payload, taxonomy_path, _ = _use_temp_taxonomy(tmp_path, monkeypatch)
     bundles = payload["bundles"]
     assert isinstance(bundles, list)
@@ -2575,7 +2696,9 @@ def test_new_rule_uses_taxonomy_bundle_labels_for_builtin_profiles(app_client, t
     assert ">At Least Full HD</option>" in response.text
 
 
-def test_settings_uses_taxonomy_bundle_labels_for_builtin_profiles(app_client, tmp_path, monkeypatch) -> None:
+def test_settings_uses_taxonomy_bundle_labels_for_builtin_profiles(
+    app_client, tmp_path, monkeypatch
+) -> None:
     payload, taxonomy_path, _ = _use_temp_taxonomy(tmp_path, monkeypatch)
     bundles = payload["bundles"]
     assert isinstance(bundles, list)
@@ -2641,8 +2764,14 @@ def test_edit_movie_rule_page_renders_jellyfin_movie_sync_copy(app_client, db_se
 
     assert response.status_code == 200
     assert "Keep searching this movie for better quality" in response.text
-    assert "centralized watch-state sync disables this rule after the movie is marked completed in any connected platform" in response.text
-    assert "disabled automatically because completed watch state was reported by Jellyfin, Stremio" in response.text
+    assert (
+        "centralized watch-state sync disables this rule after the movie is marked completed in any connected platform"
+        in response.text
+    )
+    assert (
+        "disabled automatically because completed watch state was reported by Jellyfin, Stremio"
+        in response.text
+    )
 
 
 def test_new_rule_uses_ultra_hd_hdr_defaults(app_client) -> None:
@@ -2830,7 +2959,10 @@ def test_save_settings_persists_profile_management_tokens(app_client, db_session
     assert settings.jackett_api_key_encrypted is not None
     assert settings.jellyfin_db_path == r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db"
     assert settings.jellyfin_user_name == "Spon4ik"
-    assert settings.stremio_local_storage_path == r"C:\Users\test\AppData\Local\Programs\Stremio\leveldb"
+    assert (
+        settings.stremio_local_storage_path
+        == r"C:\Users\test\AppData\Local\Programs\Stremio\leveldb"
+    )
     assert settings.default_quality_profile.value == "2160p_hdr"
     assert settings.default_sequential_download is True
     assert settings.default_first_last_piece_prio is True
@@ -2897,7 +3029,9 @@ def test_test_stremio_settings_reports_success(app_client, monkeypatch, tmp_path
     assert "Active movie/series library items: 1 of 1." in response.text
 
 
-def test_test_stremio_settings_compat_path_reports_success(app_client, monkeypatch, tmp_path) -> None:
+def test_test_stremio_settings_compat_path_reports_success(
+    app_client, monkeypatch, tmp_path
+) -> None:
     storage_path = create_stremio_local_storage(tmp_path)
     _install_stremio_api(
         monkeypatch,
@@ -3188,7 +3322,10 @@ def test_save_filter_profile_creates_custom_profile(app_client, db_session) -> N
     assert settings is not None
     assert settings.saved_quality_profiles["hevc-web-only"]["label"] == "HEVC Web Only"
     assert settings.saved_quality_profiles["hevc-web-only"]["include_tokens"] == ["hevc", "web_dl"]
-    assert settings.saved_quality_profiles["hevc-web-only"]["exclude_tokens"] == ["bluray", "bdremux"]
+    assert settings.saved_quality_profiles["hevc-web-only"]["exclude_tokens"] == [
+        "bluray",
+        "bdremux",
+    ]
     assert settings.saved_quality_profiles["hevc-web-only"]["media_types"] == ["series"]
 
     overwrite_response = app_client.post(
@@ -3226,7 +3363,12 @@ def test_overwrite_filter_profile_updates_builtin_at_least_hd(app_client, db_ses
     assert payload["profile_key"] == "builtin-at-least-hd"
     settings = db_session.get(AppSettings, "default")
     assert settings is not None
-    assert settings.quality_profile_rules["1080p"]["include_tokens"] == ["full_hd", "1080p", "2160p", "4k"]
+    assert settings.quality_profile_rules["1080p"]["include_tokens"] == [
+        "full_hd",
+        "1080p",
+        "2160p",
+        "4k",
+    ]
     assert settings.quality_profile_rules["1080p"]["exclude_tokens"] == ["480p", "360p", "sd"]
 
 
@@ -3262,7 +3404,10 @@ def test_overwrite_filter_profile_updates_builtin_at_least_uhd(app_client, db_se
         "sd",
         "bdremux",
     ]
-    assert settings.saved_quality_profiles["builtin-at-least-uhd"]["media_types"] == ["series", "movie"]
+    assert settings.saved_quality_profiles["builtin-at-least-uhd"]["media_types"] == [
+        "series",
+        "movie",
+    ]
 
 
 def test_new_rule_prefills_remembered_default_feeds(app_client, db_session) -> None:
@@ -3274,7 +3419,10 @@ def test_new_rule_prefills_remembered_default_feeds(app_client, db_session) -> N
     response = app_client.get("/rules/new")
 
     assert response.status_code == 200
-    assert 'type="checkbox" name="feed_urls" value="http://feed.example/remembered" checked' in response.text
+    assert (
+        'type="checkbox" name="feed_urls" value="http://feed.example/remembered" checked'
+        in response.text
+    )
     assert 'name="remember_feed_defaults" value="on" checked' in response.text
 
 
@@ -3357,7 +3505,10 @@ def test_update_rule_can_remember_selected_feeds_as_defaults(app_client, db_sess
     db_session.expire_all()
     refreshed_settings = db_session.get(AppSettings, "default")
     assert refreshed_settings is not None
-    assert refreshed_settings.default_feed_urls == ["http://feed.example/alpha", "http://feed.example/bravo"]
+    assert refreshed_settings.default_feed_urls == [
+        "http://feed.example/alpha",
+        "http://feed.example/bravo",
+    ]
 
 
 def test_rule_form_includes_bulk_feed_selection_controls(app_client) -> None:
@@ -3385,4 +3536,7 @@ def test_edit_rule_renders_saved_feeds_as_checked_checkboxes(app_client, db_sess
     response = app_client.get(f"/rules/{rule.id}")
 
     assert response.status_code == 200
-    assert 'type="checkbox" name="feed_urls" value="http://feed.example/saved" checked' in response.text
+    assert (
+        'type="checkbox" name="feed_urls" value="http://feed.example/saved" checked'
+        in response.text
+    )

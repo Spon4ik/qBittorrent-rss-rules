@@ -10,14 +10,8 @@ from app.services.qbittorrent import QbittorrentAuthError, QbittorrentClient
 
 def test_flatten_feed_tree_handles_nested_nodes() -> None:
     payload = {
-        "Shows": {
-            "English": {
-                "url": "http://feed.example/shows"
-            }
-        },
-        "Movies": {
-            "url": "http://feed.example/movies"
-        },
+        "Shows": {"English": {"url": "http://feed.example/shows"}},
+        "Movies": {"url": "http://feed.example/movies"},
     }
 
     feeds = QbittorrentClient.flatten_feed_tree(payload)
@@ -132,10 +126,10 @@ def test_add_torrent_file_posts_multipart_payload() -> None:
     )
 
     body_text = captured_body.decode(errors="ignore")
-    assert "name=\"torrents\"; filename=\"queued-result.torrent\"" in body_text
-    assert "name=\"category\"" in body_text
+    assert 'name="torrents"; filename="queued-result.torrent"' in body_text
+    assert 'name="category"' in body_text
     assert "Series/Shrinking [imdbid-tt15153834]" in body_text
-    assert "name=\"paused\"" in body_text
+    assert 'name="paused"' in body_text
     assert "false" in body_text
 
 

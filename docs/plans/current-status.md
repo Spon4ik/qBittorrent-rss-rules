@@ -2,7 +2,8 @@
 
 ## Current focus
 
-- Phase 23 is now the next planned minor release target for `v0.9.0`, focused on globally ordering merged qB RSS and Torrentio-compatible results inside one addon surface instead of relying on Stremio's separate provider grouping.
+- Phase 24 is now closed and release-validated in `v0.8.3` as the hotfix slice for Stremio long-running series episode lookups that disappear because the addon applies the original series year as a hard search filter.
+- Phase 23 is now the active minor release target for `v0.9.0`, focused on globally ordering merged qB RSS and Torrentio-compatible results inside one addon surface, following the qB-side precursors shipped in `0.8.3`.
 - Phase 22 is now closed and release-validated in `v0.8.2` as the Stremio variant-parity follow-up, keeping the broader qB RSS variant set, sorting it by quality then seeds, and upgrading exact locally available variants in-place instead of suppressing the rest of the addon rows.
 - Phase 21 is now closed and release-validated in `v0.8.1` as the Stremio playback follow-up slice, covering qB RSS stream ordering and qB-backed local playback acceleration now that qB RSS rows render in the real Stremio desktop client.
 - Phase 20 is now closed and release-validated in `v0.8.0` as the Stremio library sync and native addon parity slice. The Stremio library sync, centralized completed-movie watch-state path, native addon, and the final Stremio desktop stream-rendering fix are all in place with green automated gates and real desktop smoke proof.
@@ -20,6 +21,27 @@
 - The retained desktop direction remains the WinUI WebView-shell + companion-process lifecycle baseline introduced in `v0.6.0`.
 
 ## Implemented
+
+- Completed the `v0.8.3` phase-24 release closeout on 2026-04-02:
+  - synchronized version touchpoints to `0.8.3` (`pyproject.toml`, test assertions, and desktop compatibility constants) following the phase-24 hotfix validation;
+  - updated `ROADMAP.md` and release history to mark the Stremio year hotfix and phase 23 qB-side precursors as shipped;
+  - validated the final `v0.8.3` patch release with `scripts\check.bat`, `scripts\closeout_qa.bat` (`All browser closeout checks passed`), and `scripts\run_dev.bat desktop-build` (`Build succeeded` after clearing locked desktop window processes).
+
+- Implemented Stremio Series watch progress arbitration (un-planned hotfix for v0.8.4/v0.9.0 cycle) on 2026-04-02:
+  - analyzed the Stremio `libraryItem` shape and successfully decoded the `watched` string (e.g. `tt10986410:3:12:43...`) and `video_id` object to dynamically extract `latest_watched_episode_key`;
+  - modified the `Rule` SQLModel definition with `stremio_known_episode_numbers` and `stremio_watched_episode_numbers` JSON columns, autogenerating Alebmic migration `b444a9971f02` to safely deploy the schema change;
+  - updated `app/services/stremio.py` so that `_sync_existing_rule` and `_create_rule_for_item` now run series updates through the `watch_state.py` shared arbitration layer. The layer directly queries the `v3-cinemeta.strem.io` API to natively enumerate series bounds (meaning no configuration or OMDb API key is required, and "Ted Lasso" Season 3 Episode 12 automatically advances to Season 4 Episode 0).
+
+- Shipped the phase-23 precursor follow-up locally on 2026-03-30 inside the `v0.8.3` release:
+  - extended `app/schemas.py`, `app/services/jackett.py`, and `app/routes/pages.py` so saved-rule/main-app IMDb-first series searches now carry episode-floor context (`season_number` / `episode_number`) into the Jackett request contract, retry `IMDb + season + episode`, then `IMDb + season`, and only then fall back to broader title matching;
+  - tightened Jackett local filtering so explicit conflicting IMDb IDs are now rejected instead of surviving only because the title text matched, which reduces ambiguous-title fallback leakage for remake-heavy names such as `Ghosts`;
+  - updated `app/services/stremio_addon.py` so qB-authored Stremio rows expose richer visible variant detail (quality markers, size, and source/indexer attribution) instead of collapsing into nearly identical `qB RSS Rules 2160p` rows;
+  - validated the follow-up with `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_jackett.py tests\\test_routes.py tests\\test_stremio_addon.py -q` (`145 passed`, `1 skipped`), `.\\.venv\\Scripts\\python.exe -m ruff check app\\schemas.py app\\services\\jackett.py app\\routes\\pages.py app\\services\\stremio_addon.py tests\\test_jackett.py tests\\test_routes.py tests\\test_stremio_addon.py` (`All checks passed`), and `.\\.venv\\Scripts\\python.exe -m mypy app\\schemas.py app\\services\\jackett.py app\\routes\\pages.py app\\services\\stremio_addon.py` (`Success: no issues found in 4 source files`).
+
+- Implemented the phase-24 long-running-series Stremio hotfix on 2026-03-28:
+  - updated `app/services/stremio_addon.py` so series episode exact/text/season-fallback Jackett searches no longer send the original series year as a hard filter;
+  - added a focused regression in `tests/test_stremio_addon.py` for `Death in Paradise` season 14 episode discovery when metadata year is still `2011`;
+  - validated the change with `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_stremio_addon.py -q` (`13 passed`), `.\\.venv\\Scripts\\python.exe -m ruff check app\\services\\stremio_addon.py tests\\test_stremio_addon.py` (`All checks passed`), `.\\.venv\\Scripts\\python.exe -m mypy app\\services\\stremio_addon.py` (`Success: no issues found in 1 source file`), direct `:8000` route repros for `tt1888075:14:1`, `tt1888075:14:2`, `tt1888075:14:3`, `tt1888075:13:1`, and `tt1888075:15:8`, and real desktop smoke reruns for `https://web.stremio.com/#/detail/series/tt1888075/tt1888075%3A14%3A1` with artifacts under `logs/qa/stremio-desktop-smoke-20260328T181024Z/` and `logs/qa/stremio-desktop-smoke-20260328T181339Z/`, the latter confirming 14 qB RSS rows visible in the Stremio UI.
 
 - Completed the `v0.8.2` phase-22 release closeout on 2026-03-28:
   - reworked `app/services/stremio_addon.py` so qB RSS stream collection now keeps the viable variant set instead of collapsing to a tiny local-first subset, while still sorting the visible addon rows by quality first and seeds second;
@@ -794,15 +816,19 @@
 
 ## In progress
 
+- Phase 24 is now implemented and locally validated; the remaining decision is whether to cut it as `v0.8.3` before resuming phase 23.
 - Phase 23 planning is now open for the next minor release: the target is one merged addon/provider block ordered globally by quality then seeds across qB RSS and Torrentio-compatible sources.
+- Phase 23 now has one completed precursor slice: qB rows are more descriptive and the main qB RSS Jackett path preserves series episode-floor precision, but true global ordering is still blocked on adding a Torrentio-compatible provider adapter and emitting one merged addon surface.
 - The main architectural constraint for phase 23 is the Stremio client behavior observed in the real desktop smoke: separate addons render as separate grouped sections, so true global ordering will require aggregation rather than another qB RSS-only sort tweak.
 - The real desktop addon smoke and the backend addon smoke remain the standing regression pair for future Stremio addon changes.
 - The main unresolved runtime follow-up is still metadata-provider quality on this machine: item-page playback is fixed, but search-catalog parity still depends on correcting the saved OMDb key or broadening provider fallbacks.
 
 ## Next actions
 
+- Decide whether to ship the validated long-running-series fix as `v0.8.3` on its own or alongside the completed phase-23 qB precision/attribution precursor follow-up.
+- Keep `Death in Paradise` season 14/15 routes in the live Stremio addon regression set.
 - Decide the phase-23 provider aggregation architecture for globally ordering qB RSS and Torrentio-compatible rows inside one addon surface.
-- Prototype the merged row contract so provider attribution survives the global sort.
+- Prototype the merged row contract plus the Torrentio-compatible provider adapter needed so provider attribution survives the global sort inside one addon block.
 - Keep `scripts\\stremio_addon_smoke.py` and `scripts\\stremio_desktop_smoke.py` as the required acceptance pair before changing native addon stream/search behavior again.
 - Repair the mock-addon install path inside `scripts\\stremio_desktop_variant_matrix.py` so the temporary QA addon reaches the stream-request stage and can keep bisecting future acceptance regressions automatically.
 - Correct the saved OMDb API key so `/stremio/catalog/...` can contribute search results again; stream lookups now degrade through Cinemeta metadata for known IMDb items, but title-search catalog results still depend on a working metadata provider.

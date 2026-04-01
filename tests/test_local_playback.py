@@ -31,7 +31,9 @@ class _FakeQbClient:
     ) -> None:
         self._torrent = torrent
         self._files = files
-        self._torrents = list(torrents) if torrents is not None else ([torrent] if torrent is not None else [])
+        self._torrents = (
+            list(torrents) if torrents is not None else ([torrent] if torrent is not None else [])
+        )
 
     def get_torrent(self, info_hash: str) -> dict[str, object] | None:
         assert info_hash == "abc123"

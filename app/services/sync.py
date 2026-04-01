@@ -27,7 +27,10 @@ class SyncService:
             raise SyncServiceError("Rule not found.")
 
         action = "create" if not rule.remote_rule_name_last_synced else "update"
-        if rule.remote_rule_name_last_synced and rule.remote_rule_name_last_synced != rule.rule_name:
+        if (
+            rule.remote_rule_name_last_synced
+            and rule.remote_rule_name_last_synced != rule.rule_name
+        ):
             action = "rename"
 
         builder = RuleBuilder(self.app_settings)

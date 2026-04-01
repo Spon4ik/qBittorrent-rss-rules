@@ -236,9 +236,12 @@ def build_episode_progress_fragment(start_season: int | None, start_episode: int
     ]
     if season_value < 99:
         season_after = _build_min_numeric_pattern_1_to_99(season_value + 1)
-        fragments.insert(0, rf"{season_prefix}{season_after}(?!\d){separators}{episode_prefix}{episode_any}")
+        fragments.insert(
+            0, rf"{season_prefix}{season_after}(?!\d){separators}{episode_prefix}{episode_any}"
+        )
         fragments.insert(1, rf"{season_prefix}{season_after}(?!\d)(?:\b|$)")
     return f"(?:{'|'.join(fragments)})"
+
 
 def normalize_jellyfin_episode_keys(value: list[str] | None) -> list[str]:
     return normalize_watch_state_episode_keys(value)
@@ -277,7 +280,9 @@ def build_below_floor_episode_fragment(season_number: int, episode_number: int) 
     return f"(?:{'|'.join(fragments)})"
 
 
-def build_lower_episode_exclusion_fragment(start_season: int | None, start_episode: int | None) -> str:
+def build_lower_episode_exclusion_fragment(
+    start_season: int | None, start_episode: int | None
+) -> str:
     if start_season is None or start_episode is None:
         return ""
 
@@ -319,9 +324,13 @@ class RuleBuilder:
         template = "Other/{title} [imdbid-{imdb_id}]"
         if self.settings is not None:
             if rule.media_type == MediaType.MOVIE:
-                template = self.settings.movie_category_template or "Movies/{title} [imdbid-{imdb_id}]"
+                template = (
+                    self.settings.movie_category_template or "Movies/{title} [imdbid-{imdb_id}]"
+                )
             elif rule.media_type == MediaType.SERIES:
-                template = self.settings.series_category_template or "Series/{title} [imdbid-{imdb_id}]"
+                template = (
+                    self.settings.series_category_template or "Series/{title} [imdbid-{imdb_id}]"
+                )
             elif rule.media_type == MediaType.AUDIOBOOK:
                 template = "Audiobooks/{title}"
             elif rule.media_type == MediaType.MUSIC:
@@ -374,7 +383,9 @@ class RuleBuilder:
         positive_fragments.extend(
             build_keyword_group_fragments(parse_additional_include_groups(rule.additional_includes))
         )
-        episode_progress_fragment = build_episode_progress_fragment(rule.start_season, rule.start_episode)
+        episode_progress_fragment = build_episode_progress_fragment(
+            rule.start_season, rule.start_episode
+        )
         if episode_progress_fragment:
             positive_fragments.append(episode_progress_fragment)
 

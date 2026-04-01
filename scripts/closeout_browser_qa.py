@@ -256,9 +256,15 @@ def parse_args() -> argparse.Namespace:
             "isolated mock qBittorrent + Jackett services."
         )
     )
-    parser.add_argument("--output-dir", default="logs/qa", help="Directory for timestamped QA artifacts.")
-    parser.add_argument("--timeout-ms", type=int, default=25000, help="Playwright step timeout in milliseconds.")
-    parser.add_argument("--headful", action="store_true", help="Run Chromium with a visible window.")
+    parser.add_argument(
+        "--output-dir", default="logs/qa", help="Directory for timestamped QA artifacts."
+    )
+    parser.add_argument(
+        "--timeout-ms", type=int, default=25000, help="Playwright step timeout in milliseconds."
+    )
+    parser.add_argument(
+        "--headful", action="store_true", help="Run Chromium with a visible window."
+    )
     parser.add_argument(
         "--p9-hover-sample-count",
         type=int,
@@ -362,7 +368,9 @@ def build_qb_handler(state: MockQbState) -> type[BaseHTTPRequestHandler]:
                 self._write_text("", status=200)
                 return
             if parsed.path == "/api/v2/torrents/add":
-                state.torrent_add_calls.append({key: values[-1] if values else "" for key, values in form.items()})
+                state.torrent_add_calls.append(
+                    {key: values[-1] if values else "" for key, values in form.items()}
+                )
                 self._write_text("", status=200)
                 return
             self._write_json({"error": f"Unhandled POST path: {parsed.path}"}, status=404)
@@ -373,42 +381,52 @@ def build_qb_handler(state: MockQbState) -> type[BaseHTTPRequestHandler]:
 def _torznab_indexers_xml() -> str:
     category_tree = (
         "<categories>"
-        "<category id=\"5000\" name=\"TV\">"
-        "<subcat id=\"5040\" name=\"HD\" />"
-        "<subcat id=\"5050\" name=\"UHD\" />"
-        "<subcat id=\"5070\" name=\"CAM\" />"
-        "<subcat id=\"5080\" name=\"Documentary\" />"
+        '<category id="5000" name="TV">'
+        '<subcat id="5040" name="HD" />'
+        '<subcat id="5050" name="UHD" />'
+        '<subcat id="5070" name="CAM" />'
+        '<subcat id="5080" name="Documentary" />'
         "</category>"
-        "<category id=\"3000\" name=\"Audio\">"
-        "<subcat id=\"3030\" name=\"Audiobook\" />"
+        '<category id="3000" name="Audio">'
+        '<subcat id="3030" name="Audiobook" />'
         "</category>"
         "</categories>"
     )
     indexer_blocks: list[str] = []
-    for indexer_id in ("alpha", "beta", "gamma", "hdrezka", "delta", "epsilon", "zeta", "theta", "books"):
+    for indexer_id in (
+        "alpha",
+        "beta",
+        "gamma",
+        "hdrezka",
+        "delta",
+        "epsilon",
+        "zeta",
+        "theta",
+        "books",
+    ):
         indexer_blocks.append(
-            f"<indexer id=\"{indexer_id}\">"
+            f'<indexer id="{indexer_id}">'
             "<caps>"
-            "<tv-search available=\"yes\" supportedParams=\"q,imdbid\" />"
-            "<movie-search available=\"yes\" supportedParams=\"q,imdbid\" />"
-            "<book-search available=\"yes\" supportedParams=\"q\" />"
+            '<tv-search available="yes" supportedParams="q,imdbid" />'
+            '<movie-search available="yes" supportedParams="q,imdbid" />'
+            '<book-search available="yes" supportedParams="q" />'
             f"{category_tree}"
             "</caps>"
             "</indexer>"
         )
-    return f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><indexers>{''.join(indexer_blocks)}</indexers>"
+    return f'<?xml version="1.0" encoding="UTF-8"?><indexers>{"".join(indexer_blocks)}</indexers>'
 
 
 def _torznab_caps_xml() -> str:
     return (
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        '<?xml version="1.0" encoding="UTF-8"?>'
         "<caps>"
         "<searching>"
-        "<search available=\"yes\" supportedParams=\"q\" />"
-        "<tv-search available=\"yes\" supportedParams=\"q,imdbid\" />"
-        "<movie-search available=\"yes\" supportedParams=\"q,imdbid\" />"
-        "<book-search available=\"yes\" supportedParams=\"q\" />"
-        "<music-search available=\"yes\" supportedParams=\"q\" />"
+        '<search available="yes" supportedParams="q" />'
+        '<tv-search available="yes" supportedParams="q,imdbid" />'
+        '<movie-search available="yes" supportedParams="q,imdbid" />'
+        '<book-search available="yes" supportedParams="q" />'
+        '<music-search available="yes" supportedParams="q" />'
         "</searching>"
         "</caps>"
     )
@@ -416,7 +434,8 @@ def _torznab_caps_xml() -> str:
 
 def _torznab_item_xml(item: dict[str, Any]) -> str:
     category_lines = "".join(
-        f"<category>{escape(str(category_id))}</category>" for category_id in item.get("categories", [])
+        f"<category>{escape(str(category_id))}</category>"
+        for category_id in item.get("categories", [])
     )
     attrs = [
         ("size", item.get("size")),
@@ -433,7 +452,7 @@ def _torznab_item_xml(item: dict[str, Any]) -> str:
         text = str(value or "").strip()
         if not text:
             continue
-        attr_lines += f"<attr name=\"{escape(name)}\" value=\"{escape(text)}\" />"
+        attr_lines += f'<attr name="{escape(name)}" value="{escape(text)}" />'
 
     title = escape(str(item["title"]))
     link = escape(str(item["link"]))
@@ -445,7 +464,7 @@ def _torznab_item_xml(item: dict[str, Any]) -> str:
         "<item>"
         f"<title>{title}</title>"
         f"<link>{link}</link>"
-        f"<guid isPermaLink=\"false\">{guid}</guid>"
+        f'<guid isPermaLink="false">{guid}</guid>'
         f"<comments>{comments}</comments>"
         f"<pubDate>{pub_date}</pubDate>"
         f"<jackettindexer>{indexer}</jackettindexer>"
@@ -458,8 +477,8 @@ def _torznab_item_xml(item: dict[str, Any]) -> str:
 def _torznab_results_xml(items: list[dict[str, Any]]) -> str:
     item_lines = "".join(_torznab_item_xml(item) for item in items)
     return (
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<rss version=\"2.0\">"
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<rss version="2.0">'
         "<channel>"
         f"{item_lines}"
         "</channel>"
@@ -491,8 +510,8 @@ def build_jackett_handler(state: MockJackettState) -> type[BaseHTTPRequestHandle
 
         def _write_error(self, message: str, status: int = 400) -> None:
             payload = (
-                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-                f"<error code=\"203\" description=\"{escape(message)}\" />"
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                f'<error code="203" description="{escape(message)}" />'
             )
             self._write_xml(payload, status=status)
 
@@ -524,7 +543,9 @@ def build_jackett_handler(state: MockJackettState) -> type[BaseHTTPRequestHandle
     return JackettHandler
 
 
-def start_threaded_server(handler: type[BaseHTTPRequestHandler], host: str, port: int) -> tuple[ThreadingHTTPServer, threading.Thread]:
+def start_threaded_server(
+    handler: type[BaseHTTPRequestHandler], host: str, port: int
+) -> tuple[ThreadingHTTPServer, threading.Thread]:
     server = ThreadingHTTPServer((host, port), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -818,7 +839,10 @@ def main() -> int:
             def search_filtered_count(section: str) -> int:
                 resolved_section = resolve_result_section(section)
                 if resolved_section == section:
-                    raw = page.text_content(f'[data-search-filtered-count="{resolved_section}"]') or "0"
+                    raw = (
+                        page.text_content(f'[data-search-filtered-count="{resolved_section}"]')
+                        or "0"
+                    )
                     return int(raw.strip() or "0")
                 labels = source_label_patterns(section)
                 if labels:
@@ -829,7 +853,10 @@ def main() -> int:
             def search_fetched_count(section: str) -> int:
                 resolved_section = resolve_result_section(section)
                 if resolved_section == section:
-                    raw = page.text_content(f'[data-search-fetched-count="{resolved_section}"]') or "0"
+                    raw = (
+                        page.text_content(f'[data-search-fetched-count="{resolved_section}"]')
+                        or "0"
+                    )
                     return int(raw.strip() or "0")
                 labels = source_label_patterns(section)
                 if labels:
@@ -873,7 +900,9 @@ def main() -> int:
 
             def reset_inline_local_filters_for_visibility() -> None:
                 matching_section = page.locator("details:has-text('Matching And Quality')").first
-                if matching_section.count() == 1 and not matching_section.evaluate("node => Boolean(node.open)"):
+                if matching_section.count() == 1 and not matching_section.evaluate(
+                    "node => Boolean(node.open)"
+                ):
                     matching_section.locator("summary").click()
                 if page.locator('textarea[name="must_not_contain"]').count() == 1:
                     page.fill('textarea[name="must_not_contain"]', "")
@@ -908,9 +937,18 @@ def main() -> int:
                 "Phase 4",
                 "Feed checkboxes render with remembered default prefill",
                 lambda: (
-                    page.goto(f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms),
-                    page.wait_for_selector('#feed-options input[name="feed_urls"]', timeout=args.timeout_ms),
-                    _expect(len(all_feed_values()) >= 3, "Expected at least 3 feed checkboxes from mock qB."),
+                    page.goto(
+                        f"{app_base_url}/rules/new",
+                        wait_until="networkidle",
+                        timeout=args.timeout_ms,
+                    ),
+                    page.wait_for_selector(
+                        '#feed-options input[name="feed_urls"]', timeout=args.timeout_ms
+                    ),
+                    _expect(
+                        len(all_feed_values()) >= 3,
+                        "Expected at least 3 feed checkboxes from mock qB.",
+                    ),
                     _expect(
                         set(DEFAULT_FEEDS).issubset(set(checked_feed_values())),
                         (
@@ -928,7 +966,9 @@ def main() -> int:
                 "Select all / Clear all controls toggle feed checkboxes deterministically",
                 lambda: (
                     page.click("#feed-clear-all"),
-                    _expect(len(checked_feed_values()) == 0, "Clear all should uncheck every feed."),
+                    _expect(
+                        len(checked_feed_values()) == 0, "Clear all should uncheck every feed."
+                    ),
                     page.click("#feed-select-all"),
                     _expect(
                         len(checked_feed_values()) == len(all_feed_values()),
@@ -956,7 +996,9 @@ def main() -> int:
                         with Session(engine) as session:
                             existing_names = set(
                                 session.scalars(
-                                    select(Rule.rule_name).where(Rule.rule_name.like("QA P9 Hover Seed %"))
+                                    select(Rule.rule_name).where(
+                                        Rule.rule_name.like("QA P9 Hover Seed %")
+                                    )
                                 ).all()
                             )
                             for index in range(min_count):
@@ -970,7 +1012,9 @@ def main() -> int:
                                         normalized_title=rule_name,
                                         imdb_id=f"tt{9000000 + index}",
                                         poster_url=build_svg_data_url(rule_name),
-                                        media_type=MediaType.SERIES if index % 2 == 0 else MediaType.MOVIE,
+                                        media_type=MediaType.SERIES
+                                        if index % 2 == 0
+                                        else MediaType.MOVIE,
                                         quality_profile=QualityProfile.PLAIN,
                                         feed_urls=[DEFAULT_FEEDS[index % len(DEFAULT_FEEDS)]],
                                         enabled=True,
@@ -988,7 +1032,9 @@ def main() -> int:
                     artifact_prefix: str,
                     capture_screenshots: bool,
                 ) -> tuple[list[str], str, list[dict[str, Any]]]:
-                    target_page.goto(f"{app_base_url}/", wait_until="networkidle", timeout=args.timeout_ms)
+                    target_page.goto(
+                        f"{app_base_url}/", wait_until="networkidle", timeout=args.timeout_ms
+                    )
                     target_page.wait_for_selector("[data-rules-page]", timeout=args.timeout_ms)
                     target_poster_rows = target_page.locator(
                         '[data-rules-row][data-rule-poster-url]:not([data-rule-poster-url=""])'
@@ -1053,10 +1099,20 @@ def main() -> int:
                         )
                         row_name = target_row.get_attribute("data-rule-name") or f"row-{row_index}"
                         row_top = float(row_box["y"]) if row_box is not None else -1.0
-                        row_bottom = float(row_box["y"] + row_box["height"]) if row_box is not None else -1.0
-                        row_center = float(row_box["y"] + (row_box["height"] / 2)) if row_box is not None else -1.0
+                        row_bottom = (
+                            float(row_box["y"] + row_box["height"]) if row_box is not None else -1.0
+                        )
+                        row_center = (
+                            float(row_box["y"] + (row_box["height"] / 2))
+                            if row_box is not None
+                            else -1.0
+                        )
                         poster_top = float(poster_box["y"]) if poster_box is not None else -1.0
-                        poster_bottom = float(poster_box["y"] + poster_box["height"]) if poster_box is not None else -1.0
+                        poster_bottom = (
+                            float(poster_box["y"] + poster_box["height"])
+                            if poster_box is not None
+                            else -1.0
+                        )
                         edge_gap = (
                             abs(poster_bottom - row_bottom)
                             if poster_top < row_top
@@ -1099,7 +1155,11 @@ def main() -> int:
                         ),
                         encoding="utf-8",
                     )
-                    return screenshot_artifacts, relative_path(manifest_path, project_dir), manifest_rows
+                    return (
+                        screenshot_artifacts,
+                        relative_path(manifest_path, project_dir),
+                        manifest_rows,
+                    )
 
                 def capture_p9_hover_video(evidence_dir: Path) -> str | None:
                     video_context = browser.new_context(
@@ -1139,7 +1199,11 @@ def main() -> int:
                     '[data-rules-row][data-rule-poster-url]:not([data-rule-poster-url=""])'
                 )
 
-                if table_wrap.count() == 1 and cards_wrap.count() == 1 and page.locator("[data-rules-row]").count() >= 1:
+                if (
+                    table_wrap.count() == 1
+                    and cards_wrap.count() == 1
+                    and page.locator("[data-rules-row]").count() >= 1
+                ):
                     _expect(
                         table_wrap.evaluate("node => !node.hidden"),
                         "Rules page should default to table view.",
@@ -1243,7 +1307,9 @@ def main() -> int:
                     """,
                     timeout=args.timeout_ms,
                 )
-                page.goto(f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms)
+                page.goto(
+                    f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms
+                )
                 page.wait_for_selector('input[name="rule_name"]', timeout=args.timeout_ms)
 
             run_check(
@@ -1263,16 +1329,23 @@ def main() -> int:
             page.on("dialog", on_dialog)
 
             def check_phase5_media_behavior() -> None:
-                _expect(page.is_visible('[data-imdb-field="true"]'), "IMDb field should be visible for series.")
+                _expect(
+                    page.is_visible('[data-imdb-field="true"]'),
+                    "IMDb field should be visible for series.",
+                )
                 series_providers = page.eval_on_selector_all(
                     "#metadata-lookup-provider option",
                     "els => els.map((el) => el.value)",
                 )
-                _expect(series_providers == ["omdb"], f"Series providers mismatch: {series_providers}")
+                _expect(
+                    series_providers == ["omdb"], f"Series providers mismatch: {series_providers}"
+                )
 
                 page.select_option('select[name="media_type"]', "music")
                 page.wait_for_timeout(120)
-                _expect(dialog_messages, "Media switch should prompt warning-and-clear confirmation.")
+                _expect(
+                    dialog_messages, "Media switch should prompt warning-and-clear confirmation."
+                )
                 _expect(
                     "Switching media type will clear filters" in dialog_messages[-1],
                     "Media switch dialog text mismatch.",
@@ -1285,7 +1358,10 @@ def main() -> int:
                     "#metadata-lookup-provider option",
                     "els => els.map((el) => el.value)",
                 )
-                _expect(music_providers == ["musicbrainz"], f"Music providers mismatch: {music_providers}")
+                _expect(
+                    music_providers == ["musicbrainz"],
+                    f"Music providers mismatch: {music_providers}",
+                )
 
                 page.select_option('select[name="media_type"]', "audiobook")
                 page.wait_for_timeout(120)
@@ -1312,7 +1388,10 @@ def main() -> int:
                     set(other_providers) == {"omdb", "musicbrainz", "openlibrary", "google_books"},
                     f"Other providers mismatch: {other_providers}",
                 )
-                _expect(page.is_visible('[data-imdb-field="true"]'), "IMDb field should be visible for other.")
+                _expect(
+                    page.is_visible('[data-imdb-field="true"]'),
+                    "IMDb field should be visible for other.",
+                )
 
                 checked_hidden = page.evaluate(
                     """
@@ -1327,7 +1406,9 @@ def main() -> int:
                     }).length
                     """
                 )
-                _expect(checked_hidden == 0, "Switch should clear incompatible checked quality tokens.")
+                _expect(
+                    checked_hidden == 0, "Switch should clear incompatible checked quality tokens."
+                )
 
             run_check(
                 "P5-01",
@@ -1338,7 +1419,9 @@ def main() -> int:
             )
 
             def check_phase5_rule_pattern_preview_parity() -> None:
-                page.goto(f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms)
+                page.goto(
+                    f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms
+                )
                 matching_section = page.locator("details:has(#pattern-preview)").first
                 if not matching_section.evaluate("node => Boolean(node.open)"):
                     matching_section.locator("summary").click()
@@ -1374,7 +1457,9 @@ def main() -> int:
             )
 
             def check_phase18_filter_profile_selection_updates_immediately() -> None:
-                page.goto(f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms)
+                page.goto(
+                    f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms
+                )
                 matching_section = page.locator("details:has-text('Matching And Quality')").first
                 if not matching_section.evaluate("node => Boolean(node.open)"):
                     matching_section.locator("summary").click()
@@ -1403,7 +1488,10 @@ def main() -> int:
                     }
                     """
                 )
-                _expect(target_profile is not None, "Expected at least one alternate visible filter profile.")
+                _expect(
+                    target_profile is not None,
+                    "Expected at least one alternate visible filter profile.",
+                )
                 page.select_option('select[name="filter_profile_key"]', target_profile["key"])
                 page.wait_for_function(
                     """
@@ -1448,7 +1536,9 @@ def main() -> int:
                 page=page,
             )
 
-            def check_phase19_inline_search_filter_profile_selection_updates_results_immediately() -> None:
+            def check_phase19_inline_search_filter_profile_selection_updates_results_immediately() -> (
+                None
+            ):
                 from sqlalchemy import create_engine, select
                 from sqlalchemy.orm import Session
 
@@ -1486,7 +1576,9 @@ def main() -> int:
                 try:
                     with Session(engine) as session:
                         rule_name = "QA P19 Inline Search Profile"
-                        existing_rule = session.scalar(select(Rule).where(Rule.rule_name == rule_name))
+                        existing_rule = session.scalar(
+                            select(Rule).where(Rule.rule_name == rule_name)
+                        )
                         if existing_rule is None:
                             existing_rule = Rule(
                                 rule_name=rule_name,
@@ -1506,7 +1598,11 @@ def main() -> int:
                 finally:
                     engine.dispose()
 
-                page.goto(f"{app_base_url}/rules/{rule_id}/search", wait_until="networkidle", timeout=args.timeout_ms)
+                page.goto(
+                    f"{app_base_url}/rules/{rule_id}/search",
+                    wait_until="networkidle",
+                    timeout=args.timeout_ms,
+                )
                 page.wait_for_selector("[data-search-page]", timeout=args.timeout_ms)
                 page.wait_for_selector('select[name="filter_profile_key"]', timeout=args.timeout_ms)
                 page.wait_for_selector("[data-search-filtered-count]", timeout=args.timeout_ms)
@@ -1573,10 +1669,19 @@ def main() -> int:
                 original_stat = app_js_path.stat()
 
                 def asset_script_src() -> str:
-                    page.goto(f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms)
-                    page.wait_for_selector('script[src*="app.js"]', state="attached", timeout=args.timeout_ms)
+                    page.goto(
+                        f"{app_base_url}/rules/new",
+                        wait_until="networkidle",
+                        timeout=args.timeout_ms,
+                    )
+                    page.wait_for_selector(
+                        'script[src*="app.js"]', state="attached", timeout=args.timeout_ms
+                    )
                     src = page.locator('script[src*="app.js"]').first.get_attribute("src")
-                    _expect(bool(src), "Expected the app.js asset URL to be present in the rendered page.")
+                    _expect(
+                        bool(src),
+                        "Expected the app.js asset URL to be present in the rendered page.",
+                    )
                     return str(src)
 
                 initial_src = asset_script_src()
@@ -1616,17 +1721,24 @@ def main() -> int:
                 page.goto(search_url, wait_until="networkidle", timeout=args.timeout_ms)
                 page.wait_for_selector("[data-search-controls]", timeout=args.timeout_ms)
                 controls = page.locator("[data-search-controls]")
-                _expect(controls.count() == 1, "Expected one compact result-view panel for unified results.")
+                _expect(
+                    controls.count() == 1,
+                    "Expected one compact result-view panel for unified results.",
+                )
                 _expect(
                     controls.first.locator("[data-search-view-mode]").count() == 0,
                     "Search panel should stay table-only in compact mode.",
                 )
                 _expect(
-                    page.locator('[data-search-table-wrap="combined"]').first.evaluate("node => !node.hidden"),
+                    page.locator('[data-search-table-wrap="combined"]').first.evaluate(
+                        "node => !node.hidden"
+                    ),
                     "Table view should be visible by default.",
                 )
                 _expect(
-                    page.locator('[data-search-results="combined"]').first.evaluate("node => Boolean(node.hidden)"),
+                    page.locator('[data-search-results="combined"]').first.evaluate(
+                        "node => Boolean(node.hidden)"
+                    ),
                     "Card container should remain hidden in table-only mode.",
                 )
 
@@ -1658,7 +1770,9 @@ def main() -> int:
                     """,
                     timeout=args.timeout_ms,
                 )
-                statuses = [controls.first.locator("[data-search-default-status]").inner_text().strip()]
+                statuses = [
+                    controls.first.locator("[data-search-default-status]").inner_text().strip()
+                ]
                 _expect(
                     all("Saved." in status for status in statuses),
                     f"Unexpected save-default statuses: {statuses}",
@@ -1732,7 +1846,9 @@ def main() -> int:
 
             def check_phase6_release_year_toggle() -> None:
                 page.goto(search_url, wait_until="networkidle", timeout=args.timeout_ms)
-                page.wait_for_selector('[data-search-filtered-count="combined"]', timeout=args.timeout_ms)
+                page.wait_for_selector(
+                    '[data-search-filtered-count="combined"]', timeout=args.timeout_ms
+                )
 
                 baseline_requests = request_count()
                 baseline_fallback = search_filtered_count("fallback")
@@ -1743,10 +1859,10 @@ def main() -> int:
                         f"got {baseline_fallback}"
                     ),
                 )
-                page.uncheck('input[data-search-include-year]')
+                page.uncheck("input[data-search-include-year]")
                 page.wait_for_timeout(200)
                 _expect(
-                    page.is_disabled('input[data-search-release-year]'),
+                    page.is_disabled("input[data-search-release-year]"),
                     "Release-year field should be disabled when toggle is unchecked.",
                 )
                 fallback_without_year = search_filtered_count("fallback")
@@ -1775,7 +1891,9 @@ def main() -> int:
 
             def check_phase6_quality_toggle_and_multiselect_filters() -> None:
                 page.goto(search_url, wait_until="networkidle", timeout=args.timeout_ms)
-                page.wait_for_selector('[data-search-filtered-count="combined"]', timeout=args.timeout_ms)
+                page.wait_for_selector(
+                    '[data-search-filtered-count="combined"]', timeout=args.timeout_ms
+                )
                 baseline_requests = request_count()
                 baseline_fallback_count = search_filtered_count("fallback")
 
@@ -1784,7 +1902,10 @@ def main() -> int:
                 )
                 _expect(token_slider.count() == 1, "Expected cam quality token slider on /search.")
                 pattern_preview = page.locator("#search-pattern-preview")
-                _expect(pattern_preview.count() == 1, "Expected generated pattern preview textarea on /search.")
+                _expect(
+                    pattern_preview.count() == 1,
+                    "Expected generated pattern preview textarea on /search.",
+                )
 
                 # Regression guard: include slider must override conflicting manual excluded text terms.
                 page.fill('textarea[name="additional_includes"]', "young sherlock")
@@ -1904,7 +2025,10 @@ def main() -> int:
                 delta_indexer_option = page.locator(
                     '[data-search-multiselect-options="indexers"] label:has-text("delta") input[type="checkbox"]'
                 )
-                _expect(delta_indexer_option.count() == 1, "Expected delta indexer option in indexer multiselect.")
+                _expect(
+                    delta_indexer_option.count() == 1,
+                    "Expected delta indexer option in indexer multiselect.",
+                )
                 delta_indexer_option.check()
                 page.wait_for_timeout(220)
                 _expect(
@@ -1947,7 +2071,9 @@ def main() -> int:
                 )
                 page.fill('input[name="keywords_any"]', "cam")
                 page.wait_for_timeout(220)
-                category_scope_status = page.text_content('[data-search-category-scope-status]') or ""
+                category_scope_status = (
+                    page.text_content("[data-search-category-scope-status]") or ""
+                )
                 _expect(
                     "currently have no cached matches" in category_scope_status,
                     (
@@ -1986,19 +2112,29 @@ def main() -> int:
                 page.fill('input[name="keywords_any"]', "2160p | hdr10")
                 page.wait_for_timeout(180)
                 filter_impact_count = page.eval_on_selector_all(
-                    '[data-filter-impact-list] li',
+                    "[data-filter-impact-list] li",
                     "els => els.length",
                 )
-                _expect(filter_impact_count == 0, "Standalone filter-impact panels should not render in unified flow.")
+                _expect(
+                    filter_impact_count == 0,
+                    "Standalone filter-impact panels should not render in unified flow.",
+                )
                 active_filter_chips = page.eval_on_selector_all(
                     "[data-search-active-filter-list] .search-active-filter-chip",
                     "els => els.length",
                 )
-                _expect(active_filter_chips >= 1, "Expected active local-filter chips to appear after applying filters.")
+                _expect(
+                    active_filter_chips >= 1,
+                    "Expected active local-filter chips to appear after applying filters.",
+                )
                 page.click("[data-search-clear-filters]")
                 page.wait_for_timeout(180)
                 _expect(
-                    page.eval_on_selector_all("[data-search-active-filter-list] .search-active-filter-chip", "els => els.length") == 0,
+                    page.eval_on_selector_all(
+                        "[data-search-active-filter-list] .search-active-filter-chip",
+                        "els => els.length",
+                    )
+                    == 0,
                     "Clear local filters should remove active-filter chips.",
                 )
 
@@ -2007,7 +2143,10 @@ def main() -> int:
                 use_link = page.locator(
                     '[data-search-row="combined"]:not([hidden]) a.button-link:has-text("Use In New Rule")'
                 ).first
-                _expect(use_link.count() == 1, "Expected a visible Use In New Rule link in unified results.")
+                _expect(
+                    use_link.count() == 1,
+                    "Expected a visible Use In New Rule link in unified results.",
+                )
                 href = use_link.get_attribute("href") or ""
                 _expect(href.startswith("/rules/new?"), f"Unexpected handoff href: {href}")
 
@@ -2050,9 +2189,15 @@ def main() -> int:
                 page.click('button:has-text("Create Rule")')
                 page.wait_for_url("**/rules/**", timeout=args.timeout_ms)
                 current_url = page.url
-                _expect("/rules/" in current_url, f"Expected redirect to created rule page, got {current_url}")
+                _expect(
+                    "/rules/" in current_url,
+                    f"Expected redirect to created rule page, got {current_url}",
+                )
                 run_search_here = page.locator('a.button-link:has-text("Run Search Here")').first
-                _expect(run_search_here.count() == 1, "Expected Run Search Here action on the rule page.")
+                _expect(
+                    run_search_here.count() == 1,
+                    "Expected Run Search Here action on the rule page.",
+                )
                 run_search_here.click()
                 page.wait_for_url(
                     re.compile(r".*/rules/[^/?#]+\?.*run_search=1.*"),
@@ -2187,7 +2332,8 @@ def main() -> int:
                 wait_for_torrent_add_calls(add_call_start + 1)
                 latest_unpaused = qb_state.torrent_add_calls[-1]
                 _expect(
-                    latest_unpaused.get("paused") == "false" and latest_unpaused.get("stopped") == "false",
+                    latest_unpaused.get("paused") == "false"
+                    and latest_unpaused.get("stopped") == "false",
                     (
                         "Expected unchecked Add paused to send paused=false and stopped=false; "
                         f"payload={latest_unpaused}"
@@ -2200,7 +2346,8 @@ def main() -> int:
                 wait_for_torrent_add_calls(add_call_start + 1)
                 latest_paused = qb_state.torrent_add_calls[-1]
                 _expect(
-                    latest_paused.get("paused") == "true" and latest_paused.get("stopped") == "true",
+                    latest_paused.get("paused") == "true"
+                    and latest_paused.get("stopped") == "true",
                     (
                         "Expected checked Add paused to send paused=true and stopped=true; "
                         f"payload={latest_paused}"
@@ -2237,13 +2384,17 @@ def main() -> int:
                     ),
                 )
 
-                table_wrap = page.locator(f'#inline-search-results [data-search-table-wrap="{section}"]').first
+                table_wrap = page.locator(
+                    f'#inline-search-results [data-search-table-wrap="{section}"]'
+                ).first
                 _expect(table_wrap.count() == 1, f"Expected inline {section} table wrapper.")
                 _expect(
                     not table_wrap.evaluate("node => node.hidden"),
                     "Inline results should default to table view.",
                 )
-                card_wrap = page.locator(f'#inline-search-results [data-search-results="{section}"]').first
+                card_wrap = page.locator(
+                    f'#inline-search-results [data-search-results="{section}"]'
+                ).first
                 _expect(
                     card_wrap.evaluate("node => node.hidden"),
                     "Inline card view should be hidden when table view is defaulted.",
@@ -2252,7 +2403,9 @@ def main() -> int:
                 sort_controls = page.locator("#inline-search-results [data-search-controls]").first
                 _expect(sort_controls.count() == 1, "Expected inline sort controls.")
                 baseline_requests = request_count()
-                page.locator('#inline-search-results [data-search-table-sort-field="title"]').first.click()
+                page.locator(
+                    '#inline-search-results [data-search-table-sort-field="title"]'
+                ).first.click()
                 page.wait_for_timeout(220)
                 asc_titles = search_visible_titles(section)
                 if len(asc_titles) >= 2:
@@ -2260,7 +2413,9 @@ def main() -> int:
                         asc_titles == sorted(asc_titles, key=str.casefold),
                         f"Expected inline {section} titles sorted ascending by title; titles={asc_titles}.",
                     )
-                page.locator('#inline-search-results [data-search-table-sort-field="title"]').first.click()
+                page.locator(
+                    '#inline-search-results [data-search-table-sort-field="title"]'
+                ).first.click()
                 page.wait_for_timeout(220)
                 desc_titles = search_visible_titles(section)
                 if len(desc_titles) >= 2:

@@ -203,7 +203,9 @@ def _finalize_unified_payload(payload: dict[str, Any]) -> dict[str, Any]:
     unified_rows = _coerce_serialized_result_rows(payload.get("unified_raw_results"))
     payload["unified_raw_results"] = unified_rows
     payload["combined_fetched_count"] = len(unified_rows)
-    payload["combined_filtered_count"] = sum(1 for item in unified_rows if bool(item.get("visible")))
+    payload["combined_filtered_count"] = sum(
+        1 for item in unified_rows if bool(item.get("visible"))
+    )
     payload["show_peers_column"] = any(item.get("peers") is not None for item in unified_rows)
     payload["show_leechers_column"] = any(item.get("leechers") is not None for item in unified_rows)
     payload["show_grabs_column"] = any(item.get("grabs") is not None for item in unified_rows)
@@ -337,7 +339,9 @@ def inline_search_from_snapshot(snapshot: RuleSearchSnapshot) -> dict[str, objec
             primary_request_variants=[
                 str(item)
                 for item in (
-                    inline_search.get("request_variants") or inline_search.get("query_variants") or []
+                    inline_search.get("request_variants")
+                    or inline_search.get("query_variants")
+                    or []
                 )
                 if str(item or "").strip()
             ],

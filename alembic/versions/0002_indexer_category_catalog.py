@@ -4,6 +4,7 @@ Revision ID: 0002_indexer_category_catalog
 Revises: 0001_initial_schema
 Create Date: 2026-03-12 00:00:00
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa

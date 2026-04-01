@@ -124,14 +124,18 @@ def _base_context(request: Request, page_title: str) -> dict[str, object]:
     }
 
 
-def _safe_feed_options(session: Session, selected_urls: list[str] | None = None) -> list[dict[str, str]]:
+def _safe_feed_options(
+    session: Session, selected_urls: list[str] | None = None
+) -> list[dict[str, str]]:
     settings = SettingsService.get_or_create(session)
     connection = SettingsService.resolve_qb_connection(settings)
     selected_urls = selected_urls or []
     feed_options: list[dict[str, str]] = []
     if connection.is_configured:
         try:
-            with QbittorrentClient(connection.base_url, connection.username, connection.password) as client:
+            with QbittorrentClient(
+                connection.base_url, connection.username, connection.password
+            ) as client:
                 feed_options = [item.model_dump() for item in client.get_feeds()]
         except QbittorrentClientError:
             feed_options = []
@@ -195,7 +199,9 @@ def _backfill_missing_rule_posters(
                 metadata_result = client.lookup(
                     MetadataLookupProvider.OMDB,
                     lookup_title,
-                    rule.media_type if rule.media_type in {MediaType.MOVIE, MediaType.SERIES} else MediaType.SERIES,
+                    rule.media_type
+                    if rule.media_type in {MediaType.MOVIE, MediaType.SERIES}
+                    else MediaType.SERIES,
                 )
         except MetadataLookupError:
             with _RULE_POSTER_BACKFILL_LOCK:
@@ -263,7 +269,9 @@ def _run_rule_poster_backfill(rule_ids: Sequence[str]) -> None:
             rule.id: rule
             for rule in session.scalars(select(Rule).where(Rule.id.in_(normalized_rule_ids))).all()
         }
-        ordered_rules = [rules_by_id[rule_id] for rule_id in normalized_rule_ids if rule_id in rules_by_id]
+        ordered_rules = [
+            rules_by_id[rule_id] for rule_id in normalized_rule_ids if rule_id in rules_by_id
+        ]
         if ordered_rules:
             _backfill_missing_rule_posters(session, rules=ordered_rules, settings=settings)
     finally:
@@ -312,10 +320,14 @@ def _rule_to_form_data(rule: Rule) -> dict[str, object]:
         "must_not_contain": rule.must_not_contain,
         "start_season": rule.start_season or "",
         "start_episode": rule.start_episode or "",
-        "jellyfin_search_existing_unseen": bool(getattr(rule, "jellyfin_search_existing_unseen", False)),
+        "jellyfin_search_existing_unseen": bool(
+            getattr(rule, "jellyfin_search_existing_unseen", False)
+        ),
         "jellyfin_auto_disabled": bool(getattr(rule, "jellyfin_auto_disabled", False)),
         "movie_completion_sources": movie_completion_sources,
-        "movie_completion_sources_display": format_watch_state_source_labels(movie_completion_sources),
+        "movie_completion_sources_display": format_watch_state_source_labels(
+            movie_completion_sources
+        ),
         "movie_completion_auto_disabled": movie_completion_auto_disabled,
         "movie_auto_disabled": movie_completion_auto_disabled or legacy_jellyfin_auto_disabled,
         "jellyfin_existing_episode_numbers": list(
@@ -437,7 +449,9 @@ def _normalize_quality_token_selection(
 
 
 def _query_bool_values(values: list[str]) -> bool:
-    return any(str(value or "").strip().casefold() in {"1", "true", "on", "yes"} for value in values)
+    return any(
+        str(value or "").strip().casefold() in {"1", "true", "on", "yes"} for value in values
+    )
 
 
 def _rule_search_title(rule: Rule) -> str:
@@ -463,6 +477,16 @@ def _title_only_search_request_from_rule(rule: Rule) -> JackettSearchRequest | N
             query=fallback_title,
             media_type=media_type,
             imdb_id=rule.imdb_id or None,
+            season_number=(
+                int(rule.start_season)
+                if media_type == MediaType.SERIES and rule.start_season is not None
+                else None
+            ),
+            episode_number=(
+                int(rule.start_episode)
+                if media_type == MediaType.SERIES and rule.start_episode is not None
+                else None
+            ),
             release_year=(rule.release_year or None) if rule.include_release_year else None,
         )
     except ValidationError:
@@ -573,7 +597,10 @@ def _apply_rule_feed_scope(
         feed_indexers.append(indexer)
     if not feed_indexers:
         if effective_feed_urls:
-            return payload, "Affected feeds could not be mapped to Jackett indexers; using default indexer scope."
+            return (
+                payload,
+                "Affected feeds could not be mapped to Jackett indexers; using default indexer scope.",
+            )
         return payload, None
 
     if len(feed_indexers) == 1:
@@ -661,9 +688,7 @@ def _apply_catalog_category_labels(session: Session, results: list[Any]) -> None
             ]
         )
         existing_real_labels = [
-            item
-            for item in existing_labels
-            if not _is_placeholder_category_label(item)
+            item for item in existing_labels if not _is_placeholder_category_label(item)
         ]
         if existing_real_labels:
             result_record.category_labels = existing_real_labels
@@ -672,10 +697,7 @@ def _apply_catalog_category_labels(session: Session, results: list[Any]) -> None
             result_record.category_labels = resolved_labels
             continue
         fallback_labels = _dedupe_labels(
-            [
-                _canonical_category_label(item, fallback_category_id)
-                for item in category_ids
-            ]
+            [_canonical_category_label(item, fallback_category_id) for item in category_ids]
         )
         if fallback_labels:
             result_record.category_labels = fallback_labels
@@ -756,11 +778,15 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
         session.rollback()
         settings = SettingsService.get_or_create(session)
 
-    default_sort_field = normalize_rules_page_sort_field(getattr(settings, "rules_page_sort_field", "updated_at"))
+    default_sort_field = normalize_rules_page_sort_field(
+        getattr(settings, "rules_page_sort_field", "updated_at")
+    )
     default_sort_direction = normalize_rules_page_sort_direction(
         getattr(settings, "rules_page_sort_direction", "desc")
     )
-    default_view_mode = normalize_rules_page_view_mode(getattr(settings, "rules_page_view_mode", "table"))
+    default_view_mode = normalize_rules_page_view_mode(
+        getattr(settings, "rules_page_view_mode", "table")
+    )
 
     search = request.query_params.get("search", "").strip()
     search_lower = search.lower()
@@ -813,10 +839,7 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
             )
             .where(RuleSearchSnapshot.rule_id.in_([rule.id for rule in rules]))
         )
-        snapshot_by_rule_id = {
-            item.rule_id: item
-            for item in session.scalars(snapshot_query).all()
-        }
+        snapshot_by_rule_id = {item.rule_id: item for item in session.scalars(snapshot_query).all()}
 
     rows: list[dict[str, Any]] = []
     for rule in rules:
@@ -894,9 +917,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
         quality_include_tokens,
         quality_exclude_tokens,
     )
-    filter_indexers = _parse_search_filter_terms(
-        ", ".join(query_params.getlist("filter_indexers"))
-    )
+    filter_indexers = _parse_search_filter_terms(", ".join(query_params.getlist("filter_indexers")))
     filter_category_ids = _parse_search_filter_terms(
         ", ".join(query_params.getlist("filter_category_ids"))
     )
@@ -957,7 +978,9 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
             "sort_criteria": normalize_search_sort_criteria(settings.search_sort_criteria),
         }
         queue_defaults["add_paused"] = bool(settings.default_add_paused)
-        queue_defaults["sequential_download"] = bool(getattr(settings, "default_sequential_download", True))
+        queue_defaults["sequential_download"] = bool(
+            getattr(settings, "default_sequential_download", True)
+        )
         queue_defaults["first_last_piece_prio"] = bool(
             getattr(settings, "default_first_last_piece_prio", True)
         )
@@ -1030,7 +1053,9 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                             _prefill_rule_search_form_data(form_data, source_rule)
                             errors = ["Saved rule could not be converted into a Jackett search."]
             if payload_from_rule is not None:
-                payload_from_rule, feed_scope_notice = _apply_rule_feed_scope(payload_from_rule, source_rule)
+                payload_from_rule, feed_scope_notice = _apply_rule_feed_scope(
+                    payload_from_rule, source_rule
+                )
                 if feed_scope_notice:
                     derivation_notice = (
                         f"{derivation_notice} {feed_scope_notice}".strip()
@@ -1074,14 +1099,14 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                 )
                 for group in quality_include_term_groups:
                     keywords_any_groups.append(group)
-                quality_include_terms = [term for group in quality_include_term_groups for term in group]
+                quality_include_terms = [
+                    term for group in quality_include_term_groups for term in group
+                ]
                 merged_keywords_any = _merge_search_terms(
                     _parse_search_filter_terms(str(form_data["keywords_any"])),
                     quality_include_terms,
                 )
-                quality_exclude_terms = expand_quality_search_terms(
-                    quality_exclude_tokens
-                )
+                quality_exclude_terms = expand_quality_search_terms(quality_exclude_tokens)
                 merged_keywords_not = _merge_search_terms(
                     _parse_search_filter_terms(str(form_data["must_not_contain"])),
                     quality_exclude_terms,
@@ -1093,7 +1118,9 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "indexer": form_data["indexer"],
                         "imdb_id": form_data["imdb_id"],
                         "release_year": (
-                            form_data["release_year"] if cast(bool, form_data["include_release_year"]) else ""
+                            form_data["release_year"]
+                            if cast(bool, form_data["include_release_year"])
+                            else ""
                         ),
                         "keywords_all": form_data["additional_includes"],
                         "keywords_any": merged_keywords_any,
@@ -1156,6 +1183,15 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                 summary_parts = ["Title"]
                 if active_payload.imdb_id_only:
                     summary_parts.append("IMDb-enforced Jackett lookup")
+                if active_payload.season_number is not None:
+                    if active_payload.episode_number is not None:
+                        summary_parts.append(
+                            f"series floor S{int(active_payload.season_number):02d}E{int(active_payload.episode_number):02d}"
+                        )
+                    else:
+                        summary_parts.append(
+                            f"season floor S{int(active_payload.season_number):02d}"
+                        )
                 if active_payload.keywords_all:
                     summary_parts.append("required keywords")
                 if keyword_fragment:
@@ -1182,10 +1218,14 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                     "unified_raw_results",
                 ):
                     raw_items = cast(list[dict[str, Any]], search_run.get(key, []))
-                    search_run[key] = [{**item, "new_rule_href": new_rule_href} for item in raw_items]
+                    search_run[key] = [
+                        {**item, "new_rule_href": new_rule_href} for item in raw_items
+                    ]
                 search_run.update(
                     {
-                        "source_label": "Saved rule search" if source_rule else "Jackett active search",
+                        "source_label": "Saved rule search"
+                        if source_rule
+                        else "Jackett active search",
                         "rule_prefill_summary": f"{', '.join(summary_parts)}.",
                         "source_rule_name": source_rule.rule_name if source_rule else "",
                         "ignored_full_regex": ignored_full_regex,
@@ -1224,7 +1264,9 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
 @router.get("/rules/{rule_id}/search")
 def run_rule_search(rule_id: str, request: Request) -> RedirectResponse:
     feed_urls = _normalize_feed_url_list(request.query_params.getlist("feed_urls"))
-    feed_scope_override = request.query_params.get("feed_scope_override", "").strip().casefold() in {
+    feed_scope_override = request.query_params.get(
+        "feed_scope_override", ""
+    ).strip().casefold() in {
         "1",
         "true",
         "on",
@@ -1252,7 +1294,9 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
     requested_media_type = _normalized_media_type(request.query_params.get("media_type"))
     default_quality = settings.default_quality_profile
     profile_rules = resolve_quality_profile_rules(settings)
-    default_profile_rule = profile_rules.get(default_quality.value, {"include_tokens": [], "exclude_tokens": []})
+    default_profile_rule = profile_rules.get(
+        default_quality.value, {"include_tokens": [], "exclude_tokens": []}
+    )
     default_filter_profile_key = detect_matching_filter_profile_key(
         default_profile_rule.get("include_tokens", []),
         default_profile_rule.get("exclude_tokens", []),
@@ -1344,7 +1388,9 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
             ),
             "media_choices": media_type_choices(),
             "metadata_lookup_providers": metadata_lookup_provider_catalog(),
-            "visible_metadata_lookup_providers": metadata_lookup_provider_choices(requested_media_type),
+            "visible_metadata_lookup_providers": metadata_lookup_provider_choices(
+                requested_media_type
+            ),
             "metadata_lookup_disabled": settings.metadata_provider.value == "disabled",
             "shell_layout": "wide",
             "content_layout": "wide",
@@ -1416,7 +1462,9 @@ def edit_rule(
     settings = SettingsService.get_or_create(session)
     profile_rules = resolve_quality_profile_rules(settings)
     form_data = _rule_to_form_data(rule)
-    form_media_type = str(form_data.get("media_type", MediaType.SERIES.value) or MediaType.SERIES.value)
+    form_media_type = str(
+        form_data.get("media_type", MediaType.SERIES.value) or MediaType.SERIES.value
+    )
     form_data["filter_profile_key"] = detect_matching_filter_profile_key(
         form_data["quality_include_tokens"],
         form_data["quality_exclude_tokens"],
@@ -1430,8 +1478,15 @@ def edit_rule(
     inline_search: dict[str, object] | None = None
     inline_search_errors: list[str] = []
     inline_search_notices: list[str] = []
-    run_inline_search_requested = request.query_params.get("run_search", "").strip().casefold() in {"1", "true", "on", "yes"}
-    refresh_inline_snapshot = request.query_params.get("refresh_snapshot", "").strip().casefold() in {
+    run_inline_search_requested = request.query_params.get("run_search", "").strip().casefold() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+    refresh_inline_snapshot = request.query_params.get(
+        "refresh_snapshot", ""
+    ).strip().casefold() in {
         "1",
         "true",
         "on",
@@ -1443,7 +1498,9 @@ def edit_rule(
         "on",
         "yes",
     }
-    feed_scope_override_requested = request.query_params.get("feed_scope_override", "").strip().casefold() in {
+    feed_scope_override_requested = request.query_params.get(
+        "feed_scope_override", ""
+    ).strip().casefold() in {
         "1",
         "true",
         "on",
@@ -1451,10 +1508,9 @@ def edit_rule(
     }
     feed_urls_override = _normalize_feed_url_list(request.query_params.getlist("feed_urls"))
     feed_urls_from_rule = _normalize_feed_url_list(list(rule.feed_urls or []))
-    effective_feed_scope_override = (
-        feed_scope_override_requested
-        and sorted(feed_urls_override) != sorted(feed_urls_from_rule)
-    )
+    effective_feed_scope_override = feed_scope_override_requested and sorted(
+        feed_urls_override
+    ) != sorted(feed_urls_from_rule)
     auto_replay_inline_snapshot = (
         not run_inline_search_requested
         and not clear_inline_results
@@ -1486,20 +1542,28 @@ def edit_rule(
                 except Exception:
                     payload_from_rule = _title_only_search_request_from_rule(rule)
                     if payload_from_rule is not None:
-                        inline_search_notices.append("Rule search fell back to title-only compatibility mode.")
+                        inline_search_notices.append(
+                            "Rule search fell back to title-only compatibility mode."
+                        )
             except Exception:
                 ignored_full_regex = True
                 payload_from_rule = _title_only_search_request_from_rule(rule)
                 if payload_from_rule is not None:
-                    inline_search_notices.append("Rule search needed compatibility fallback and used title-only mode.")
+                    inline_search_notices.append(
+                        "Rule search needed compatibility fallback and used title-only mode."
+                    )
 
             if payload_from_rule is None:
-                inline_search_errors = ["Rule could not be converted into a Jackett search payload."]
+                inline_search_errors = [
+                    "Rule could not be converted into a Jackett search payload."
+                ]
             else:
                 payload_from_rule, feed_scope_notice = _apply_rule_feed_scope(
                     payload_from_rule,
                     rule,
-                    feed_urls_override=(feed_urls_override if effective_feed_scope_override else None),
+                    feed_urls_override=(
+                        feed_urls_override if effective_feed_scope_override else None
+                    ),
                 )
                 if feed_scope_notice:
                     inline_search_notices.append(feed_scope_notice)
@@ -1546,7 +1610,9 @@ def edit_rule(
                     except JackettClientError as exc:
                         inline_search_errors = [str(exc)]
                     except Exception as exc:
-                        inline_search_errors = [_unexpected_error_message("Inline rule search failed unexpectedly", exc)]
+                        inline_search_errors = [
+                            _unexpected_error_message("Inline rule search failed unexpectedly", exc)
+                        ]
 
     context = _base_context(request, f"Edit {rule.rule_name}")
     available_filter_profiles = available_filter_profile_choices(settings)
@@ -1583,7 +1649,9 @@ def edit_rule(
                 "rule_id": rule.id,
                 "add_paused": bool(rule.add_paused),
                 "sequential_download": bool(getattr(settings, "default_sequential_download", True)),
-                "first_last_piece_prio": bool(getattr(settings, "default_first_last_piece_prio", True)),
+                "first_last_piece_prio": bool(
+                    getattr(settings, "default_first_last_piece_prio", True)
+                ),
             },
             "shell_layout": "wide",
             "content_layout": "wide",
@@ -1664,7 +1732,8 @@ def health(request: Request) -> JSONResponse:
         {
             "status": "ok",
             "app_version": request.app.version,
-            "static_asset_version": compute_static_asset_version() or getattr(
+            "static_asset_version": compute_static_asset_version()
+            or getattr(
                 request.app.state,
                 "static_asset_version",
                 request.app.version,

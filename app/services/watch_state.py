@@ -156,11 +156,7 @@ class MovieWatchStateSelection:
 
     @property
     def changed(self) -> bool:
-        return (
-            self.completion_changed
-            or self.enabled_changed
-            or self.auto_disabled_changed
-        )
+        return self.completion_changed or self.enabled_changed or self.auto_disabled_changed
 
 
 def derive_watch_state_floor(
@@ -211,15 +207,13 @@ def derive_watch_state_floor(
         if next_current_after_watched is not None:
             watched_next_floor = next_current_after_watched
             watched_floor_reason = (
-                f'Advanced to S{watched_next_floor[0]:02d}E{watched_next_floor[1]:02d} '
-                f'from {source_label} progress through S{last_watched[0]:02d}E{last_watched[1]:02d}. '
+                f"Advanced to S{watched_next_floor[0]:02d}E{watched_next_floor[1]:02d} "
+                f"from {source_label} progress through S{last_watched[0]:02d}E{last_watched[1]:02d}. "
                 f"This rule keeps searching existing unseen {source_label} episodes."
             )
         else:
             watched_next_floor, watched_base_reason = next_floor_after_episode(last_watched)
-            watched_floor_reason = (
-                f"{watched_base_reason} This rule keeps searching existing unseen {source_label} episodes."
-            )
+            watched_floor_reason = f"{watched_base_reason} This rule keeps searching existing unseen {source_label} episodes."
 
     existing_unseen_episode_numbers: list[str] = []
     for episode_key in current_episode_numbers:
@@ -285,7 +279,9 @@ def select_watch_state_floor(
             floor_changed = False
             floor_detail = f"Current rule floor already matches {source_label}-derived progress."
             if current_floor > next_floor:
-                floor_detail = f"Current rule floor is already ahead of {source_label}-derived progress."
+                floor_detail = (
+                    f"Current rule floor is already ahead of {source_label}-derived progress."
+                )
 
     return WatchStateFloorSelection(
         effective_floor=effective_floor,
@@ -307,9 +303,7 @@ def select_movie_watch_state(
     normalized_source_label = _normalize_watch_state_source_label(source_label)
     previous_completed_sources = normalize_watch_state_source_labels(current_completed_sources)
     next_completed_sources = [
-        label
-        for label in previous_completed_sources
-        if label != normalized_source_label
+        label for label in previous_completed_sources if label != normalized_source_label
     ]
     if normalized_source_label and source_present and source_completed:
         next_completed_sources.append(normalized_source_label)
@@ -353,7 +347,9 @@ def select_movie_watch_state(
         effective_auto_disabled = False
         if current_auto_disabled:
             effective_enabled = True
-            detail = "Re-enabled because no connected source currently reports this movie as completed."
+            detail = (
+                "Re-enabled because no connected source currently reports this movie as completed."
+            )
         else:
             effective_enabled = current_enabled
             detail = "No connected source currently reports this movie as completed."

@@ -8,6 +8,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.8.3] - 2026-04-02
+
+- Removed the hard series start-year constraint for Stremio episode lookups so long-running series such as `Death in Paradise` no longer filter out later-season Jackett results.
+- Added episode-floor context (`season_number` / `episode_number`) to the main app Jackett IMDb-first series fallback path so saved-rule searches remain precise for ambiguous titles such as `Ghosts` before broadening the search.
+- Added richer Stremio row detail (quality markers, size, indexer attribution) so qB-authored rows expose variant differences before full cross-addon aggregation lands.
+- Revalidated the patch with focused pytest/typing/lint checks, realtime direct route probes, and desktop smoke reruns for the corrected `Death in Paradise` and `The Beauty` request payloads.
+
 ## [0.8.2] - 2026-03-28
 
 - Kept the qB RSS Stremio addon variant set instead of collapsing it back to a tiny local-first subset, so known episode pages such as `The Beauty` can render the local `2160p` row alongside multiple `1080p` fallbacks from qB RSS.

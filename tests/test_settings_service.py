@@ -24,28 +24,46 @@ def clear_environment_cache_fixture() -> None:
     _clear_env_cache()
 
 
-def test_rewrite_localhost_url_for_wsl_updates_loopback_host(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.services.settings_service.platform.release", lambda: "6.6.87.2-microsoft-standard-WSL2")
+def test_rewrite_localhost_url_for_wsl_updates_loopback_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.settings_service.platform.release", lambda: "6.6.87.2-microsoft-standard-WSL2"
+    )
     monkeypatch.setattr("app.services.settings_service.platform.version", lambda: "WSL2")
 
-    assert _rewrite_localhost_url_for_wsl("http://localhost:8080/") == "http://host.docker.internal:8080/"
+    assert (
+        _rewrite_localhost_url_for_wsl("http://localhost:8080/")
+        == "http://host.docker.internal:8080/"
+    )
     assert (
         _rewrite_localhost_url_for_wsl("http://127.0.0.1:8080/path?x=1")
         == "http://host.docker.internal:8080/path?x=1"
     )
 
 
-def test_rewrite_localhost_url_for_wsl_keeps_non_loopback_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.services.settings_service.platform.release", lambda: "6.6.87.2-microsoft-standard-WSL2")
+def test_rewrite_localhost_url_for_wsl_keeps_non_loopback_hosts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.settings_service.platform.release", lambda: "6.6.87.2-microsoft-standard-WSL2"
+    )
     monkeypatch.setattr("app.services.settings_service.platform.version", lambda: "WSL2")
 
-    assert _rewrite_localhost_url_for_wsl("http://host.docker.internal:8080/") == "http://host.docker.internal:8080/"
-    assert _rewrite_localhost_url_for_wsl("http://192.168.1.51:8080/") == "http://192.168.1.51:8080/"
+    assert (
+        _rewrite_localhost_url_for_wsl("http://host.docker.internal:8080/")
+        == "http://host.docker.internal:8080/"
+    )
+    assert (
+        _rewrite_localhost_url_for_wsl("http://192.168.1.51:8080/") == "http://192.168.1.51:8080/"
+    )
 
 
 def test_rewrite_localhost_url_for_wsl_is_noop_outside_wsl(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.services.settings_service.platform.release", lambda: "6.8.0-generic")
-    monkeypatch.setattr("app.services.settings_service.platform.version", lambda: "#1 SMP PREEMPT_DYNAMIC")
+    monkeypatch.setattr(
+        "app.services.settings_service.platform.version", lambda: "#1 SMP PREEMPT_DYNAMIC"
+    )
 
     assert _rewrite_localhost_url_for_wsl("http://localhost:8080/") == "http://localhost:8080/"
 
@@ -65,8 +83,12 @@ def test_ensure_runtime_dirs_touches_relative_sqlite_database(
     assert (tmp_path / "data" / "qb_rules.db").exists()
 
 
-def test_resolve_qb_connection_rewrites_settings_localhost_in_wsl(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.services.settings_service.platform.release", lambda: "6.6.87.2-microsoft-standard-WSL2")
+def test_resolve_qb_connection_rewrites_settings_localhost_in_wsl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.settings_service.platform.release", lambda: "6.6.87.2-microsoft-standard-WSL2"
+    )
     monkeypatch.setattr("app.services.settings_service.platform.version", lambda: "WSL2")
 
     monkeypatch.delenv("QB_RULES_QB_BASE_URL", raising=False)
@@ -88,8 +110,12 @@ def test_resolve_qb_connection_rewrites_settings_localhost_in_wsl(monkeypatch: p
     assert resolved.password == "secret"
 
 
-def test_resolve_qb_connection_rewrites_env_localhost_in_wsl(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.services.settings_service.platform.release", lambda: "6.6.87.2-microsoft-standard-WSL2")
+def test_resolve_qb_connection_rewrites_env_localhost_in_wsl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.settings_service.platform.release", lambda: "6.6.87.2-microsoft-standard-WSL2"
+    )
     monkeypatch.setattr("app.services.settings_service.platform.version", lambda: "WSL2")
 
     monkeypatch.setenv("QB_RULES_QB_BASE_URL", "http://localhost:18080/")

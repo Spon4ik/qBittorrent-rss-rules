@@ -337,30 +337,42 @@ class SettingsService:
                     LEGACY_DEFAULT_QUALITY_PROFILE_RULES[profile_key]["exclude_tokens"]
                 ):
                     continue
-                normalized_profile_rules[profile_key] = deepcopy(DEFAULT_QUALITY_PROFILE_RULES[profile_key])
+                normalized_profile_rules[profile_key] = deepcopy(
+                    DEFAULT_QUALITY_PROFILE_RULES[profile_key]
+                )
                 changed = True
             if changed:
                 settings.quality_profile_rules = normalized_profile_rules
-        normalized_saved_profiles = normalize_saved_quality_profiles(settings.saved_quality_profiles)
+        normalized_saved_profiles = normalize_saved_quality_profiles(
+            settings.saved_quality_profiles
+        )
         if normalized_saved_profiles != settings.saved_quality_profiles:
             settings.saved_quality_profiles = normalized_saved_profiles
             changed = True
-        normalized_default_feeds = [str(url).strip() for url in (settings.default_feed_urls or []) if str(url).strip()]
+        normalized_default_feeds = [
+            str(url).strip() for url in (settings.default_feed_urls or []) if str(url).strip()
+        ]
         if normalized_default_feeds != (settings.default_feed_urls or []):
             settings.default_feed_urls = normalized_default_feeds
             changed = True
-        normalized_jellyfin_db_path = str(getattr(settings, "jellyfin_db_path", "") or "").strip() or None
+        normalized_jellyfin_db_path = (
+            str(getattr(settings, "jellyfin_db_path", "") or "").strip() or None
+        )
         if normalized_jellyfin_db_path != getattr(settings, "jellyfin_db_path", None):
             settings.jellyfin_db_path = normalized_jellyfin_db_path
             changed = True
-        normalized_jellyfin_user_name = str(getattr(settings, "jellyfin_user_name", "") or "").strip() or None
+        normalized_jellyfin_user_name = (
+            str(getattr(settings, "jellyfin_user_name", "") or "").strip() or None
+        )
         if normalized_jellyfin_user_name != getattr(settings, "jellyfin_user_name", None):
             settings.jellyfin_user_name = normalized_jellyfin_user_name
             changed = True
         normalized_jellyfin_auto_sync_enabled = bool(
             getattr(settings, "jellyfin_auto_sync_enabled", DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED)
         )
-        if normalized_jellyfin_auto_sync_enabled != getattr(settings, "jellyfin_auto_sync_enabled", None):
+        if normalized_jellyfin_auto_sync_enabled != getattr(
+            settings, "jellyfin_auto_sync_enabled", None
+        ):
             settings.jellyfin_auto_sync_enabled = normalized_jellyfin_auto_sync_enabled
             changed = True
         normalized_jellyfin_auto_sync_interval = normalize_jellyfin_auto_sync_interval_seconds(
@@ -377,9 +389,11 @@ class SettingsService:
         ):
             settings.jellyfin_auto_sync_interval_seconds = normalized_jellyfin_auto_sync_interval
             changed = True
-        normalized_jellyfin_auto_sync_status = str(
-            getattr(settings, "jellyfin_auto_sync_last_status", "idle") or "idle"
-        ).strip().lower()
+        normalized_jellyfin_auto_sync_status = (
+            str(getattr(settings, "jellyfin_auto_sync_last_status", "idle") or "idle")
+            .strip()
+            .lower()
+        )
         if not normalized_jellyfin_auto_sync_status:
             normalized_jellyfin_auto_sync_status = "idle"
         if normalized_jellyfin_auto_sync_status != getattr(
@@ -429,9 +443,11 @@ class SettingsService:
         ):
             settings.stremio_auto_sync_interval_seconds = normalized_stremio_auto_sync_interval
             changed = True
-        normalized_stremio_auto_sync_status = str(
-            getattr(settings, "stremio_auto_sync_last_status", "idle") or "idle"
-        ).strip().lower()
+        normalized_stremio_auto_sync_status = (
+            str(getattr(settings, "stremio_auto_sync_last_status", "idle") or "idle")
+            .strip()
+            .lower()
+        )
         if not normalized_stremio_auto_sync_status:
             normalized_stremio_auto_sync_status = "idle"
         if normalized_stremio_auto_sync_status != getattr(
@@ -492,7 +508,9 @@ class SettingsService:
         normalized_rules_page_sort_direction = normalize_rules_page_sort_direction(
             getattr(settings, "rules_page_sort_direction", DEFAULT_RULES_PAGE_SORT_DIRECTION)
         )
-        if normalized_rules_page_sort_direction != getattr(settings, "rules_page_sort_direction", None):
+        if normalized_rules_page_sort_direction != getattr(
+            settings, "rules_page_sort_direction", None
+        ):
             settings.rules_page_sort_direction = normalized_rules_page_sort_direction
             changed = True
         normalized_schedule_scope = normalize_rule_fetch_schedule_scope(
@@ -508,23 +526,33 @@ class SettingsService:
                 DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES,
             )
         )
-        if normalized_schedule_interval != getattr(settings, "rules_fetch_schedule_interval_minutes", None):
+        if normalized_schedule_interval != getattr(
+            settings, "rules_fetch_schedule_interval_minutes", None
+        ):
             settings.rules_fetch_schedule_interval_minutes = normalized_schedule_interval
             changed = True
         normalized_schedule_enabled = bool(getattr(settings, "rules_fetch_schedule_enabled", False))
         if normalized_schedule_enabled != getattr(settings, "rules_fetch_schedule_enabled", None):
             settings.rules_fetch_schedule_enabled = normalized_schedule_enabled
             changed = True
-        normalized_schedule_status = str(
-            getattr(settings, "rules_fetch_schedule_last_status", "idle") or "idle"
-        ).strip().lower()
+        normalized_schedule_status = (
+            str(getattr(settings, "rules_fetch_schedule_last_status", "idle") or "idle")
+            .strip()
+            .lower()
+        )
         if not normalized_schedule_status:
             normalized_schedule_status = "idle"
-        if normalized_schedule_status != getattr(settings, "rules_fetch_schedule_last_status", None):
+        if normalized_schedule_status != getattr(
+            settings, "rules_fetch_schedule_last_status", None
+        ):
             settings.rules_fetch_schedule_last_status = normalized_schedule_status
             changed = True
-        normalized_schedule_message = str(getattr(settings, "rules_fetch_schedule_last_message", "") or "")
-        if normalized_schedule_message != getattr(settings, "rules_fetch_schedule_last_message", None):
+        normalized_schedule_message = str(
+            getattr(settings, "rules_fetch_schedule_last_message", "") or ""
+        )
+        if normalized_schedule_message != getattr(
+            settings, "rules_fetch_schedule_last_message", None
+        ):
             settings.rules_fetch_schedule_last_message = normalized_schedule_message
             changed = True
         if changed:
@@ -581,7 +609,8 @@ class SettingsService:
         return ResolvedQbConnection(
             base_url=_rewrite_localhost_url_for_wsl(resolved_base_url),
             username=env.qb_username or (settings.qb_username if settings else None),
-            password=env.qb_password or reveal_secret(settings.qb_password_encrypted if settings else None),
+            password=env.qb_password
+            or reveal_secret(settings.qb_password_encrypted if settings else None),
         )
 
     @staticmethod
@@ -590,7 +619,8 @@ class SettingsService:
         provider = settings.metadata_provider if settings else MetadataProvider.OMDB
         return ResolvedMetadataConfig(
             provider=provider,
-            api_key=env.omdb_api_key or reveal_secret(settings.omdb_api_key_encrypted if settings else None),
+            api_key=env.omdb_api_key
+            or reveal_secret(settings.omdb_api_key_encrypted if settings else None),
         )
 
     @staticmethod
@@ -615,13 +645,17 @@ class SettingsService:
             user_name=str(user_name).strip() or None if user_name is not None else None,
             auto_sync_enabled=bool(
                 getattr(settings, "jellyfin_auto_sync_enabled", DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED)
-            ) if settings is not None else DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED,
+            )
+            if settings is not None
+            else DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED,
             auto_sync_interval_seconds=normalize_jellyfin_auto_sync_interval_seconds(
                 getattr(
                     settings,
                     "jellyfin_auto_sync_interval_seconds",
                     DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS,
-                ) if settings is not None else DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS
+                )
+                if settings is not None
+                else DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS
             ),
         )
 
@@ -633,9 +667,7 @@ class SettingsService:
         )
         return ResolvedStremioConfig(
             local_storage_path=(
-                str(local_storage_path).strip() or None
-                if local_storage_path is not None
-                else None
+                str(local_storage_path).strip() or None if local_storage_path is not None else None
             ),
             auth_key=(
                 str(env.stremio_auth_key).strip() or None
@@ -687,14 +719,13 @@ class SettingsService:
                 None,
             ),
             "jellyfin_auto_sync_last_status": str(
-                getattr(settings, "jellyfin_auto_sync_last_status", "idle")
-                or "idle"
+                getattr(settings, "jellyfin_auto_sync_last_status", "idle") or "idle"
             ),
             "jellyfin_auto_sync_last_message": str(
-                getattr(settings, "jellyfin_auto_sync_last_message", "")
-                or ""
+                getattr(settings, "jellyfin_auto_sync_last_message", "") or ""
             ),
-            "stremio_local_storage_path": getattr(settings, "stremio_local_storage_path", None) or "",
+            "stremio_local_storage_path": getattr(settings, "stremio_local_storage_path", None)
+            or "",
             "stremio_auto_sync_enabled": bool(
                 getattr(settings, "stremio_auto_sync_enabled", DEFAULT_STREMIO_AUTO_SYNC_ENABLED)
             ),
@@ -711,25 +742,35 @@ class SettingsService:
                 None,
             ),
             "stremio_auto_sync_last_status": str(
-                getattr(settings, "stremio_auto_sync_last_status", "idle")
-                or "idle"
+                getattr(settings, "stremio_auto_sync_last_status", "idle") or "idle"
             ),
             "stremio_auto_sync_last_message": str(
-                getattr(settings, "stremio_auto_sync_last_message", "")
-                or ""
+                getattr(settings, "stremio_auto_sync_last_message", "") or ""
             ),
             "metadata_provider": settings.metadata_provider.value,
             "series_category_template": settings.series_category_template,
             "movie_category_template": settings.movie_category_template,
             "save_path_template": settings.save_path_template,
             "default_add_paused": settings.default_add_paused,
-            "default_sequential_download": bool(getattr(settings, "default_sequential_download", True)),
-            "default_first_last_piece_prio": bool(getattr(settings, "default_first_last_piece_prio", True)),
+            "default_sequential_download": bool(
+                getattr(settings, "default_sequential_download", True)
+            ),
+            "default_first_last_piece_prio": bool(
+                getattr(settings, "default_first_last_piece_prio", True)
+            ),
             "default_enabled": settings.default_enabled,
-            "profile_1080p_include_tokens": profile_rules[QualityProfile.HD_1080P.value]["include_tokens"],
-            "profile_1080p_exclude_tokens": profile_rules[QualityProfile.HD_1080P.value]["exclude_tokens"],
-            "profile_2160p_hdr_include_tokens": profile_rules[QualityProfile.UHD_2160P_HDR.value]["include_tokens"],
-            "profile_2160p_hdr_exclude_tokens": profile_rules[QualityProfile.UHD_2160P_HDR.value]["exclude_tokens"],
+            "profile_1080p_include_tokens": profile_rules[QualityProfile.HD_1080P.value][
+                "include_tokens"
+            ],
+            "profile_1080p_exclude_tokens": profile_rules[QualityProfile.HD_1080P.value][
+                "exclude_tokens"
+            ],
+            "profile_2160p_hdr_include_tokens": profile_rules[QualityProfile.UHD_2160P_HDR.value][
+                "include_tokens"
+            ],
+            "profile_2160p_hdr_exclude_tokens": profile_rules[QualityProfile.UHD_2160P_HDR.value][
+                "exclude_tokens"
+            ],
             "default_feed_urls": list(settings.default_feed_urls or []),
             "default_quality_profile": settings.default_quality_profile.value,
             "saved_quality_profile_count": len(saved_profiles),
@@ -745,7 +786,9 @@ class SettingsService:
                 get_environment_settings().stremio_local_storage_path
             ),
             "has_env_stremio_auth_key": bool(get_environment_settings().stremio_auth_key),
-            "search_result_view_mode": normalize_search_result_view_mode(settings.search_result_view_mode),
+            "search_result_view_mode": normalize_search_result_view_mode(
+                settings.search_result_view_mode
+            ),
             "search_sort_criteria": normalize_search_sort_criteria(settings.search_sort_criteria),
             "rules_page_view_mode": normalize_rules_page_view_mode(
                 getattr(settings, "rules_page_view_mode", DEFAULT_RULES_PAGE_VIEW_MODE)
@@ -780,11 +823,9 @@ class SettingsService:
                 None,
             ),
             "rules_fetch_schedule_last_status": str(
-                getattr(settings, "rules_fetch_schedule_last_status", "idle")
-                or "idle"
+                getattr(settings, "rules_fetch_schedule_last_status", "idle") or "idle"
             ),
             "rules_fetch_schedule_last_message": str(
-                getattr(settings, "rules_fetch_schedule_last_message", "")
-                or ""
+                getattr(settings, "rules_fetch_schedule_last_message", "") or ""
             ),
         }

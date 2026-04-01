@@ -211,7 +211,15 @@ def _stream_sort_key(result: JackettSearchResult) -> tuple[int, int, int, int, i
     published_score = 0
     published_at = str(result.published_at or "").strip()
     if published_at:
-        published_score = int(published_at.replace("-", "").replace(":", "").replace("T", "").replace("+", "").replace("Z", "").replace(".", "")[:14] or "0")
+        published_score = int(
+            published_at.replace("-", "")
+            .replace(":", "")
+            .replace("T", "")
+            .replace("+", "")
+            .replace("Z", "")
+            .replace(".", "")[:14]
+            or "0"
+        )
     return (
         _stream_quality_score(result),
         int(result.seeders or 0),
@@ -222,16 +230,25 @@ def _stream_sort_key(result: JackettSearchResult) -> tuple[int, int, int, int, i
     )
 
 
-def _quality_first_stream_sort_key(result: JackettSearchResult) -> tuple[int, int, int, int, int, str]:
+def _quality_first_stream_sort_key(
+    result: JackettSearchResult,
+) -> tuple[int, int, int, int, int, str]:
     return _stream_sort_key(result)
 
 
-def _collection_priority_stream_sort_key(result: JackettSearchResult) -> tuple[int, int, int, int, int, str]:
+def _collection_priority_stream_sort_key(
+    result: JackettSearchResult,
+) -> tuple[int, int, int, int, int, str]:
     published_score = 0
     published_at = str(result.published_at or "").strip()
     if published_at:
         published_score = int(
-            published_at.replace("-", "").replace(":", "").replace("T", "").replace("+", "").replace("Z", "").replace(".", "")[:14]
+            published_at.replace("-", "")
+            .replace(":", "")
+            .replace("T", "")
+            .replace("+", "")
+            .replace("Z", "")
+            .replace(".", "")[:14]
             or "0"
         )
     return (
@@ -310,17 +327,26 @@ def _stream_title(
     metadata_title: str,
     season_number: int | None,
     episode_number: int | None,
-    seeders: int | None,
+    result: JackettSearchResult,
 ) -> str:
     display_label = _stream_display_label(
         metadata_title=metadata_title,
         season_number=season_number,
         episode_number=episode_number,
     )
-    return (
-        f"{display_label}\r\n\r\n"
-        f"\U0001F464 {int(seeders or 0)}  \u2699\ufe0f qbrssrules"
-    )
+    detail_parts = [f"\U0001f464 {int(result.seeders or 0)}"]
+    size_label = str(result.size_label or "").strip()
+    if size_label:
+        detail_parts.append(f"\U0001f4be {size_label}")
+    variant_label = _quality_label_from_title(str(result.title or ""))
+    if variant_label and variant_label.casefold() != "torrent":
+        detail_parts.append(variant_label)
+    source_label = str(result.indexer or "").strip()
+    if source_label:
+        detail_parts.append(f"\u2699\ufe0f qbrssrules/{source_label}")
+    else:
+        detail_parts.append("\u2699\ufe0f qbrssrules")
+    return f"{display_label}\r\n\r\n{'  '.join(detail_parts)}"
 
 
 def _stream_response_payload(streams: list[dict[str, object]]) -> dict[str, object]:
@@ -462,7 +488,9 @@ def _resolve_stream_target(
             )
         return None
     if scheme in {"http", "https"}:
-        timeout_seconds = max(0.1, float(http_timeout_seconds or STREMIO_HTTP_TORRENT_TIMEOUT_SECONDS))
+        timeout_seconds = max(
+            0.1, float(http_timeout_seconds or STREMIO_HTTP_TORRENT_TIMEOUT_SECONDS)
+        )
         try:
             torrent_bytes, source_name = _download_torrent_bytes_for_stremio(
                 link,
@@ -498,7 +526,7 @@ def _resolve_stream_target(
 
 
 def _stream_name(result: JackettSearchResult) -> str:
-    return f"qB RSS Rules\n{_quality_tag_from_title(str(result.title or ''))}"
+    return f"qB RSS Rules\n{_quality_label_from_title(str(result.title or ''))}"
 
 
 def _local_stream_name(result: JackettSearchResult) -> str:
@@ -516,7 +544,7 @@ def _local_stream_title(
         season_number=season_number,
         episode_number=episode_number,
     )
-    return f"{display_label}\r\n\r\n\U0001F4C1 Local qB file  \u2699\ufe0f qbrssrules"
+    return f"{display_label}\r\n\r\n\U0001f4c1 Local qB file  \u2699\ufe0f qbrssrules"
 
 
 def _local_playback_url(base_url: str, token: str) -> str:
@@ -532,7 +560,9 @@ def _local_match_sort_key(match: QbLocalPlaybackMatch) -> tuple[int, str]:
     )
 
 
-def _local_inventory_stream_sort_key(match: QbLocalPlaybackMatch) -> tuple[int, int, int, int, int, str]:
+def _local_inventory_stream_sort_key(
+    match: QbLocalPlaybackMatch,
+) -> tuple[int, int, int, int, int, str]:
     quality_text = f"{match.torrent_name} {match.playback_file.filename}"
     return (
         _quality_score_text(quality_text),
@@ -579,7 +609,7 @@ def _local_stream_from_playback_file(
 ) -> dict[str, object]:
     token = register_local_playback_file(playback_file)
     return {
-        "name": f"qB RSS Rules\nLocal {_quality_tag_from_title(quality_text)}",
+        "name": f"qB RSS Rules\nLocal {_quality_label_from_title(quality_text)}",
         "tag": _quality_tag_from_title(quality_text),
         "type": item_type,
         "title": _local_stream_title(
@@ -598,7 +628,9 @@ def _local_stream_from_playback_file(
 
 
 def _stream_identity_key(stream: dict[str, object]) -> str:
-    info_hash = str(stream.get("infoHash") or stream.get("_dedupeInfoHash") or "").strip().casefold()
+    info_hash = (
+        str(stream.get("infoHash") or stream.get("_dedupeInfoHash") or "").strip().casefold()
+    )
     if info_hash:
         return f"hash:{info_hash}"
     stream_url = str(stream.get("url") or "").strip()
@@ -639,7 +671,7 @@ def _stream_from_result_with_timeout(
             metadata_title=metadata_title,
             season_number=season_number,
             episode_number=episode_number,
-            seeders=result.seeders,
+            result=result,
         ),
         "infoHash": info_hash,
         "sources": [*list(target.sources), f"dht:{info_hash}"],
@@ -820,8 +852,16 @@ class StremioAddonService:
             "name": "qB RSS Rules",
             "description": "Local Stremio addon powered by qB RSS Rules search, OMDb metadata, and Jackett streams.",
             "resources": [
-                {"name": "catalog", "types": ["movie", "series"], "idPrefixes": list(STREMIO_SUPPORTED_ID_PREFIXES)},
-                {"name": "stream", "types": ["movie", "series"], "idPrefixes": list(STREMIO_SUPPORTED_ID_PREFIXES)},
+                {
+                    "name": "catalog",
+                    "types": ["movie", "series"],
+                    "idPrefixes": list(STREMIO_SUPPORTED_ID_PREFIXES),
+                },
+                {
+                    "name": "stream",
+                    "types": ["movie", "series"],
+                    "idPrefixes": list(STREMIO_SUPPORTED_ID_PREFIXES),
+                },
             ],
             "types": ["movie", "series"],
             "idPrefixes": list(STREMIO_SUPPORTED_ID_PREFIXES),
@@ -933,12 +973,13 @@ class StremioAddonService:
 
         runs: list[JackettSearchRun] = []
         if parsed_id.is_episode:
+            episode_release_year: str | None = None
             exact_payload = JackettSearchRequest(
                 query=clamp_search_query_text(metadata.title, fallback=parsed_id.imdb_id),
                 media_type=media_type,
                 imdb_id=parsed_id.imdb_id,
                 imdb_id_only=True,
-                release_year=metadata.year or None,
+                release_year=episode_release_year,
                 keywords_all=[
                     f"S{int(parsed_id.season_number or 0):02d}E{int(parsed_id.episode_number or 0):02d}"
                 ],
@@ -949,7 +990,7 @@ class StremioAddonService:
                     fallback=parsed_id.imdb_id,
                 ),
                 media_type=media_type,
-                release_year=metadata.year or None,
+                release_year=episode_release_year,
             )
             completed_runs: dict[str, JackettSearchRun] = {}
             search_futures = {}
@@ -969,7 +1010,9 @@ class StremioAddonService:
                         payload=text_episode_payload,
                     ): "text",
                 }
-                done, pending = wait(search_futures, timeout=STREMIO_SEARCH_COLLECTION_BUDGET_SECONDS)
+                done, pending = wait(
+                    search_futures, timeout=STREMIO_SEARCH_COLLECTION_BUDGET_SECONDS
+                )
                 for future in done:
                     run = future.result()
                     if run is None:
@@ -996,10 +1039,8 @@ class StremioAddonService:
                     media_type=media_type,
                     imdb_id=parsed_id.imdb_id,
                     imdb_id_only=True,
-                    release_year=metadata.year or None,
-                    keywords_all=[
-                        f"S{int(parsed_id.season_number or 0):02d}"
-                    ],
+                    release_year=episode_release_year,
+                    keywords_all=[f"S{int(parsed_id.season_number or 0):02d}"],
                 )
                 season_run = _run_jackett_search(
                     api_url=api_url,
@@ -1092,8 +1133,7 @@ class StremioAddonService:
                     )
                 local_matches.sort(key=_local_match_sort_key, reverse=True)
                 seen_stream_keys = {
-                    _stream_identity_key(candidate.stream)
-                    for candidate in stream_candidates
+                    _stream_identity_key(candidate.stream) for candidate in stream_candidates
                 }
                 for match in local_matches:
                     if len(stream_candidates) >= STREMIO_STREAM_LIMIT:
@@ -1120,10 +1160,7 @@ class StremioAddonService:
             if qb_client is not None:
                 qb_client.close()
         stream_candidates.sort(key=lambda candidate: candidate.sort_key, reverse=True)
-        streams = [
-            candidate.stream
-            for candidate in stream_candidates[:STREMIO_STREAM_LIMIT]
-        ]
+        streams = [candidate.stream for candidate in stream_candidates[:STREMIO_STREAM_LIMIT]]
         if len(streams) > STREMIO_STREAM_LIMIT:
             streams = streams[:STREMIO_STREAM_LIMIT]
         payload = _stream_response_payload(streams)

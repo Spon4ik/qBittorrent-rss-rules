@@ -269,7 +269,9 @@ def test_metadata_client_openlibrary_supports_title_lookup() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    result = client.lookup(MetadataLookupProvider.OPENLIBRARY, "Project Hail Mary", MediaType.AUDIOBOOK)
+    result = client.lookup(
+        MetadataLookupProvider.OPENLIBRARY, "Project Hail Mary", MediaType.AUDIOBOOK
+    )
 
     assert result.provider == MetadataLookupProvider.OPENLIBRARY
     assert result.source_id == "works/OL12345W"
@@ -327,7 +329,9 @@ def test_metadata_client_google_books_supports_title_lookup() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    result = client.lookup(MetadataLookupProvider.GOOGLE_BOOKS, "The Way of Kings", MediaType.AUDIOBOOK)
+    result = client.lookup(
+        MetadataLookupProvider.GOOGLE_BOOKS, "The Way of Kings", MediaType.AUDIOBOOK
+    )
 
     assert result.provider == MetadataLookupProvider.GOOGLE_BOOKS
     assert result.source_id == "book-123"
@@ -358,7 +362,9 @@ def test_metadata_client_google_books_supports_isbn_lookup() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    result = client.lookup(MetadataLookupProvider.GOOGLE_BOOKS, "9780593135204", MediaType.AUDIOBOOK)
+    result = client.lookup(
+        MetadataLookupProvider.GOOGLE_BOOKS, "9780593135204", MediaType.AUDIOBOOK
+    )
 
     assert result.title == "Project Hail Mary"
     assert result.source_id == "book-9780593135204"

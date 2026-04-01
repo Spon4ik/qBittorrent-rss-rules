@@ -4,7 +4,8 @@
 
 ### In progress
 
-- Phase 23 is now the next planned `v0.9.0` minor slice, focused on merging external addon/provider streams into one globally ranked list instead of relying on Stremio's per-addon grouping.
+- Phase 24 is now closed and release-validated in `v0.8.3` as the hotfix for long-running Stremio series lookups that were over-constrained by the original series year, along with early phase 23 qB-side precursors for visibility and search precision.
+- Phase 23 is now the active `v0.9.0` minor slice, focused on merging external addon/provider streams into one globally ranked list instead of relying on Stremio's per-addon grouping.
 - Phase 22 is now closed and release-validated in `v0.8.2` as the Stremio patch slice covering full qB RSS variant retention, global quality-first ordering, and exact-variant local playback marking after the `v0.8.1` release still suppressed rows too aggressively.
 - Phase 21 is now closed and release-validated in `v0.8.1` as the Stremio playback follow-up slice covering qB RSS stream ordering and qB-backed local playback acceleration so predownloaded torrents materially improve Stremio playback.
 - Phase 20 is now closed and release-validated in `v0.8.0` as the Stremio library sync and native addon parity slice, including real desktop proof that qB RSS rows render in Stremio for known items such as `The Beauty`.
@@ -16,7 +17,8 @@
 
 ### Current phase track
 
-- Phase 23: global cross-addon stream ordering (planned next minor; `docs/plans/phase-23-global-cross-addon-stream-ordering.md`)
+- Phase 24: Stremio long-running series year hotfix (implemented and release-validated in `v0.8.3`; `docs/plans/phase-24-stremio-long-running-series-year-hotfix.md`)
+- Phase 23: global cross-addon stream ordering (active track; `docs/plans/phase-23-global-cross-addon-stream-ordering.md`)
 - Phase 22: Stremio variant parity and local playback marking (implemented and release-validated in `v0.8.2`; `docs/plans/phase-22-stremio-variant-parity-and-local-marking.md`)
 - Phase 21: Stremio stream ordering and qB-backed local playback acceleration (implemented and release-validated in `v0.8.1`; `docs/plans/phase-21-stremio-stream-ordering-and-local-playback.md`)
 - Phase 20: Stremio library sync and native addon parity (implemented and release-validated in `v0.8.0`; `docs/plans/phase-20-stremio-library-rule-sync.md`)
@@ -36,6 +38,9 @@
 - Phase 6: Jackett-backed active search workspace (implemented and release-validated in v0.2.0; follow-up polish completed, deeper persistence still deferred)
 - Phase 4: feed selection UX improvements (implemented, automated closeout validated)
 - Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, automated closeout validated)
+
+Phase 24 detail pointer:
+- Dated checklist, regression evidence, and scope for the active `v0.8.3` long-running series hotfix live in `docs/plans/phase-24-stremio-long-running-series-year-hotfix.md`.
 
 Phase 23 detail pointer:
 - Dated checklist, architectural options, and delivery risks for the planned `v0.9.0` cross-addon ordering slice live in `docs/plans/phase-23-global-cross-addon-stream-ordering.md`.
@@ -96,7 +101,11 @@ Phase 6 detail pointer:
 - Reduce context and maintenance cost by splitting the largest rule/search/Jellyfin files along real domain boundaries.
 - Keep deterministic browser QA and route/service regressions as release gates for every workflow change.
 
-## Release-validated: v0.8.1 (2026-03-28)
+## Release-validated: v0.8.3 (2026-04-02)
+
+- Shipped the phase-24 hotfix so long-running series like `Death in Paradise` no longer hide episode streams due to outdated start-year constraints in Stremio lookup queries.
+- Shipped early phase-23 precursors: improved Stremio addon variant visibility (quality markers, size, attribution) and added episode-floor precision to the main app Jackett IMDb-first series fallback path.
+- Revalidated the patch with focused pytest/typing/lint checks, realtime direct route probes, and desktop smoke reruns for the corrected `Death in Paradise` and `The Beauty` request payloads.
 
 ## Release-validated: v0.8.2 (2026-03-28)
 

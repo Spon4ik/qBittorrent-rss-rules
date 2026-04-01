@@ -197,7 +197,9 @@ def resolve_category_labels(
     indexer: str | None,
     category_ids: Sequence[str],
 ) -> list[str]:
-    normalized_ids = [normalize_category_id(item) for item in category_ids if normalize_category_id(item)]
+    normalized_ids = [
+        normalize_category_id(item) for item in category_ids if normalize_category_id(item)
+    ]
     if not normalized_ids:
         return []
     indexer_candidates = indexer_key_candidates(indexer)

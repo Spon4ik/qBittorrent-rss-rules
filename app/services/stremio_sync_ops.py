@@ -59,7 +59,7 @@ class StremioSyncExecution:
     def render_message(self, prefix: str = "Stremio sync completed") -> str:
         return (
             f"{prefix} for {self.summary.active_item_count} active title(s) "
-            f'({", ".join(self.detail_fragments())}).'
+            f"({', '.join(self.detail_fragments())})."
         )
 
     def top_errors(self, *, limit: int = 5) -> list[str]:
@@ -89,7 +89,9 @@ def execute_stremio_sync(
         qb_sync_error_messages: list[str] = []
         qb_sync_skipped = False
 
-        synced_outcomes = [outcome for outcome in summary.outcomes if outcome.changed and outcome.rule_id]
+        synced_outcomes = [
+            outcome for outcome in summary.outcomes if outcome.changed and outcome.rule_id
+        ]
         if synced_outcomes:
             connection = SettingsService.resolve_qb_connection(settings)
             if connection.is_configured:

@@ -37,11 +37,17 @@ def test_stremio_manifest_route_exposes_catalog_and_stream_resources(app_client)
     assert response.headers["access-control-allow-methods"] == "GET, OPTIONS"
     payload = response.json()
     assert payload["id"] == "org.qbrssrules.stremio.local"
-    assert payload["version"] == "0.8.2+stremio.1"
+    assert payload["version"] == "0.8.3+stremio.1"
     assert any(resource["name"] == "catalog" for resource in payload["resources"])
     assert any(resource["name"] == "stream" for resource in payload["resources"])
-    assert any(catalog["id"] == "qb-search" and catalog["type"] == "movie" for catalog in payload["catalogs"])
-    assert any(catalog["id"] == "qb-search" and catalog["type"] == "series" for catalog in payload["catalogs"])
+    assert any(
+        catalog["id"] == "qb-search" and catalog["type"] == "movie"
+        for catalog in payload["catalogs"]
+    )
+    assert any(
+        catalog["id"] == "qb-search" and catalog["type"] == "series"
+        for catalog in payload["catalogs"]
+    )
 
 
 def test_stremio_catalog_route_returns_metadata_search_results(
@@ -189,11 +195,14 @@ def test_stremio_stream_route_reuses_jackett_results_and_sorts_by_quality(
     assert payload["staleError"] == 604800
     assert len(payload["streams"]) == 2
     assert payload["streams"][0]["infoHash"] == "2222222222222222222222222222222222222222"
-    assert payload["streams"][0]["name"] == "qB RSS Rules\n2160p"
+    assert payload["streams"][0]["name"] == "qB RSS Rules\n2160p HDR DV WEB-DL"
     assert payload["streams"][0]["type"] == "series"
     assert payload["streams"][0]["tag"] == "2160p"
     assert payload["streams"][0]["seeders"] == 2
-    assert payload["streams"][0]["title"] == "The Beauty  S01E01\r\n\r\n👤 2  ⚙️ qbrssrules"
+    assert payload["streams"][0]["title"].startswith("The Beauty  S01E01\r\n\r\n")
+    assert "47.0 GB" in payload["streams"][0]["title"]
+    assert "2160p HDR DV WEB-DL" in payload["streams"][0]["title"]
+    assert "qbrssrules/megapeer" in payload["streams"][0]["title"]
     assert "description" not in payload["streams"][0]
     assert payload["streams"][0].get("fileIdx") is None
     assert payload["streams"][0]["behaviorHints"] == {
@@ -205,6 +214,83 @@ def test_stremio_stream_route_reuses_jackett_results_and_sorts_by_quality(
     assert set(seen_searches) == {
         ("The Beauty", ("S01E01",), "tt33517752"),
         ("The Beauty S01E01", (), None),
+    }
+
+
+def test_stremio_stream_route_does_not_use_series_start_year_for_episode_searches(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        metadata_provider=MetadataProvider.OMDB,
+        omdb_api_key_encrypted=obfuscate_secret("omdb-key"),
+        jackett_api_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("jackett-key"),
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    def fake_lookup_by_imdb_id(self, imdb_id):
+        assert imdb_id == "tt1888075"
+        return MetadataResult(
+            title="Death in Paradise",
+            provider=MetadataLookupProvider.OMDB,
+            imdb_id=imdb_id,
+            source_id=imdb_id,
+            media_type=MediaType.SERIES,
+            year="2011",
+            poster_url=None,
+        )
+
+    seen_searches: list[tuple[str, tuple[str, ...], str | None, str | None]] = []
+
+    def fake_search(self, payload):
+        assert payload.media_type == MediaType.SERIES
+        seen_searches.append(
+            (
+                payload.query,
+                tuple(payload.keywords_all),
+                payload.imdb_id,
+                payload.release_year,
+            )
+        )
+        if payload.query == "Death in Paradise S14E01":
+            assert payload.release_year is None
+            return JackettSearchRun(
+                results=[
+                    JackettSearchResult(
+                        merge_key="dip-s14e01",
+                        title="Death in Paradise S14E01 1080p WEB-DL",
+                        link="magnet:?xt=urn:btih:3333333333333333333333333333333333333333",
+                        info_hash="3333333333333333333333333333333333333333",
+                        indexer="alpha",
+                        size_bytes=2 * 1024 * 1024 * 1024,
+                        size_label="2.0 GB",
+                        seeders=12,
+                        peers=20,
+                        published_at="2025-02-10T10:00:00+00:00",
+                    )
+                ],
+                fallback_results=[],
+            )
+        assert payload.release_year is None
+        return JackettSearchRun(results=[], fallback_results=[])
+
+    monkeypatch.setattr(MetadataClient, "lookup_by_imdb_id", fake_lookup_by_imdb_id)
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get("/stremio/stream/series/tt1888075:14:1.json")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["streams"]) == 1
+    assert payload["streams"][0]["infoHash"] == "3333333333333333333333333333333333333333"
+    assert set(seen_searches) == {
+        ("Death in Paradise", ("S14E01",), "tt1888075", None),
+        ("Death in Paradise", ("S14",), "tt1888075", None),
+        ("Death in Paradise S14E01", (), None, None),
     }
 
 
@@ -391,7 +477,10 @@ def test_stremio_stream_route_accepts_http_torrent_download_links(
         "filename": "The.Beauty.S01E01.2160p.WEB-DL.H265.mkv",
     }
     assert payload["streams"][0]["sources"][0] == "tracker:https://tracker.example/announce"
-    assert payload["streams"][0]["title"] == "The Beauty  S01E01\r\n\r\n👤 2  ⚙️ qbrssrules"
+    assert payload["streams"][0]["title"].startswith("The Beauty  S01E01\r\n\r\n")
+    assert "47.0 GB" in payload["streams"][0]["title"]
+    assert "2160p HDR DV WEB-DL" in payload["streams"][0]["title"]
+    assert "qbrssrules/megapeer" in payload["streams"][0]["title"]
 
 
 def test_stremio_stream_route_uses_season_fallback_for_episode_packs(
@@ -497,7 +586,10 @@ def test_stremio_stream_route_uses_season_fallback_for_episode_packs(
     assert payload["streams"][0]["type"] == "series"
     assert payload["streams"][0]["tag"] == "2160p"
     assert payload["streams"][0]["fileIdx"] == 5
-    assert payload["streams"][0]["title"] == "The Beauty  S01E04\r\n\r\n👤 25  ⚙️ qbrssrules"
+    assert payload["streams"][0]["title"].startswith("The Beauty  S01E04\r\n\r\n")
+    assert "47.0 GB" in payload["streams"][0]["title"]
+    assert "2160p HDR DV WEB-DL" in payload["streams"][0]["title"]
+    assert "qbrssrules/kinozal" in payload["streams"][0]["title"]
     assert payload["streams"][1]["infoHash"] == "4444444444444444444444444444444444444444"
     assert payload["streams"][1].get("fileIdx") is None
     assert payload["streams"][1]["tag"] == "1080p"
@@ -576,7 +668,9 @@ def test_stremio_stream_route_prefers_local_qb_playback_for_completed_files(
             info_hash="5555555555555555555555555555555555555555",
             filename=source_name,
             files=[
-                TorrentFileEntry(file_id=5, path="The.Beauty.S01E01.2160p.DSNP.WEB-DL.DV.HDR.H.265.mkv"),
+                TorrentFileEntry(
+                    file_id=5, path="The.Beauty.S01E01.2160p.DSNP.WEB-DL.DV.HDR.H.265.mkv"
+                ),
             ],
             tracker_urls=["https://tracker.example/announce"],
         )
@@ -627,9 +721,11 @@ def test_stremio_stream_route_prefers_local_qb_playback_for_completed_files(
     assert response.status_code == 200
     payload = response.json()
     assert len(payload["streams"]) == 1
-    assert payload["streams"][0]["name"] == "qB RSS Rules\nLocal 2160p"
+    assert payload["streams"][0]["name"] == "qB RSS Rules\nLocal 2160p HDR DV WEB-DL"
     assert payload["streams"][0]["tag"] == "2160p"
-    assert payload["streams"][0]["title"] == "The Beauty  S01E01\r\n\r\n📁 Local qB file  ⚙️ qbrssrules"
+    assert (
+        payload["streams"][0]["title"] == "The Beauty  S01E01\r\n\r\n📁 Local qB file  ⚙️ qbrssrules"
+    )
     assert payload["streams"][0]["behaviorHints"] == {
         "bingieGroup": "qB RSS Rules|5555555555555555555555555555555555555555",
         "filename": "The.Beauty.S01E01.2160p.DSNP.WEB-DL.DV.HDR.H.265.mkv",
@@ -770,7 +866,7 @@ def test_stremio_stream_route_keeps_quality_sorted_variant_set_and_marks_local_e
     assert response.status_code == 200
     payload = response.json()
     assert len(payload["streams"]) == 3
-    assert payload["streams"][0]["name"] == "qB RSS Rules\nLocal 2160p"
+    assert payload["streams"][0]["name"] == "qB RSS Rules\nLocal 2160p HDR DV WEB-DL"
     assert payload["streams"][0]["tag"] == "2160p"
     assert payload["streams"][0]["url"].startswith("http://testserver/stremio/local-playback/")
     assert payload["streams"][1]["infoHash"] == "6666666666666666666666666666666666666666"
@@ -906,7 +1002,7 @@ def test_stremio_stream_route_uses_local_qb_inventory_when_jackett_misses_best_v
     assert response.status_code == 200
     payload = response.json()
     assert len(payload["streams"]) == 2
-    assert payload["streams"][0]["name"] == "qB RSS Rules\nLocal 2160p"
+    assert payload["streams"][0]["name"] == "qB RSS Rules\nLocal 2160p HDR DV WEB-DL"
     assert payload["streams"][0]["tag"] == "2160p"
     assert payload["streams"][0]["url"].startswith("http://testserver/stremio/local-playback/")
     assert payload["streams"][1]["infoHash"] == "4444444444444444444444444444444444444444"
@@ -973,5 +1069,8 @@ def test_stremio_stream_route_does_not_cache_empty_results(
     assert second_response.status_code == 200
     assert first_response.json()["streams"] == []
     assert len(second_response.json()["streams"]) == 1
-    assert second_response.json()["streams"][0]["infoHash"] == "7777777777777777777777777777777777777777"
+    assert (
+        second_response.json()["streams"][0]["infoHash"]
+        == "7777777777777777777777777777777777777777"
+    )
     assert call_counter["count"] > 3

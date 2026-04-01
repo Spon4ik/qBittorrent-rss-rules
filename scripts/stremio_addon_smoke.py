@@ -128,10 +128,14 @@ def _http_get_json(url: str) -> dict[str, Any]:
         raise RuntimeError(f"HTTP {exc.code} for {url}: {body}") from exc
 
 
-def _stream_summary(item_type: str, item_id: str, cold_ms: float, warm_ms: float, payload: dict[str, Any]) -> StreamProbeSummary:
+def _stream_summary(
+    item_type: str, item_id: str, cold_ms: float, warm_ms: float, payload: dict[str, Any]
+) -> StreamProbeSummary:
     streams = list(payload.get("streams") or [])
     tags = [str(stream.get("tag") or "") for stream in streams]
-    info_hashes = [str(stream.get("infoHash") or "") for stream in streams if stream.get("infoHash")]
+    info_hashes = [
+        str(stream.get("infoHash") or "") for stream in streams if stream.get("infoHash")
+    ]
     has_4k = any(tag.casefold() in {"2160p", "4k"} for tag in tags)
     return StreamProbeSummary(
         item_type=item_type,
@@ -178,7 +182,9 @@ def _probe_manifest_http(base_url: str) -> dict[str, Any]:
     return _http_get_json(url)
 
 
-def _format_report(mode: str, manifest: dict[str, Any] | None, summaries: list[StreamProbeSummary]) -> dict[str, Any]:
+def _format_report(
+    mode: str, manifest: dict[str, Any] | None, summaries: list[StreamProbeSummary]
+) -> dict[str, Any]:
     return {
         "mode": mode,
         "manifest": manifest,
@@ -226,7 +232,10 @@ def main() -> int:
         ]
     else:
         manifest = _probe_manifest_http(args.base_url)
-        summaries = [_probe_http_item(args.base_url, item_type=item_type, item_id=item_id) for item_type, item_id in items]
+        summaries = [
+            _probe_http_item(args.base_url, item_type=item_type, item_id=item_id)
+            for item_type, item_id in items
+        ]
 
     report = _format_report(args.mode, manifest, summaries)
     failures = _check_thresholds(

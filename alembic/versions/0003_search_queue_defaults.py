@@ -4,6 +4,7 @@ Revision ID: 0003_search_queue_defaults
 Revises: 0002_indexer_category_catalog
 Create Date: 2026-03-12 00:00:00
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -20,11 +21,15 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "app_settings",
-        sa.Column("default_sequential_download", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column(
+            "default_sequential_download", sa.Boolean(), nullable=False, server_default=sa.true()
+        ),
     )
     op.add_column(
         "app_settings",
-        sa.Column("default_first_last_piece_prio", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column(
+            "default_first_last_piece_prio", sa.Boolean(), nullable=False, server_default=sa.true()
+        ),
     )
 
 

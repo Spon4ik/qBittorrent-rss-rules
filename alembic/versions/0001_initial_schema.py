@@ -4,6 +4,7 @@ Revision ID: 0001_initial_schema
 Revises:
 Create Date: 2026-03-01 00:00:00
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -70,8 +71,12 @@ def upgrade() -> None:
         sa.Column("movie_category_template", sa.String(length=255), nullable=False),
         sa.Column("save_path_template", sa.String(length=255), nullable=False),
         sa.Column("default_add_paused", sa.Boolean(), nullable=False),
-        sa.Column("default_sequential_download", sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column("default_first_last_piece_prio", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column(
+            "default_sequential_download", sa.Boolean(), nullable=False, server_default=sa.true()
+        ),
+        sa.Column(
+            "default_first_last_piece_prio", sa.Boolean(), nullable=False, server_default=sa.true()
+        ),
         sa.Column("default_enabled", sa.Boolean(), nullable=False),
         sa.Column("quality_profile_rules", sa.JSON(), nullable=False),
         sa.Column("saved_quality_profiles", sa.JSON(), nullable=False),

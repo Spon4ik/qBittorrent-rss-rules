@@ -88,7 +88,9 @@ class Rule(Base):
     must_not_contain: Mapped[str] = mapped_column(Text, nullable=False, default="")
     start_season: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     start_episode: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
-    jellyfin_search_existing_unseen: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    jellyfin_search_existing_unseen: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     jellyfin_auto_disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     jellyfin_known_episode_numbers: Mapped[list[str]] = mapped_column(
         JSON,
@@ -115,6 +117,16 @@ class Rule(Base):
         nullable=False,
         default=False,
     )
+    stremio_known_episode_numbers: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+    stremio_watched_episode_numbers: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
     stremio_library_item_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     stremio_library_item_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     stremio_managed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -136,7 +148,9 @@ class Rule(Base):
     )
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -158,8 +172,12 @@ class RuleSearchSnapshot(Base):
     release_filter_cache_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     release_filtered_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     release_fetched_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -253,19 +271,25 @@ class AppSettings(Base):
         default=dict,
     )
     default_feed_urls: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    search_result_view_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="table")
+    search_result_view_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="table"
+    )
     search_sort_criteria: Mapped[list[dict[str, str]]] = mapped_column(
         JSON,
         nullable=False,
         default=list,
     )
-    rules_fetch_schedule_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    rules_fetch_schedule_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     rules_fetch_schedule_interval_minutes: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=360,
     )
-    rules_fetch_schedule_scope: Mapped[str] = mapped_column(String(32), nullable=False, default="enabled")
+    rules_fetch_schedule_scope: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="enabled"
+    )
     rules_fetch_schedule_last_run_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
@@ -281,8 +305,12 @@ class AppSettings(Base):
     )
     rules_fetch_schedule_last_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
     rules_page_view_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="table")
-    rules_page_sort_field: Mapped[str] = mapped_column(String(64), nullable=False, default="updated_at")
-    rules_page_sort_direction: Mapped[str] = mapped_column(String(8), nullable=False, default="desc")
+    rules_page_sort_field: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="updated_at"
+    )
+    rules_page_sort_direction: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="desc"
+    )
     default_quality_profile: Mapped[QualityProfile] = mapped_column(
         Enum(QualityProfile, name="default_quality_profile"),
         nullable=False,
@@ -305,7 +333,9 @@ class SyncEvent(Base):
     action: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
 
 
 class ImportBatch(Base):
@@ -316,7 +346,9 @@ class ImportBatch(Base):
     mode: Mapped[str] = mapped_column(String(32), nullable=False)
     imported_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     skipped_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
 
 
 class IndexerCategoryCatalog(Base):

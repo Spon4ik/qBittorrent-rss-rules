@@ -29,7 +29,12 @@ def _bencode(value: object) -> bytes:
     if isinstance(value, list):
         return b"l" + b"".join(_bencode(item) for item in value) + b"e"
     if isinstance(value, Mapping):
-        items = sorted(value.items(), key=lambda item: bytes(item[0] if isinstance(item[0], bytes) else str(item[0]).encode()))
+        items = sorted(
+            value.items(),
+            key=lambda item: bytes(
+                item[0] if isinstance(item[0], bytes) else str(item[0]).encode()
+            ),
+        )
         payload = b"d"
         for key, item_value in items:
             payload += _bencode(key)
@@ -177,7 +182,9 @@ def test_queue_result_with_optional_file_selection_applies_qb_file_priorities(mo
     monkeypatch.setattr(
         QbittorrentClient,
         "set_file_priority",
-        lambda self, info_hash, file_ids, priority: priority_calls.append((info_hash, list(file_ids), priority)),
+        lambda self, info_hash, file_ids, priority: priority_calls.append(
+            (info_hash, list(file_ids), priority)
+        ),
     )
 
     result = queue_result_with_optional_file_selection(
@@ -208,7 +215,9 @@ def test_queue_result_with_optional_file_selection_applies_qb_file_priorities(mo
     assert priority_calls[1][2] == 1
 
 
-def test_queue_result_with_optional_file_selection_rejects_torrents_without_missing_files(monkeypatch) -> None:
+def test_queue_result_with_optional_file_selection_rejects_torrents_without_missing_files(
+    monkeypatch,
+) -> None:
     torrent_bytes = _build_multi_file_torrent_bytes("Shrinking.S03E07.mkv")
     rule = Rule(
         rule_name="Shrinking Rule",

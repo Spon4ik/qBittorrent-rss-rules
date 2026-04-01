@@ -138,8 +138,7 @@ def _variant_payloads(
     addon_name: str,
 ) -> dict[str, dict[str, Any]]:
     qbrss_live_streams = [
-        _rewrite_stream_name(stream, addon_name)
-        for stream in list(qb_payload.get("streams") or [])
+        _rewrite_stream_name(stream, addon_name) for stream in list(qb_payload.get("streams") or [])
     ]
     jackett_live_streams = [
         _rewrite_stream_name(stream, addon_name)

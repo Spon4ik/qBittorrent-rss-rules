@@ -107,6 +107,8 @@ class JackettSearchRequest(BaseModel):
     indexer: str = "all"
     imdb_id: str | None = None
     imdb_id_only: bool = False
+    season_number: int | None = Field(default=None, ge=0, le=99)
+    episode_number: int | None = Field(default=None, ge=0, le=999)
     release_year: str | None = None
     keywords_all: list[str] = Field(default_factory=list)
     keywords_any: list[str] = Field(default_factory=list)
@@ -226,6 +228,12 @@ class JackettSearchRequest(BaseModel):
                 raise ValueError("IMDb-first search requires an IMDb ID.")
             if self.media_type not in {MediaType.MOVIE, MediaType.SERIES}:
                 raise ValueError("IMDb-first search is only available for movies and series.")
+        if self.episode_number is not None and self.season_number is None:
+            raise ValueError("Episode number requires a season number.")
+        if (
+            self.season_number is not None or self.episode_number is not None
+        ) and self.media_type != MediaType.SERIES:
+            raise ValueError("Season and episode narrowing is only available for series.")
         if len(self.keywords_all) > 24:
             raise ValueError("Use up to 24 required keywords per search.")
         if not self.keywords_any_groups and self.keywords_any:
@@ -347,7 +355,9 @@ class SearchViewPreferencesPayload(BaseModel):
             seen_fields.add(item.field)
             if len(normalized) >= 3:
                 break
-        self.sort_criteria = normalized or [SearchSortPreference(field="published_at", direction="desc")]
+        self.sort_criteria = normalized or [
+            SearchSortPreference(field="published_at", direction="desc")
+        ]
         return self
 
 

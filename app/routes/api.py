@@ -221,8 +221,12 @@ def _render_rule_form(
             form_data["jellyfin_existing_episode_count"] = 0
     settings = SettingsService.get_or_create(session)
     profile_rules = resolve_quality_profile_rules(settings)
-    current_media_type = str(form_data.get("media_type", MediaType.SERIES.value) or MediaType.SERIES.value)
-    form_data.setdefault("metadata_lookup_provider", default_metadata_lookup_provider(current_media_type))
+    current_media_type = str(
+        form_data.get("media_type", MediaType.SERIES.value) or MediaType.SERIES.value
+    )
+    form_data.setdefault(
+        "metadata_lookup_provider", default_metadata_lookup_provider(current_media_type)
+    )
     available_filter_profiles = available_filter_profile_choices(settings)
     raw_selected_feed_urls = form_data.get("feed_urls", []) or []
     if isinstance(raw_selected_feed_urls, list):
@@ -231,7 +235,9 @@ def _render_rule_form(
         selected_feed_urls = [str(raw_selected_feed_urls)]
     context: dict[str, Any] = {
         "request": request,
-        "page_title": "New Rule" if mode == "create" else f"Edit {form_data.get('rule_name', 'Rule')}",
+        "page_title": "New Rule"
+        if mode == "create"
+        else f"Edit {form_data.get('rule_name', 'Rule')}",
         "mode": mode,
         "rule_id": rule_id,
         "form_data": form_data,
@@ -260,7 +266,9 @@ def _render_rule_form(
     connection = SettingsService.resolve_qb_connection(settings)
     if connection.is_configured:
         try:
-            with QbittorrentClient(connection.base_url, connection.username, connection.password) as client:
+            with QbittorrentClient(
+                connection.base_url, connection.username, connection.password
+            ) as client:
                 context["feed_options"] = [item.model_dump() for item in client.get_feeds()]
         except QbittorrentClientError:
             pass
@@ -429,9 +437,7 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
         jackett_api_key_encrypted=settings.jackett_api_key_encrypted,
         jellyfin_db_path=getattr(settings, "jellyfin_db_path", None),
         jellyfin_user_name=getattr(settings, "jellyfin_user_name", None),
-        jellyfin_auto_sync_enabled=bool(
-            getattr(settings, "jellyfin_auto_sync_enabled", True)
-        ),
+        jellyfin_auto_sync_enabled=bool(getattr(settings, "jellyfin_auto_sync_enabled", True)),
         jellyfin_auto_sync_interval_seconds=int(
             getattr(settings, "jellyfin_auto_sync_interval_seconds", 30)
         ),
@@ -443,9 +449,7 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
             getattr(settings, "jellyfin_auto_sync_last_message", "")
         ),
         stremio_local_storage_path=getattr(settings, "stremio_local_storage_path", None),
-        stremio_auto_sync_enabled=bool(
-            getattr(settings, "stremio_auto_sync_enabled", True)
-        ),
+        stremio_auto_sync_enabled=bool(getattr(settings, "stremio_auto_sync_enabled", True)),
         stremio_auto_sync_interval_seconds=int(
             getattr(settings, "stremio_auto_sync_interval_seconds", 30)
         ),
@@ -453,9 +457,7 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
         stremio_auto_sync_last_status=str(
             getattr(settings, "stremio_auto_sync_last_status", "idle")
         ),
-        stremio_auto_sync_last_message=str(
-            getattr(settings, "stremio_auto_sync_last_message", "")
-        ),
+        stremio_auto_sync_last_message=str(getattr(settings, "stremio_auto_sync_last_message", "")),
         metadata_provider=settings.metadata_provider,
         omdb_api_key_encrypted=settings.omdb_api_key_encrypted,
         series_category_template=settings.series_category_template,
@@ -463,24 +465,26 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
         save_path_template=settings.save_path_template,
         default_add_paused=settings.default_add_paused,
         default_sequential_download=bool(getattr(settings, "default_sequential_download", True)),
-        default_first_last_piece_prio=bool(getattr(settings, "default_first_last_piece_prio", True)),
+        default_first_last_piece_prio=bool(
+            getattr(settings, "default_first_last_piece_prio", True)
+        ),
         default_enabled=settings.default_enabled,
         quality_profile_rules=settings.quality_profile_rules,
         saved_quality_profiles=settings.saved_quality_profiles,
         default_feed_urls=settings.default_feed_urls,
         search_result_view_mode=settings.search_result_view_mode,
         search_sort_criteria=settings.search_sort_criteria,
-        rules_fetch_schedule_enabled=bool(
-            getattr(settings, "rules_fetch_schedule_enabled", False)
-        ),
+        rules_fetch_schedule_enabled=bool(getattr(settings, "rules_fetch_schedule_enabled", False)),
         rules_fetch_schedule_interval_minutes=int(
             getattr(settings, "rules_fetch_schedule_interval_minutes", 360)
         ),
-        rules_fetch_schedule_scope=str(
-            getattr(settings, "rules_fetch_schedule_scope", "enabled")
+        rules_fetch_schedule_scope=str(getattr(settings, "rules_fetch_schedule_scope", "enabled")),
+        rules_fetch_schedule_last_run_at=getattr(
+            settings, "rules_fetch_schedule_last_run_at", None
         ),
-        rules_fetch_schedule_last_run_at=getattr(settings, "rules_fetch_schedule_last_run_at", None),
-        rules_fetch_schedule_next_run_at=getattr(settings, "rules_fetch_schedule_next_run_at", None),
+        rules_fetch_schedule_next_run_at=getattr(
+            settings, "rules_fetch_schedule_next_run_at", None
+        ),
         rules_fetch_schedule_last_status=str(
             getattr(settings, "rules_fetch_schedule_last_status", "idle")
         ),
@@ -603,8 +607,12 @@ def save_search_preferences(
         {
             "view_mode": settings.search_result_view_mode,
             "sort_criteria": list(settings.search_sort_criteria or []),
-            "default_sequential_download": bool(getattr(settings, "default_sequential_download", True)),
-            "default_first_last_piece_prio": bool(getattr(settings, "default_first_last_piece_prio", True)),
+            "default_sequential_download": bool(
+                getattr(settings, "default_sequential_download", True)
+            ),
+            "default_first_last_piece_prio": bool(
+                getattr(settings, "default_first_last_piece_prio", True)
+            ),
         }
     )
 
@@ -613,7 +621,9 @@ def save_search_preferences(
 async def record_debug_hover_telemetry(request: Request) -> JSONResponse:
     payload = await request.json()
     if not isinstance(payload, dict):
-        return JSONResponse({"error": "Hover telemetry payload must be a JSON object."}, status_code=400)
+        return JSONResponse(
+            {"error": "Hover telemetry payload must be a JSON object."}, status_code=400
+        )
     event = record_hover_event(payload)
     return JSONResponse({"status": "ok", "event": event})
 
@@ -719,7 +729,9 @@ def feeds_refresh(session: Session = Depends(get_db_session)) -> JSONResponse:
         return JSONResponse({"error": "qBittorrent connection is not configured."}, status_code=400)
 
     try:
-        with QbittorrentClient(connection.base_url, connection.username, connection.password) as client:
+        with QbittorrentClient(
+            connection.base_url, connection.username, connection.password
+        ) as client:
             feeds = [item.model_dump() for item in client.get_feeds()]
     except QbittorrentClientError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
@@ -736,7 +748,8 @@ def save_filter_profile(
     all_profiles = build_available_filter_profiles(settings)
     scoped_media_types = (
         [payload.media_type.value]
-        if payload.media_type in {
+        if payload.media_type
+        in {
             MediaType.SERIES,
             MediaType.MOVIE,
             MediaType.AUDIOBOOK,
@@ -750,7 +763,9 @@ def save_filter_profile(
         if not profile_key:
             return JSONResponse({"error": "A profile name is required."}, status_code=400)
         if profile_key in all_profiles:
-            return JSONResponse({"error": "A profile with that name already exists."}, status_code=400)
+            return JSONResponse(
+                {"error": "A profile with that name already exists."}, status_code=400
+            )
         new_profile: dict[str, object] = {
             "label": payload.profile_name,
             "include_tokens": payload.include_tokens,
@@ -1005,7 +1020,9 @@ def sync_rule(
     except SyncServiceError as exc:
         return RedirectResponse(url=f"/?message={exc}&level=error", status_code=303)
     level = "success" if result.success else "warning"
-    return RedirectResponse(url=f"/rules/{rule_id}?message={result.message}&level={level}", status_code=303)
+    return RedirectResponse(
+        url=f"/rules/{rule_id}?message={result.message}&level={level}", status_code=303
+    )
 
 
 @router.post("/rules/{rule_id}/delete")
@@ -1076,7 +1093,10 @@ async def validate_taxonomy(
     return _render_taxonomy_page(
         request,
         session=session,
-        form_data={"taxonomy_json": str(preview["formatted_text"]), "change_note": form_data["change_note"]},
+        form_data={
+            "taxonomy_json": str(preview["formatted_text"]),
+            "change_note": form_data["change_note"],
+        },
         errors=[],
         preview=preview,
         message=message,
@@ -1211,7 +1231,9 @@ async def test_qb_settings(
             errors=["qBittorrent connection is not fully configured."],
         )
     try:
-        with QbittorrentClient(connection.base_url, connection.username, connection.password) as client:
+        with QbittorrentClient(
+            connection.base_url, connection.username, connection.password
+        ) as client:
             client.test_connection()
     except QbittorrentClientError as exc:
         return _render_settings_page(
@@ -1431,11 +1453,7 @@ async def test_stremio_settings(
             errors=[str(exc)],
         )
 
-    storage_detail = (
-        f" Storage: {result.local_storage_path}."
-        if result.local_storage_path
-        else ""
-    )
+    storage_detail = f" Storage: {result.local_storage_path}." if result.local_storage_path else ""
     return _render_settings_page(
         request,
         form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},

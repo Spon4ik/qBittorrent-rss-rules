@@ -41,7 +41,9 @@ def test_jellyfin_auto_sync_runs_on_start_and_on_db_changes(
 
     monkeypatch.setattr("app.services.jellyfin_auto_sync.execute_jellyfin_sync", fake_execute)
 
-    service = JellyfinAutoSyncService(session_factory=get_session_factory(), poll_interval_seconds=5)
+    service = JellyfinAutoSyncService(
+        session_factory=get_session_factory(), poll_interval_seconds=5
+    )
 
     service.run_once(force=True)
     db_session.expire_all()

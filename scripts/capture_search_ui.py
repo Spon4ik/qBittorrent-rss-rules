@@ -156,14 +156,12 @@ def main() -> int:
             managed_server = True
             if not _wait_for_server(args.base_url, args.server_timeout):
                 raise RuntimeError(
-                    "Timed out waiting for app server. "
-                    f"See {server_log_path} for startup logs."
+                    f"Timed out waiting for app server. See {server_log_path} for startup logs."
                 )
 
         if not _wait_for_server(args.base_url, args.server_timeout):
             raise RuntimeError(
-                "App server is not reachable. "
-                "Start it first or run with --start-server."
+                "App server is not reachable. Start it first or run with --start-server."
             )
 
         try:
@@ -233,7 +231,9 @@ def main() -> int:
                                     "height": height,
                                     "path": path,
                                     "url": target_url,
-                                    "file": str(file_path.relative_to(project_dir)).replace("\\", "/"),
+                                    "file": str(file_path.relative_to(project_dir)).replace(
+                                        "\\", "/"
+                                    ),
                                 }
                             )
                     finally:

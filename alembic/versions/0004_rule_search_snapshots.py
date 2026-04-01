@@ -4,6 +4,7 @@ Revision ID: 0004_rule_search_snapshots
 Revises: 0003_search_queue_defaults
 Create Date: 2026-03-14 00:00:00
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -33,4 +34,3 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("rule_search_snapshots")
-

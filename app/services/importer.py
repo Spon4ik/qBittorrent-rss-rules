@@ -63,7 +63,11 @@ class Importer:
                 rule = self.session.scalar(select(Rule).where(Rule.rule_name == entry.rule_name))
                 assert rule is not None
             else:
-                rule = Rule(rule_name=entry.resolved_name, content_name=entry.rule_name, normalized_title=entry.rule_name)
+                rule = Rule(
+                    rule_name=entry.resolved_name,
+                    content_name=entry.rule_name,
+                    normalized_title=entry.rule_name,
+                )
                 self.session.add(rule)
 
             self._apply_payload(rule, entry.rule_name, entry.resolved_name, payload)
@@ -109,10 +113,7 @@ class Importer:
     def _next_available_name(self, rule_name: str) -> str:
         suffix = 1
         candidate = f"{rule_name} (imported {suffix})"
-        existing_names = {
-            name
-            for name in self.session.scalars(select(Rule.rule_name)).all()
-        }
+        existing_names = {name for name in self.session.scalars(select(Rule.rule_name)).all()}
         while candidate in existing_names:
             suffix += 1
             candidate = f"{rule_name} (imported {suffix})"

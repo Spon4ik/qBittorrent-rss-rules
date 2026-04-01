@@ -4,6 +4,7 @@ Revision ID: 0005_rules_main_page_release_ops
 Revises: 0004_rule_search_snapshots
 Create Date: 2026-03-15 00:00:00
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -25,7 +26,9 @@ def upgrade() -> None:
 
     op.add_column(
         "app_settings",
-        sa.Column("rules_fetch_schedule_enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column(
+            "rules_fetch_schedule_enabled", sa.Boolean(), nullable=False, server_default=sa.false()
+        ),
     )
     op.add_column(
         "app_settings",
@@ -73,15 +76,24 @@ def upgrade() -> None:
     )
     op.add_column(
         "app_settings",
-        sa.Column("rules_page_view_mode", sa.String(length=16), nullable=False, server_default="table"),
+        sa.Column(
+            "rules_page_view_mode", sa.String(length=16), nullable=False, server_default="table"
+        ),
     )
     op.add_column(
         "app_settings",
-        sa.Column("rules_page_sort_field", sa.String(length=64), nullable=False, server_default="updated_at"),
+        sa.Column(
+            "rules_page_sort_field",
+            sa.String(length=64),
+            nullable=False,
+            server_default="updated_at",
+        ),
     )
     op.add_column(
         "app_settings",
-        sa.Column("rules_page_sort_direction", sa.String(length=8), nullable=False, server_default="desc"),
+        sa.Column(
+            "rules_page_sort_direction", sa.String(length=8), nullable=False, server_default="desc"
+        ),
     )
 
 

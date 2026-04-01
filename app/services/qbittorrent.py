@@ -35,7 +35,9 @@ class QbittorrentClient:
         self.base_url = (base_url or "").rstrip("/")
         self.username = username
         self.password = password
-        self.timeout = timeout if timeout is not None else get_environment_settings().request_timeout
+        self.timeout = (
+            timeout if timeout is not None else get_environment_settings().request_timeout
+        )
         self._authenticated = False
         self._client = httpx.Client(
             base_url=self.base_url,

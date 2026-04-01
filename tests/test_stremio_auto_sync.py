@@ -58,9 +58,7 @@ def test_stremio_auto_sync_runs_on_start_and_on_library_changes(
     assert calls == [str(tmp_path / "stremio")]
     assert refreshed.stremio_auto_sync_last_run_at is not None
     assert refreshed.stremio_auto_sync_last_status == "success"
-    assert refreshed.stremio_auto_sync_last_message.startswith(
-        "Automatic Stremio sync completed"
-    )
+    assert refreshed.stremio_auto_sync_last_message.startswith("Automatic Stremio sync completed")
 
     service.run_once(force=False)
     assert calls == [str(tmp_path / "stremio")]

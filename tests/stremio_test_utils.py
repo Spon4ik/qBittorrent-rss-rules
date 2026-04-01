@@ -9,14 +9,17 @@ def create_stremio_local_storage(
     auth_key: str = "auth-key",
     user_id: str = "0123456789abcdef",
 ) -> Path:
-    storage_path = root / "stremio-shell-ng.exe.WebView2" / "EBWebView" / "Default" / "Local Storage" / "leveldb"
+    storage_path = (
+        root
+        / "stremio-shell-ng.exe.WebView2"
+        / "EBWebView"
+        / "Default"
+        / "Local Storage"
+        / "leveldb"
+    )
     storage_path.mkdir(parents=True, exist_ok=True)
     payload = (
-        '\x00noise{"auth":{"key":"'
-        + auth_key
-        + '","user":{"_id":"'
-        + user_id
-        + '"}}}\x00tail'
+        '\x00noise{"auth":{"key":"' + auth_key + '","user":{"_id":"' + user_id + '"}}}\x00tail'
     )
     (storage_path / "000001.ldb").write_bytes(payload.encode("utf-8"))
     return storage_path

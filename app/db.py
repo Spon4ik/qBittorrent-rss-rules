@@ -133,14 +133,22 @@ def _ensure_rule_columns() -> None:
                     continue
                 connection.execute(text(f"ALTER TABLE rules ADD COLUMN {column_name} {column_def}"))
         if "app_settings" in existing_tables:
-            existing_settings_columns = {item["name"] for item in inspector.get_columns("app_settings")}
+            existing_settings_columns = {
+                item["name"] for item in inspector.get_columns("app_settings")
+            }
             for column_name, column_def in expected_settings_columns.items():
                 if column_name in existing_settings_columns:
                     continue
-                connection.execute(text(f"ALTER TABLE app_settings ADD COLUMN {column_name} {column_def}"))
+                connection.execute(
+                    text(f"ALTER TABLE app_settings ADD COLUMN {column_name} {column_def}")
+                )
         if "rule_search_snapshots" in existing_tables:
-            existing_snapshot_columns = {item["name"] for item in inspector.get_columns("rule_search_snapshots")}
+            existing_snapshot_columns = {
+                item["name"] for item in inspector.get_columns("rule_search_snapshots")
+            }
             for column_name, column_def in expected_snapshot_columns.items():
                 if column_name in existing_snapshot_columns:
                     continue
-                connection.execute(text(f"ALTER TABLE rule_search_snapshots ADD COLUMN {column_name} {column_def}"))
+                connection.execute(
+                    text(f"ALTER TABLE rule_search_snapshots ADD COLUMN {column_name} {column_def}")
+                )

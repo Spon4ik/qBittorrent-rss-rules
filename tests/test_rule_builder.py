@@ -323,7 +323,9 @@ def test_build_generated_pattern_rejects_zero_based_ranges_below_episode_floor()
     assert compiled.search("The Good Ship Murder S03 1080p season pack")
 
 
-def test_build_generated_pattern_excludes_zero_based_ranges_for_existing_jellyfin_inventory() -> None:
+def test_build_generated_pattern_excludes_zero_based_ranges_for_existing_jellyfin_inventory() -> (
+    None
+):
     builder = RuleBuilder(settings=None)
     pattern = builder.build_generated_pattern(
         build_rule(

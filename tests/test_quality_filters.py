@@ -110,7 +110,11 @@ def test_quality_option_groups_for_media_type_filter_audio_and_video_tokens() ->
     audio_groups = quality_option_groups_for_media_type("music")
 
     assert [item["key"] for item in video_groups] == ["resolution", "definition", "source"]
-    assert [item["key"] for item in audio_groups] == ["audio_format", "audio_quality", "audio_channels"]
+    assert [item["key"] for item in audio_groups] == [
+        "audio_format",
+        "audio_quality",
+        "audio_channels",
+    ]
     assert "m4b" not in [option["value"] for option in audio_groups[0]["options"]]
     assert "flac" in [option["value"] for option in audio_groups[0]["options"]]
 
@@ -212,7 +216,9 @@ def test_quality_taxonomy_rejects_bundle_with_unknown_option(tmp_path, monkeypat
         quality_bundle_choices()
 
 
-def test_quality_taxonomy_rejects_alias_with_unknown_canonical_option(tmp_path, monkeypatch) -> None:
+def test_quality_taxonomy_rejects_alias_with_unknown_canonical_option(
+    tmp_path, monkeypatch
+) -> None:
     payload = _read_default_quality_taxonomy()
     aliases = payload["aliases"]
     assert isinstance(aliases, list)
@@ -277,7 +283,9 @@ def test_preview_quality_taxonomy_update_flags_orphaned_rule_tokens() -> None:
     assert preview["existing_invalid_references"] == []
 
 
-def test_preview_quality_taxonomy_update_allows_label_changes_when_invalid_tokens_already_exist() -> None:
+def test_preview_quality_taxonomy_update_allows_label_changes_when_invalid_tokens_already_exist() -> (
+    None
+):
     payload = _read_default_quality_taxonomy()
     bundles = payload["bundles"]
     assert isinstance(bundles, list)
@@ -309,7 +317,9 @@ def test_preview_quality_taxonomy_update_allows_label_changes_when_invalid_token
     ]
 
 
-def test_quality_profile_labels_follow_matching_taxonomy_bundle_labels(tmp_path, monkeypatch) -> None:
+def test_quality_profile_labels_follow_matching_taxonomy_bundle_labels(
+    tmp_path, monkeypatch
+) -> None:
     payload = _read_default_quality_taxonomy()
     bundles = payload["bundles"]
     assert isinstance(bundles, list)
@@ -323,7 +333,9 @@ def test_quality_profile_labels_follow_matching_taxonomy_bundle_labels(tmp_path,
     )
 
     quality_choices = {item["value"]: item["label"] for item in quality_profile_choices()}
-    filter_profiles = {item["key"]: item["label"] for item in available_filter_profile_choices(None)}
+    filter_profiles = {
+        item["key"]: item["label"] for item in available_filter_profile_choices(None)
+    }
 
     assert quality_choices["1080p"] == "At Least Full HD"
     assert quality_choices["2160p_hdr"] == "Ultra HD + HDR"
@@ -334,8 +346,7 @@ def test_quality_profile_labels_follow_matching_taxonomy_bundle_labels(tmp_path,
 
 def test_builtin_audio_profiles_are_available_for_matching_media_types() -> None:
     audio_profiles = {
-        item["key"]: item
-        for item in available_filter_profile_choices_for_media_type(None, "music")
+        item["key"]: item for item in available_filter_profile_choices_for_media_type(None, "music")
     }
 
     assert "builtin-music-lossless" in audio_profiles
@@ -396,7 +407,10 @@ def test_apply_quality_taxonomy_update_writes_file_and_audit_entry(tmp_path, mon
     )
 
     assert audit_error is None
-    assert json.loads(taxonomy_path.read_text(encoding="utf-8"))["aliases"][-1]["alias"] == "web_rip_alt"
+    assert (
+        json.loads(taxonomy_path.read_text(encoding="utf-8"))["aliases"][-1]["alias"]
+        == "web_rip_alt"
+    )
     assert recent_quality_taxonomy_audit_entries(limit=1)[0]["note"] == "service test"
 
 
@@ -484,7 +498,12 @@ def test_get_or_create_migrates_legacy_default_quality_profile_rules(db_session)
 
 def test_get_or_create_keeps_customized_quality_profile_rules(db_session) -> None:
     customized_rules = deepcopy(LEGACY_DEFAULT_QUALITY_PROFILE_RULES)
-    customized_rules[QualityProfile.HD_1080P.value]["exclude_tokens"] = ["480p", "360p", "sd", "bluray"]
+    customized_rules[QualityProfile.HD_1080P.value]["exclude_tokens"] = [
+        "480p",
+        "360p",
+        "sd",
+        "bluray",
+    ]
 
     settings = AppSettings(
         id="default",

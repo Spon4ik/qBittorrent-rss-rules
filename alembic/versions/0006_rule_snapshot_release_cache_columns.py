@@ -4,6 +4,7 @@ Revision ID: 0006_rule_snapshot_release_cache_columns
 Revises: 0005_rules_main_page_release_ops
 Create Date: 2026-03-22 00:00:00
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa

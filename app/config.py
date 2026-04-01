@@ -69,7 +69,9 @@ def get_environment_settings() -> EnvironmentSettings:
         ),
         omdb_api_key=os.getenv("QB_RULES_OMDB_API_KEY") or None,
         save_secrets_to_db=_get_bool(os.getenv("QB_RULES_SAVE_SECRETS_TO_DB"), False),
-        enable_rule_fetch_scheduler=_get_bool(os.getenv("QB_RULES_ENABLE_RULE_FETCH_SCHEDULER"), True),
+        enable_rule_fetch_scheduler=_get_bool(
+            os.getenv("QB_RULES_ENABLE_RULE_FETCH_SCHEDULER"), True
+        ),
         rule_fetch_scheduler_poll_seconds=float(
             os.getenv("QB_RULES_RULE_FETCH_SCHEDULER_POLL_SECONDS", "30")
         ),

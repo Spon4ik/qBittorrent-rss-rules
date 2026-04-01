@@ -327,7 +327,9 @@ class JellyfinService:
             current_existing_episode_numbers != next_existing_episode_numbers
         )
         known_episode_numbers_changed = current_known_episode_numbers != next_known_episode_numbers
-        watched_episode_numbers_changed = current_watched_episode_numbers != next_watched_episode_numbers
+        watched_episode_numbers_changed = (
+            current_watched_episode_numbers != next_watched_episode_numbers
+        )
         if (
             not floor_changed
             and not existing_episode_numbers_changed
@@ -362,7 +364,9 @@ class JellyfinService:
                     f"Recorded {len(next_existing_episode_numbers)} existing unseen Jellyfin episode(s)."
                 )
             elif current_existing_episode_numbers:
-                message_parts.append("Cleared previously recorded existing unseen Jellyfin episodes.")
+                message_parts.append(
+                    "Cleared previously recorded existing unseen Jellyfin episodes."
+                )
         if known_episode_numbers_changed:
             if next_known_episode_numbers:
                 message_parts.append(
@@ -401,10 +405,14 @@ class JellyfinService:
             list(getattr(rule, "movie_completion_sources", []) or [])
         )
         legacy_auto_disabled = bool(getattr(rule, "jellyfin_auto_disabled", False))
-        current_auto_disabled = bool(getattr(rule, "movie_completion_auto_disabled", False)) or legacy_auto_disabled
+        current_auto_disabled = (
+            bool(getattr(rule, "movie_completion_auto_disabled", False)) or legacy_auto_disabled
+        )
         current_enabled = bool(rule.enabled)
         source_completed = (
-            self._movie_is_completed(connection=connection, user=user, movie_id=matched_movie.item_id)
+            self._movie_is_completed(
+                connection=connection, user=user, movie_id=matched_movie.item_id
+            )
             if matched_movie is not None
             else False
         )
@@ -448,11 +456,15 @@ class JellyfinService:
         session.add(rule)
         message_parts: list[str] = []
         if matched_movie is None and had_jellyfin_completion and not has_jellyfin_completion:
-            message_parts.append("Cleared Jellyfin completion evidence because no matching movie was found.")
+            message_parts.append(
+                "Cleared Jellyfin completion evidence because no matching movie was found."
+            )
         elif matched_movie is not None and source_completed and not had_jellyfin_completion:
             message_parts.append(f'Jellyfin reports "{matched_movie.title}" as completed.')
         elif matched_movie is not None and not source_completed and had_jellyfin_completion:
-            message_parts.append(f'Jellyfin no longer reports "{matched_movie.title}" as completed.')
+            message_parts.append(
+                f'Jellyfin no longer reports "{matched_movie.title}" as completed.'
+            )
         message_parts.append(selection.detail)
         return JellyfinRuleSyncOutcome(
             rule_id=rule.id,
@@ -529,7 +541,9 @@ class JellyfinService:
             self._catalog_imdb_id_cache[cache_key] = None
             return None
 
-        lookup_title = str(matched_series.title or rule.normalized_title or rule.content_name or "").strip()
+        lookup_title = str(
+            matched_series.title or rule.normalized_title or rule.content_name or ""
+        ).strip()
         if not lookup_title:
             self._catalog_imdb_id_cache[cache_key] = None
             return None
@@ -610,8 +624,8 @@ class JellyfinService:
                 next_floor = (season_number + 1, 0)
                 return (
                     next_floor,
-                    f'Advanced to S{next_floor[0]:02d}E{next_floor[1]:02d} because OMDb reports '
-                    f'S{season_number:02d}E{latest_released_episode:02d} as the latest released '
+                    f"Advanced to S{next_floor[0]:02d}E{next_floor[1]:02d} because OMDb reports "
+                    f"S{season_number:02d}E{latest_released_episode:02d} as the latest released "
                     f"episode in season {season_number}.",
                 )
 
@@ -658,7 +672,9 @@ class JellyfinService:
             connection.execute("SELECT 1 FROM BaseItemProviders LIMIT 1").fetchone()
             connection.execute("SELECT 1 FROM UserData LIMIT 1").fetchone()
         except sqlite3.DatabaseError as exc:
-            raise JellyfinError("Configured file is not a readable Jellyfin library database.") from exc
+            raise JellyfinError(
+                "Configured file is not a readable Jellyfin library database."
+            ) from exc
 
     @staticmethod
     def _list_users(connection: sqlite3.Connection) -> list[JellyfinUser]:
@@ -685,12 +701,16 @@ class JellyfinService:
             for user in users:
                 if user.username.casefold() == configured_key:
                     return user
-            raise JellyfinError(f'Jellyfin user "{configured_name}" was not found in the configured DB.')
+            raise JellyfinError(
+                f'Jellyfin user "{configured_name}" was not found in the configured DB.'
+            )
         if len(users) == 1:
             return users[0]
         if not users:
             raise JellyfinError("No Jellyfin users were found in the configured DB.")
-        raise JellyfinError("Multiple Jellyfin users were found. Set Jellyfin username in Settings.")
+        raise JellyfinError(
+            "Multiple Jellyfin users were found. Set Jellyfin username in Settings."
+        )
 
     @staticmethod
     def _load_library_catalog(
@@ -743,14 +763,14 @@ class JellyfinService:
         rule_imdb_id = _normalize_imdb_id(rule.imdb_id)
         if rule_imdb_id:
             imdb_matches = [
-                item
-                for item in catalog
-                if item.imdb_id and item.imdb_id == rule_imdb_id
+                item for item in catalog if item.imdb_id and item.imdb_id == rule_imdb_id
             ]
             if len(imdb_matches) == 1:
                 return imdb_matches[0]
             if len(imdb_matches) > 1:
-                raise JellyfinError(f'Multiple Jellyfin {item_label} items matched IMDb ID "{rule.imdb_id}".')
+                raise JellyfinError(
+                    f'Multiple Jellyfin {item_label} items matched IMDb ID "{rule.imdb_id}".'
+                )
 
         normalized_titles = {
             value
@@ -781,9 +801,7 @@ class JellyfinService:
 
         if rule_imdb_id:
             imdb_safe_matches = [
-                item
-                for item in title_matches
-                if item.imdb_id in {None, rule_imdb_id}
+                item for item in title_matches if item.imdb_id in {None, rule_imdb_id}
             ]
             if not imdb_safe_matches:
                 return None
@@ -849,10 +867,7 @@ class JellyfinService:
             )
 
         current_episode_numbers = _sort_episode_keys(
-            [
-                f"S{episode.season_number:02d}E{episode.episode_number:02d}"
-                for episode in episodes
-            ]
+            [f"S{episode.season_number:02d}E{episode.episode_number:02d}" for episode in episodes]
         )
         current_watched_episode_numbers = _sort_episode_keys(
             [

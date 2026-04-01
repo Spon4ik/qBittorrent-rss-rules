@@ -28,5 +28,6 @@ Primary documents:
 - `docs/plans/phase-21-stremio-stream-ordering-and-local-playback.md`: implemented and release-validated `v0.8.1` plan covering qB RSS stream ranking and qB-backed local playback acceleration for the Stremio addon
 - `docs/plans/phase-22-stremio-variant-parity-and-local-marking.md`: implemented and release-validated `v0.8.2` plan covering full qB RSS variant retention, global quality-first ordering inside the qB RSS surface, and exact-variant local playback marking for the Stremio addon
 - `docs/plans/phase-23-global-cross-addon-stream-ordering.md`: next planned minor-release plan covering one merged addon/provider stream surface with global ordering across qB RSS and Torrentio-compatible results
+- `docs/plans/phase-24-stremio-long-running-series-year-hotfix.md`: implemented and release-validated patch plan covering the long-running-series episode search regression where Stremio lookups are over-constrained by the original series year
 
-`ROADMAP.md` remains the high-level product roadmap. The files in `docs/plans/` are the detailed source of truth for work that is actively being implemented or prepared. Phases 5 through 22 are implemented and release-validated, and phase 23 is now the next planned Stremio follow-up.
+`ROADMAP.md` remains the high-level product roadmap. The files in `docs/plans/` are the detailed source of truth for work that is actively being implemented or prepared. Phases 5 through 22, and 24 are implemented and release-validated. Phase 23 is the active cross-addon ordering slice.

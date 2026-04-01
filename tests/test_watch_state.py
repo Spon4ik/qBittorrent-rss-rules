@@ -73,7 +73,10 @@ def test_derive_and_select_watch_state_floor_preserves_source_label_and_current_
 
     assert selection.effective_floor == (1, 5)
     assert selection.floor_changed is False
-    assert selection.floor_detail == "Current rule floor is already ahead of Jellyfin-derived progress."
+    assert (
+        selection.floor_detail
+        == "Current rule floor is already ahead of Jellyfin-derived progress."
+    )
 
 
 def test_normalize_watch_state_source_labels_canonicalizes_and_sorts() -> None:

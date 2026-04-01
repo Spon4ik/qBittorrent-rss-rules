@@ -4,6 +4,7 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -13,13 +14,26 @@ from sqlalchemy.orm import Session
 
 from app.config import get_environment_settings
 from app.models import AppSettings, MediaType, Rule
+from app.services.metadata import MetadataClient, MetadataLookupError, MetadataLookupProvider
 from app.services.quality_filters import resolve_quality_profile_rules
 from app.services.rule_builder import RuleBuilder
 from app.services.settings_service import SettingsService
 from app.services.watch_state import (
     MovieWatchStateSelection,
+    WatchStateDerivedFloor,
+    derive_watch_state_floor,
     normalize_watch_state_source_labels,
     select_movie_watch_state,
+    select_watch_state_floor,
+)
+from app.services.watch_state import (
+    floor_tuple as _floor_tuple,
+)
+from app.services.watch_state import (
+    increment_floor as _increment_floor,
+)
+from app.services.watch_state import (
+    normalize_watch_state_episode_keys as normalize_stremio_episode_keys,
 )
 
 STREMIO_API_BASE_URL = "https://api.strem.io/api"
@@ -32,9 +46,7 @@ STREMIO_USER_ID_RE = re.compile(
     r'"auth".*?"user".*?_id.*?([0-9a-f]{16,})',
     re.IGNORECASE | re.DOTALL,
 )
-CHANGED_OUTCOME_STATUSES = frozenset(
-    {"created", "linked", "updated", "disabled", "reenabled"}
-)
+CHANGED_OUTCOME_STATUSES = frozenset({"created", "linked", "updated", "disabled", "reenabled"})
 StremioOutcomeStatus = Literal[
     "created",
     "linked",
@@ -70,6 +82,7 @@ class StremioLibraryItem:
     removed: bool
     temp: bool
     completed: bool
+    latest_watched_episode_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,7 +161,10 @@ def _normalize_title(value: str | None) -> str:
 
 def _normalize_storage_text(payload: bytes) -> str:
     text = payload.decode("utf-8", errors="ignore").replace("\x00", "")
-    return "".join(character if character.isprintable() or character in "\r\n\t " else " " for character in text)
+    return "".join(
+        character if character.isprintable() or character in "\r\n\t " else " "
+        for character in text
+    )
 
 
 def _normalize_stremio_item_type(value: str | None) -> str | None:
@@ -218,7 +234,11 @@ class StremioService:
     def __init__(self, settings: AppSettings | None) -> None:
         self.settings = settings
         self.config = SettingsService.resolve_stremio(settings)
+        self.metadata_config = SettingsService.resolve_metadata(settings)
         self._request_timeout = get_environment_settings().request_timeout
+        self._metadata_client: MetadataClient | None = None
+        self._catalog_imdb_id_cache: dict[str, str | None] = {}
+        self._catalog_season_cache: dict[tuple[str, int], list[int] | None] = {}
 
     def can_resolve_auth(self) -> bool:
         if self.config.has_explicit_auth_key:
@@ -323,7 +343,9 @@ class StremioService:
                     rule.enabled = False
                     rule.stremio_auto_disabled = True
                     session.add(rule)
-                    message_parts.append("Disabled because the title is no longer in the Stremio library.")
+                    message_parts.append(
+                        "Disabled because the title is no longer in the Stremio library."
+                    )
                     status = "disabled"
 
             if status is None:
@@ -549,6 +571,26 @@ class StremioService:
         media_type = _stremio_item_media_type(item_type)
         if not item_id or not title or item_type is None or media_type is None:
             return None
+        completed = False
+        latest_watched_episode_key = None
+        state = payload.get("state")
+        if isinstance(state, dict):
+            if media_type == MediaType.MOVIE:
+                completed = _stremio_state_indicates_completion(state)
+            elif media_type == MediaType.SERIES:
+                video_id_str = str(state.get("video_id") or "").strip()
+                watched_str = str(state.get("watched") or "").strip()
+                match_str = video_id_str or watched_str
+                if match_str and ":" in match_str:
+                    parts = match_str.split(":")
+                    if len(parts) >= 3:
+                        try:
+                            season_num = int(parts[1])
+                            episode_num = int(parts[2])
+                            latest_watched_episode_key = f"S{season_num:02d}E{episode_num:02d}"
+                        except ValueError:
+                            pass
+
         return StremioLibraryItem(
             item_id=item_id,
             title=title,
@@ -558,11 +600,8 @@ class StremioService:
             imdb_id=_stremio_item_imdb_id(item_id),
             removed=bool(payload.get("removed", False)),
             temp=bool(payload.get("temp", False)),
-            completed=(
-                _stremio_state_indicates_completion(payload.get("state"))
-                if media_type == MediaType.MOVIE
-                else False
-            ),
+            completed=completed,
+            latest_watched_episode_key=latest_watched_episode_key,
         )
 
     @staticmethod
@@ -715,6 +754,13 @@ class StremioService:
             item_id=item.item_id,
             item_title=item.title,
         )
+        if item.media_type == MediaType.SERIES:
+            return self._apply_series_watch_state_outcome(
+                session,
+                rule=rule,
+                item=item,
+                base_outcome=outcome,
+            )
         return self._apply_movie_completion_outcome(
             session,
             rule=rule,
@@ -851,6 +897,235 @@ class StremioService:
             item_title=base_outcome.item_title,
         )
 
+    def _derive_stremio_floor(
+        self,
+        *,
+        item: StremioLibraryItem,
+        rule: Rule,
+    ) -> WatchStateDerivedFloor | None:
+        episode_keys = [item.latest_watched_episode_key] if item.latest_watched_episode_key else []
+        remembered_known = normalize_stremio_episode_keys(
+            list(getattr(rule, "stremio_known_episode_numbers", []) or [])
+        )
+        remembered_watched = normalize_stremio_episode_keys(
+            list(getattr(rule, "stremio_watched_episode_numbers", []) or [])
+        )
+        return derive_watch_state_floor(
+            source_label="Stremio",
+            current_episode_numbers=episode_keys,
+            current_watched_episode_numbers=episode_keys,
+            remembered_known_episode_numbers=remembered_known,
+            remembered_watched_episode_numbers=remembered_watched,
+            next_floor_after_episode=lambda current_episode: self._next_floor_after_episode(
+                item=item,
+                rule=rule,
+                current_episode=current_episode,
+            ),
+        )
+
+    def _apply_series_watch_state_outcome(
+        self,
+        session: Session,
+        *,
+        rule: Rule,
+        item: StremioLibraryItem,
+        base_outcome: StremioRuleSyncOutcome,
+    ) -> StremioRuleSyncOutcome:
+        if item.media_type != MediaType.SERIES:
+            return base_outcome
+
+        derived_floor = self._derive_stremio_floor(item=item, rule=rule)
+        if derived_floor is None:
+            return base_outcome
+
+        selection = select_watch_state_floor(
+            derived_floor=derived_floor,
+            current_floor=_floor_tuple(rule.start_season, rule.start_episode),
+            keep_searching_existing_unseen=bool(
+                getattr(rule, "jellyfin_search_existing_unseen", False)
+            ),
+            source_label="Stremio",
+        )
+
+        rule.stremio_known_episode_numbers = derived_floor.known_episode_numbers
+        rule.stremio_watched_episode_numbers = derived_floor.watched_episode_numbers
+        if selection.effective_floor is not None:
+            rule.start_season = selection.effective_floor[0]
+            rule.start_episode = selection.effective_floor[1]
+        session.add(rule)
+
+        status = base_outcome.status
+        message_parts = [base_outcome.message] if base_outcome.message else []
+        if selection.floor_changed:
+            if status == "unchanged":
+                status = "updated"
+            message_parts.append(selection.floor_detail)
+
+        return StremioRuleSyncOutcome(
+            status=status,
+            rule_id=base_outcome.rule_id,
+            rule_name=base_outcome.rule_name,
+            message=" ".join(message_parts),
+            item_id=base_outcome.item_id,
+            item_title=base_outcome.item_title,
+        )
+
+    def _resolve_catalog_imdb_id(
+        self,
+        *,
+        item: StremioLibraryItem,
+        rule: Rule,
+    ) -> str | None:
+        def _normalize_imdb_id(value: str | None) -> str | None:
+            match = IMDB_ID_RE.search(str(value or "").strip())
+            return match.group(1).lower() if match else None
+
+        existing_imdb_id = _normalize_imdb_id(item.imdb_id or rule.imdb_id)
+        if existing_imdb_id:
+            return existing_imdb_id
+
+        cache_key = item.item_id
+        if cache_key in self._catalog_imdb_id_cache:
+            return self._catalog_imdb_id_cache[cache_key]
+
+        client = self._metadata_client_for_catalog()
+        if client is None:
+            self._catalog_imdb_id_cache[cache_key] = None
+            return None
+
+        lookup_title = str(item.title or rule.normalized_title or rule.content_name or "").strip()
+        if not lookup_title:
+            self._catalog_imdb_id_cache[cache_key] = None
+            return None
+
+        try:
+            result = client.lookup(
+                MetadataLookupProvider.OMDB,
+                lookup_title,
+                MediaType.SERIES,
+            )
+        except MetadataLookupError:
+            self._catalog_imdb_id_cache[cache_key] = None
+            return None
+
+        normalized_imdb_id = _normalize_imdb_id(result.imdb_id)
+        self._catalog_imdb_id_cache[cache_key] = normalized_imdb_id
+        return normalized_imdb_id
+
+    def _metadata_client_for_catalog(self) -> MetadataClient | None:
+        if self.metadata_config.provider.value == "disabled":
+            return None
+        if not self.metadata_config.api_key:
+            return None
+        if self._metadata_client is None:
+            self._metadata_client = MetadataClient(
+                self.metadata_config.provider,
+                self.metadata_config.api_key,
+            )
+        return self._metadata_client
+
+    def _released_episode_numbers_for_season(
+        self,
+        *,
+        item: StremioLibraryItem,
+        rule: Rule,
+        season_number: int,
+    ) -> list[int] | None:
+        if season_number < 1 or season_number > 99:
+            return None
+
+        imdb_id = self._resolve_catalog_imdb_id(item=item, rule=rule)
+        if not imdb_id:
+            return None
+
+        cache_key = (imdb_id, season_number)
+        if cache_key in self._catalog_season_cache:
+            return self._catalog_season_cache[cache_key]
+
+        client = httpx.Client(timeout=self._request_timeout)
+        try:
+            with client:
+                response = client.get(f"https://v3-cinemeta.strem.io/meta/series/{imdb_id}.json")
+                response.raise_for_status()
+                payload = response.json()
+        except (httpx.RequestError, httpx.HTTPStatusError, ValueError):
+            self._catalog_season_cache[cache_key] = None
+            return None
+
+        meta = payload.get("meta")
+        if not isinstance(meta, dict):
+            self._catalog_season_cache[cache_key] = None
+            return None
+            
+        videos = meta.get("videos")
+        if not isinstance(videos, list):
+            self._catalog_season_cache[cache_key] = None
+            return None
+
+        now = datetime.now(UTC)
+        released_episode_numbers: set[int] = set()
+
+        for v in videos:
+            if not isinstance(v, dict):
+                continue
+            v_season = v.get("season")
+            if v_season != season_number:
+                continue
+            try:
+                ep_num = int(str(v.get("episode", "")))
+            except ValueError:
+                continue
+            
+            released_str = str(v.get("released", "")).strip()
+            if released_str:
+                try:
+                    released_at = datetime.fromisoformat(released_str.replace("Z", "+00:00"))
+                    if released_at > now:
+                        continue
+                except ValueError:
+                    pass
+            
+            released_episode_numbers.add(ep_num)
+
+        if not released_episode_numbers:
+            self._catalog_season_cache[cache_key] = None
+            return None
+        
+        sorted_episodes = sorted(released_episode_numbers)
+        self._catalog_season_cache[cache_key] = sorted_episodes
+        return sorted_episodes
+
+    def _next_floor_after_episode(
+        self,
+        *,
+        item: StremioLibraryItem,
+        rule: Rule,
+        current_episode: tuple[int, int],
+    ) -> tuple[tuple[int, int], str]:
+        season_number, episode_number = current_episode
+        released_episode_numbers = self._released_episode_numbers_for_season(
+            item=item,
+            rule=rule,
+            season_number=season_number,
+        )
+        if released_episode_numbers:
+            latest_released_episode = max(released_episode_numbers)
+            if episode_number >= latest_released_episode and season_number < 99:
+                next_floor = (season_number + 1, 0)
+                return (
+                    next_floor,
+                    f"Advanced to S{next_floor[0]:02d}E{next_floor[1]:02d} because Stremio Cinemeta reports "
+                    f"S{season_number:02d}E{latest_released_episode:02d} as the latest released "
+                    f"episode in season {season_number}.",
+                )
+
+        next_floor = _increment_floor(season_number, episode_number)
+        return (
+            next_floor,
+            f"Advanced to S{next_floor[0]:02d}E{next_floor[1]:02d} from "
+            f"S{season_number:02d}E{episode_number:02d}.",
+        )
+
     def _sync_existing_rule(
         self,
         session: Session,
@@ -901,9 +1176,8 @@ class StremioService:
         if previous_managed and managed_changed:
             message_parts.append("Updated Stremio-managed rule details.")
             status = "updated"
-        elif (
-            not previous_managed
-            and previous_imdb_id != (str(rule.imdb_id or "").strip().lower() or None)
+        elif not previous_managed and previous_imdb_id != (
+            str(rule.imdb_id or "").strip().lower() or None
         ):
             message_parts.append("Filled the missing IMDb ID from Stremio.")
             if status == "unchanged":
@@ -928,13 +1202,22 @@ class StremioService:
                 if message_parts
                 else (
                     f'Already linked to the Stremio title "{item.title}" and up to date.'
-                    if previous_item_id == item.item_id and previous_title == item.title and previous_media_type == item.media_type
+                    if previous_item_id == item.item_id
+                    and previous_title == item.title
+                    and previous_media_type == item.media_type
                     else f'Already linked to the Stremio title "{item.title}".'
                 )
             ),
             item_id=item.item_id,
             item_title=item.title,
         )
+        if item.media_type == MediaType.SERIES:
+            return self._apply_series_watch_state_outcome(
+                session,
+                rule=rule,
+                item=item,
+                base_outcome=base_outcome,
+            )
         return self._apply_movie_completion_outcome(
             session,
             rule=rule,

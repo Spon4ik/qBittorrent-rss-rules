@@ -94,7 +94,9 @@ def test_category_catalog_resolve_respects_indexer_scope_for_same_category_id(db
 
     assert changed == 2
     assert resolve_category_labels(db_session, indexer="rutracker", category_ids=["5000"]) == ["TV"]
-    assert resolve_category_labels(db_session, indexer="book-tracker", category_ids=["5000"]) == ["Books"]
+    assert resolve_category_labels(db_session, indexer="book-tracker", category_ids=["5000"]) == [
+        "Books"
+    ]
 
 
 def test_category_catalog_uses_category_id_fallback_for_ambiguous_result_labels(db_session) -> None:

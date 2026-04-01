@@ -46,25 +46,42 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="Live app base URL.")
-    parser.add_argument("--output-dir", default="logs/live-hover", help="Directory for capture artifacts.")
-    parser.add_argument("--samples", type=int, default=4, help="Number of lower-row/browser hover samples.")
+    parser.add_argument(
+        "--output-dir", default="logs/live-hover", help="Directory for capture artifacts."
+    )
+    parser.add_argument(
+        "--samples", type=int, default=4, help="Number of lower-row/browser hover samples."
+    )
     parser.add_argument("--wait-ms", type=int, default=450, help="Wait time between hover actions.")
     parser.add_argument("--timeout-ms", type=int, default=30000, help="Timeout for page/app steps.")
-    parser.add_argument("--headful", action="store_true", help="Run browser capture with a visible window.")
-    parser.add_argument("--skip-browser", action="store_true", help="Skip the live browser capture path.")
-    parser.add_argument("--skip-desktop", action="store_true", help="Skip the desktop WebView capture path.")
+    parser.add_argument(
+        "--headful", action="store_true", help="Run browser capture with a visible window."
+    )
+    parser.add_argument(
+        "--skip-browser", action="store_true", help="Skip the live browser capture path."
+    )
+    parser.add_argument(
+        "--skip-desktop", action="store_true", help="Skip the desktop WebView capture path."
+    )
     parser.add_argument(
         "--desktop-exe",
         default="QbRssRulesDesktop\\bin\\x64\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\QbRssRulesDesktop.exe",
         help="Path to the WinUI desktop executable to launch for desktop capture.",
     )
-    parser.add_argument("--desktop-title", default=DEFAULT_WINDOW_TITLE, help="Desktop window title substring.")
+    parser.add_argument(
+        "--desktop-title", default=DEFAULT_WINDOW_TITLE, help="Desktop window title substring."
+    )
     parser.add_argument(
         "--desktop-relaunch",
         action="store_true",
         help="Close an existing desktop window and launch a fresh debug-targeted instance for capture.",
     )
-    parser.add_argument("--desktop-scroll-steps", type=int, default=18, help="Scroll-wheel steps before desktop hovers.")
+    parser.add_argument(
+        "--desktop-scroll-steps",
+        type=int,
+        default=18,
+        help="Scroll-wheel steps before desktop hovers.",
+    )
     parser.add_argument(
         "--desktop-hover-x-ratio",
         type=float,
@@ -96,7 +113,9 @@ def ensure_http_ok(url: str, timeout_seconds: float) -> bool:
     return False
 
 
-def telemetry_url(base_url: str, *, session_id: str | None = None, clear: bool = False, limit: int = 20) -> str:
+def telemetry_url(
+    base_url: str, *, session_id: str | None = None, clear: bool = False, limit: int = 20
+) -> str:
     params: list[tuple[str, str]] = [("limit", str(limit))]
     if session_id:
         params.append(("session_id", session_id))
@@ -105,8 +124,12 @@ def telemetry_url(base_url: str, *, session_id: str | None = None, clear: bool =
     return urljoin(base_url.rstrip("/") + "/", f"api/debug/hover-telemetry?{urlencode(params)}")
 
 
-def fetch_telemetry(base_url: str, *, session_id: str | None = None, clear: bool = False, limit: int = 20) -> dict[str, Any]:
-    with urlopen(telemetry_url(base_url, session_id=session_id, clear=clear, limit=limit), timeout=8) as response:  # noqa: S310
+def fetch_telemetry(
+    base_url: str, *, session_id: str | None = None, clear: bool = False, limit: int = 20
+) -> dict[str, Any]:
+    with urlopen(
+        telemetry_url(base_url, session_id=session_id, clear=clear, limit=limit), timeout=8
+    ) as response:  # noqa: S310
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -133,7 +156,9 @@ def build_rules_url(
     return urljoin(base_url.rstrip("/") + "/", f"?{query}")
 
 
-def wait_for_session_events(base_url: str, session_id: str, *, timeout_seconds: float) -> list[dict[str, Any]]:
+def wait_for_session_events(
+    base_url: str, session_id: str, *, timeout_seconds: float
+) -> list[dict[str, Any]]:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         payload = fetch_telemetry(base_url, session_id=session_id, limit=20)
@@ -234,12 +259,20 @@ def capture_browser(
         browser = playwright.chromium.launch(headless=not headful)
         context = browser.new_context(viewport={"width": 1720, "height": 1040})
         page = context.new_page()
-        page.goto(build_rules_url(base_url, session_id=session_id), wait_until="networkidle", timeout=timeout_ms)
-        poster_rows = page.locator('[data-rules-row][data-rule-poster-url]:not([data-rule-poster-url=""])')
+        page.goto(
+            build_rules_url(base_url, session_id=session_id),
+            wait_until="networkidle",
+            timeout=timeout_ms,
+        )
+        poster_rows = page.locator(
+            '[data-rules-row][data-rule-poster-url]:not([data-rule-poster-url=""])'
+        )
         row_count = poster_rows.count()
         if row_count < 2:
             raise RuntimeError(f"Live browser capture found only {row_count} poster-backed rows.")
-        poster_rows.nth(row_count - 1).evaluate("node => node.scrollIntoView({ block: 'end', inline: 'nearest' })")
+        poster_rows.nth(row_count - 1).evaluate(
+            "node => node.scrollIntoView({ block: 'end', inline: 'nearest' })"
+        )
         page.wait_for_timeout(wait_ms)
         viewport_height = float(page.evaluate("window.innerHeight"))
         visible_indexes: list[int] = []
@@ -247,16 +280,21 @@ def capture_browser(
             row_box = poster_rows.nth(row_index).bounding_box()
             if row_box is None:
                 continue
-            if float(row_box["y"]) >= 0 and float(row_box["y"] + row_box["height"]) <= viewport_height + 1:
+            if (
+                float(row_box["y"]) >= 0
+                and float(row_box["y"] + row_box["height"]) <= viewport_height + 1
+            ):
                 visible_indexes.append(row_index)
-        sample_indexes = visible_indexes[-max(2, min(samples, len(visible_indexes))):]
+        sample_indexes = visible_indexes[-max(2, min(samples, len(visible_indexes))) :]
         rows: list[dict[str, Any]] = []
         for sequence, row_index in enumerate(sample_indexes, start=1):
             fetch_telemetry(base_url, session_id=session_id, clear=True)
             row = poster_rows.nth(row_index)
             row.hover()
             page.wait_for_timeout(wait_ms)
-            events = wait_for_session_events(base_url, session_id, timeout_seconds=max(4, timeout_ms / 1000))
+            events = wait_for_session_events(
+                base_url, session_id, timeout_seconds=max(4, timeout_ms / 1000)
+            )
             screenshot_path = artifact_dir / f"hover-{sequence:02d}-row-{row_index:02d}.png"
             page.screenshot(path=str(screenshot_path), full_page=False)
             screenshots.append(str(screenshot_path.relative_to(run_dir)).replace("\\", "/"))
@@ -328,7 +366,9 @@ def capture_desktop(
         hwnd = wait_for_window(desktop_title, timeout_seconds=max(8, timeout_ms / 1000))
     if not hwnd:
         raise RuntimeError(f"Could not find desktop window containing title '{desktop_title}'.")
-    if not ensure_http_ok(urljoin(base_url.rstrip("/") + "/", "health"), timeout_seconds=max(8, timeout_ms / 1000)):
+    if not ensure_http_ok(
+        urljoin(base_url.rstrip("/") + "/", "health"), timeout_seconds=max(8, timeout_ms / 1000)
+    ):
         raise RuntimeError(f"Live backend at {base_url} did not become reachable.")
 
     activate_window(hwnd)
@@ -339,12 +379,20 @@ def capture_desktop(
     deadline = time.monotonic() + max(10, timeout_ms / 1000)
     while time.monotonic() < deadline and len(rows) < sample_count:
         payload = fetch_telemetry(base_url, session_id=session_id, limit=40)
-        events = [event for event in payload.get("events") or [] if str(event.get("reason") or "") in {"mouseenter", "image-load"}]
+        events = [
+            event
+            for event in payload.get("events") or []
+            if str(event.get("reason") or "") in {"mouseenter", "image-load"}
+        ]
         next_event: dict[str, Any] | None = None
         for preferred_reason in ("image-load", "mouseenter"):
             for event in events:
                 row_id = str(event.get("row_id") or "")
-                if str(event.get("reason") or "") != preferred_reason or not row_id or row_id in seen_row_ids:
+                if (
+                    str(event.get("reason") or "") != preferred_reason
+                    or not row_id
+                    or row_id in seen_row_ids
+                ):
                     continue
                 seen_row_ids.add(row_id)
                 next_event = event
@@ -361,7 +409,9 @@ def capture_desktop(
             {
                 "sequence": len(rows) + 1,
                 "hover_point": None,
-                "ratio_y": hover_y_ratios[min(len(rows), len(hover_y_ratios) - 1)] if hover_y_ratios else None,
+                "ratio_y": hover_y_ratios[min(len(rows), len(hover_y_ratios) - 1)]
+                if hover_y_ratios
+                else None,
                 "telemetry": next_event,
                 "screenshot": str(screenshot_path.relative_to(run_dir)).replace("\\", "/"),
             }
@@ -408,7 +458,10 @@ def main() -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
 
     if not ensure_http_ok(urljoin(args.base_url.rstrip("/") + "/", "health"), timeout_seconds=8):
-        print(f"Live app is not reachable at {args.base_url}. Start the API/desktop app first.", file=sys.stderr)
+        print(
+            f"Live app is not reachable at {args.base_url}. Start the API/desktop app first.",
+            file=sys.stderr,
+        )
         return 1
 
     results: dict[str, Any] = {

@@ -42,6 +42,11 @@
   - added `tests/test_routes.py::test_edit_rule_page_preserves_zero_episode_floor_in_form` so route rendering locks the `S(next)E00` form contract for season-finale rules;
   - added deterministic browser closeout coverage in `scripts/closeout_browser_qa.py` so the edit form and generated pattern preview both keep the `E00` floor visible for a saved season-finale rule before release closeout.
 
+- Fixed the qB RSS Jackett IMDb-first precision gap on 2026-04-02:
+  - updated `app/services/jackett.py` so IMDb-first searches now probe direct configured IMDb-capable indexers when Jackett's aggregate `all` endpoint returns an empty success, instead of jumping straight to title fallback;
+  - kept the broad title-fallback path intact as a later-stage safety net, but only after the direct IMDb-capable indexer pass has had a chance to return exact matches for the searched title/IMDb item;
+  - added `tests/test_jackett.py::test_jackett_client_uses_direct_indexers_when_all_imdb_search_returns_empty` and revalidated the focused Jackett precision path with targeted pytest plus Ruff checks.
+
 - Shipped the phase-23 precursor follow-up locally on 2026-03-30 inside the `v0.8.3` release:
   - extended `app/schemas.py`, `app/services/jackett.py`, and `app/routes/pages.py` so saved-rule/main-app IMDb-first series searches now carry episode-floor context (`season_number` / `episode_number`) into the Jackett request contract, retry `IMDb + season + episode`, then `IMDb + season`, and only then fall back to broader title matching;
   - tightened Jackett local filtering so explicit conflicting IMDb IDs are now rejected instead of surviving only because the title text matched, which reduces ambiguous-title fallback leakage for remake-heavy names such as `Ghosts`;
@@ -840,6 +845,7 @@
 - Decide the phase-23 provider aggregation architecture for globally ordering qB RSS and Torrentio-compatible rows inside one addon surface.
 - Prototype the merged row contract plus the Torrentio-compatible provider adapter needed so provider attribution survives the global sort inside one addon block.
 - Keep the new season-finale `E00` edit-form/browser regression in the focused QA set whenever rule-floor or rule-form serialization changes.
+- Keep the new aggregate-empty IMDb precision regression in the focused Jackett test set whenever the qB RSS IMDb-first search path or fallback sequencing changes.
 - Keep `scripts\\stremio_addon_smoke.py` and `scripts\\stremio_desktop_smoke.py` as the required acceptance pair before changing native addon stream/search behavior again.
 - Repair the mock-addon install path inside `scripts\\stremio_desktop_variant_matrix.py` so the temporary QA addon reaches the stream-request stage and can keep bisecting future acceptance regressions automatically.
 - Correct the saved OMDb API key so `/stremio/catalog/...` can contribute search results again; stream lookups now degrade through Cinemeta metadata for known IMDb items, but title-search catalog results still depend on a working metadata provider.

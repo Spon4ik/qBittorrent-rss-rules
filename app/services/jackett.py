@@ -1178,6 +1178,7 @@ class JackettClient:
         seen_warning_messages: set[str] = set()
         primary_merged: dict[str, tuple[datetime | None, JackettSearchResult]] = {}
         last_timeout_error: JackettTimeoutError | None = None
+        direct_probe_attempted = False
 
         request_params = self._search_params_for_variant(payload, primary_query)
         fallback_params = self._fallback_search_params_for_variant(
@@ -1204,6 +1205,7 @@ class JackettClient:
                 self._add_request_label(request_variants, seen_request_variants, attempted_request)
             if payload.indexer == "all":
                 try:
+                    direct_probe_attempted = True
                     variant_results, _, attempted_requests, timeout_messages = (
                         self._search_variant_across_capable_indexers(
                             payload,
@@ -1224,6 +1226,25 @@ class JackettClient:
         except JackettTimeoutError as exc:
             last_timeout_error = exc
             self._add_warning(warning_messages, seen_warning_messages, str(exc))
+
+        if payload.indexer == "all" and not primary_merged and not direct_probe_attempted:
+            try:
+                direct_probe_attempted = True
+                variant_results, _, attempted_requests, timeout_messages = (
+                    self._search_variant_across_capable_indexers(
+                        payload,
+                        primary_query,
+                    )
+                )
+            except (JackettHTTPError, JackettClientError):
+                variant_results = []
+                attempted_requests = []
+                timeout_messages = []
+            for attempted_request in attempted_requests:
+                self._add_request_label(request_variants, seen_request_variants, attempted_request)
+            for message in timeout_messages:
+                self._add_warning(warning_messages, seen_warning_messages, message)
+            self._merge_results(primary_merged, variant_results)
 
         fallback_request_variants: list[str] = []
         seen_fallback_request_variants: set[str] = set()

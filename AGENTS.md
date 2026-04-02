@@ -13,6 +13,8 @@ At the start of each work session:
 
 - Confirm whether an active implementation phase already exists before making changes.
 - Implement against the active phase plan instead of improvising scope.
+- Use a dedicated git branch for each implementation slice, which in this repo normally means one branch per active phase.
+- Do not create an additional branch just because the target version changes if that version is the release vehicle for the same active phase; create a separate version branch only when parallel maintenance or hotfix work needs to diverge from the main phase track.
 - If implementation must diverge from the current phase plan, update the relevant plan document before or with the code change.
 - Keep roadmap, plan, and status docs aligned with the actual codebase state.
 

@@ -8,6 +8,12 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.8.4] - 2026-04-02
+
+- Fixed the saved-rule edit form so season-finale floors that advance to next-season `E00` keep `start_episode=0` visible instead of collapsing to a blank field on edit.
+- Prevented accidental loss of the precise episode floor on re-save, so the main qB RSS app no longer broadens those season-finale searches just because the edit form dropped the zero value.
+- Added focused route regression coverage plus deterministic browser closeout coverage for the `E00` rule-floor edit flow.
+
 ## [0.8.3] - 2026-04-02
 
 - Removed the hard series start-year constraint for Stremio episode lookups so long-running series such as `Death in Paradise` no longer filter out later-season Jackett results.

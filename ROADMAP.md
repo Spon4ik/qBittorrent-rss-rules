@@ -107,6 +107,11 @@ Phase 6 detail pointer:
 - Shipped early phase-23 precursors: improved Stremio addon variant visibility (quality markers, size, attribution) and added episode-floor precision to the main app Jackett IMDb-first series fallback path.
 - Revalidated the patch with focused pytest/typing/lint checks, realtime direct route probes, and desktop smoke reruns for the corrected `Death in Paradise` and `The Beauty` request payloads.
 
+## Release-validated: v0.8.4 (2026-04-02)
+
+- Shipped a maintenance hotfix so season-finale series rules that advance to next-season `E00` no longer lose `start_episode=0` when opened and re-saved from the edit form.
+- Added focused route regression coverage and deterministic browser closeout coverage for the `E00` edit-form flow so the stored episode floor remains visible and stable across UI round trips.
+
 ## Release-validated: v0.8.2 (2026-03-28)
 
 - Shipped the phase-22 Stremio variant-parity follow-up so qB RSS now keeps the broader viable variant set instead of collapsing back to a tiny local-first subset.

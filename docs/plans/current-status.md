@@ -22,6 +22,11 @@
 
 ## Implemented
 
+- Completed the `v0.8.4` maintenance hotfix release on 2026-04-02:
+  - synchronized version touchpoints to `0.8.4` (`pyproject.toml`, `app/main.py`, desktop compatibility constants, `/health` route assertions, addon manifest regression, and `CHANGELOG.md`);
+  - fixed the saved-rule edit form so season-finale floors that advance to `S(next)E00` keep `start_episode=0` visible instead of collapsing to a blank field on edit and re-save;
+  - added focused route regression coverage plus deterministic browser closeout coverage for the `E00` rule-floor edit flow.
+
 - Completed the `v0.8.3` phase-24 release closeout on 2026-04-02:
   - synchronized version touchpoints to `0.8.3` (`pyproject.toml`, test assertions, and desktop compatibility constants) following the phase-24 hotfix validation;
   - updated `ROADMAP.md` and release history to mark the Stremio year hotfix and phase 23 qB-side precursors as shipped;
@@ -31,6 +36,11 @@
   - analyzed the Stremio `libraryItem` shape and successfully decoded the `watched` string (e.g. `tt10986410:3:12:43...`) and `video_id` object to dynamically extract `latest_watched_episode_key`;
   - modified the `Rule` SQLModel definition with `stremio_known_episode_numbers` and `stremio_watched_episode_numbers` JSON columns, autogenerating Alebmic migration `b444a9971f02` to safely deploy the schema change;
   - updated `app/services/stremio.py` so that `_sync_existing_rule` and `_create_rule_for_item` now run series updates through the `watch_state.py` shared arbitration layer. The layer directly queries the `v3-cinemeta.strem.io` API to natively enumerate series bounds (meaning no configuration or OMDb API key is required, and "Ted Lasso" Season 3 Episode 12 automatically advances to Season 4 Episode 0).
+
+- Fixed the season-finale `E00` rule edit regression on 2026-04-02:
+  - updated `app/routes/pages.py` so saved rules with `start_episode=0` render `0` back into the edit form instead of collapsing to a blank field via falsy-value coercion;
+  - added `tests/test_routes.py::test_edit_rule_page_preserves_zero_episode_floor_in_form` so route rendering locks the `S(next)E00` form contract for season-finale rules;
+  - added deterministic browser closeout coverage in `scripts/closeout_browser_qa.py` so the edit form and generated pattern preview both keep the `E00` floor visible for a saved season-finale rule before release closeout.
 
 - Shipped the phase-23 precursor follow-up locally on 2026-03-30 inside the `v0.8.3` release:
   - extended `app/schemas.py`, `app/services/jackett.py`, and `app/routes/pages.py` so saved-rule/main-app IMDb-first series searches now carry episode-floor context (`season_number` / `episode_number`) into the Jackett request contract, retry `IMDb + season + episode`, then `IMDb + season`, and only then fall back to broader title matching;
@@ -829,6 +839,7 @@
 - Keep `Death in Paradise` season 14/15 routes in the live Stremio addon regression set.
 - Decide the phase-23 provider aggregation architecture for globally ordering qB RSS and Torrentio-compatible rows inside one addon surface.
 - Prototype the merged row contract plus the Torrentio-compatible provider adapter needed so provider attribution survives the global sort inside one addon block.
+- Keep the new season-finale `E00` edit-form/browser regression in the focused QA set whenever rule-floor or rule-form serialization changes.
 - Keep `scripts\\stremio_addon_smoke.py` and `scripts\\stremio_desktop_smoke.py` as the required acceptance pair before changing native addon stream/search behavior again.
 - Repair the mock-addon install path inside `scripts\\stremio_desktop_variant_matrix.py` so the temporary QA addon reaches the stream-request stage and can keep bisecting future acceptance regressions automatically.
 - Correct the saved OMDb API key so `/stremio/catalog/...` can contribute search results again; stream lookups now degrade through Cinemeta metadata for known IMDb items, but title-search catalog results still depend on a working metadata provider.

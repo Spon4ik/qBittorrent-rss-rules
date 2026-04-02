@@ -318,8 +318,8 @@ def _rule_to_form_data(rule: Rule) -> dict[str, object]:
         "use_regex": rule.use_regex,
         "must_contain_override": rule.must_contain_override or "",
         "must_not_contain": rule.must_not_contain,
-        "start_season": rule.start_season or "",
-        "start_episode": rule.start_episode or "",
+        "start_season": rule.start_season if rule.start_season is not None else "",
+        "start_episode": rule.start_episode if rule.start_episode is not None else "",
         "jellyfin_search_existing_unseen": bool(
             getattr(rule, "jellyfin_search_existing_unseen", False)
         ),

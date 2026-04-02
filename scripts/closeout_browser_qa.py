@@ -570,12 +570,24 @@ def read_debug_log_line_count(path: Path) -> int | None:
 
 def force_default_feed_urls(db_path: Path, feed_urls: list[str]) -> None:
     payload = json.dumps(feed_urls)
-    with sqlite3.connect(db_path) as connection:
-        connection.execute(
-            "UPDATE app_settings SET default_feed_urls = ? WHERE id = 'default'",
-            (payload,),
-        )
-        connection.commit()
+    deadline = time.monotonic() + 10.0
+    last_error: sqlite3.OperationalError | None = None
+    while time.monotonic() < deadline:
+        try:
+            with sqlite3.connect(db_path, timeout=2.0) as connection:
+                connection.execute(
+                    "UPDATE app_settings SET default_feed_urls = ? WHERE id = 'default'",
+                    (payload,),
+                )
+                connection.commit()
+            return
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).casefold():
+                raise
+            last_error = exc
+            time.sleep(0.2)
+    if last_error is not None:
+        raise last_error
 
 
 def markdown_table(checks: list[CheckResult]) -> str:
@@ -1453,6 +1465,78 @@ def main() -> int:
                 "Phase 5",
                 "Rule generated-pattern preview reflects mustNotContain and pipe alternatives",
                 check_phase5_rule_pattern_preview_parity,
+                page=page,
+            )
+
+            def check_phase5_edit_rule_preserves_e00_floor() -> None:
+                from sqlalchemy import create_engine
+                from sqlalchemy.orm import Session
+
+                from app.models import MediaType, QualityProfile, Rule
+
+                engine = create_engine(
+                    f"sqlite:///{db_path.as_posix()}",
+                    connect_args={"check_same_thread": False},
+                    future=True,
+                )
+                try:
+                    with Session(engine) as session:
+                        rule = Rule(
+                            rule_name="QA E00 Floor Rule",
+                            content_name="QA E00 Floor Rule",
+                            normalized_title="QA E00 Floor Rule",
+                            media_type=MediaType.SERIES,
+                            quality_profile=QualityProfile.PLAIN,
+                            start_season=2,
+                            start_episode=0,
+                            feed_urls=[DEFAULT_FEEDS[0]],
+                            enabled=True,
+                        )
+                        session.add(rule)
+                        session.commit()
+                        rule_id = rule.id
+                finally:
+                    engine.dispose()
+
+                page.goto(
+                    f"{app_base_url}/rules/{rule_id}",
+                    wait_until="networkidle",
+                    timeout=args.timeout_ms,
+                )
+                page.wait_for_selector('input[name="start_episode"]', timeout=args.timeout_ms)
+                matching_section = page.locator("details:has(#pattern-preview)").first
+                if not matching_section.evaluate("node => Boolean(node.open)"):
+                    matching_section.locator("summary").click()
+                start_episode_value = page.input_value('input[name="start_episode"]')
+                preview = page.input_value("#pattern-preview")
+                helper_text = page.locator('input[name="start_episode"]').locator("xpath=..").text_content()
+                _expect(
+                    start_episode_value == "0",
+                    (
+                        "Expected season-finale rules to keep the next-season E00 floor visible "
+                        f"on the edit form; current={start_episode_value!r}."
+                    ),
+                )
+                _expect(
+                    bool(preview.strip()),
+                    (
+                        "Expected the generated pattern preview to stay populated for "
+                        f"season-finale rules; preview={preview!r}."
+                    ),
+                )
+                _expect(
+                    helper_text is not None and "E00" in helper_text,
+                    (
+                        "Expected the start-episode helper text to keep the E00 guidance visible "
+                        f"for season-finale rules; helper={helper_text!r}."
+                    ),
+                )
+
+            run_check(
+                "P5-03",
+                "Phase 5",
+                "Edit rule form preserves next-season E00 floors for season-finale rules",
+                check_phase5_edit_rule_preserves_e00_floor,
                 page=page,
             )
 

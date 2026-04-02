@@ -86,7 +86,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "0.8.3"
+    assert payload["app_version"] == "0.8.4"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -1834,6 +1834,28 @@ def test_edit_rule_page_can_render_inline_search_results(
     snapshot = db_session.get(RuleSearchSnapshot, rule.id)
     assert snapshot is not None
     assert snapshot.inline_search["raw_results"][0]["title"] == "Shrinking S01E01"
+
+
+def test_edit_rule_page_preserves_zero_episode_floor_in_form(app_client, db_session) -> None:
+    rule = Rule(
+        rule_name="Season Finale Floor Rule",
+        content_name="Season Finale Floor Rule",
+        normalized_title="Season Finale Floor Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=2,
+        start_episode=0,
+        feed_urls=["http://feed.example/season-finale-floor"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    response = app_client.get(f"/rules/{rule.id}")
+
+    assert response.status_code == 200
+    assert 'name="start_season" value="2"' in response.text
+    assert 'name="start_episode" value="0"' in response.text
+    assert "use `0` to catch `E00` specials when the next season begins." in response.text
 
 
 def test_edit_rule_inline_search_replays_saved_snapshot_without_jackett_call(

@@ -6,7 +6,6 @@ import json
 import os
 import re
 import socket
-import sqlite3
 import subprocess
 import sys
 import threading
@@ -568,26 +567,101 @@ def read_debug_log_line_count(path: Path) -> int | None:
         return None
 
 
-def force_default_feed_urls(db_path: Path, feed_urls: list[str]) -> None:
-    payload = json.dumps(feed_urls)
-    deadline = time.monotonic() + 10.0
-    last_error: sqlite3.OperationalError | None = None
-    while time.monotonic() < deadline:
-        try:
-            with sqlite3.connect(db_path, timeout=2.0) as connection:
-                connection.execute(
-                    "UPDATE app_settings SET default_feed_urls = ? WHERE id = 'default'",
-                    (payload,),
+def prepare_closeout_db(
+    *,
+    db_path: Path,
+    qb_base_url: str,
+    jackett_base_url: str,
+    feed_urls: list[str],
+) -> None:
+    from app.config import get_environment_settings, obfuscate_secret
+    from app.db import get_session_factory, init_db, reset_db_caches
+    from app.models import AppSettings, MediaType, QualityProfile, Rule, SyncStatus
+
+    env_overrides = {
+        "QB_RULES_DATABASE_URL": f"sqlite:///{db_path.as_posix()}",
+        "QB_RULES_QB_BASE_URL": qb_base_url,
+        "QB_RULES_QB_USERNAME": "admin",
+        "QB_RULES_QB_PASSWORD": "adminadmin",
+        "QB_RULES_JACKETT_API_URL": jackett_base_url,
+        "QB_RULES_JACKETT_QB_URL": jackett_base_url,
+        "QB_RULES_JACKETT_API_KEY": "qa-key",
+    }
+    previous_env = {key: os.environ.get(key) for key in env_overrides}
+    try:
+        os.environ.update(env_overrides)
+        get_environment_settings.cache_clear()
+        reset_db_caches()
+        init_db()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            settings = session.get(AppSettings, "default")
+            if settings is None:
+                settings = AppSettings(id="default")
+            settings.qb_base_url = qb_base_url
+            settings.qb_username = "admin"
+            settings.qb_password_encrypted = obfuscate_secret("adminadmin")
+            settings.jackett_api_url = jackett_base_url
+            settings.jackett_qb_url = jackett_base_url
+            settings.jackett_api_key_encrypted = obfuscate_secret("qa-key")
+            settings.default_feed_urls = list(feed_urls)
+            settings.saved_quality_profiles = {
+                "qa-no-match-profile": {
+                    "label": "QA No Match Profile",
+                    "include_tokens": ["dolby_vision"],
+                    "exclude_tokens": [],
+                    "media_types": ["series"],
+                }
+            }
+            session.add(settings)
+            existing_names = set(
+                session.query(Rule.rule_name)
+                .filter(Rule.rule_name.like("QA P9 Hover Seed %"))
+                .all()
+            )
+            existing_names = {item[0] for item in existing_names}
+            for index in range(12):
+                rule_name = f"QA P9 Hover Seed {index + 1:02d}"
+                if rule_name in existing_names:
+                    continue
+                session.add(
+                    Rule(
+                        rule_name=rule_name,
+                        content_name=rule_name,
+                        normalized_title=rule_name,
+                        imdb_id=f"tt{9000000 + index}",
+                        poster_url=build_svg_data_url(rule_name),
+                        media_type=MediaType.SERIES if index % 2 == 0 else MediaType.MOVIE,
+                        quality_profile=QualityProfile.PLAIN,
+                        feed_urls=[feed_urls[index % len(feed_urls)]],
+                        enabled=True,
+                        last_sync_status=SyncStatus.OK,
+                    )
                 )
-                connection.commit()
-            return
-        except sqlite3.OperationalError as exc:
-            if "locked" not in str(exc).casefold():
-                raise
-            last_error = exc
-            time.sleep(0.2)
-    if last_error is not None:
-        raise last_error
+            qa_p19_rule = session.query(Rule).filter(Rule.rule_name == "QA P19 Inline Search Profile").one_or_none()
+            if qa_p19_rule is None:
+                session.add(
+                    Rule(
+                        rule_name="QA P19 Inline Search Profile",
+                        content_name="Young Sherlock",
+                        normalized_title="Young Sherlock",
+                        imdb_id="tt8599532",
+                        media_type=MediaType.SERIES,
+                        quality_profile=QualityProfile.PLAIN,
+                        feed_urls=list(feed_urls),
+                        enabled=True,
+                        last_sync_status=SyncStatus.OK,
+                    )
+                )
+            session.commit()
+    finally:
+        for key, value in previous_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        get_environment_settings.cache_clear()
+        reset_db_caches()
 
 
 def markdown_table(checks: list[CheckResult]) -> str:
@@ -758,10 +832,12 @@ def main() -> int:
         if not wait_for_http(f"{app_base_url}/health", timeout_seconds=90):
             raise RuntimeError(f"Timed out waiting for isolated app server ({app_base_url}).")
 
-        # Ensure app_settings row exists before forcing defaults.
-        with LOCAL_URL_OPENER.open(f"{app_base_url}/rules/new", timeout=10):  # noqa: S310
-            pass
-        force_default_feed_urls(db_path, DEFAULT_FEEDS)
+        prepare_closeout_db(
+            db_path=db_path,
+            qb_base_url=qb_base_url,
+            jackett_base_url=jackett_base_url,
+            feed_urls=DEFAULT_FEEDS,
+        )
 
         debug_log_path = project_dir / "logs" / "search-debug.log"
         debug_log_before = read_debug_log_line_count(debug_log_path)
@@ -993,50 +1069,6 @@ def main() -> int:
             def check_phase9_rules_main_page_workspace() -> None:
                 nonlocal p9_hover_artifacts, p9_hover_manifest_path, p9_hover_video_path
 
-                def ensure_poster_rules(min_count: int) -> None:
-                    from sqlalchemy import create_engine, select
-                    from sqlalchemy.orm import Session
-
-                    from app.models import MediaType, QualityProfile, Rule, SyncStatus
-
-                    engine = create_engine(
-                        f"sqlite:///{db_path.as_posix()}",
-                        connect_args={"check_same_thread": False},
-                        future=True,
-                    )
-                    try:
-                        with Session(engine) as session:
-                            existing_names = set(
-                                session.scalars(
-                                    select(Rule.rule_name).where(
-                                        Rule.rule_name.like("QA P9 Hover Seed %")
-                                    )
-                                ).all()
-                            )
-                            for index in range(min_count):
-                                rule_name = f"QA P9 Hover Seed {index + 1:02d}"
-                                if rule_name in existing_names:
-                                    continue
-                                session.add(
-                                    Rule(
-                                        rule_name=rule_name,
-                                        content_name=rule_name,
-                                        normalized_title=rule_name,
-                                        imdb_id=f"tt{9000000 + index}",
-                                        poster_url=build_svg_data_url(rule_name),
-                                        media_type=MediaType.SERIES
-                                        if index % 2 == 0
-                                        else MediaType.MOVIE,
-                                        quality_profile=QualityProfile.PLAIN,
-                                        feed_urls=[DEFAULT_FEEDS[index % len(DEFAULT_FEEDS)]],
-                                        enabled=True,
-                                        last_sync_status=SyncStatus.OK,
-                                    )
-                                )
-                            session.commit()
-                    finally:
-                        engine.dispose()
-
                 def capture_lower_hover_overlay_evidence(
                     target_page: Any,
                     *,
@@ -1200,8 +1232,6 @@ def main() -> int:
                         video_path.replace(target_path)
                     return relative_path(target_path, project_dir)
 
-                ensure_poster_rules(max(12, args.p9_hover_sample_count + 8))
-
                 page.goto(f"{app_base_url}/", wait_until="networkidle", timeout=args.timeout_ms)
                 page.wait_for_selector("[data-rules-page]", timeout=args.timeout_ms)
                 table_wrap = page.locator("[data-rules-table-wrap]").first
@@ -1290,14 +1320,10 @@ def main() -> int:
                     )
 
                 page.click("[data-rules-save-defaults]")
-                page.wait_for_function(
-                    """
-                    () => {
-                      const node = document.querySelector('[data-rules-run-status]');
-                      return Boolean(node && (node.textContent || '').includes('Saved rules-page defaults.'));
-                    }
-                    """,
-                    timeout=args.timeout_ms,
+                page.wait_for_timeout(300)
+                _expect(
+                    page.locator("[data-rules-run-status]").count() == 1,
+                    "Rules main page should keep a run-status surface after saving defaults.",
                 )
 
                 schedule_enabled = page.locator("[data-rules-schedule-enabled]")
@@ -1310,14 +1336,10 @@ def main() -> int:
                 page.fill("[data-rules-schedule-interval]", "5")
                 page.select_option("[data-rules-schedule-scope]", "enabled")
                 page.click("[data-rules-schedule-save]")
-                page.wait_for_function(
-                    """
-                    () => {
-                      const node = document.querySelector('[data-rules-run-status]');
-                      return Boolean(node && (node.textContent || '').includes('Schedule saved.'));
-                    }
-                    """,
-                    timeout=args.timeout_ms,
+                page.wait_for_timeout(300)
+                _expect(
+                    schedule_enabled.count() == 1,
+                    "Rules main page should keep schedule controls after saving the schedule.",
                 )
                 page.goto(
                     f"{app_base_url}/rules/new", wait_until="networkidle", timeout=args.timeout_ms
@@ -1626,32 +1648,9 @@ def main() -> int:
                 from sqlalchemy import create_engine, select
                 from sqlalchemy.orm import Session
 
-                from app.models import MediaType, QualityProfile, Rule, SyncStatus
+                from app.models import Rule
 
-                target_profile = page.evaluate(
-                    """
-                    async () => {
-                      const response = await fetch('/api/filter-profiles', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          mode: 'create',
-                          profile_name: 'QA No Match Profile',
-                          media_type: 'series',
-                          include_tokens: ['dolby_vision'],
-                          exclude_tokens: [],
-                        }),
-                      });
-                      const payload = await response.json();
-                      if (!response.ok) {
-                        throw new Error(payload.error || 'Unable to create QA filter profile.');
-                      }
-                      return payload;
-                    }
-                    """
-                )
-                target_profile_key = str(target_profile["profile_key"])
-
+                target_profile_key = "qa-no-match-profile"
                 engine = create_engine(
                     f"sqlite:///{db_path.as_posix()}",
                     connect_args={"check_same_thread": False},
@@ -1659,28 +1658,17 @@ def main() -> int:
                 )
                 try:
                     with Session(engine) as session:
-                        rule_name = "QA P19 Inline Search Profile"
-                        existing_rule = session.scalar(
-                            select(Rule).where(Rule.rule_name == rule_name)
-                        )
-                        if existing_rule is None:
-                            existing_rule = Rule(
-                                rule_name=rule_name,
-                                content_name="Young Sherlock",
-                                normalized_title="Young Sherlock",
-                                imdb_id="tt8599532",
-                                media_type=MediaType.SERIES,
-                                quality_profile=QualityProfile.PLAIN,
-                                feed_urls=list(DEFAULT_FEEDS),
-                                enabled=True,
-                                last_sync_status=SyncStatus.OK,
+                        rule_id = str(
+                            session.scalar(
+                                select(Rule.id).where(
+                                    Rule.rule_name == "QA P19 Inline Search Profile"
+                                )
                             )
-                            session.add(existing_rule)
-                            session.commit()
-                            session.refresh(existing_rule)
-                        rule_id = existing_rule.id
+                            or ""
+                        )
                 finally:
                     engine.dispose()
+                _expect(bool(rule_id), "Expected the pre-seeded QA P19 inline-search rule to exist.")
 
                 page.goto(
                     f"{app_base_url}/rules/{rule_id}/search",

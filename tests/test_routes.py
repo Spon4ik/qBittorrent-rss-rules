@@ -86,7 +86,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "0.8.4"
+    assert payload["app_version"] == "0.8.5"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -233,6 +233,137 @@ def test_rules_page_renders_release_status_from_snapshots(app_client, db_session
     assert "No snapshot" in response.text
     assert "1 / 1" in response.text
     assert "0 / 1" in response.text
+
+
+def test_rules_page_renders_exact_status_from_snapshots(app_client, db_session) -> None:
+    exact_rule = Rule(
+        rule_name="Exact Rule",
+        content_name="Exact Rule",
+        normalized_title="Exact Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/exact/results/torznab/api"],
+    )
+    fallback_only_rule = Rule(
+        rule_name="Fallback Only Rule",
+        content_name="Fallback Only Rule",
+        normalized_title="Fallback Only Rule",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/fallback/results/torznab/api"],
+    )
+    no_exact_rule = Rule(
+        rule_name="No Exact Rule",
+        content_name="No Exact Rule",
+        normalized_title="No Exact Rule",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/no-exact/results/torznab/api"],
+    )
+    unknown_rule = Rule(
+        rule_name="Unknown Exact Rule",
+        content_name="Unknown Exact Rule",
+        normalized_title="Unknown Exact Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/unknown/results/torznab/api"],
+    )
+    db_session.add_all([exact_rule, fallback_only_rule, no_exact_rule, unknown_rule])
+    db_session.flush()
+    db_session.add_all(
+        [
+            RuleSearchSnapshot(
+                rule_id=exact_rule.id,
+                payload={"query": "Exact Rule", "imdb_id_only": True},
+                inline_search={},
+                release_filtered_count=4,
+                release_fetched_count=9,
+                exact_filtered_count=3,
+                exact_fetched_count=5,
+            ),
+            RuleSearchSnapshot(
+                rule_id=fallback_only_rule.id,
+                payload={"query": "Fallback Only Rule", "imdb_id_only": True},
+                inline_search={},
+                release_filtered_count=2,
+                release_fetched_count=8,
+                exact_filtered_count=0,
+                exact_fetched_count=4,
+            ),
+            RuleSearchSnapshot(
+                rule_id=no_exact_rule.id,
+                payload={"query": "No Exact Rule", "imdb_id_only": True},
+                inline_search={},
+                release_filtered_count=0,
+                release_fetched_count=6,
+                exact_filtered_count=0,
+                exact_fetched_count=2,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = app_client.get("/")
+
+    assert response.status_code == 200
+    assert "Exact found" in response.text
+    assert "Fallback only" in response.text
+    assert "No exact" in response.text
+    assert "3 / 5" in response.text
+    assert "0 / 4" in response.text
+    assert "0 / 2" in response.text
+
+
+def test_rules_page_filters_by_exact_state(app_client, db_session) -> None:
+    exact_rule = Rule(
+        rule_name="Exact Filter Rule",
+        content_name="Exact Filter Rule",
+        normalized_title="Exact Filter Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/exact-filter/results/torznab/api"],
+    )
+    fallback_rule = Rule(
+        rule_name="Fallback Filter Rule",
+        content_name="Fallback Filter Rule",
+        normalized_title="Fallback Filter Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/fallback-filter/results/torznab/api"],
+    )
+    db_session.add_all([exact_rule, fallback_rule])
+    db_session.flush()
+    db_session.add_all(
+        [
+            RuleSearchSnapshot(
+                rule_id=exact_rule.id,
+                payload={"query": "Exact Filter Rule", "imdb_id_only": True},
+                inline_search={},
+                release_filtered_count=1,
+                release_fetched_count=3,
+                exact_filtered_count=1,
+                exact_fetched_count=2,
+            ),
+            RuleSearchSnapshot(
+                rule_id=fallback_rule.id,
+                payload={"query": "Fallback Filter Rule", "imdb_id_only": True},
+                inline_search={},
+                release_filtered_count=1,
+                release_fetched_count=5,
+                exact_filtered_count=0,
+                exact_fetched_count=2,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = app_client.get("/?exact=exact")
+
+    assert response.status_code == 200
+    assert "Exact Filter Rule" in response.text
+    assert "Fallback Filter Rule" not in response.text
+    assert 'name="exact"' in response.text
+    assert 'value="exact" selected' in response.text
 
 
 def test_rules_page_defers_missing_poster_backfill_from_response_render(
@@ -660,6 +791,20 @@ def test_inline_feed_scope_indexer_matching_uses_key_variants() -> None:
     assert "entry.indexerKeys.some((item) => allowedFeedKeys.has(item))" in app_js_source
 
 
+def test_rules_page_filter_state_persists_locally_in_app_js() -> None:
+    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+    app_js_source = app_js_path.read_text(encoding="utf-8")
+
+    assert 'const FILTER_STORAGE_KEY = "qb-rules-page-filters:v1";' in app_js_source
+    assert (
+        'const FILTER_FIELD_NAMES = ["search", "media", "sync", "enabled", "release", "exact"];'
+        in app_js_source
+    )
+    assert "window.localStorage.setItem(" in app_js_source
+    assert 'window.sessionStorage.setItem(FILTER_RESTORE_FLAG_KEY, "1");' in app_js_source
+    assert "filterForm.requestSubmit();" in app_js_source
+
+
 def test_inline_local_filters_enforce_query_and_imdb_parity() -> None:
     app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
     app_js_source = app_js_path.read_text(encoding="utf-8")
@@ -673,6 +818,27 @@ def test_inline_local_filters_enforce_query_and_imdb_parity() -> None:
     )
     assert (
         "if (!imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {"
+        in app_js_source
+    )
+
+
+def test_inline_local_filters_keep_precise_primary_rows_separate_from_fallback_regex_logic() -> (
+    None
+):
+    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+    app_js_source = app_js_path.read_text(encoding="utf-8")
+
+    assert "const matchesPreciseTitleIdentity = (title, queryValue) => {" in app_js_source
+    assert (
+        'const isPrecisePrimaryRow = Boolean(payloadImdbId && (entry.querySourceKeys || []).includes("primary"));'
+        in app_js_source
+    )
+    assert (
+        "if (isPrecisePrimaryRow && !imdbExactMatch && !matchesPreciseTitleIdentity(entry.title, filters.query)) {"
+        in app_js_source
+    )
+    assert (
+        "if (!isPrecisePrimaryRow && filters.generatedPatternRegex && !filters.generatedPatternRegex.test(entry.regexSurface)) {"
         in app_js_source
     )
 
@@ -1040,6 +1206,7 @@ def test_search_page_auto_enforces_imdb_and_renders_unified_results_table(
     assert response.status_code == 200
     assert "Require IMDb ID" not in response.text
     assert "Unified query results" in response.text
+    assert "Precise results" in response.text
     assert "Title fallback" in response.text
     assert "IMDb-enforced Jackett lookup" in response.text
     assert "t=tvsearch imdbid=tt11379026 cat=5000" in response.text
@@ -1547,6 +1714,7 @@ def test_search_page_from_rule_carries_series_episode_floor_into_imdb_search(
         assert payload.imdb_id_only is True
         assert payload.season_number == 3
         assert payload.episode_number == 7
+        assert payload.primary_keywords_any_groups == []
         return JackettSearchRun(query_variants=["Shrinking"], results=[])
 
     monkeypatch.setattr(JackettClient, "search", fake_search)

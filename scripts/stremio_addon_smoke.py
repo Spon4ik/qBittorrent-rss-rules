@@ -267,4 +267,12 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if not __package__:
+        import subprocess
+
+        raise SystemExit(
+            subprocess.call(
+                [sys.executable, "-m", "scripts.stremio_addon_smoke", *sys.argv[1:]]
+            )
+        )
     raise SystemExit(main())

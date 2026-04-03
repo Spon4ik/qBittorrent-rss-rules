@@ -22,6 +22,24 @@
 
 ## Implemented
 
+- Completed the `v0.8.5` maintenance release on 2026-04-03:
+  - split the overloaded quality taxonomy so `bluray` now matches explicit BluRay labels while `BDRip/BRRip` uses its own `bdrip` token, preventing exact 4K HDR disc-rip rows from being hidden just because a rule excludes `bluray`;
+  - added focused taxonomy and Jackett regressions in `tests/test_quality_filters.py` and `tests/test_jackett.py`, plus a deterministic browser-closeout rule that keeps a `BDRip` exact movie row visible when only `bluray` and `bdremux` are excluded;
+  - hardened `scripts/stremio_addon_smoke.py` so direct execution delegates to module mode, eliminating the earlier path-dependent false negative in service smoke validation;
+  - widened the Stremio episode search collection budget in `app/services/stremio_addon.py` so cold live HTTP addon requests keep the full exact stream set for `The Beauty` episode 1 instead of collapsing to a single local-playback row on first hit;
+  - revalidated the patch with `scripts\check.bat` (`285 passed`), `scripts\closeout_browser_qa.py` (artifacts under `logs/qa/phase-closeout-20260403T093533Z/`), `scripts\run_dev.bat desktop-build`, and sequential `scripts\stremio_addon_smoke.py` service/http runs with `--min-streams 2 --require-4k`.
+
+- Hardened the phase-23 precise-search QA and rules-page visibility slice on 2026-04-03:
+  - kept the new rules-page exact-result indicators/filter and remembered filter selections on the main table/cards workspace, so exact-match rule snapshots are visible and filterable from the default rules surface;
+  - fixed a qB RSS exact-title merge bug in `app/services/jackett.py` so non-exact title-query rows no longer get consumed by the primary dedupe pass before the fallback lane can render them;
+  - strengthened `scripts/closeout_browser_qa.py` with a multi-rule movie/series precise-vs-fallback matrix, scheduler-disabled deterministic app startup, and source-aware combined-row assertions that now pass end-to-end in `logs/qa/phase-closeout-20260403T003252Z/closeout-report.md`;
+  - updated `AGENTS.md` and `.codex/skills/qa-engineer/SKILL.md` so future work keeps iterating until the bug is actually fixed, treats manual-failure reports as higher-signal than synthetic confidence, and proactively tightens real logic/design gaps discovered during implementation.
+
+- Tightened qB RSS exact-vs-fallback local filtering on 2026-04-03:
+  - extended `JackettSearchRequest` with dedicated primary-filter keyword fields so IMDb-first exact runs can keep quality-only local filtering separate from broad fallback text/refinement terms;
+  - updated `app/services/jackett.py` and `/search` payload construction in `app/routes/pages.py` so primary/non-fallback IMDb results now keep identity, year, size, category/indexer, and quality constraints without inheriting rule/manual regex-style text gating meant for fallback rows;
+  - added focused regression coverage across `tests/test_jackett.py` and `tests/test_routes.py`, including multiple series/movie rule shapes plus explicit primary-vs-fallback behavior checks for exact-quality filtering.
+
 - Completed the `v0.8.4` maintenance hotfix release on 2026-04-02:
   - synchronized version touchpoints to `0.8.4` (`pyproject.toml`, `app/main.py`, desktop compatibility constants, `/health` route assertions, addon manifest regression, and `CHANGELOG.md`);
   - fixed the saved-rule edit form so season-finale floors that advance to `S(next)E00` keep `start_episode=0` visible instead of collapsing to a blank field on edit and re-save;
@@ -831,21 +849,23 @@
 
 ## In progress
 
-- Phase 24 is now implemented and locally validated; the remaining decision is whether to cut it as `v0.8.3` before resuming phase 23.
-- Phase 23 planning is now open for the next minor release: the target is one merged addon/provider block ordered globally by quality then seeds across qB RSS and Torrentio-compatible sources.
-- Phase 23 now has one completed precursor slice: qB rows are more descriptive and the main qB RSS Jackett path preserves series episode-floor precision, but true global ordering is still blocked on adding a Torrentio-compatible provider adapter and emitting one merged addon surface.
+- Phase 23 remains the active `v0.9.0` minor slice: the remaining work is still true cross-addon/provider aggregation so qB RSS and Torrentio-compatible rows can be ranked inside one merged addon surface.
+- The qB-side precursor track is now release-validated through `v0.8.5`: row attribution is richer, series episode floors survive edit/save round trips, aggregate-empty IMDb searches still probe direct IMDb-capable indexers, primary exact rows stay separate from fallback-only regex/manual text refinement, rules-page exact counts/filters are visible, and `bluray` no longer over-matches `BDRip/BRRip`.
+- The final `v0.8.5` validation pass also fixed a live-addon cold-path gap: the HTTP Stremio route now keeps the full `The Beauty` episode stream set on first request instead of degrading to a single local row because the episode search collection budget expired too early.
 - The main architectural constraint for phase 23 is the Stremio client behavior observed in the real desktop smoke: separate addons render as separate grouped sections, so true global ordering will require aggregation rather than another qB RSS-only sort tweak.
-- The real desktop addon smoke and the backend addon smoke remain the standing regression pair for future Stremio addon changes.
+- The real desktop addon smoke and the backend addon smoke remain the standing regression pair for future Stremio addon changes; the repo-local HTTP/service addon smoke pair was rerun successfully during the `v0.8.5` closeout.
 - The main unresolved runtime follow-up is still metadata-provider quality on this machine: item-page playback is fixed, but search-catalog parity still depends on correcting the saved OMDb key or broadening provider fallbacks.
 
 ## Next actions
 
-- Decide whether to ship the validated long-running-series fix as `v0.8.3` on its own or alongside the completed phase-23 qB precision/attribution precursor follow-up.
 - Keep `Death in Paradise` season 14/15 routes in the live Stremio addon regression set.
 - Decide the phase-23 provider aggregation architecture for globally ordering qB RSS and Torrentio-compatible rows inside one addon surface.
 - Prototype the merged row contract plus the Torrentio-compatible provider adapter needed so provider attribution survives the global sort inside one addon block.
 - Keep the new season-finale `E00` edit-form/browser regression in the focused QA set whenever rule-floor or rule-form serialization changes.
 - Keep the new aggregate-empty IMDb precision regression in the focused Jackett test set whenever the qB RSS IMDb-first search path or fallback sequencing changes.
+- Keep the new primary-vs-fallback keyword-splitting regressions in the focused Jackett/route test set whenever rule-derived search payloads or local filtering behavior changes.
+- Keep the new `bluray` versus `BDRip/BRRip` taxonomy regression in both the focused quality-filter tests and the phase-23 browser matrix whenever quality-token semantics or exact local filtering changes.
+- Keep the new rules-page exact-result indicator/filter plus the phase-23 browser matrix in `scripts\\closeout_browser_qa.py` whenever precise-vs-fallback classification or rules-page snapshot summaries change.
 - Keep `scripts\\stremio_addon_smoke.py` and `scripts\\stremio_desktop_smoke.py` as the required acceptance pair before changing native addon stream/search behavior again.
 - Repair the mock-addon install path inside `scripts\\stremio_desktop_variant_matrix.py` so the temporary QA addon reaches the stream-request stage and can keep bisecting future acceptance regressions automatically.
 - Correct the saved OMDb API key so `/stremio/catalog/...` can contribute search results again; stream lookups now degrade through Cinemeta metadata for known IMDb items, but title-search catalog results still depend on a working metadata provider.

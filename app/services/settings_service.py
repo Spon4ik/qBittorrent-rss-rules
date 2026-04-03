@@ -46,6 +46,7 @@ RULES_PAGE_SORT_FIELDS = frozenset(
         "last_sync_status",
         "enabled",
         "release_state",
+        "exact_filtered_count",
         "combined_filtered_count",
         "combined_fetched_count",
         "last_snapshot_at",

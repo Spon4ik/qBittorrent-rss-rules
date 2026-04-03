@@ -8,6 +8,14 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.8.5] - 2026-04-03
+
+- Split the overloaded `bluray` quality token from `BDRip/BRRip` so `exclude bluray` no longer hides otherwise valid exact 4K HDR disc-rip results.
+- Hardened the rules-page closeout matrix plus Stremio addon smoke tooling so exact-filter/browser validation and direct smoke-script execution stay deterministic across real release reruns.
+- Increased the Stremio episode search collection budget so cold live HTTP addon requests no longer collapse to a misleading local-only row for `The Beauty` episode 1 while the in-process service still finds the full exact stream set.
+- Added targeted quality-taxonomy and Jackett regressions plus a deterministic browser-closeout case for the `bluray` versus `BDRip` exact-match path.
+- Revalidated the patch with `scripts\\check.bat`, `scripts\\closeout_browser_qa.py`, `scripts\\run_dev.bat desktop-build`, and sequential Stremio addon HTTP/service smoke runs.
+
 ## [0.8.4] - 2026-04-02
 
 - Fixed the saved-rule edit form so season-finale floors that advance to next-season `E00` keep `start_episode=0` visible instead of collapsing to a blank field on edit.

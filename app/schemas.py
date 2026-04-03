@@ -33,6 +33,7 @@ RULES_PAGE_SORT_FIELDS = {
     "last_sync_status",
     "enabled",
     "release_state",
+    "exact_filtered_count",
     "combined_filtered_count",
     "combined_fetched_count",
     "last_snapshot_at",
@@ -114,6 +115,10 @@ class JackettSearchRequest(BaseModel):
     keywords_any: list[str] = Field(default_factory=list)
     keywords_any_groups: list[list[str]] = Field(default_factory=list)
     keywords_not: list[str] = Field(default_factory=list)
+    primary_keywords_all: list[str] = Field(default_factory=list)
+    primary_keywords_any: list[str] = Field(default_factory=list)
+    primary_keywords_any_groups: list[list[str]] = Field(default_factory=list)
+    primary_keywords_not: list[str] = Field(default_factory=list)
     size_min_mb: float | None = Field(default=None, ge=0)
     size_max_mb: float | None = Field(default=None, ge=0)
     filter_indexers: list[str] = Field(default_factory=list)
@@ -148,7 +153,15 @@ class JackettSearchRequest(BaseModel):
             raise ValueError("Release year must include four digits.")
         return match.group(1)
 
-    @field_validator("keywords_all", "keywords_any", "keywords_not", mode="before")
+    @field_validator(
+        "keywords_all",
+        "keywords_any",
+        "keywords_not",
+        "primary_keywords_all",
+        "primary_keywords_any",
+        "primary_keywords_not",
+        mode="before",
+    )
     @classmethod
     def normalize_keyword_list(cls, value: list[str] | str | None) -> list[str]:
         if value is None or value == "":
@@ -171,7 +184,7 @@ class JackettSearchRequest(BaseModel):
             cleaned.append(candidate)
         return cleaned
 
-    @field_validator("keywords_any_groups", mode="before")
+    @field_validator("keywords_any_groups", "primary_keywords_any_groups", mode="before")
     @classmethod
     def normalize_keywords_any_groups(
         cls,
@@ -238,6 +251,8 @@ class JackettSearchRequest(BaseModel):
             raise ValueError("Use up to 24 required keywords per search.")
         if not self.keywords_any_groups and self.keywords_any:
             self.keywords_any_groups = [list(self.keywords_any)]
+        if not self.primary_keywords_any_groups and self.primary_keywords_any:
+            self.primary_keywords_any_groups = [list(self.primary_keywords_any)]
         if self.keywords_any_groups:
             flattened_any: list[str] = []
             seen_any: set[str] = set()
@@ -250,12 +265,32 @@ class JackettSearchRequest(BaseModel):
                     seen_any.add(item)
                     flattened_any.append(item)
             self.keywords_any = flattened_any
+        if self.primary_keywords_any_groups:
+            flattened_primary_any: list[str] = []
+            seen_primary_any: set[str] = set()
+            for group in self.primary_keywords_any_groups:
+                if len(group) > 16:
+                    raise ValueError("Use up to 16 optional keywords per keyword group.")
+                for item in group:
+                    if item in seen_primary_any:
+                        continue
+                    seen_primary_any.add(item)
+                    flattened_primary_any.append(item)
+            self.primary_keywords_any = flattened_primary_any
         if len(self.keywords_any) > 64:
             raise ValueError("Use up to 64 optional keywords total per search.")
+        if len(self.primary_keywords_all) > 24:
+            raise ValueError("Use up to 24 required primary keywords per search.")
+        if len(self.primary_keywords_any) > 64:
+            raise ValueError("Use up to 64 optional primary keywords total per search.")
         if len(self.keywords_any_groups) > 8:
             raise ValueError("Use up to 8 optional keyword groups per search.")
+        if len(self.primary_keywords_any_groups) > 8:
+            raise ValueError("Use up to 8 optional primary keyword groups per search.")
         if len(self.keywords_not) > 48:
             raise ValueError("Use up to 48 excluded keywords per search.")
+        if len(self.primary_keywords_not) > 48:
+            raise ValueError("Use up to 48 excluded primary keywords per search.")
         if (
             self.size_min_mb is not None
             and self.size_max_mb is not None

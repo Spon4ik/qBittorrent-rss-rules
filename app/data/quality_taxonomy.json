@@ -214,7 +214,17 @@
     {
       "value": "bluray",
       "label": "BluRay",
-      "pattern": "blu[\\s._-]*ray|bluray|b[dr]rip",
+      "pattern": "blu[\\s._-]*ray|bluray",
+      "group": "source",
+      "media_types": [
+        "series",
+        "movie"
+      ]
+    },
+    {
+      "value": "bdrip",
+      "label": "BDRip / BRRip",
+      "pattern": "b[dr]rip",
       "group": "source",
       "media_types": [
         "series",
@@ -531,6 +541,7 @@
         "tv_sync",
         "web_rip",
         "web_dl",
+        "bdrip",
         "bluray",
         "bdremux"
       ]
@@ -570,7 +581,7 @@
     {
       "alias": "brrip",
       "label": "BRRip",
-      "canonical": "bluray"
+      "canonical": "bdrip"
     }
   ]
 }

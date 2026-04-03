@@ -746,6 +746,9 @@ def _rule_list_sort_value(item: dict[str, Any], field: str) -> Any:
     if field == "combined_fetched_count":
         release = cast(dict[str, Any], item.get("release") or {})
         return int(release.get("combined_fetched_count") or 0)
+    if field == "exact_filtered_count":
+        release = cast(dict[str, Any], item.get("release") or {})
+        return int(release.get("exact_filtered_count") or 0)
     if field == "last_snapshot_at":
         release = cast(dict[str, Any], item.get("release") or {})
         snapshot_fetched_at = cast(datetime | None, release.get("snapshot_fetched_at"))
@@ -794,6 +797,7 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
     sync_filter = request.query_params.get("sync", "").strip()
     enabled_filter = request.query_params.get("enabled", "").strip()
     release_filter = request.query_params.get("release", "").strip()
+    exact_filter = request.query_params.get("exact", "").strip()
     sort_field = normalize_rules_page_sort_field(
         request.query_params.get("sort", "").strip() or default_sort_field
     )
@@ -835,6 +839,8 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
                     RuleSearchSnapshot.release_filter_cache_key,
                     RuleSearchSnapshot.release_filtered_count,
                     RuleSearchSnapshot.release_fetched_count,
+                    RuleSearchSnapshot.exact_filtered_count,
+                    RuleSearchSnapshot.exact_fetched_count,
                 )
             )
             .where(RuleSearchSnapshot.rule_id.in_([rule.id for rule in rules]))
@@ -846,6 +852,8 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
         snapshot = snapshot_by_rule_id.get(rule.id)
         release = release_state_from_snapshot(snapshot, rule=rule)
         if release_filter and str(release.get("state")) != release_filter:
+            continue
+        if exact_filter and str(release.get("exact_state")) != exact_filter:
             continue
         rows.append(
             {
@@ -870,6 +878,7 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
                 "sync": sync_filter,
                 "enabled": enabled_filter,
                 "release": release_filter,
+                "exact": exact_filter,
                 "sort": sort_field,
                 "direction": sort_direction,
                 "view": view_mode,
@@ -881,6 +890,12 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
                 {"value": "matches", "label": "Matches found"},
                 {"value": "no_matches", "label": "No matches"},
                 {"value": "empty", "label": "No fetched rows"},
+                {"value": "unknown", "label": "No snapshot"},
+            ],
+            "exact_choices": [
+                {"value": "exact", "label": "Exact found"},
+                {"value": "fallback_only", "label": "Fallback only"},
+                {"value": "none", "label": "No exact"},
                 {"value": "unknown", "label": "No snapshot"},
             ],
             "rules_page_defaults": {
@@ -1126,6 +1141,9 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "keywords_any": merged_keywords_any,
                         "keywords_any_groups": keywords_any_groups,
                         "keywords_not": merged_keywords_not,
+                        "primary_keywords_any": quality_include_terms,
+                        "primary_keywords_any_groups": quality_include_term_groups,
+                        "primary_keywords_not": quality_exclude_terms,
                         "size_min_mb": form_data["size_min_mb"],
                         "size_max_mb": form_data["size_max_mb"],
                         "filter_indexers": filter_indexers,
@@ -1174,7 +1192,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                 new_rule_href = f"/rules/new?{urlencode(rule_prefill)}"
 
                 primary_label = (
-                    "IMDb-first results"
+                    "Precise results"
                     if active_payload.imdb_id_only
                     else ("Saved rule search" if source_rule else "Jackett active search")
                 )

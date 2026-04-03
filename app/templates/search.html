@@ -301,8 +301,8 @@
 {% if not unified_rows %}
 <section class="empty-state">
   <h3>No matches</h3>
-  {% if search_run.primary_label == "IMDb-first results" %}
-  <p>No IMDb-first or title-fallback requests returned results for this run.</p>
+  {% if search_run.primary_is_exact %}
+  <p>No precise or title-fallback requests returned results for this run.</p>
   {% else %}
   <p>Jackett returned no results for this search.</p>
   {% endif %}

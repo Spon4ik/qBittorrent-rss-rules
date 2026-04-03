@@ -34,7 +34,7 @@ def _serialized_result_key(item: Mapping[str, Any]) -> str:
 
 def _primary_label(payload: JackettSearchRequest) -> str:
     if payload.imdb_id_only:
-        return "IMDb-first results"
+        return "Precise results"
     return "Rule search results"
 
 
@@ -231,6 +231,9 @@ def build_inline_search_payload(
     visible_primary_keys = {_search_result_key(item) for item in run.results}
     visible_fallback_keys = {_search_result_key(item) for item in run.fallback_results}
     all_results = [*raw_primary, *raw_fallback]
+    primary_is_exact = bool(payload.imdb_id_only)
+    exact_filtered_count = len(run.results) if primary_is_exact else 0
+    exact_fetched_count = len(raw_primary) if primary_is_exact else 0
     unified_raw_results = _build_unified_raw_results_from_models(
         raw_primary=raw_primary,
         raw_fallback=raw_fallback,
@@ -262,6 +265,9 @@ def build_inline_search_payload(
             for item in raw_fallback
         ],
         "fallback_results": [item.model_dump(mode="json") for item in run.fallback_results],
+        "primary_is_exact": primary_is_exact,
+        "exact_filtered_count": exact_filtered_count,
+        "exact_fetched_count": exact_fetched_count,
         "unified_raw_results": unified_raw_results,
         "source_breakdown": _build_source_breakdown(
             primary_label=primary_label,
@@ -300,6 +306,9 @@ def save_rule_search_snapshot(
         run=run,
         ignored_full_regex=ignored_full_regex,
     )
+    inline_search = cast(dict[str, Any], snapshot.inline_search or {})
+    snapshot.exact_filtered_count = int(inline_search.get("exact_filtered_count") or 0)
+    snapshot.exact_fetched_count = int(inline_search.get("exact_fetched_count") or 0)
     snapshot.fetched_at = utcnow()
     session.add(snapshot)
     return snapshot
@@ -353,6 +362,19 @@ def inline_search_from_snapshot(snapshot: RuleSearchSnapshot) -> dict[str, objec
                 if str(item or "").strip()
             ],
         )
+
+    primary_is_exact = bool(inline_search.get("primary_is_exact"))
+    inline_search["primary_is_exact"] = primary_is_exact
+    inline_search["exact_filtered_count"] = (
+        len(filtered_primary)
+        if primary_is_exact
+        else int(inline_search.get("exact_filtered_count") or 0)
+    )
+    inline_search["exact_fetched_count"] = (
+        len(raw_primary)
+        if primary_is_exact
+        else int(inline_search.get("exact_fetched_count") or 0)
+    )
 
     inline_search = _finalize_unified_payload(inline_search)
     inline_search["snapshot_fetched_at"] = snapshot.fetched_at.isoformat()

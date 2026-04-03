@@ -586,6 +586,16 @@ def _release_state_rank(state: str) -> int:
     return ranking.get(state, 5)
 
 
+def _exact_state_rank(state: str) -> int:
+    ranking = {
+        "exact": 0,
+        "fallback_only": 1,
+        "none": 2,
+        "unknown": 3,
+    }
+    return ranking.get(state, 4)
+
+
 def _coerce_int(value: object, *, default: int = 0) -> int:
     if value is None:
         return default
@@ -593,6 +603,24 @@ def _coerce_int(value: object, *, default: int = 0) -> int:
         return int(str(value).strip())
     except (TypeError, ValueError):
         return default
+
+
+def _exact_counts_from_snapshot(snapshot: RuleSearchSnapshot) -> tuple[int, int]:
+    if snapshot.exact_filtered_count is not None and snapshot.exact_fetched_count is not None:
+        return int(snapshot.exact_filtered_count), int(snapshot.exact_fetched_count)
+    inline_search = cast(dict[str, Any], snapshot.inline_search or {})
+    exact_filtered_count = _coerce_int(inline_search.get("exact_filtered_count"), default=0)
+    exact_fetched_count = _coerce_int(inline_search.get("exact_fetched_count"), default=0)
+    if exact_filtered_count or exact_fetched_count:
+        return exact_filtered_count, exact_fetched_count
+    payload = cast(dict[str, Any], snapshot.payload or {})
+    if bool(payload.get("imdb_id_only")):
+        filtered_primary = inline_search.get("results")
+        raw_primary = inline_search.get("raw_results")
+        filtered_count = len(filtered_primary) if isinstance(filtered_primary, list) else 0
+        fetched_count = len(raw_primary) if isinstance(raw_primary, list) else 0
+        return filtered_count, fetched_count
+    return 0, 0
 
 
 def release_state_from_snapshot(
@@ -607,6 +635,11 @@ def release_state_from_snapshot(
             "label": "No snapshot",
             "combined_filtered_count": 0,
             "combined_fetched_count": 0,
+            "exact_state": "unknown",
+            "exact_rank": _exact_state_rank("unknown"),
+            "exact_label": "No snapshot",
+            "exact_filtered_count": 0,
+            "exact_fetched_count": 0,
             "snapshot_fetched_at": None,
         }
     if rule is not None:
@@ -633,17 +666,35 @@ def release_state_from_snapshot(
     if fetched_count < 0:
         fetched_count = len(_snapshot_unified_raw_rows(snapshot))
     state = _release_state_from_counts(filtered_count, fetched_count)
+    exact_filtered_count, exact_fetched_count = _exact_counts_from_snapshot(snapshot)
+    if exact_filtered_count > 0:
+        exact_state = "exact"
+    elif filtered_count > 0:
+        exact_state = "fallback_only"
+    else:
+        exact_state = "none"
     label = {
         "matches": "Matches found",
         "no_matches": "No matches",
         "empty": "No fetched rows",
     }.get(state, "Unknown")
+    exact_label = {
+        "exact": "Exact found",
+        "fallback_only": "Fallback only",
+        "none": "No exact",
+        "unknown": "No snapshot",
+    }.get(exact_state, "Unknown")
     return {
         "state": state,
         "rank": _release_state_rank(state),
         "label": label,
         "combined_filtered_count": filtered_count,
         "combined_fetched_count": fetched_count,
+        "exact_state": exact_state,
+        "exact_rank": _exact_state_rank(exact_state),
+        "exact_label": exact_label,
+        "exact_filtered_count": exact_filtered_count,
+        "exact_fetched_count": exact_fetched_count,
         "snapshot_fetched_at": snapshot.fetched_at,
     }
 

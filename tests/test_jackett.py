@@ -1112,9 +1112,12 @@ def test_jackett_client_can_force_imdb_id_only_request() -> None:
 
     assert request_count == 2
     assert result.query_variants == ["Ghosts"]
-    assert result.request_variants == ["t=tvsearch imdbid=tt11379026 cat=5000"]
+    assert result.request_variants == [
+        "t=tvsearch imdbid=tt11379026 cat=5000",
+        't=tvsearch q="Ghosts" cat=5000',
+    ]
     assert [item.title for item in result.results] == ["Ghosts S03E01 1080p"]
-    assert result.fallback_request_variants == ['t=tvsearch q="Ghosts" cat=5000']
+    assert result.fallback_request_variants == []
     assert result.fallback_results == []
 
 
@@ -1245,9 +1248,106 @@ def test_jackett_client_uses_series_episode_precision_before_broad_fallback() ->
     assert result.request_variants == [
         "t=tvsearch imdbid=tt11379026 season=3 ep=7 cat=5000",
         "t=tvsearch imdbid=tt11379026 season=3 cat=5000",
+        't=tvsearch q="Ghosts" cat=5000',
     ]
     assert [item.title for item in result.results] == ["Ghosts S03 1080p Season Pack"]
-    assert result.fallback_request_variants == ['t=tvsearch q="Ghosts" cat=5000']
+    assert result.fallback_request_variants == []
+    assert result.fallback_results == []
+
+
+def test_jackett_client_precise_movie_quality_exclude_bluray_keeps_bdrip_result() -> None:
+    seen_requests: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = {key: value for key, value in request.url.params.multi_items()}
+        seen_requests.append(params)
+        assert request.url.path == "/api/v2.0/indexers/all/results/torznab/api"
+        if params == {
+            "apikey": "secret",
+            "t": "movie",
+            "cat": "2000",
+            "imdbid": "tt0161081",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>What Lies Beneath 2000 DUB, MVO, AVO, Sub 4K, HEVC, HDR, Dolby Vision P8 BDRip 2160p - RUSSIAN</title>
+      <guid>what-lies-beneath-guid</guid>
+      <link>magnet:?xt=urn:btih:WLB123</link>
+      <torznab:attr name="imdbid" value="tt0161081" />
+      <torznab:attr name="jackettindexer" value="kinozal" />
+      <torznab:attr name="size" value="42949672960" />
+      <torznab:attr name="category" value="2000" />
+      <torznab:attr name="year" value="2000" />
+    </item>
+  </channel>
+</rss>
+""",
+            )
+        assert params == {
+            "apikey": "secret",
+            "t": "movie",
+            "cat": "2000",
+            "q": "What Lies Beneath",
+        }
+        return httpx.Response(200, text="<rss><channel /></rss>")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="What Lies Beneath",
+            media_type="movie",
+            imdb_id="tt0161081",
+            imdb_id_only=True,
+            keywords_any=[
+                "ultra hd",
+                "uhd",
+                "2160p",
+                "4k",
+                "hdr",
+                "hdr10",
+                "dolby vision",
+                "dv",
+            ],
+            keywords_any_groups=[
+                ["ultra hd", "uhd", "2160p", "4k"],
+                ["hdr", "hdr10"],
+                ["dolby vision", "dv"],
+            ],
+            keywords_not=["bdremux", "bluray"],
+        )
+    )
+
+    assert seen_requests == [
+        {
+            "apikey": "secret",
+            "t": "movie",
+            "cat": "2000",
+            "imdbid": "tt0161081",
+        },
+        {
+            "apikey": "secret",
+            "t": "movie",
+            "cat": "2000",
+            "q": "What Lies Beneath",
+        },
+    ]
+    assert result.request_variants == [
+        "t=movie imdbid=tt0161081 cat=2000",
+        't=movie q="What Lies Beneath" cat=2000',
+    ]
+    assert [item.title for item in result.results] == [
+        "What Lies Beneath 2000 DUB, MVO, AVO, Sub 4K, HEVC, HDR, Dolby Vision P8 BDRip 2160p - RUSSIAN"
+    ]
+    assert result.fallback_request_variants == []
     assert result.fallback_results == []
 
 
@@ -1395,10 +1495,13 @@ def test_jackett_client_uses_title_fallback_when_strict_imdb_match_is_empty() ->
             "q": "Ghosts",
         },
     ]
-    assert result.request_variants == ["t=tvsearch imdbid=tt11379026 cat=5000"]
-    assert result.results == []
-    assert result.fallback_request_variants == ['t=tvsearch q="Ghosts" cat=5000']
-    assert [item.title for item in result.fallback_results] == ["Ghosts S03E01 1080p"]
+    assert result.request_variants == [
+        "t=tvsearch imdbid=tt11379026 cat=5000",
+        't=tvsearch q="Ghosts" cat=5000',
+    ]
+    assert [item.title for item in result.results] == ["Ghosts S03E01 1080p"]
+    assert result.fallback_request_variants == []
+    assert result.fallback_results == []
 
 
 def test_jackett_client_drops_fallback_rows_with_conflicting_imdb_id() -> None:
@@ -1412,6 +1515,13 @@ def test_jackett_client_drops_fallback_rows_with_conflicting_imdb_id() -> None:
             "imdbid": "tt11379026",
         }:
             return httpx.Response(200, text="<rss><channel /></rss>")
+
+        if params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(200, text="<indexers />")
 
         if params == {
             "apikey": "secret",
@@ -1465,6 +1575,43 @@ def test_jackett_client_imdb_title_fallback_uses_scoped_indexers_after_all_timeo
         seen_requests.append((path, params))
 
         if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "imdbid": "tt17676654",
+        }:
+            return httpx.Response(200, text="<rss><channel /></rss>")
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="rutracker">
+    <caps>
+      <searching>
+        <tv-search available="yes" supportedParams="q,imdbid" />
+      </searching>
+    </caps>
+  </indexer>
+  <indexer id="kinozal">
+    <caps>
+      <searching>
+        <tv-search available="yes" supportedParams="q,imdbid" />
+      </searching>
+    </caps>
+  </indexer>
+</indexers>
+""",
+            )
+
+        if path in {
+            "/api/v2.0/indexers/rutracker/results/torznab/api",
+            "/api/v2.0/indexers/kinozal/results/torznab/api",
+        } and params == {
             "apikey": "secret",
             "t": "tvsearch",
             "imdbid": "tt17676654",
@@ -1556,7 +1703,8 @@ def test_jackett_client_imdb_title_fallback_uses_scoped_indexers_after_all_timeo
         and params.get("q") == "American Classic"
         for path, params in seen_requests
     )
-    assert [item.title for item in result.fallback_results] == ["American Classic S01E01 1080p"]
+    assert [item.title for item in result.results] == ["American Classic S01E01 1080p"]
+    assert result.fallback_results == []
     assert any('t=tvsearch q="American Classic"' in item for item in result.warning_messages)
 
 
@@ -1639,9 +1787,12 @@ def test_jackett_client_retries_series_imdb_only_with_title_after_bad_request() 
             "q": "Common Title",
         },
     ]
-    assert result.request_variants == ["t=tvsearch imdbid=tt39781131 cat=5000"]
+    assert result.request_variants == [
+        "t=tvsearch imdbid=tt39781131 cat=5000",
+        't=tvsearch q="Common Title" cat=5000',
+    ]
     assert result.results == []
-    assert result.fallback_request_variants == ['t=tvsearch q="Common Title" cat=5000']
+    assert result.fallback_request_variants == []
     assert result.fallback_results == []
 
 
@@ -1795,9 +1946,10 @@ def test_jackett_client_uses_direct_indexers_when_all_rejects_imdb_enforced_seri
     assert result.request_variants == [
         "t=tvsearch imdbid=tt17676654 cat=5000",
         "t=tvsearch imdbid=tt17676654",
+        't=tvsearch q="American Classic" cat=5000',
     ]
     assert [item.title for item in result.results] == ["American Classic S01E01 1080p"]
-    assert result.fallback_request_variants == ['t=tvsearch q="American Classic" cat=5000']
+    assert result.fallback_request_variants == []
     assert result.fallback_results == []
 
 
@@ -1923,10 +2075,178 @@ def test_jackett_client_uses_direct_indexers_when_all_imdb_search_returns_empty(
     assert result.request_variants == [
         "t=tvsearch imdbid=tt17676654 cat=5000",
         "t=tvsearch imdbid=tt17676654",
+        't=tvsearch q="American Classic" cat=5000',
     ]
     assert [item.title for item in result.results] == ["American Classic S01E01 1080p"]
-    assert result.fallback_request_variants == ['t=tvsearch q="American Classic" cat=5000']
+    assert result.fallback_request_variants == []
     assert result.fallback_results == []
+
+
+def test_jackett_client_precise_title_primary_keeps_non_exact_title_rows_available_for_fallback() -> (
+    None
+):
+    seen_requests: list[tuple[str, dict[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = {key: value for key, value in request.url.params.multi_items()}
+        seen_requests.append((path, params))
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "imdbid": "tt8599532",
+        }:
+            return httpx.Response(200, text="<rss><channel /></rss>")
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="alpha">
+    <caps>
+      <searching>
+        <tv-search available="yes" supportedParams="q,imdbid" />
+      </searching>
+    </caps>
+  </indexer>
+</indexers>
+""",
+            )
+
+        if path == "/api/v2.0/indexers/alpha/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "imdbid": "tt8599532",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>Young Sherlock S01E01 2160p HDR10 WEB-DL</title>
+      <guid>young-sherlock-primary-guid</guid>
+      <link>magnet:?xt=urn:btih:YOUNG111</link>
+      <torznab:attr name="jackettindexer" value="alpha" />
+      <torznab:attr name="category" value="5000" />
+    </item>
+  </channel>
+</rss>
+""",
+            )
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "tvsearch",
+            "cat": "5000",
+            "q": "Young Sherlock",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>Young Sherlock S01E02 2160p HDR WEB-DL</title>
+      <guid>young-sherlock-exact-guid</guid>
+      <link>magnet:?xt=urn:btih:YOUNG222</link>
+      <torznab:attr name="jackettindexer" value="beta" />
+      <torznab:attr name="category" value="5000" />
+    </item>
+    <item>
+      <title>Young Sherlock Test Cut 2160p HDR10 WEB-DL</title>
+      <guid>young-sherlock-fallback-guid</guid>
+      <link>magnet:?xt=urn:btih:YOUNG333</link>
+      <torznab:attr name="jackettindexer" value="gamma" />
+      <torznab:attr name="category" value="5000" />
+    </item>
+  </channel>
+</rss>
+""",
+            )
+
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="Young Sherlock",
+            media_type="series",
+            imdb_id="tt8599532",
+            imdb_id_only=True,
+            keywords_all=["test cut"],
+            keywords_any=["2160p", "hdr", "hdr10"],
+            keywords_any_groups=[["2160p"], ["hdr", "hdr10"]],
+            primary_keywords_any=["2160p", "hdr", "hdr10"],
+            primary_keywords_any_groups=[["2160p"], ["hdr", "hdr10"]],
+        )
+    )
+
+    assert seen_requests == [
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "tvsearch",
+                "cat": "5000",
+                "imdbid": "tt8599532",
+            },
+        ),
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "indexers",
+                "configured": "true",
+            },
+        ),
+        (
+            "/api/v2.0/indexers/alpha/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "tvsearch",
+                "imdbid": "tt8599532",
+            },
+        ),
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "tvsearch",
+                "cat": "5000",
+                "q": "Young Sherlock",
+            },
+        ),
+        (
+            "/api/v2.0/indexers/all/results/torznab/api",
+            {
+                "apikey": "secret",
+                "t": "tvsearch",
+                "cat": "5000",
+                "q": "Young Sherlock",
+            },
+        ),
+    ]
+    assert [item.title for item in result.results] == [
+        "Young Sherlock S01E01 2160p HDR10 WEB-DL",
+        "Young Sherlock S01E02 2160p HDR WEB-DL",
+    ]
+    assert result.fallback_request_variants == ['t=tvsearch q="Young Sherlock" cat=5000']
+    assert [item.title for item in result.fallback_results] == [
+        "Young Sherlock Test Cut 2160p HDR10 WEB-DL"
+    ]
 
 
 def test_jackett_client_falls_back_to_broad_title_search_when_tv_indexers_do_not_support_input_imdb() -> (
@@ -2040,10 +2360,13 @@ def test_jackett_client_falls_back_to_broad_title_search_when_tv_indexers_do_not
             },
         ),
     ]
-    assert result.request_variants == ["t=tvsearch imdbid=tt17676654 cat=5000"]
-    assert result.results == []
-    assert result.fallback_request_variants == ['t=tvsearch q="American Classic" cat=5000']
-    assert [item.title for item in result.fallback_results] == ["American Classic S01E01 1080p"]
+    assert result.request_variants == [
+        "t=tvsearch imdbid=tt17676654 cat=5000",
+        't=tvsearch q="American Classic" cat=5000',
+    ]
+    assert [item.title for item in result.results] == ["American Classic S01E01 1080p"]
+    assert result.fallback_request_variants == []
+    assert result.fallback_results == []
 
 
 def test_jackett_client_uses_single_remote_query_when_optional_groups_are_present() -> None:

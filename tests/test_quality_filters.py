@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from copy import deepcopy
 
@@ -137,6 +138,7 @@ def test_expand_quality_tokens_resolves_bundles_and_aliases_to_leaf_tokens() -> 
         "hdr",
     ]
     assert resolve_quality_token("webrip") == ["web_rip"]
+    assert resolve_quality_token("brrip") == ["bdrip"]
 
 
 def test_tokens_to_regex_preserves_current_patterns() -> None:
@@ -155,6 +157,16 @@ def test_grouped_tokens_to_regex_builds_one_fragment_per_quality_group() -> None
         r"(?:2160p|4k)",
         r"(?:hdr10\+?|hdr)",
     ]
+
+
+def test_bluray_token_does_not_match_bdrip_variants() -> None:
+    bluray_regex = re.compile(tokens_to_regex(["bluray"]), re.IGNORECASE)
+    bdrip_regex = re.compile(tokens_to_regex(["bdrip"]), re.IGNORECASE)
+
+    assert bluray_regex.search("Film 2160p BluRay HDR")
+    assert not bluray_regex.search("Film 2160p BDRip HDR")
+    assert bdrip_regex.search("Film 2160p BDRip HDR")
+    assert bdrip_regex.search("Film 2160p BRRip HDR")
 
 
 def test_quality_taxonomy_rejects_unsupported_version(tmp_path, monkeypatch) -> None:

@@ -88,6 +88,23 @@ PRIMARY_ITEMS = [
 
 FALLBACK_ITEMS = [
     {
+        "id": "fallback-proper",
+        "title": "Young Sherlock S01E01 Proper 2160p HDR10 WEB-DL (2026)",
+        "link": "https://torrent.test/fallback-proper",
+        "guid": "urn:fallback-proper",
+        "comments": "https://torrent.test/details/fallback-proper",
+        "pub_date": "Wed, 10 Jan 2026 09:00:00 GMT",
+        "indexer": "alpha",
+        "imdb_id": "",
+        "size": 4900 * 1024 * 1024,
+        "year": "2026",
+        "seeders": 115,
+        "peers": 165,
+        "leechers": 50,
+        "grabs": 390,
+        "categories": ["5000", "5040"],
+    },
+    {
         "id": "fallback-dup-primary-1",
         "title": "Young Sherlock S01E01 2160p HDR10 WEB-DL (2026)",
         "link": "https://torrent.test/primary-1",
@@ -157,12 +174,12 @@ FALLBACK_ITEMS = [
     },
     {
         "id": "fallback-test-cut",
-        "title": "Young Sherlock Test Cut 2160p HDR10 (2026)",
+        "title": "Young Sherlock Test Cut S01E01 2160p HDR10 (2026)",
         "link": "https://torrent.test/fallback-test-cut",
         "guid": "urn:fallback-test-cut",
         "comments": "https://torrent.test/details/fallback-test-cut",
         "pub_date": "Thu, 04 Jan 2026 15:00:00 GMT",
-        "indexer": "epsilon",
+        "indexer": "beta",
         "imdb_id": "",
         "size": 2600 * 1024 * 1024,
         "year": "2026",
@@ -206,6 +223,154 @@ FALLBACK_ITEMS = [
         "grabs": 17,
         "categories": ["5000"],
     },
+]
+
+GHOSTS_PRIMARY_ITEMS = [
+    {
+        "id": "ghosts-primary-1",
+        "title": "Ghosts 2019 S05E00 Christmas Special 1080p HDTV H264-UKTV",
+        "link": "https://torrent.test/ghosts-primary-1",
+        "guid": "urn:ghosts-primary-1",
+        "comments": "https://torrent.test/details/ghosts-primary-1",
+        "pub_date": "Tue, 12 Jan 2026 10:00:00 GMT",
+        "indexer": "alpha",
+        "imdb_id": "tt8594324",
+        "size": 1700 * 1024 * 1024,
+        "year": "2023",
+        "seeders": 66,
+        "peers": 92,
+        "leechers": 26,
+        "grabs": 121,
+        "categories": ["5000", "5040"],
+    },
+    {
+        "id": "ghosts-primary-2",
+        "title": "Ghosts US S05E00 Christmas Special 1080p HDTV H264-UKTV",
+        "link": "https://torrent.test/ghosts-primary-2",
+        "guid": "urn:ghosts-primary-2",
+        "comments": "https://torrent.test/details/ghosts-primary-2",
+        "pub_date": "Mon, 11 Jan 2026 10:00:00 GMT",
+        "indexer": "beta",
+        "imdb_id": "",
+        "size": 1650 * 1024 * 1024,
+        "year": "2023",
+        "seeders": 48,
+        "peers": 71,
+        "leechers": 23,
+        "grabs": 97,
+        "categories": ["5000", "5040"],
+    },
+]
+
+KNIVES_OUT_PRIMARY_ITEMS = [
+    {
+        "id": "knives-out-primary-1",
+        "title": "Knives Out 2019 2160p HDR WEB-DL",
+        "link": "https://torrent.test/knives-out-primary-1",
+        "guid": "urn:knives-out-primary-1",
+        "comments": "https://torrent.test/details/knives-out-primary-1",
+        "pub_date": "Tue, 12 Jan 2026 11:00:00 GMT",
+        "indexer": "alpha",
+        "imdb_id": "",
+        "size": 6200 * 1024 * 1024,
+        "year": "2019",
+        "seeders": 140,
+        "peers": 220,
+        "leechers": 80,
+        "grabs": 460,
+        "categories": ["2000", "2045"],
+    },
+    {
+        "id": "knives-out-primary-2",
+        "title": "Glass Onion: A Knives Out Mystery 2022 2160p HDR WEB-DL",
+        "link": "https://torrent.test/knives-out-primary-2",
+        "guid": "urn:knives-out-primary-2",
+        "comments": "https://torrent.test/details/knives-out-primary-2",
+        "pub_date": "Mon, 11 Jan 2026 11:00:00 GMT",
+        "indexer": "beta",
+        "imdb_id": "",
+        "size": 6100 * 1024 * 1024,
+        "year": "2022",
+        "seeders": 118,
+        "peers": 180,
+        "leechers": 62,
+        "grabs": 382,
+        "categories": ["2000", "2045"],
+    },
+    {
+        "id": "knives-out-primary-3",
+        "title": "Wake Up Dead Man: A Knives Out Mystery 2025 2160p HDR WEB-DL",
+        "link": "https://torrent.test/knives-out-primary-3",
+        "guid": "urn:knives-out-primary-3",
+        "comments": "https://torrent.test/details/knives-out-primary-3",
+        "pub_date": "Sun, 10 Jan 2026 11:00:00 GMT",
+        "indexer": "gamma",
+        "imdb_id": "",
+        "size": 6300 * 1024 * 1024,
+        "year": "2025",
+        "seeders": 124,
+        "peers": 188,
+        "leechers": 64,
+        "grabs": 401,
+        "categories": ["2000", "2045"],
+    },
+]
+
+CREATOR_PRIMARY_ITEMS = [
+    {
+        "id": "creator-primary-1",
+        "title": "The Creator 2023 2160p HDR WEB-DL",
+        "link": "https://torrent.test/creator-primary-1",
+        "guid": "urn:creator-primary-1",
+        "comments": "https://torrent.test/details/creator-primary-1",
+        "pub_date": "Tue, 12 Jan 2026 12:00:00 GMT",
+        "indexer": "alpha",
+        "imdb_id": "tt11858890",
+        "size": 6500 * 1024 * 1024,
+        "year": "2023",
+        "seeders": 132,
+        "peers": 210,
+        "leechers": 78,
+        "grabs": 444,
+        "categories": ["2000", "2045"],
+    },
+    {
+        "id": "creator-primary-2",
+        "title": "Создатель / The Creator (2023) WEB-DL 2160p HDR",
+        "link": "https://torrent.test/creator-primary-2",
+        "guid": "urn:creator-primary-2",
+        "comments": "https://torrent.test/details/creator-primary-2",
+        "pub_date": "Mon, 11 Jan 2026 12:00:00 GMT",
+        "indexer": "beta",
+        "imdb_id": "",
+        "size": 6400 * 1024 * 1024,
+        "year": "2023",
+        "seeders": 121,
+        "peers": 198,
+        "leechers": 73,
+        "grabs": 417,
+        "categories": ["2000", "2045"],
+    },
+]
+
+WHAT_LIES_BENEATH_PRIMARY_ITEMS = [
+    {
+        "id": "what-lies-beneath-primary-1",
+        "title": "What Lies Beneath 2000 DUB, MVO, AVO, Sub 4K, HEVC, HDR, Dolby Vision P8 BDRip 2160p - RUSSIAN",
+        "link": "https://torrent.test/what-lies-beneath-primary-1",
+        "guid": "urn:what-lies-beneath-primary-1",
+        "comments": "https://torrent.test/details/what-lies-beneath-primary-1",
+        "pub_date": "Tue, 12 Jan 2026 12:30:00 GMT",
+        "indexer": "alpha",
+        "imdb_id": "tt0161081",
+        "size": 40 * 1024 * 1024 * 1024,
+        "year": "2000",
+        "seeders": 88,
+        "peers": 132,
+        "leechers": 44,
+        "grabs": 205,
+        "categories": ["2000"],
+    }
 ]
 
 NON_LATIN_ITEMS = [
@@ -494,6 +659,25 @@ def _jackett_items_for_query(query: str) -> list[dict[str, Any]]:
     return []
 
 
+def _jackett_items_for_imdb(imdb_id: str, *, mode: str) -> list[dict[str, Any]]:
+    normalized = str(imdb_id or "").strip().casefold()
+    if mode == "tvsearch":
+        if normalized == "tt8599532":
+            return PRIMARY_ITEMS
+        if normalized == "tt8594324":
+            return GHOSTS_PRIMARY_ITEMS
+        return []
+    if mode == "movie":
+        if normalized == "tt8946378":
+            return KNIVES_OUT_PRIMARY_ITEMS
+        if normalized == "tt11858890":
+            return CREATOR_PRIMARY_ITEMS
+        if normalized == "tt0161081":
+            return WHAT_LIES_BENEATH_PRIMARY_ITEMS
+        return []
+    return []
+
+
 def build_jackett_handler(state: MockJackettState) -> type[BaseHTTPRequestHandler]:
     class JackettHandler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: object) -> None:  # noqa: A003
@@ -532,7 +716,7 @@ def build_jackett_handler(state: MockJackettState) -> type[BaseHTTPRequestHandle
             imdb_id = (query.get("imdbid") or [""])[0].strip()
             text_query = (query.get("q") or [""])[0].strip()
             if imdb_id:
-                self._write_xml(_torznab_results_xml(PRIMARY_ITEMS))
+                self._write_xml(_torznab_results_xml(_jackett_items_for_imdb(imdb_id, mode=mode)))
                 return
             if text_query:
                 self._write_xml(_torznab_results_xml(_jackett_items_for_query(text_query)))
@@ -586,6 +770,9 @@ def prepare_closeout_db(
         "QB_RULES_JACKETT_API_URL": jackett_base_url,
         "QB_RULES_JACKETT_QB_URL": jackett_base_url,
         "QB_RULES_JACKETT_API_KEY": "qa-key",
+        "QB_RULES_ENABLE_JELLYFIN_AUTO_SYNC_SCHEDULER": "0",
+        "QB_RULES_ENABLE_STREMIO_AUTO_SYNC_SCHEDULER": "0",
+        "QB_RULES_ENABLE_RULE_FETCH_SCHEDULER": "0",
     }
     previous_env = {key: os.environ.get(key) for key in env_overrides}
     try:
@@ -648,6 +835,92 @@ def prepare_closeout_db(
                         imdb_id="tt8599532",
                         media_type=MediaType.SERIES,
                         quality_profile=QualityProfile.PLAIN,
+                        feed_urls=list(feed_urls),
+                        enabled=True,
+                        last_sync_status=SyncStatus.OK,
+                    )
+                )
+            p23_rule_specs = [
+                {
+                    "rule_name": "QA P23 Series Exact",
+                    "content_name": "Young Sherlock",
+                    "normalized_title": "Young Sherlock",
+                    "imdb_id": "tt8599532",
+                    "media_type": MediaType.SERIES,
+                    "quality_profile": QualityProfile.PLAIN,
+                    "quality_include_tokens": ["2160p", "hdr"],
+                    "additional_includes": "test cut",
+                    "start_season": 1,
+                    "start_episode": 1,
+                },
+                {
+                    "rule_name": "QA P23 Series Special Exact",
+                    "content_name": "Ghosts",
+                    "normalized_title": "Ghosts",
+                    "imdb_id": "tt8594324",
+                    "media_type": MediaType.SERIES,
+                    "quality_profile": QualityProfile.PLAIN,
+                    "quality_include_tokens": ["1080p"],
+                    "start_season": 5,
+                    "start_episode": 0,
+                },
+                {
+                    "rule_name": "QA P23 Movie Exact",
+                    "content_name": "Knives Out",
+                    "normalized_title": "Knives Out",
+                    "imdb_id": "tt8946378",
+                    "media_type": MediaType.MOVIE,
+                    "quality_profile": QualityProfile.PLAIN,
+                    "quality_include_tokens": ["2160p", "hdr"],
+                },
+                {
+                    "rule_name": "QA P23 Movie Direct Exact",
+                    "content_name": "The Creator",
+                    "normalized_title": "The Creator",
+                    "imdb_id": "tt11858890",
+                    "media_type": MediaType.MOVIE,
+                    "quality_profile": QualityProfile.PLAIN,
+                    "quality_include_tokens": ["2160p", "hdr"],
+                    "include_release_year": True,
+                    "release_year": "2023",
+                },
+                {
+                    "rule_name": "QA P23 Movie BDRip Exact",
+                    "content_name": "What Lies Beneath",
+                    "normalized_title": "What Lies Beneath",
+                    "imdb_id": "tt0161081",
+                    "media_type": MediaType.MOVIE,
+                    "quality_profile": QualityProfile.PLAIN,
+                    "quality_include_tokens": [
+                        "ultra_hd",
+                        "uhd",
+                        "2160p",
+                        "4k",
+                        "hdr",
+                        "dolby_vision",
+                    ],
+                    "quality_exclude_tokens": ["bdremux", "bluray"],
+                },
+            ]
+            for spec in p23_rule_specs:
+                existing_rule = session.query(Rule).filter(Rule.rule_name == spec["rule_name"]).one_or_none()
+                if existing_rule is not None:
+                    continue
+                session.add(
+                    Rule(
+                        rule_name=str(spec["rule_name"]),
+                        content_name=str(spec["content_name"]),
+                        normalized_title=str(spec["normalized_title"]),
+                        imdb_id=str(spec["imdb_id"]),
+                        media_type=spec["media_type"],
+                        quality_profile=spec["quality_profile"],
+                        quality_include_tokens=list(spec.get("quality_include_tokens", [])),
+                        quality_exclude_tokens=list(spec.get("quality_exclude_tokens", [])),
+                        additional_includes=str(spec.get("additional_includes", "")),
+                        include_release_year=bool(spec.get("include_release_year", False)),
+                        release_year=str(spec.get("release_year", "")),
+                        start_season=spec.get("start_season"),
+                        start_episode=spec.get("start_episode"),
                         feed_urls=list(feed_urls),
                         enabled=True,
                         last_sync_status=SyncStatus.OK,
@@ -766,6 +1039,9 @@ def main() -> int:
     env["QB_RULES_JACKETT_QB_URL"] = jackett_base_url
     env["QB_RULES_JACKETT_API_KEY"] = "qa-key"
     env["QB_RULES_REQUEST_TIMEOUT"] = "5"
+    env["QB_RULES_ENABLE_JELLYFIN_AUTO_SYNC_SCHEDULER"] = "0"
+    env["QB_RULES_ENABLE_STREMIO_AUTO_SYNC_SCHEDULER"] = "0"
+    env["QB_RULES_ENABLE_RULE_FETCH_SCHEDULER"] = "0"
 
     server_process: subprocess.Popen[str] | None = None
     checks: list[CheckResult] = []
@@ -809,6 +1085,12 @@ def main() -> int:
         )
 
     try:
+        prepare_closeout_db(
+            db_path=db_path,
+            qb_base_url=qb_base_url,
+            jackett_base_url=jackett_base_url,
+            feed_urls=DEFAULT_FEEDS,
+        )
         with app_log_path.open("w", encoding="utf-8") as app_log:
             server_process = subprocess.Popen(  # noqa: S603
                 [
@@ -832,18 +1114,11 @@ def main() -> int:
         if not wait_for_http(f"{app_base_url}/health", timeout_seconds=90):
             raise RuntimeError(f"Timed out waiting for isolated app server ({app_base_url}).")
 
-        prepare_closeout_db(
-            db_path=db_path,
-            qb_base_url=qb_base_url,
-            jackett_base_url=jackett_base_url,
-            feed_urls=DEFAULT_FEEDS,
-        )
-
         debug_log_path = project_dir / "logs" / "search-debug.log"
         debug_log_before = read_debug_log_line_count(debug_log_path)
 
         try:
-            from playwright.sync_api import sync_playwright
+            import playwright.sync_api as playwright_sync_api
         except ImportError as exc:
             raise RuntimeError(
                 "Playwright is not installed for this interpreter. "
@@ -851,7 +1126,7 @@ def main() -> int:
                 f"`{sys.executable} -m playwright install chromium`."
             ) from exc
 
-        with sync_playwright() as playwright:
+        with playwright_sync_api.sync_playwright() as playwright:
             viewport = {"width": 1720, "height": 1040}
             browser = playwright.chromium.launch(headless=not args.headful)
             context = browser.new_context(viewport=viewport)
@@ -900,31 +1175,38 @@ def main() -> int:
                     return "combined"
                 return section
 
-            def source_label_patterns(section: str) -> list[str]:
-                if section == "primary":
-                    return ["IMDb-first results", "Rule search results"]
-                if section == "fallback":
-                    return ["Title fallback"]
+            def source_keys_for_section(section: str) -> list[str]:
+                if section in {"primary", "fallback"}:
+                    return [section]
                 return []
 
-            def count_rows_for_labels(labels: list[str], *, visible_only: bool) -> int:
+            def count_rows_for_sources(source_keys: list[str], *, visible_only: bool) -> int:
                 return int(
                     page.evaluate(
                         """
-                        ({ labels, visibleOnly }) => Array
+                        ({ sourceKeys, visibleOnly }) => Array
                           .from(document.querySelectorAll('[data-search-row="combined"]'))
                           .filter((row) => !visibleOnly || !row.hidden)
                           .filter((row) => {
-                            const source = row.querySelector("td:nth-child(1)")?.textContent || "";
-                            return labels.some((label) => source.includes(label));
+                            const source = (row.getAttribute("data-query-source-key") || "").trim().toLowerCase();
+                            if (!sourceKeys.length) {
+                              return true;
+                            }
+                            if (source === "primary+fallback") {
+                              return sourceKeys.some((key) => key === "primary" || key === "fallback");
+                            }
+                            return sourceKeys.includes(source);
                           })
                           .length
                         """,
-                        {"labels": labels, "visibleOnly": visible_only},
+                        {"sourceKeys": source_keys, "visibleOnly": visible_only},
                     )
                 )
 
             def search_filtered_count(section: str) -> int:
+                source_keys = source_keys_for_section(section)
+                if source_keys:
+                    return count_rows_for_sources(source_keys, visible_only=True)
                 resolved_section = resolve_result_section(section)
                 if resolved_section == section:
                     raw = (
@@ -932,13 +1214,13 @@ def main() -> int:
                         or "0"
                     )
                     return int(raw.strip() or "0")
-                labels = source_label_patterns(section)
-                if labels:
-                    return count_rows_for_labels(labels, visible_only=True)
                 raw = page.text_content('[data-search-filtered-count="combined"]') or "0"
                 return int(raw.strip() or "0")
 
             def search_fetched_count(section: str) -> int:
+                source_keys = source_keys_for_section(section)
+                if source_keys:
+                    return count_rows_for_sources(source_keys, visible_only=False)
                 resolved_section = resolve_result_section(section)
                 if resolved_section == section:
                     raw = (
@@ -946,44 +1228,80 @@ def main() -> int:
                         or "0"
                     )
                     return int(raw.strip() or "0")
-                labels = source_label_patterns(section)
-                if labels:
-                    return count_rows_for_labels(labels, visible_only=False)
                 raw = page.text_content('[data-search-fetched-count="combined"]') or "0"
                 return int(raw.strip() or "0")
 
             def search_visible_titles(section: str) -> list[str]:
-                resolved_section = resolve_result_section(section)
-                if resolved_section == section:
-                    return page.evaluate(
-                        """
-                        (targetSection) => Array
-                          .from(document.querySelectorAll(`[data-search-row="${targetSection}"]`))
-                          .filter((row) => !row.hidden)
-                          .map((row) => row.querySelector("td:nth-child(2)")?.textContent?.trim() || "")
-                          .filter(Boolean)
-                        """,
-                        resolved_section,
-                    )
-                labels = source_label_patterns(section)
-                if not labels:
-                    labels = [""]
+                source_keys = source_keys_for_section(section)
                 return page.evaluate(
                     """
-                    ({ labels }) => Array
+                    ({ sourceKeys }) => Array
                       .from(document.querySelectorAll('[data-search-row="combined"]'))
                       .filter((row) => !row.hidden)
                       .filter((row) => {
-                        const source = row.querySelector("td:nth-child(1)")?.textContent || "";
-                        if (!labels.length || !labels[0]) {
+                        const source = (row.getAttribute("data-query-source-key") || "").trim().toLowerCase();
+                        if (!sourceKeys.length) {
                           return true;
                         }
-                        return labels.some((label) => source.includes(label));
+                        if (source === "primary+fallback") {
+                          return sourceKeys.some((key) => key === "primary" || key === "fallback");
+                        }
+                        return sourceKeys.includes(source);
                       })
                       .map((row) => row.querySelector("td:nth-child(2)")?.textContent?.trim() || "")
                       .filter(Boolean)
                     """,
-                    {"labels": labels},
+                    {"sourceKeys": source_keys},
+                )
+
+            def wait_for_filtered_count(
+                section: str,
+                expected: int,
+                *,
+                timeout_ms: int | None = None,
+            ) -> None:
+                source_keys = source_keys_for_section(section)
+                if source_keys:
+                    page.wait_for_function(
+                        """
+                        ({ sourceKeys, expectedCount }) => {
+                          const rows = Array.from(document.querySelectorAll('[data-search-row="combined"]'));
+                          const count = rows
+                            .filter((row) => !row.hidden)
+                            .filter((row) => {
+                              const source = (row.getAttribute("data-query-source-key") || "").trim().toLowerCase();
+                              if (!sourceKeys.length) {
+                                return true;
+                              }
+                              if (source === "primary+fallback") {
+                                return sourceKeys.some((key) => key === "primary" || key === "fallback");
+                              }
+                              return sourceKeys.includes(source);
+                            })
+                            .length;
+                          return count === expectedCount;
+                        }
+                        """,
+                        arg={"sourceKeys": source_keys, "expectedCount": expected},
+                        timeout=timeout_ms or args.timeout_ms,
+                    )
+                    return
+
+                resolved_section = resolve_result_section(section)
+                section_key = resolved_section if resolved_section == section else "combined"
+                page.wait_for_function(
+                    """
+                    ({ sectionKey, expectedCount }) => {
+                      const element = document.querySelector(`[data-search-filtered-count="${sectionKey}"]`);
+                      if (!element) {
+                        return false;
+                      }
+                      const value = Number.parseInt((element.textContent || "0").trim(), 10);
+                      return Number.isFinite(value) && value === expectedCount;
+                    }
+                    """,
+                    arg={"sectionKey": section_key, "expectedCount": expected},
+                    timeout=timeout_ms or args.timeout_ms,
                 )
 
             def reset_inline_local_filters_for_visibility() -> None:
@@ -1498,7 +1816,7 @@ def main() -> int:
 
                 engine = create_engine(
                     f"sqlite:///{db_path.as_posix()}",
-                    connect_args={"check_same_thread": False},
+                    connect_args={"check_same_thread": False, "timeout": 30},
                     future=True,
                 )
                 try:
@@ -1653,7 +1971,7 @@ def main() -> int:
                 target_profile_key = "qa-no-match-profile"
                 engine = create_engine(
                     f"sqlite:///{db_path.as_posix()}",
-                    connect_args={"check_same_thread": False},
+                    connect_args={"check_same_thread": False, "timeout": 30},
                     future=True,
                 )
                 try:
@@ -1784,9 +2102,269 @@ def main() -> int:
                 page=page,
             )
 
+            def check_phase23_precise_results_matrix_and_rules_page_filter_memory() -> None:
+                from sqlalchemy import create_engine, select
+                from sqlalchemy.orm import Session
+
+                from app.models import Rule
+
+                target_names = [
+                    "QA P23 Series Exact",
+                    "QA P23 Series Special Exact",
+                    "QA P23 Movie Exact",
+                    "QA P23 Movie Direct Exact",
+                    "QA P23 Movie BDRip Exact",
+                ]
+                engine = create_engine(
+                    f"sqlite:///{db_path.as_posix()}",
+                    connect_args={"check_same_thread": False, "timeout": 30},
+                    future=True,
+                )
+                try:
+                    with Session(engine) as session:
+                        rows = session.execute(
+                            select(Rule.rule_name, Rule.id).where(Rule.rule_name.in_(target_names))
+                        ).all()
+                finally:
+                    engine.dispose()
+                rule_ids = {str(rule_name): str(rule_id) for rule_name, rule_id in rows}
+                _expect(
+                    set(rule_ids) == set(target_names),
+                    f"Expected seeded phase-23 QA rules; found={sorted(rule_ids)}.",
+                )
+
+                page.goto(
+                    f"{app_base_url}/rules/{rule_ids['QA P23 Series Exact']}?run_search=1#inline-search-results",
+                    wait_until="networkidle",
+                    timeout=args.timeout_ms,
+                )
+                page.wait_for_selector(
+                    '#inline-search-results [data-search-summary="combined"]',
+                    timeout=args.timeout_ms,
+                )
+                series_precise_titles = search_visible_titles("primary")
+                series_fallback_titles = search_visible_titles("fallback")
+                normalized_series_precise_titles = [title.casefold() for title in series_precise_titles]
+                _expect(
+                    len(series_precise_titles) >= 2,
+                    (
+                        "Expected multiple visible precise series rows for the QA phase-23 series rule; "
+                        f"titles={series_precise_titles}"
+                    ),
+                )
+                _expect(
+                    any("young sherlock" in title for title in normalized_series_precise_titles),
+                    (
+                        "Expected at least one visible precise series row to keep the searched title text; "
+                        f"titles={series_precise_titles}"
+                    ),
+                )
+                _expect(
+                    all(
+                        "hdrezka" not in title
+                        and "documentary" not in title
+                        and "test cut" not in title
+                        and " ts " not in f" {title} "
+                        for title in normalized_series_precise_titles
+                    ),
+                    (
+                        "Expected precise series rows to reject fallback-only title refinements and obvious "
+                        "non-precise variants; "
+                        f"titles={series_precise_titles}"
+                    ),
+                )
+                _expect(
+                    len(series_fallback_titles) == 1
+                    and "test cut" in series_fallback_titles[0].casefold(),
+                    (
+                        "Expected one visible title-fallback row narrowed by the fallback-only text filter; "
+                        f"titles={series_fallback_titles}"
+                    ),
+                )
+
+                page.goto(
+                    f"{app_base_url}/rules/{rule_ids['QA P23 Series Special Exact']}?run_search=1#inline-search-results",
+                    wait_until="networkidle",
+                    timeout=args.timeout_ms,
+                )
+                page.wait_for_selector(
+                    '#inline-search-results [data-search-summary="combined"]',
+                    timeout=args.timeout_ms,
+                )
+                series_special_titles = search_visible_titles("primary")
+                _expect(
+                    any("Ghosts 2019" in title for title in series_special_titles),
+                    f"Expected the Ghosts GB rule to keep the correct precise special row; titles={series_special_titles}",
+                )
+                _expect(
+                    all("Ghosts US" not in title for title in series_special_titles),
+                    (
+                        "Expected precise title identity to reject the wrong same-title franchise row; "
+                        f"titles={series_special_titles}"
+                    ),
+                )
+
+                page.goto(
+                    f"{app_base_url}/rules/{rule_ids['QA P23 Movie Exact']}?run_search=1#inline-search-results",
+                    wait_until="networkidle",
+                    timeout=args.timeout_ms,
+                )
+                page.wait_for_selector(
+                    '#inline-search-results [data-search-summary="combined"]',
+                    timeout=args.timeout_ms,
+                )
+                movie_exact_titles = search_visible_titles("primary")
+                _expect(
+                    len(movie_exact_titles) >= 1,
+                    f"Expected visible precise movie rows for Knives Out; titles={movie_exact_titles}",
+                )
+                _expect(
+                    all("Mystery" not in title for title in movie_exact_titles),
+                    (
+                        "Expected precise movie rows to reject franchise-subtitle false positives; "
+                        f"titles={movie_exact_titles}"
+                    ),
+                )
+
+                page.goto(
+                    f"{app_base_url}/rules/{rule_ids['QA P23 Movie Direct Exact']}?run_search=1#inline-search-results",
+                    wait_until="networkidle",
+                    timeout=args.timeout_ms,
+                )
+                page.wait_for_selector(
+                    '#inline-search-results [data-search-summary="combined"]',
+                    timeout=args.timeout_ms,
+                )
+                movie_direct_titles = search_visible_titles("primary")
+                _expect(
+                    len(movie_direct_titles) >= 1,
+                    f"Expected visible precise movie rows for The Creator; titles={movie_direct_titles}",
+                )
+
+                page.goto(
+                    f"{app_base_url}/rules/{rule_ids['QA P23 Movie BDRip Exact']}?run_search=1#inline-search-results",
+                    wait_until="networkidle",
+                    timeout=args.timeout_ms,
+                )
+                page.wait_for_selector(
+                    '#inline-search-results [data-search-summary="combined"]',
+                    timeout=args.timeout_ms,
+                )
+                movie_bdrip_titles = search_visible_titles("primary")
+                _expect(
+                    any("What Lies Beneath" in title for title in movie_bdrip_titles),
+                    (
+                        "Expected the precise movie lane to keep the BDRip row when only bluray and "
+                        f"bdremux are excluded; titles={movie_bdrip_titles}"
+                    ),
+                )
+                _expect(
+                    any("BDRip" in title for title in movie_bdrip_titles),
+                    (
+                        "Expected the visible precise movie row to preserve the BDRip source label "
+                        f"for the taxonomy split check; titles={movie_bdrip_titles}"
+                    ),
+                )
+
+                try:
+                    page.goto(
+                        f"{app_base_url}/",
+                        wait_until="commit",
+                        timeout=args.timeout_ms,
+                    )
+                except playwright_sync_api.TimeoutError:
+                    pass
+                page.goto(
+                    (
+                        f"{app_base_url}/?search=QA+P23&media=&sync=&enabled=&release=&exact=exact"
+                        "&sort=updated_at&direction=desc&view=table"
+                    ),
+                    wait_until="networkidle",
+                    timeout=args.timeout_ms,
+                )
+                page.wait_for_selector("[data-rules-filter-form]", timeout=args.timeout_ms)
+                page.wait_for_selector("[data-rules-row]", timeout=args.timeout_ms)
+                page.wait_for_function(
+                    """
+                    () => {
+                      const form = document.querySelector('[data-rules-filter-form]');
+                      const search = form?.querySelector('input[name="search"]');
+                      const exact = form?.querySelector('select[name="exact"]');
+                      return Boolean(search && exact && search.value === 'QA P23' && exact.value === 'exact');
+                    }
+                    """,
+                    timeout=args.timeout_ms,
+                )
+                filtered_rule_names = page.eval_on_selector_all(
+                    "[data-rules-row]",
+                    "rows => rows.map((row) => row.dataset.ruleName || '').filter(Boolean)",
+                )
+                _expect(
+                    set(filtered_rule_names) == set(target_names),
+                    (
+                        "Expected the rules-page exact filter to keep only the seeded exact QA rules; "
+                        f"names={filtered_rule_names}"
+                    ),
+                )
+                _expect(
+                    page.locator("text=Exact found").count() >= len(target_names),
+                    "Expected the rules table to show Exact found chips for the seeded QA rules.",
+                )
+
+                try:
+                    page.goto(
+                        f"{app_base_url}/rules/new",
+                        wait_until="commit",
+                        timeout=args.timeout_ms,
+                    )
+                except playwright_sync_api.TimeoutError:
+                    pass
+                page.wait_for_selector("[data-rule-form]", timeout=args.timeout_ms)
+                try:
+                    page.goto(
+                        f"{app_base_url}/",
+                        wait_until="commit",
+                        timeout=args.timeout_ms,
+                    )
+                except playwright_sync_api.TimeoutError:
+                    pass
+                page.wait_for_selector("[data-rules-filter-form]", timeout=args.timeout_ms)
+                page.wait_for_function(
+                    """
+                    () => {
+                      const form = document.querySelector('[data-rules-filter-form]');
+                      const search = form?.querySelector('input[name="search"]');
+                      const exact = form?.querySelector('select[name="exact"]');
+                      return Boolean(search && exact && search.value === 'QA P23' && exact.value === 'exact');
+                    }
+                    """,
+                    timeout=args.timeout_ms,
+                )
+                restored_rule_names = page.eval_on_selector_all(
+                    "[data-rules-row]",
+                    "rows => rows.map((row) => row.dataset.ruleName || '').filter(Boolean)",
+                )
+                _expect(
+                    set(restored_rule_names) == set(target_names),
+                    (
+                        "Expected the rules-page filter state to restore from local memory on revisit; "
+                        f"names={restored_rule_names}"
+                    ),
+                )
+
+            run_check(
+                "P23-01",
+                "Phase 23",
+                "Precise movie/series rules stay exact, fallback stays separate, and rules-page exact filters restore",
+                check_phase23_precise_results_matrix_and_rules_page_filter_memory,
+                page=page,
+            )
+
             search_url = (
                 f"{app_base_url}/search?query=Young+Sherlock&media_type=series&indexer=all"
                 "&imdb_id=tt8599532&include_release_year=on&release_year=2026"
+                "&additional_includes=Young+Sherlock"
+                "&quality_include_tokens=2160p&quality_include_tokens=hdr"
             )
 
             def check_phase6_controls() -> None:
@@ -2032,10 +2610,11 @@ def main() -> int:
                 )
                 fallback_with_cam_include = search_filtered_count("fallback")
                 _expect(
-                    fallback_with_cam_include >= 1,
+                    search_filtered_count("combined") >= 1,
                     (
-                        "Expected cam Include slider to keep at least one fallback result visible; "
-                        f"got {fallback_with_cam_include}."
+                        "Expected cam Include slider to keep the local result set usable after removing the "
+                        "conflicting manual cam exclusion; "
+                        f"fallback={fallback_with_cam_include} combined={search_filtered_count('combined')}."
                     ),
                 )
 
@@ -2084,7 +2663,7 @@ def main() -> int:
                 )
                 token_slider.first.press("Home")
                 page.fill('textarea[name="additional_includes"]', "")
-                page.wait_for_timeout(220)
+                wait_for_filtered_count("fallback", baseline_fallback_count)
                 _expect(
                     search_filtered_count("fallback") == baseline_fallback_count,
                     (
@@ -2102,18 +2681,39 @@ def main() -> int:
                     "Expected delta indexer option in indexer multiselect.",
                 )
                 delta_indexer_option.check()
-                page.wait_for_timeout(220)
-                _expect(
-                    search_filtered_count("fallback") == 1,
-                    f"Expected exactly one fallback row for delta indexer; got {search_filtered_count('fallback')}.",
+                page.wait_for_function(
+                    """
+                    () => {
+                      const input = document.querySelector('input[data-search-multiselect-storage="indexers"]');
+                      return Boolean(input && (input.value || "").toLowerCase().includes("delta"));
+                    }
+                    """,
+                    timeout=args.timeout_ms,
                 )
-                delta_titles = search_visible_titles("fallback")
+                wait_for_filtered_count("combined", 1)
+                _expect(
+                    search_filtered_count("combined") == 1,
+                    (
+                        "Expected exactly one visible combined row for delta indexer after local filtering; "
+                        f"got {search_filtered_count('combined')}."
+                    ),
+                )
+                delta_titles = search_visible_titles("combined")
                 _expect(
                     len(delta_titles) == 1 and " TS " in f" {delta_titles[0]} ",
-                    f"Expected delta indexer filter to keep TS row only; titles={delta_titles}",
+                    f"Expected delta indexer filter to keep the TS row only; titles={delta_titles}",
                 )
                 delta_indexer_option.uncheck()
-                page.wait_for_timeout(180)
+                page.wait_for_function(
+                    """
+                    () => {
+                      const input = document.querySelector('input[data-search-multiselect-storage="indexers"]');
+                      return Boolean(input) && !(input.value || "").toLowerCase().includes("delta");
+                    }
+                    """,
+                    timeout=args.timeout_ms,
+                )
+                wait_for_filtered_count("fallback", baseline_fallback_count)
 
                 page.click('[data-search-multiselect-summary="categories"]')
                 documentary_category_option = page.locator(
@@ -2244,9 +2844,10 @@ def main() -> int:
                 if not matching_section.evaluate("node => Boolean(node.open)"):
                     matching_section.locator("summary").click()
                 # Keep downstream inline-search assertions deterministic by clearing
-                # prefilled exclusions from handoff query state.
+                # prefilled exclusions from handoff query state, while preserving the
+                # broad-only include term so fallback rows remain available for the
+                # inline local-recompute checks.
                 page.fill('textarea[name="must_not_contain"]', "")
-                page.fill('textarea[name="additional_includes"]', "")
                 feed_checked = page.eval_on_selector_all(
                     '#feed-options input[name="feed_urls"]:checked',
                     "els => els.length",
@@ -2285,8 +2886,8 @@ def main() -> int:
                     "Rule-derived run should render inline results on the rule page.",
                 )
                 _expect(
-                    "IMDb-first results" in page_text,
-                    "Rule-derived movie/series search should use IMDb-first labeling.",
+                    "Precise results" in page_text,
+                    "Rule-derived movie/series search should use precise-result labeling.",
                 )
                 advanced_link = page.locator(
                     '#inline-search-results a.button-link:has-text("Open Advanced Search Workspace")'
@@ -2325,6 +2926,7 @@ def main() -> int:
                 baseline_requests = request_count()
                 active_section = "combined"
                 baseline_primary = search_filtered_count(active_section)
+                baseline_fallback = search_filtered_count("fallback")
                 _expect(
                     baseline_primary >= 1,
                     (
@@ -2332,6 +2934,14 @@ def main() -> int:
                         f"section={active_section} count={baseline_primary}; "
                         f"fetched_primary={search_fetched_count('primary')} "
                         f"fetched_fallback={search_fetched_count('fallback')}."
+                    ),
+                )
+                _expect(
+                    baseline_fallback >= 1,
+                    (
+                        "Expected inline fallback rows before generated-pattern recompute check so "
+                        "mustNotContain can exercise the fallback-only local filter lane; "
+                        f"fallback={baseline_fallback}."
                     ),
                 )
                 page.fill('textarea[name="must_not_contain"]', "young sherlock")

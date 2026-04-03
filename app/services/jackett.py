@@ -27,6 +27,7 @@ from app.services.rule_builder import (
     parse_additional_include_groups,
     parse_manual_must_contain_additions,
 )
+from app.services.selective_queue import text_matches_episode
 
 
 class JackettClientError(RuntimeError):
@@ -55,7 +56,15 @@ YEAR_RE = re.compile(r"\b(\d{4})\b")
 SEASON_TOKEN_RE = re.compile(r"^s0*(\d{1,2})$")
 EPISODE_TOKEN_RE = re.compile(r"^e0*(\d{1,3})$")
 SEASON_EPISODE_TOKEN_RE = re.compile(r"^s0*(\d{1,2})e0*(\d{1,3})$")
+SEASON_EPISODE_RANGE_TEXT_RE = re.compile(
+    r"(?i)s(?P<season>\d{1,2})[\s._-]*e(?P<start>\d{1,3})(?:[\s._-]*(?:-|to)[\s._-]*(?:e)?(?P<end>\d{1,3}))?"
+)
+SEASON_ONLY_TEXT_RE = re.compile(
+    r"(?i)\b(?:s(?P<season_short>\d{1,2})(?![\s._-]*e\d)|season[\s._-]*(?P<season_long>\d{1,2}))\b"
+)
+TITLE_SEGMENT_SPLIT_RE = re.compile(r"[|/\[\]\(\)]+")
 INDEXER_KEY_STRIP_RE = re.compile(r"[\s._-]+")
+X_SEASON_EPISODE_TOKEN_RE = re.compile(r"^\d{1,2}x\d{1,3}$")
 SEPARATOR_FRAGMENT_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"[\s._-]*", " "),
     (r"[\s._-]+", " "),
@@ -141,6 +150,68 @@ TORZNAB_STANDARD_CATEGORY_LABELS: dict[str, tuple[str, ...]] = {
 }
 LOGGER = logging.getLogger(__name__)
 SEARCH_DEBUG_LOG_PATH = ROOT_DIR / "logs" / "search-debug.log"
+PRECISE_TITLE_ALLOWED_POSTFIX_TOKENS = frozenset(
+    {
+        "aac",
+        "ac3",
+        "atmos",
+        "av1",
+        "avc",
+        "avo",
+        "bdrip",
+        "bluray",
+        "blu",
+        "cam",
+        "christmas",
+        "complete",
+        "criterion",
+        "director",
+        "dub",
+        "dts",
+        "dv",
+        "dvd",
+        "dvdrip",
+        "eng",
+        "ep",
+        "episode",
+        "extended",
+        "finale",
+        "h264",
+        "h265",
+        "hdtv",
+        "hevc",
+        "hdr",
+        "hdr10",
+        "imax",
+        "limited",
+        "multi",
+        "mvo",
+        "pack",
+        "pilot",
+        "proper",
+        "ray",
+        "remux",
+        "repack",
+        "rus",
+        "season",
+        "series",
+        "special",
+        "sub",
+        "telecine",
+        "truehd",
+        "ts",
+        "uhd",
+        "uncut",
+        "ukr",
+        "unrated",
+        "web",
+        "webdl",
+        "webrip",
+        "x264",
+        "x265",
+        "xmas",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -297,6 +368,103 @@ def _matches_query_text(*, title_surface: str, query: str) -> bool:
         return True
     title_terms = {item for item in title_surface.split(" ") if item}
     return all(item in title_terms for item in query_terms)
+
+
+def _precise_title_segments(title: str) -> list[str]:
+    segments: list[str] = []
+    seen: set[str] = set()
+    for raw_segment in TITLE_SEGMENT_SPLIT_RE.split(str(title or "")):
+        candidate = raw_segment.strip()
+        if not candidate:
+            continue
+        normalized = _normalize_match_text(candidate)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        segments.append(candidate)
+    return segments or [str(title or "")]
+
+
+def _is_allowed_precise_title_suffix_token(token: str) -> bool:
+    normalized = _normalize_match_text(token)
+    if not normalized:
+        return True
+    if YEAR_RE.fullmatch(normalized):
+        return True
+    if SEASON_TOKEN_RE.match(normalized) or EPISODE_TOKEN_RE.match(normalized):
+        return True
+    if SEASON_EPISODE_TOKEN_RE.match(normalized) or X_SEASON_EPISODE_TOKEN_RE.match(normalized):
+        return True
+    if normalized in PRECISE_TITLE_ALLOWED_POSTFIX_TOKENS:
+        return True
+    return normalized in _known_quality_search_terms()
+
+
+def _segment_matches_precise_title_identity(segment: str, query: str) -> bool:
+    normalized_segment = _normalize_match_text(segment)
+    normalized_query = _normalize_match_text(query)
+    if not normalized_segment or not normalized_query:
+        return False
+    if normalized_segment == normalized_query:
+        return True
+    if not normalized_segment.startswith(normalized_query):
+        return False
+    suffix = normalized_segment[len(normalized_query) :].strip()
+    if not suffix:
+        return True
+    first_token = suffix.split(" ", 1)[0]
+    return _is_allowed_precise_title_suffix_token(first_token)
+
+
+def _matches_precise_title_identity(title: str, query: str) -> bool:
+    return any(
+        _segment_matches_precise_title_identity(segment, query)
+        for segment in _precise_title_segments(title)
+    )
+
+
+def _episode_matches_for_text(text: str) -> list[tuple[int, int, int]]:
+    matches: list[tuple[int, int, int]] = []
+    for match in SEASON_EPISODE_RANGE_TEXT_RE.finditer(str(text or "")):
+        season_number = int(match.group("season"))
+        start_episode = int(match.group("start"))
+        end_raw = match.group("end")
+        end_episode = int(end_raw) if end_raw is not None else start_episode
+        if end_episode < start_episode:
+            start_episode, end_episode = end_episode, start_episode
+        matches.append((season_number, start_episode, end_episode))
+    return matches
+
+
+def _matches_requested_season(text: str, *, season_number: int) -> bool:
+    if any(
+        matched_season == season_number
+        for matched_season, _start_episode, _end_episode in _episode_matches_for_text(text)
+    ):
+        return True
+    for match in SEASON_ONLY_TEXT_RE.finditer(str(text or "")):
+        raw_season = match.group("season_short") or match.group("season_long")
+        if raw_season is not None and int(raw_season) == season_number:
+            return True
+    return False
+
+
+def _matches_requested_season_episode(
+    text: str,
+    *,
+    season_number: int,
+    episode_number: int,
+) -> bool:
+    if text_matches_episode(
+        str(text or ""),
+        season_number=season_number,
+        episode_number=episode_number,
+    ):
+        return True
+    episode_matches = _episode_matches_for_text(text)
+    if episode_matches:
+        return False
+    return _matches_requested_season(text, season_number=season_number)
 
 
 def _first_nonempty_text(*values: object | None) -> str:
@@ -884,12 +1052,15 @@ def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, Any], bool]:
     rule_start_episode = getattr(rule, "start_episode", None)
     keywords_all: list[str] = []
     keywords_any_groups: list[list[str]] = []
+    primary_keywords_all: list[str] = []
+    primary_keywords_any_groups: list[list[str]] = []
     for group in parse_additional_include_groups(_coerce_text(rule.additional_includes)):
         if len(group) == 1:
             keywords_all.append(group[0])
             continue
         keywords_any_groups.append(group)
     keywords_not = _quality_terms(_coerce_string_list(rule.quality_exclude_tokens))
+    primary_keywords_not = list(keywords_not)
     must_contain_override = _normalize_legacy_optional_text(rule.must_contain_override)
     ignored_full_regex = looks_like_full_must_contain_override(must_contain_override)
     if not ignored_full_regex:
@@ -906,12 +1077,18 @@ def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, Any], bool]:
     quality_any_groups = _group_quality_terms(_coerce_string_list(rule.quality_include_tokens))
     if quality_any_groups:
         keywords_any_groups.extend(quality_any_groups)
+        primary_keywords_any_groups.extend(quality_any_groups)
 
     normalized_groups = _dedupe_term_groups(keywords_any_groups)
+    primary_normalized_groups = _dedupe_term_groups(primary_keywords_any_groups)
     flattened_any: list[str] = []
     for group in normalized_groups:
         flattened_any.extend(group)
     normalized_any_terms = set(_dedupe_terms(flattened_any))
+    primary_flattened_any: list[str] = []
+    for group in primary_normalized_groups:
+        primary_flattened_any.extend(group)
+    primary_any_terms = set(_dedupe_terms(primary_flattened_any))
     query = _select_search_title(fallback_title, regex_title)
     if not query:
         query = _first_nonempty_text(
@@ -949,6 +1126,18 @@ def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, Any], bool]:
             "keywords_not": [
                 item for item in _dedupe_terms(keywords_not) if item not in normalized_any_terms
             ],
+            "primary_keywords_all": [
+                item
+                for item in _dedupe_terms(primary_keywords_all)
+                if item not in primary_any_terms
+            ],
+            "primary_keywords_any": _dedupe_terms(primary_flattened_any),
+            "primary_keywords_any_groups": primary_normalized_groups,
+            "primary_keywords_not": [
+                item
+                for item in _dedupe_terms(primary_keywords_not)
+                if item not in primary_any_terms
+            ],
         },
         ignored_full_regex,
     )
@@ -966,15 +1155,35 @@ def build_reduced_search_request_from_rule(rule: Rule) -> tuple[JackettSearchReq
     keywords_any_groups = _limit_optional_groups(
         list(cast(list[list[str]], payload_data["keywords_any_groups"]))
     )
+    primary_keywords_all = list(cast(list[str], payload_data["primary_keywords_all"]))[
+        :MAX_REQUIRED_KEYWORDS
+    ]
+    primary_keywords_any_groups = _limit_optional_groups(
+        list(cast(list[list[str]], payload_data["primary_keywords_any_groups"]))
+    )
     flattened_any: list[str] = []
     for group in keywords_any_groups:
         flattened_any.extend(group)
     normalized_any_terms = set(_dedupe_terms(flattened_any))
+    primary_flattened_any: list[str] = []
+    for group in primary_keywords_any_groups:
+        primary_flattened_any.extend(group)
+    primary_any_terms = set(_dedupe_terms(primary_flattened_any))
     keywords_all = [item for item in keywords_all if item not in normalized_any_terms]
     keywords_not = [
         item
         for item in list(cast(list[str], payload_data["keywords_not"]))[:MAX_EXCLUDED_KEYWORDS]
         if item not in normalized_any_terms
+    ]
+    primary_keywords_all = [
+        item for item in primary_keywords_all if item not in primary_any_terms
+    ]
+    primary_keywords_not = [
+        item
+        for item in list(cast(list[str], payload_data["primary_keywords_not"]))[
+            :MAX_EXCLUDED_KEYWORDS
+        ]
+        if item not in primary_any_terms
     ]
     query = clamp_search_query_text(str(payload_data["query"]), fallback="Search")
     payload = JackettSearchRequest(
@@ -988,6 +1197,10 @@ def build_reduced_search_request_from_rule(rule: Rule) -> tuple[JackettSearchReq
         keywords_any=flattened_any,
         keywords_any_groups=keywords_any_groups,
         keywords_not=keywords_not,
+        primary_keywords_all=primary_keywords_all,
+        primary_keywords_any=primary_flattened_any,
+        primary_keywords_any_groups=primary_keywords_any_groups,
+        primary_keywords_not=primary_keywords_not,
     )
     return payload, ignored_full_regex
 
@@ -1246,22 +1459,35 @@ class JackettClient:
                 self._add_warning(warning_messages, seen_warning_messages, message)
             self._merge_results(primary_merged, variant_results)
 
+        precise_title_results, precise_title_requests, precise_title_warnings = (
+            self._search_precise_title_primary(
+                payload,
+                existing_merge_keys=set(primary_merged),
+            )
+        )
+        for precise_request in precise_title_requests:
+            self._add_request_label(request_variants, seen_request_variants, precise_request)
+        for message in precise_title_warnings:
+            self._add_warning(warning_messages, seen_warning_messages, message)
+        self._merge_results(primary_merged, precise_title_results)
+
         fallback_request_variants: list[str] = []
         seen_fallback_request_variants: set[str] = set()
         fallback_merged: dict[str, tuple[datetime | None, JackettSearchResult]] = {}
-        fallback_results, fallback_requests, fallback_warnings = self._search_title_fallback(
-            payload,
-            existing_merge_keys=set(primary_merged),
-        )
-        for fallback_request in fallback_requests:
-            self._add_request_label(
-                fallback_request_variants,
-                seen_fallback_request_variants,
-                fallback_request,
+        if self._needs_broad_fallback(payload):
+            fallback_results, fallback_requests, fallback_warnings = self._search_title_fallback(
+                payload,
+                existing_merge_keys=set(primary_merged),
             )
-        for message in fallback_warnings:
-            self._add_warning(warning_messages, seen_warning_messages, message)
-        self._merge_results(fallback_merged, fallback_results)
+            for fallback_request in fallback_requests:
+                self._add_request_label(
+                    fallback_request_variants,
+                    seen_fallback_request_variants,
+                    fallback_request,
+                )
+            for message in fallback_warnings:
+                self._add_warning(warning_messages, seen_warning_messages, message)
+            self._merge_results(fallback_merged, fallback_results)
 
         if (
             not request_variants
@@ -1340,10 +1566,11 @@ class JackettClient:
         *,
         section_label: str,
     ) -> list[JackettSearchResult]:
+        effective_payload = self._local_filter_payload(payload, section_label=section_label)
         kept_results: list[JackettSearchResult] = []
         drop_reasons: dict[str, int] = {}
         for result in results:
-            matches, drop_reason = self._matches_payload_terms_with_reason(result, payload)
+            matches, drop_reason = self._matches_payload_terms_with_reason(result, effective_payload)
             if matches:
                 kept_results.append(result)
                 continue
@@ -1353,13 +1580,51 @@ class JackettClient:
             LOGGER.debug(
                 "Jackett local filter diagnostics section=%s query=%r raw=%d kept=%d dropped=%d reasons=%s",
                 section_label,
-                payload.query,
+                effective_payload.query,
                 len(results),
                 len(kept_results),
                 len(results) - len(kept_results),
                 drop_reasons,
             )
         return kept_results
+
+    @staticmethod
+    def _local_filter_payload(
+        payload: JackettSearchRequest,
+        *,
+        section_label: str,
+    ) -> JackettSearchRequest:
+        if section_label == "fallback" and payload.imdb_id_only:
+            return payload.model_copy(update={"imdb_id_only": False})
+        if section_label != "primary" or not payload.imdb_id_only:
+            return payload
+        if not (
+            payload.primary_keywords_all
+            or payload.primary_keywords_any
+            or payload.primary_keywords_any_groups
+            or payload.primary_keywords_not
+        ):
+            return payload
+        return payload.model_copy(
+            update={
+                "keywords_all": list(payload.primary_keywords_all),
+                "keywords_any": list(payload.primary_keywords_any),
+                "keywords_any_groups": [
+                    list(group) for group in payload.primary_keywords_any_groups
+                ],
+                "keywords_not": list(payload.primary_keywords_not),
+            }
+        )
+
+    @classmethod
+    def _needs_broad_fallback(cls, payload: JackettSearchRequest) -> bool:
+        primary_payload = cls._local_filter_payload(payload, section_label="primary")
+        return (
+            list(primary_payload.keywords_all) != list(payload.keywords_all)
+            or [list(group) for group in primary_payload.keywords_any_groups]
+            != [list(group) for group in payload.keywords_any_groups]
+            or list(primary_payload.keywords_not) != list(payload.keywords_not)
+        )
 
     @staticmethod
     def _log_search_run(payload: JackettSearchRequest, run: JackettSearchRun) -> None:
@@ -1775,6 +2040,8 @@ class JackettClient:
                 "imdb_id_only": False,
                 "imdb_id": None,
                 "release_year": None,
+                "season_number": None,
+                "episode_number": None,
                 "keywords_all": [],
                 "keywords_any": [],
                 "keywords_any_groups": [],
@@ -1850,6 +2117,100 @@ class JackettClient:
                 continue
 
         return fallback_results, request_variants, warning_messages
+
+    def _search_precise_title_primary(
+        self,
+        payload: JackettSearchRequest,
+        *,
+        existing_merge_keys: set[str] | None = None,
+    ) -> tuple[
+        list[tuple[datetime | None, JackettSearchResult]], list[dict[str, object]], list[str]
+    ]:
+        title_payload = payload.model_copy(
+            update={
+                "imdb_id_only": False,
+                "imdb_id": None,
+                "keywords_all": [],
+                "keywords_any": [],
+                "keywords_any_groups": [],
+                "keywords_not": [],
+                "size_min_mb": None,
+                "size_max_mb": None,
+                "filter_category_ids": [],
+            }
+        )
+        query_variants = self._build_fallback_query_variants(title_payload)
+        if not query_variants:
+            return [], [], []
+
+        effective_payload = self._local_filter_payload(payload, section_label="primary")
+        seen_merge_keys = set(existing_merge_keys or ())
+        request_variants: list[dict[str, object]] = []
+        precise_results: list[tuple[datetime | None, JackettSearchResult]] = []
+        warning_messages: list[str] = []
+        remote_indexer_groups = self._remote_indexer_groups_for_standard_search(title_payload)
+
+        for query in query_variants:
+            params = self._search_params_for_variant(title_payload, query)
+            forced_mode = TORZNAB_MODE_BY_MEDIA_TYPE.get(payload.media_type)
+            if forced_mode:
+                params["t"] = forced_mode
+            continue_on_empty = (
+                title_payload.season_number is not None or title_payload.episode_number is not None
+            )
+            fallback_params = (
+                self._fallback_search_params_for_variant(
+                    title_payload,
+                    query,
+                    params,
+                )
+                if continue_on_empty
+                else []
+            )
+
+            query_had_success = False
+            for indexer_group in remote_indexer_groups:
+                group_had_success = False
+                for indexer in indexer_group:
+                    try:
+                        parsed_results, successful_params, _, timeout_messages = (
+                            self._search_variant(
+                                indexer,
+                                params,
+                                fallback_params=fallback_params,
+                                continue_on_empty=continue_on_empty,
+                            )
+                        )
+                    except JackettTimeoutError as exc:
+                        warning_messages.append(str(exc))
+                        continue
+                    except JackettHTTPError as exc:
+                        if exc.status_code != 400:
+                            raise
+                        warning_messages.append(str(exc))
+                        continue
+                    group_had_success = True
+                    query_had_success = True
+                    request_variants.append(successful_params)
+                    warning_messages.extend(timeout_messages)
+                    for item in parsed_results:
+                        merge_key = self._merge_key(item[1])
+                        if merge_key in seen_merge_keys:
+                            continue
+                        matches, _drop_reason = self._matches_payload_terms_with_reason(
+                            item[1],
+                            effective_payload,
+                        )
+                        if not matches:
+                            continue
+                        precise_results.append(item)
+                        seen_merge_keys.add(merge_key)
+                if group_had_success:
+                    break
+            if not query_had_success:
+                continue
+
+        return precise_results, request_variants, warning_messages
 
     def _configured_indexers_for_mode(self, search_mode: str) -> list[JackettIndexerCapability]:
         capability_tag = TORZNAB_CAPABILITY_TAG_BY_MODE.get(search_mode)
@@ -2330,6 +2691,9 @@ class JackettClient:
             title_surface=title_surface, query=payload.query
         ):
             return False, "query"
+        if payload.imdb_id_only and not imdb_exact_match:
+            if not _matches_precise_title_identity(result.title, payload.query):
+                return False, "precise_title_mismatch"
         text_surface = result.text_surface or title_surface
         for keyword in payload.keywords_all:
             if not _matches_included_keyword(text_surface, keyword):
@@ -2349,6 +2713,19 @@ class JackettClient:
                 return False, "release_year_missing"
             if result_year != payload.release_year:
                 return False, "release_year_mismatch"
+        if payload.media_type == MediaType.SERIES and payload.season_number is not None:
+            if payload.episode_number is not None:
+                if not _matches_requested_season_episode(
+                    result.title,
+                    season_number=int(payload.season_number),
+                    episode_number=int(payload.episode_number),
+                ):
+                    return False, "season_episode_mismatch"
+            elif not _matches_requested_season(
+                result.title,
+                season_number=int(payload.season_number),
+            ):
+                return False, "season_mismatch"
         if payload.size_min_mb is not None or payload.size_max_mb is not None:
             if result.size_bytes is None:
                 return False, "size_missing"

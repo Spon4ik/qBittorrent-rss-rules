@@ -121,6 +121,8 @@ def _ensure_rule_columns() -> None:
         "release_filter_cache_key": "TEXT",
         "release_filtered_count": "INTEGER",
         "release_fetched_count": "INTEGER",
+        "exact_filtered_count": "INTEGER",
+        "exact_fetched_count": "INTEGER",
     }
 
     with engine.begin() as connection:

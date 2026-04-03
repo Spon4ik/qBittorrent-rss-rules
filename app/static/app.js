@@ -2166,6 +2166,129 @@ function initSearchPage(container) {
     const titleTerms = new Set(titleSurface.split(" ").filter(Boolean));
     return queryTerms.every((item) => titleTerms.has(item));
   };
+  const PRECISE_TITLE_SEGMENT_SPLIT_RE = /[|/()[\]]+/u;
+  const PRECISE_TITLE_ALLOWED_POSTFIX_TOKENS = new Set([
+    "aac",
+    "ac3",
+    "atmos",
+    "av1",
+    "avc",
+    "avo",
+    "bdrip",
+    "bluray",
+    "blu",
+    "cam",
+    "christmas",
+    "complete",
+    "criterion",
+    "director",
+    "dub",
+    "dts",
+    "dv",
+    "dvd",
+    "dvdrip",
+    "eng",
+    "ep",
+    "episode",
+    "extended",
+    "finale",
+    "h264",
+    "h265",
+    "hdtv",
+    "hevc",
+    "hdr",
+    "hdr10",
+    "imax",
+    "limited",
+    "multi",
+    "mvo",
+    "pack",
+    "pilot",
+    "proper",
+    "ray",
+    "remux",
+    "repack",
+    "rus",
+    "season",
+    "series",
+    "special",
+    "sub",
+    "telecine",
+    "truehd",
+    "ts",
+    "uhd",
+    "uncut",
+    "ukr",
+    "unrated",
+    "web",
+    "webdl",
+    "webrip",
+    "x264",
+    "x265",
+    "xmas",
+  ]);
+  const YEAR_TOKEN_RE = /^\d{4}$/u;
+  const SEASON_TOKEN_RE = /^s0*\d{1,2}$/u;
+  const EPISODE_TOKEN_RE = /^e0*\d{1,3}$/u;
+  const SEASON_EPISODE_TOKEN_RE = /^s0*\d{1,2}e0*\d{1,3}$/u;
+  const X_SEASON_EPISODE_TOKEN_RE = /^\d{1,2}x\d{1,3}$/u;
+  const buildPreciseTitleSegments = (title) => {
+    const segments = [];
+    const seen = new Set();
+    for (const rawSegment of String(title || "").split(PRECISE_TITLE_SEGMENT_SPLIT_RE)) {
+      const candidate = String(rawSegment || "").trim();
+      if (!candidate) {
+        continue;
+      }
+      const normalized = normalizeSearchText(candidate);
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+      seen.add(normalized);
+      segments.push(candidate);
+    }
+    return segments.length ? segments : [String(title || "")];
+  };
+  const isAllowedPreciseTitleSuffixToken = (token) => {
+    const normalized = normalizeSearchText(token);
+    if (!normalized) {
+      return true;
+    }
+    if (YEAR_TOKEN_RE.test(normalized)) {
+      return true;
+    }
+    if (SEASON_TOKEN_RE.test(normalized) || EPISODE_TOKEN_RE.test(normalized)) {
+      return true;
+    }
+    if (SEASON_EPISODE_TOKEN_RE.test(normalized) || X_SEASON_EPISODE_TOKEN_RE.test(normalized)) {
+      return true;
+    }
+    return PRECISE_TITLE_ALLOWED_POSTFIX_TOKENS.has(normalized);
+  };
+  const segmentMatchesPreciseTitleIdentity = (segment, queryValue) => {
+    const normalizedSegment = normalizeSearchText(segment);
+    const normalizedQuery = normalizeSearchText(queryValue);
+    if (!normalizedSegment || !normalizedQuery) {
+      return false;
+    }
+    if (normalizedSegment === normalizedQuery) {
+      return true;
+    }
+    if (!normalizedSegment.startsWith(normalizedQuery)) {
+      return false;
+    }
+    const suffix = normalizedSegment.slice(normalizedQuery.length).trim();
+    if (!suffix) {
+      return true;
+    }
+    const firstToken = suffix.split(" ", 1)[0];
+    return isAllowedPreciseTitleSuffixToken(firstToken);
+  };
+  const matchesPreciseTitleIdentity = (title, queryValue) => {
+    return buildPreciseTitleSegments(title).some((segment) => (
+      segmentMatchesPreciseTitleIdentity(segment, queryValue)
+    ));
+  };
 
   const groupLabel = (group) => group.map((item) => String(item || "").trim()).filter(Boolean).join(" | ");
   const searchScopeSummaryText = (filters) => {
@@ -2194,28 +2317,34 @@ function initSearchPage(container) {
     const payloadImdbId = normalizeSearchImdbId(filters.imdbId || "");
     const resultImdbId = normalizeSearchImdbId(entry.imdbId || "");
     const imdbExactMatch = Boolean(payloadImdbId && resultImdbId && payloadImdbId === resultImdbId);
+    const isPrecisePrimaryRow = Boolean(payloadImdbId && (entry.querySourceKeys || []).includes("primary"));
     if (!imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {
       const queryLabel = getSearchQueryLabel();
       return queryLabel
         ? `Title does not match query "${queryLabel}".`
         : "Title does not match the current query.";
     }
-
-    for (const keyword of filters.keywordsAll) {
-      if (!containsTerm(entry.textSurface, keyword)) {
-        return `Missing include keyword: ${keyword}.`;
-      }
+    if (isPrecisePrimaryRow && !imdbExactMatch && !matchesPreciseTitleIdentity(entry.title, filters.query)) {
+      return "Title does not match the exact query identity.";
     }
 
-    for (const [groupIndex, group] of filters.keywordsAnyGroups.entries()) {
-      if (!group.some((keyword) => containsTerm(entry.textSurface, keyword))) {
-        return `Missing any-of group ${groupIndex + 1}: ${groupLabel(group)}.`;
+    if (!isPrecisePrimaryRow) {
+      for (const keyword of filters.keywordsAll) {
+        if (!containsTerm(entry.textSurface, keyword)) {
+          return `Missing include keyword: ${keyword}.`;
+        }
       }
-    }
 
-    for (const keyword of filters.keywordsNot) {
-      if (containsExcludedTerm(entry.textSurface, keyword)) {
-        return `Matched excluded keyword: ${keyword}.`;
+      for (const [groupIndex, group] of filters.keywordsAnyGroups.entries()) {
+        if (!group.some((keyword) => containsTerm(entry.textSurface, keyword))) {
+          return `Missing any-of group ${groupIndex + 1}: ${groupLabel(group)}.`;
+        }
+      }
+
+      for (const keyword of filters.keywordsNot) {
+        if (containsExcludedTerm(entry.textSurface, keyword)) {
+          return `Matched excluded keyword: ${keyword}.`;
+        }
       }
     }
 
@@ -2225,7 +2354,7 @@ function initSearchPage(container) {
     if (filters.qualityExcludeRegex && filters.qualityExcludeRegex.test(entry.regexSurface)) {
       return "Matched an excluded quality tag.";
     }
-    if (filters.generatedPatternRegex && !filters.generatedPatternRegex.test(entry.regexSurface)) {
+    if (!isPrecisePrimaryRow && filters.generatedPatternRegex && !filters.generatedPatternRegex.test(entry.regexSurface)) {
       return "Does not match the generated rule pattern.";
     }
 
@@ -2380,12 +2509,21 @@ function initSearchPage(container) {
       return [cleaned];
     }
     if (cleaned.includes("title fallback")) {
-      if (cleaned.includes("imdb-first") || cleaned.includes("rule search results")) {
+      if (
+        cleaned.includes("imdb-first")
+        || cleaned.includes("precise results")
+        || cleaned.includes("rule search results")
+      ) {
         return ["primary", "fallback"];
       }
       return ["fallback"];
     }
-    if (cleaned.includes("imdb-first") || cleaned.includes("rule search results") || cleaned.includes("primary")) {
+    if (
+      cleaned.includes("imdb-first")
+      || cleaned.includes("precise results")
+      || cleaned.includes("rule search results")
+      || cleaned.includes("primary")
+    ) {
       return ["primary"];
     }
     return cleaned
@@ -3840,6 +3978,9 @@ function initSettingsForm(form) {
 }
 
 function initRulesPage(container) {
+  const FILTER_STORAGE_KEY = "qb-rules-page-filters:v1";
+  const FILTER_RESTORE_FLAG_KEY = "qb-rules-page-filters:restoring";
+  const FILTER_FIELD_NAMES = ["search", "media", "sync", "enabled", "release", "exact"];
   const filterForm = container.querySelector("[data-rules-filter-form]");
   const tableWrap = container.querySelector("[data-rules-table-wrap]");
   const cardsWrap = container.querySelector("[data-rules-cards-wrap]");
@@ -3874,6 +4015,7 @@ function initRulesPage(container) {
     "last_sync_status",
     "enabled",
     "release_state",
+    "exact_filtered_count",
     "combined_filtered_count",
     "combined_fetched_count",
     "last_snapshot_at",
@@ -3891,6 +4033,7 @@ function initRulesPage(container) {
     last_sync_status: "asc",
     enabled: "desc",
     release_state: "asc",
+    exact_filtered_count: "desc",
     combined_filtered_count: "desc",
     combined_fetched_count: "desc",
     last_snapshot_at: "desc",
@@ -3912,6 +4055,7 @@ function initRulesPage(container) {
       name: "",
       mediaType: "",
       releaseRank: 99,
+      exactFilteredCount: 0,
       filteredCount: 0,
       fetchedCount: 0,
       lastSnapshotAtMs: 0,
@@ -3930,6 +4074,9 @@ function initRulesPage(container) {
     existing.name = String(element.dataset.ruleName || existing.name || "").trim();
     existing.mediaType = String(element.dataset.ruleMediaType || existing.mediaType || "").trim();
     existing.releaseRank = Number(element.dataset.ruleReleaseRank || existing.releaseRank || 99);
+    existing.exactFilteredCount = Number(
+      element.dataset.ruleExactFilteredCount || existing.exactFilteredCount || 0
+    );
     existing.filteredCount = Number(element.dataset.ruleFilteredCount || existing.filteredCount || 0);
     existing.fetchedCount = Number(element.dataset.ruleFetchedCount || existing.fetchedCount || 0);
     existing.lastSnapshotAtMs = Date.parse(String(element.dataset.ruleLastSnapshotAt || "")) || 0;
@@ -3967,6 +4114,94 @@ function initRulesPage(container) {
     runStatus.style.color = isError ? "var(--danger)" : "";
   };
 
+  const rulesPageUrl = new URL(window.location.href);
+  const hasExplicitFilterParams = () => FILTER_FIELD_NAMES.some((name) => {
+    const value = rulesPageUrl.searchParams.get(name);
+    return Boolean(String(value || "").trim());
+  });
+
+  const readStoredFilterState = () => {
+    try {
+      return parseJsonData(window.localStorage.getItem(FILTER_STORAGE_KEY), null);
+    } catch {
+      return null;
+    }
+  };
+
+  const readFilterStateFromForm = () => {
+    const values = {};
+    if (!filterForm) {
+      return values;
+    }
+    for (const fieldName of FILTER_FIELD_NAMES) {
+      const field = filterForm.querySelector(`[name="${fieldName}"]`);
+      values[fieldName] = String(field?.value || "").trim();
+    }
+    return values;
+  };
+
+  const persistFilterState = () => {
+    if (!filterForm) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        FILTER_STORAGE_KEY,
+        JSON.stringify(readFilterStateFromForm())
+      );
+    } catch {
+      // Ignore storage failures and keep the page functional.
+    }
+  };
+
+  const applyStoredFilterState = (storedValues) => {
+    if (!filterForm || !storedValues || typeof storedValues !== "object") {
+      return false;
+    }
+    let changed = false;
+    for (const fieldName of FILTER_FIELD_NAMES) {
+      const field = filterForm.querySelector(`[name="${fieldName}"]`);
+      if (!field) {
+        continue;
+      }
+      const nextValue = String(storedValues[fieldName] || "").trim();
+      if (String(field.value || "").trim() === nextValue) {
+        continue;
+      }
+      field.value = nextValue;
+      changed = true;
+    }
+    return changed;
+  };
+
+  const restoreFilterState = () => {
+    if (!filterForm) {
+      return;
+    }
+    if (hasExplicitFilterParams()) {
+      window.sessionStorage.removeItem(FILTER_RESTORE_FLAG_KEY);
+      persistFilterState();
+      return;
+    }
+    if (window.sessionStorage.getItem(FILTER_RESTORE_FLAG_KEY) === "1") {
+      window.sessionStorage.removeItem(FILTER_RESTORE_FLAG_KEY);
+      return;
+    }
+    const storedValues = readStoredFilterState();
+    const hasStoredFilters = FILTER_FIELD_NAMES.some((fieldName) => {
+      return Boolean(String(storedValues?.[fieldName] || "").trim());
+    });
+    if (!hasStoredFilters) {
+      return;
+    }
+    if (!applyStoredFilterState(storedValues)) {
+      return;
+    }
+    window.sessionStorage.setItem(FILTER_RESTORE_FLAG_KEY, "1");
+    syncFilterHiddenInputs();
+    filterForm.requestSubmit();
+  };
+
   const syncFilterHiddenInputs = () => {
     if (sortInput) {
       sortInput.value = state.sortField;
@@ -4001,6 +4236,9 @@ function initRulesPage(container) {
         break;
       case "release_state":
         result = compareNumeric(left.releaseRank, right.releaseRank);
+        break;
+      case "exact_filtered_count":
+        result = compareNumeric(left.exactFilteredCount, right.exactFilteredCount);
         break;
       case "combined_filtered_count":
         result = compareNumeric(left.filteredCount, right.filteredCount);
@@ -4068,6 +4306,7 @@ function initRulesPage(container) {
       "updated_at",
       "enabled",
       "release_state",
+      "exact_filtered_count",
       "combined_filtered_count",
       "combined_fetched_count",
       "last_snapshot_at",
@@ -4664,9 +4903,11 @@ function initRulesPage(container) {
   scheduleRunNowButton?.addEventListener("click", runScheduleNow);
 
   filterForm?.addEventListener("submit", () => {
+    persistFilterState();
     syncFilterHiddenInputs();
   });
 
+  restoreFilterState();
   sortEntries();
   renderSortHeaders();
   applyViewMode();

@@ -97,6 +97,7 @@ Phase 6 detail pointer:
 
 - Decide whether the next catalog/addon step should expand beyond OMDb-backed title search into richer provider support or more explicit release-calendar reasoning.
 - Decide whether the next Stremio follow-up should tackle watched-progress arbitration, richer addon metadata, or provider-side configuration/options.
+- Replace the fixed quality-tag bank with a compact Settings UI that lets users add, remove, and reorganize quality tokens and aliases without editing raw taxonomy JSON.
 - Decide whether deleted-history persistence should stay rule-local or graduate to a broader watch-history/scrobble-compatible cache.
 - Reduce context and maintenance cost by splitting the largest rule/search/Jellyfin files along real domain boundaries.
 - Keep deterministic browser QA and route/service regressions as release gates for every workflow change.
@@ -111,6 +112,13 @@ Phase 6 detail pointer:
 
 - Shipped a maintenance hotfix so season-finale series rules that advance to next-season `E00` no longer lose `start_episode=0` when opened and re-saved from the edit form.
 - Added focused route regression coverage and deterministic browser closeout coverage for the `E00` edit-form flow so the stored episode floor remains visible and stable across UI round trips.
+
+## Release-validated: v0.8.5 (2026-04-03)
+
+- Shipped a phase-23 maintenance follow-up so the `bluray` quality token no longer over-matches `BDRip/BRRip`, which was hiding otherwise valid exact 4K HDR results in the main qB RSS search path.
+- Hardened the deterministic browser-closeout and smoke layers so the rules-page exact-filter memory check no longer depends on a flaky same-page submit transition, direct `scripts\stremio_addon_smoke.py` execution delegates to the module path, and cold live HTTP addon requests no longer fall back to a misleading local-only row for `The Beauty` episode 1.
+- Added targeted taxonomy and Jackett regressions plus a deterministic browser-closeout check that proves exact movie rules keep `BDRip` rows visible when only `bluray` and `bdremux` are excluded.
+- Revalidated the patch with `scripts\check.bat`, `scripts\closeout_browser_qa.py`, `scripts\run_dev.bat desktop-build`, and sequential Stremio addon service/http smoke runs.
 
 ## Release-validated: v0.8.2 (2026-03-28)
 

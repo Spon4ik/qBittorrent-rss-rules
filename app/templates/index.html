@@ -63,6 +63,15 @@
         {% endfor %}
       </select>
     </label>
+    <label>
+      Exact results
+      <select name="exact">
+        <option value="">All</option>
+        {% for choice in exact_choices %}
+        <option value="{{ choice.value }}" {% if filters.exact == choice.value %}selected{% endif %}>{{ choice.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <input type="hidden" name="sort" value="{{ filters.sort }}" data-rules-sort-input />
     <input type="hidden" name="direction" value="{{ filters.direction }}" data-rules-direction-input />
     <input type="hidden" name="view" value="{{ filters.view }}" data-rules-view-input />
@@ -160,6 +169,12 @@
             </button>
           </th>
           <th>
+            <button type="button" class="search-sort-header" data-rules-sort-field="exact_filtered_count">
+              Exact
+              <span class="search-sort-glyph" data-rules-sort-glyph="exact_filtered_count">↕</span>
+            </button>
+          </th>
+          <th>
             <button type="button" class="search-sort-header" data-rules-sort-field="combined_filtered_count">
               Matches
               <span class="search-sort-glyph" data-rules-sort-glyph="combined_filtered_count">↕</span>
@@ -197,6 +212,10 @@
           data-rule-media-type="{{ rule.media_type.value }}"
           data-rule-release-state="{{ release.state }}"
           data-rule-release-rank="{{ release.rank }}"
+          data-rule-exact-state="{{ release.exact_state }}"
+          data-rule-exact-rank="{{ release.exact_rank }}"
+          data-rule-exact-filtered-count="{{ release.exact_filtered_count }}"
+          data-rule-exact-fetched-count="{{ release.exact_fetched_count }}"
           data-rule-filtered-count="{{ release.combined_filtered_count }}"
           data-rule-fetched-count="{{ release.combined_fetched_count }}"
           data-rule-last-snapshot-at="{{ release.snapshot_fetched_at.isoformat() if release.snapshot_fetched_at else '' }}"
@@ -223,6 +242,12 @@
           <td>{{ media_type_labels.get(rule.media_type.value, rule.media_type.value) }}</td>
           <td>
             <span class="status-chip status-{{ release.state|replace('_', '-') }}">{{ release.label }}</span>
+          </td>
+          <td>
+            <div class="rules-title-cell">
+              <span class="status-chip status-{{ release.exact_state|replace('_', '-') }}">{{ release.exact_label }}</span>
+              <p class="helper-text">{{ release.exact_filtered_count }} / {{ release.exact_fetched_count }}</p>
+            </div>
           </td>
           <td>
             {{ release.combined_filtered_count }} / {{ release.combined_fetched_count }}
@@ -269,6 +294,10 @@
       data-rule-media-type="{{ rule.media_type.value }}"
       data-rule-release-state="{{ release.state }}"
       data-rule-release-rank="{{ release.rank }}"
+      data-rule-exact-state="{{ release.exact_state }}"
+      data-rule-exact-rank="{{ release.exact_rank }}"
+      data-rule-exact-filtered-count="{{ release.exact_filtered_count }}"
+      data-rule-exact-fetched-count="{{ release.exact_fetched_count }}"
       data-rule-filtered-count="{{ release.combined_filtered_count }}"
       data-rule-fetched-count="{{ release.combined_fetched_count }}"
       data-rule-last-snapshot-at="{{ release.snapshot_fetched_at.isoformat() if release.snapshot_fetched_at else '' }}"
@@ -296,6 +325,10 @@
         <div>
           <dt>Release</dt>
           <dd>{{ release.label }}</dd>
+        </div>
+        <div>
+          <dt>Exact</dt>
+          <dd>{{ release.exact_label }} ({{ release.exact_filtered_count }} / {{ release.exact_fetched_count }})</dd>
         </div>
         <div>
           <dt>Matches</dt>

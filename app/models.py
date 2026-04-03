@@ -172,6 +172,8 @@ class RuleSearchSnapshot(Base):
     release_filter_cache_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     release_filtered_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     release_fetched_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exact_filtered_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exact_fetched_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
     )

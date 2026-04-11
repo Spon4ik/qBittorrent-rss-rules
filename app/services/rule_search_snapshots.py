@@ -45,6 +45,19 @@ def _normalized_fallback_label(fallback_label: str) -> str:
     return "Title fallback"
 
 
+def _dedupe_strings(values: list[object]) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        candidate = str(item or "").strip()
+        key = candidate.casefold()
+        if not candidate or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(candidate)
+    return cleaned
+
+
 def _assign_query_source_labels(
     row: dict[str, Any],
     *,
@@ -63,6 +76,44 @@ def _assign_query_source_labels(
         return
     row["query_source_key"] = "primary+fallback"
     row["query_source_label"] = f"{primary_label} + {normalized_fallback_label}"
+
+
+def _query_source_priority(source_key: str) -> int:
+    normalized = str(source_key or "").strip().casefold()
+    if normalized == "primary":
+        return 0
+    if normalized == "primary+fallback":
+        return 1
+    if normalized == "fallback":
+        return 2
+    return 9
+
+
+def _merge_grouped_row(
+    existing: dict[str, Any],
+    row: dict[str, Any],
+    *,
+    is_visible: bool,
+) -> None:
+    existing["visible"] = bool(existing.get("visible")) or is_visible
+    existing["grouped_links"] = _dedupe_strings(
+        [*list(existing.get("grouped_links") or []), *list(row.get("grouped_links") or []), row.get("link")]
+    )
+    existing["grouped_indexers"] = _dedupe_strings(
+        [
+            *list(existing.get("grouped_indexers") or []),
+            *list(row.get("grouped_indexers") or []),
+            row.get("indexer"),
+        ]
+    )
+    existing["grouped_trackers"] = _dedupe_strings(
+        [*list(existing.get("grouped_trackers") or []), *list(row.get("grouped_trackers") or [])]
+    )
+    existing["duplicate_count"] = max(
+        int(existing.get("duplicate_count") or 1),
+        int(row.get("duplicate_count") or 1),
+        len(list(existing.get("grouped_links") or [])) or 1,
+    )
 
 
 def _build_unified_raw_results_from_models(
@@ -87,17 +138,29 @@ def _build_unified_raw_results_from_models(
             existing = rows_by_key.get(row_key)
             is_visible = row_key in visible_keys
             if existing is None:
-                rows_by_key[row_key] = {
+                row = {
                     **item.model_dump(mode="json"),
                     "visible": is_visible,
                 }
+                row["grouped_links"] = _dedupe_strings(
+                    [*list(row.get("grouped_links") or []), row.get("link")]
+                )
+                row["grouped_indexers"] = _dedupe_strings(
+                    [*list(row.get("grouped_indexers") or []), row.get("indexer")]
+                )
+                row["grouped_trackers"] = _dedupe_strings(list(row.get("grouped_trackers") or []))
+                row["duplicate_count"] = max(
+                    int(row.get("duplicate_count") or 1),
+                    len(list(row.get("grouped_links") or [])) or 1,
+                )
+                rows_by_key[row_key] = row
                 row_sources[row_key] = {source_name}
                 row_order.append(row_key)
                 continue
             row_sources[row_key].add(source_name)
-            if is_visible:
-                existing["visible"] = True
+            _merge_grouped_row(existing, item.model_dump(mode="json"), is_visible=is_visible)
 
+    row_position = {row_key: index for index, row_key in enumerate(row_order)}
     unified_rows: list[dict[str, Any]] = []
     for row_key in row_order:
         row = rows_by_key[row_key]
@@ -107,8 +170,16 @@ def _build_unified_raw_results_from_models(
             primary_label=primary_label,
             fallback_label=fallback_label,
         )
+        row["grouped_query_sources"] = sorted(row_sources[row_key])
+        row["queue_scope"] = "grouped" if int(row.get("duplicate_count") or 1) > 1 else "single"
         unified_rows.append(row)
-    return unified_rows
+    return sorted(
+        unified_rows,
+        key=lambda row: (
+            _query_source_priority(str(row.get("query_source_key") or "")),
+            row_position.get(_serialized_result_key(row), 999999),
+        ),
+    )
 
 
 def _coerce_serialized_result_rows(value: object) -> list[dict[str, Any]]:
@@ -145,14 +216,25 @@ def _build_unified_raw_results_from_serialized(
             is_visible = (row_key in visible_keys) or bool(row.get("visible"))
             if existing is None:
                 row["visible"] = is_visible
+                row["grouped_links"] = _dedupe_strings(
+                    [*list(row.get("grouped_links") or []), row.get("link")]
+                )
+                row["grouped_indexers"] = _dedupe_strings(
+                    [*list(row.get("grouped_indexers") or []), row.get("indexer")]
+                )
+                row["grouped_trackers"] = _dedupe_strings(list(row.get("grouped_trackers") or []))
+                row["duplicate_count"] = max(
+                    int(row.get("duplicate_count") or 1),
+                    len(list(row.get("grouped_links") or [])) or 1,
+                )
                 rows_by_key[row_key] = row
                 row_sources[row_key] = {source_name}
                 row_order.append(row_key)
                 continue
             row_sources[row_key].add(source_name)
-            if is_visible:
-                existing["visible"] = True
+            _merge_grouped_row(existing, row, is_visible=is_visible)
 
+    row_position = {row_key: index for index, row_key in enumerate(row_order)}
     unified_rows: list[dict[str, Any]] = []
     for row_key in row_order:
         row = rows_by_key[row_key]
@@ -162,8 +244,16 @@ def _build_unified_raw_results_from_serialized(
             primary_label=primary_label,
             fallback_label=fallback_label,
         )
+        row["grouped_query_sources"] = sorted(row_sources[row_key])
+        row["queue_scope"] = "grouped" if int(row.get("duplicate_count") or 1) > 1 else "single"
         unified_rows.append(row)
-    return unified_rows
+    return sorted(
+        unified_rows,
+        key=lambda row: (
+            _query_source_priority(str(row.get("query_source_key") or "")),
+            row_position.get(_serialized_result_key(row), 999999),
+        ),
+    )
 
 
 def _build_source_breakdown(

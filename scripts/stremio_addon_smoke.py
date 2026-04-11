@@ -8,15 +8,16 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from app.db import get_session_factory
+from app.db import get_session_factory, init_db
 from app.models import AppSettings
 from app.services.stremio_addon import StremioAddonService, reset_stremio_addon_caches
 
@@ -102,7 +103,7 @@ def _selected_items(raw_items: list[str] | None) -> list[tuple[str, str]]:
     return parsed_items
 
 
-def _timed(func) -> tuple[float, Any]:
+def _timed(func: Callable[[], Any]) -> tuple[float, Any]:
     started = time.perf_counter()
     payload = func()
     elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
@@ -110,6 +111,7 @@ def _timed(func) -> tuple[float, Any]:
 
 
 def _service() -> StremioAddonService:
+    init_db()
     session = get_session_factory()()
     try:
         settings = session.get(AppSettings, "default")
@@ -122,7 +124,7 @@ def _http_get_json(url: str) -> dict[str, Any]:
     request = urllib.request.Request(url, headers={"User-Agent": "stremio-addon-smoke"})
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
+            return cast(dict[str, Any], json.loads(response.read().decode("utf-8")))
     except urllib.error.HTTPError as exc:  # pragma: no cover - defensive
         body = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"HTTP {exc.code} for {url}: {body}") from exc

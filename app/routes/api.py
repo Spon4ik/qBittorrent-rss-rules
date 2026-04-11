@@ -78,6 +78,7 @@ from app.services.rule_fetch_ops import (
 )
 from app.services.selective_queue import (
     SelectiveQueueError,
+    queue_grouped_search_results,
     queue_result_with_optional_file_selection,
 )
 from app.services.settings_service import SettingsService
@@ -160,6 +161,9 @@ def _raw_settings_form_data(form: Any) -> dict[str, Any]:
         "jellyfin_auto_sync_enabled": _bool_from_form(form, "jellyfin_auto_sync_enabled"),
         "jellyfin_auto_sync_interval_seconds": form.get("jellyfin_auto_sync_interval_seconds", 30),
         "stremio_local_storage_path": form.get("stremio_local_storage_path") or None,
+        "stremio_preferred_languages": form.get("stremio_preferred_languages") or None,
+        "stremio_stream_provider_manifests": form.get("stremio_stream_provider_manifests")
+        or None,
         "stremio_auto_sync_enabled": _bool_from_form(form, "stremio_auto_sync_enabled"),
         "stremio_auto_sync_interval_seconds": form.get("stremio_auto_sync_interval_seconds", 30),
         "metadata_provider": form.get("metadata_provider", "omdb"),
@@ -449,6 +453,9 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
             getattr(settings, "jellyfin_auto_sync_last_message", "")
         ),
         stremio_local_storage_path=getattr(settings, "stremio_local_storage_path", None),
+        stremio_stream_provider_manifests=getattr(
+            settings, "stremio_stream_provider_manifests", None
+        ),
         stremio_auto_sync_enabled=bool(getattr(settings, "stremio_auto_sync_enabled", True)),
         stremio_auto_sync_interval_seconds=int(
             getattr(settings, "stremio_auto_sync_interval_seconds", 30)
@@ -535,6 +542,7 @@ def queue_search_result(
 ) -> JSONResponse:
     settings = SettingsService.get_or_create(session)
     connection = SettingsService.resolve_qb_connection(settings)
+    jackett = SettingsService.resolve_jackett(settings)
     if not connection.is_configured:
         return JSONResponse({"error": "qBittorrent connection is not configured."}, status_code=400)
 
@@ -555,18 +563,38 @@ def queue_search_result(
         add_paused = settings.default_add_paused
 
     try:
-        queue_result = queue_result_with_optional_file_selection(
-            qb_base_url=connection.base_url or "",
-            qb_username=connection.username or "",
-            qb_password=connection.password or "",
-            link=payload.link,
-            category=category,
-            save_path=save_path,
-            paused=bool(add_paused),
-            sequential_download=payload.sequential_download,
-            first_last_piece_prio=payload.first_last_piece_prio,
-            rule=rule,
-        )
+        if len(payload.links or []) > 1:
+            queue_result = queue_grouped_search_results(
+                qb_base_url=connection.base_url or "",
+                qb_username=connection.username or "",
+                qb_password=connection.password or "",
+                links=list(payload.links or []),
+                jackett_api_url=jackett.api_url,
+                jackett_qb_url=jackett.qb_url,
+                info_hash=payload.info_hash,
+                tracker_urls=list(payload.tracker_urls or []),
+                category=category,
+                save_path=save_path,
+                paused=bool(add_paused),
+                sequential_download=payload.sequential_download,
+                first_last_piece_prio=payload.first_last_piece_prio,
+                rule=rule,
+            )
+        else:
+            queue_result = queue_result_with_optional_file_selection(
+                qb_base_url=connection.base_url or "",
+                qb_username=connection.username or "",
+                qb_password=connection.password or "",
+                link=payload.link,
+                jackett_api_url=jackett.api_url,
+                jackett_qb_url=jackett.qb_url,
+                category=category,
+                save_path=save_path,
+                paused=bool(add_paused),
+                sequential_download=payload.sequential_download,
+                first_last_piece_prio=payload.first_last_piece_prio,
+                rule=rule,
+            )
     except SelectiveQueueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     except QbittorrentClientError as exc:
@@ -1245,7 +1273,7 @@ async def test_qb_settings(
         request,
         form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
         errors=[],
-        message="qBittorrent connection test succeeded.",
+        message="qBittorrent connection test succeeded. Test actions do not save settings; use Save Settings before syncing rules.",
         message_level="success",
         status_code=200,
     )
@@ -1292,7 +1320,7 @@ async def test_jackett_settings(
         request,
         form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
         errors=[],
-        message="Jackett connection test succeeded.",
+        message="Jackett connection test succeeded. Test actions do not save settings; use Save Settings before syncing rules.",
         message_level="success",
         status_code=200,
     )

@@ -475,6 +475,7 @@
         data-category-labels="{{ (item.category_labels or []) | join(',') }}"
         data-query-source-key="{{ item.query_source_key or '' }}"
         data-query-source="{{ item.query_source_label or '' }}"
+        data-duplicate-count="{{ item.duplicate_count or 1 }}"
         {% if not item.visible %}hidden{% endif %}
       >
         <div class="rule-card-top">
@@ -517,6 +518,10 @@
               {% endif %}
             </dd>
           </div>
+          <div>
+            <dt>Grouped variants</dt>
+            <dd>{{ item.duplicate_count or 1 }}</dd>
+          </div>
         </dl>
         <div class="card-actions">
           <button
@@ -524,6 +529,10 @@
             class="button-link"
             data-result-queue-button
             data-result-link="{{ item.link }}"
+            data-result-links='{{ (item.grouped_links or [item.link]) | tojson }}'
+            data-result-info-hash="{{ item.info_hash or '' }}"
+            data-result-tracker-urls='{{ (item.grouped_trackers or []) | tojson }}'
+            data-result-queue-scope="{{ item.queue_scope or 'single' }}"
             data-result-rule-id="{{ rule_id }}"
           >
             Queue via Rule
@@ -625,6 +634,7 @@
             data-category-labels="{{ (item.category_labels or []) | join(',') }}"
             data-query-source-key="{{ item.query_source_key or '' }}"
             data-query-source="{{ item.query_source_label or '' }}"
+            data-duplicate-count="{{ item.duplicate_count or 1 }}"
             {% if not item.visible %}hidden{% endif %}
           >
             <td>{{ item.query_source_label or 'Primary query' }}</td>
@@ -666,6 +676,10 @@
                   class="button-link"
                   data-result-queue-button
                   data-result-link="{{ item.link }}"
+                  data-result-links='{{ (item.grouped_links or [item.link]) | tojson }}'
+                  data-result-info-hash="{{ item.info_hash or '' }}"
+                  data-result-tracker-urls='{{ (item.grouped_trackers or []) | tojson }}'
+                  data-result-queue-scope="{{ item.queue_scope or 'single' }}"
                   data-result-rule-id="{{ rule_id }}"
                 >
                   Queue

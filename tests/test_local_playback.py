@@ -208,3 +208,74 @@ def test_find_qb_local_playback_matches_filters_by_imdb_and_episode(tmp_path: Pa
             ),
         )
     ]
+
+
+def test_find_qb_local_playback_matches_prefers_filename_episode_over_parent_pack_range(
+    tmp_path: Path,
+) -> None:
+    series_root = tmp_path / "The Rookie [imdbid-tt7587890]"
+    episode_directory = series_root / "The.Rookie.S08E01-E14.1080p.WEB-DL"
+    episode_directory.mkdir(parents=True)
+    episode_10 = episode_directory / "The.Rookie.S08E10.1080p.mkv"
+    episode_12 = episode_directory / "The.Rookie.S08E12.1080p.mkv"
+    episode_10.write_bytes(b"episode-10")
+    episode_12.write_bytes(b"episode-12")
+
+    fake_client = _FakeQbClient(
+        torrent={
+            "hash": "abc123",
+            "name": "The.Rookie.S08E01-E14.1080p.WEB-DL",
+            "progress": 1,
+            "size": 20,
+            "completed": 20,
+            "save_path": str(series_root),
+            "content_path": str(episode_directory),
+            "root_path": str(episode_directory),
+        },
+        files=[
+            {
+                "index": 10,
+                "name": "The.Rookie.S08E01-E14.1080p.WEB-DL/The.Rookie.S08E10.1080p.mkv",
+                "progress": 1,
+                "is_seed": True,
+            },
+            {
+                "index": 12,
+                "name": "The.Rookie.S08E01-E14.1080p.WEB-DL/The.Rookie.S08E12.1080p.mkv",
+                "progress": 1,
+                "is_seed": True,
+            },
+        ],
+        torrents=[
+            {
+                "hash": "abc123",
+                "name": "The.Rookie.S08E01-E14.1080p.WEB-DL",
+                "progress": 1,
+                "size": 20,
+                "completed": 20,
+                "save_path": str(series_root),
+                "content_path": str(episode_directory),
+                "root_path": str(episode_directory),
+                "category": "Series/The Rookie [imdbid-tt7587890]",
+            }
+        ],
+    )
+
+    matches = find_qb_local_playback_matches(
+        fake_client,
+        imdb_id="tt7587890",
+        season_number=8,
+        episode_number=12,
+    )
+
+    assert matches == [
+        QbLocalPlaybackMatch(
+            info_hash="abc123",
+            torrent_name="The.Rookie.S08E01-E14.1080p.WEB-DL",
+            playback_file=LocalPlaybackFile(
+                file_path=episode_12,
+                filename=episode_12.name,
+                media_type="video/x-matroska",
+            ),
+        )
+    ]

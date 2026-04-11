@@ -963,6 +963,42 @@ def _sorted_values(values: list[str]) -> list[str]:
     return sorted(value.strip() for value in values if value and value.strip())
 
 
+def _query_source_rank(source_key: str) -> int:
+    normalized = str(source_key or "").strip().casefold()
+    if normalized == "primary":
+        return 0
+    if normalized == "primary+fallback":
+        return 1
+    if normalized == "fallback":
+        return 2
+    return 9
+
+
+def _sorted_combined_title_pairs(
+    pairs: list[tuple[str, str]],
+    *,
+    reverse: bool,
+) -> list[tuple[str, str]]:
+    sorted_pairs = sorted(
+        pairs,
+        key=lambda item: (_query_source_rank(item[1]), item[0].casefold()),
+    )
+    if reverse:
+        grouped: dict[str, list[tuple[str, str]]] = {}
+        group_order: list[str] = []
+        for pair in sorted_pairs:
+            source_key = pair[1]
+            if source_key not in grouped:
+                grouped[source_key] = []
+                group_order.append(source_key)
+            grouped[source_key].append(pair)
+        reversed_pairs: list[tuple[str, str]] = []
+        for source_key in group_order:
+            reversed_pairs.extend(reversed(grouped[source_key]))
+        return reversed_pairs
+    return sorted_pairs
+
+
 def build_svg_data_url(label: str) -> str:
     safe_label = escape(label)
     svg = f"""
@@ -1253,6 +1289,37 @@ def main() -> int:
                     """,
                     {"sourceKeys": source_keys},
                 )
+
+            def search_visible_title_source_pairs(section: str) -> list[tuple[str, str]]:
+                source_keys = source_keys_for_section(section)
+                raw_pairs = page.evaluate(
+                    """
+                    ({ sourceKeys }) => Array
+                      .from(document.querySelectorAll('[data-search-row="combined"]'))
+                      .filter((row) => !row.hidden)
+                      .filter((row) => {
+                        const source = (row.getAttribute("data-query-source-key") || "").trim().toLowerCase();
+                        if (!sourceKeys.length) {
+                          return true;
+                        }
+                        if (source === "primary+fallback") {
+                          return sourceKeys.some((key) => key === "primary" || key === "fallback");
+                        }
+                        return sourceKeys.includes(source);
+                      })
+                      .map((row) => [
+                        row.querySelector("td:nth-child(2)")?.textContent?.trim() || "",
+                        (row.getAttribute("data-query-source-key") || "").trim().toLowerCase(),
+                      ])
+                      .filter((pair) => pair[0])
+                    """,
+                    {"sourceKeys": source_keys},
+                )
+                return [
+                    (str(item[0]).strip(), str(item[1]).strip())
+                    for item in raw_pairs
+                    if isinstance(item, list) and len(item) == 2 and str(item[0]).strip()
+                ]
 
             def wait_for_filtered_count(
                 section: str,
@@ -2395,18 +2462,20 @@ def main() -> int:
                 title_sort = page.locator('[data-search-table-sort-field="title"]').first
                 title_sort.click()
                 page.wait_for_timeout(140)
-                asc_titles = search_visible_titles("combined")
-                if len(asc_titles) >= 2:
+                asc_pairs = search_visible_title_source_pairs("combined")
+                asc_titles = [title for title, _source in asc_pairs]
+                if len(asc_pairs) >= 2:
                     _expect(
-                        asc_titles == sorted(asc_titles, key=str.casefold),
+                        asc_pairs == _sorted_combined_title_pairs(asc_pairs, reverse=False),
                         f"Expected ascending title sort from header click; titles={asc_titles}.",
                     )
                 title_sort.click()
                 page.wait_for_timeout(140)
-                desc_titles = search_visible_titles("combined")
-                if len(desc_titles) >= 2:
+                desc_pairs = search_visible_title_source_pairs("combined")
+                desc_titles = [title for title, _source in desc_pairs]
+                if len(desc_pairs) >= 2:
                     _expect(
-                        desc_titles == sorted(desc_titles, key=str.casefold, reverse=True),
+                        desc_pairs == _sorted_combined_title_pairs(desc_pairs, reverse=True),
                         f"Expected descending title sort after second header click; titles={desc_titles}.",
                     )
 
@@ -3089,20 +3158,22 @@ def main() -> int:
                     '#inline-search-results [data-search-table-sort-field="title"]'
                 ).first.click()
                 page.wait_for_timeout(220)
-                asc_titles = search_visible_titles(section)
-                if len(asc_titles) >= 2:
+                asc_pairs = search_visible_title_source_pairs(section)
+                asc_titles = [title for title, _source in asc_pairs]
+                if len(asc_pairs) >= 2:
                     _expect(
-                        asc_titles == sorted(asc_titles, key=str.casefold),
+                        asc_pairs == _sorted_combined_title_pairs(asc_pairs, reverse=False),
                         f"Expected inline {section} titles sorted ascending by title; titles={asc_titles}.",
                     )
                 page.locator(
                     '#inline-search-results [data-search-table-sort-field="title"]'
                 ).first.click()
                 page.wait_for_timeout(220)
-                desc_titles = search_visible_titles(section)
-                if len(desc_titles) >= 2:
+                desc_pairs = search_visible_title_source_pairs(section)
+                desc_titles = [title for title, _source in desc_pairs]
+                if len(desc_pairs) >= 2:
                     _expect(
-                        desc_titles == sorted(desc_titles, key=str.casefold, reverse=True),
+                        desc_pairs == _sorted_combined_title_pairs(desc_pairs, reverse=True),
                         f"Expected inline {section} titles sorted descending by title; titles={desc_titles}.",
                     )
                 _expect(

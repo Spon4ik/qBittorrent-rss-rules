@@ -217,6 +217,8 @@ class AppSettings(Base):
     )
     jellyfin_auto_sync_last_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
     stremio_local_storage_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    stremio_preferred_languages: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    stremio_stream_provider_manifests: Mapped[str | None] = mapped_column(Text, nullable=True)
     stremio_auto_sync_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     stremio_auto_sync_interval_seconds: Mapped[int] = mapped_column(
         Integer,

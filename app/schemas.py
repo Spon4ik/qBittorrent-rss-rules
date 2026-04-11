@@ -119,6 +119,14 @@ class JackettSearchRequest(BaseModel):
     primary_keywords_any: list[str] = Field(default_factory=list)
     primary_keywords_any_groups: list[list[str]] = Field(default_factory=list)
     primary_keywords_not: list[str] = Field(default_factory=list)
+    artist: str | None = Field(default=None, max_length=255)
+    album: str | None = Field(default=None, max_length=255)
+    track: str | None = Field(default=None, max_length=255)
+    label: str | None = Field(default=None, max_length=255)
+    title: str | None = Field(default=None, max_length=255)
+    author: str | None = Field(default=None, max_length=255)
+    publisher: str | None = Field(default=None, max_length=255)
+    genre: str | None = Field(default=None, max_length=255)
     size_min_mb: float | None = Field(default=None, ge=0)
     size_max_mb: float | None = Field(default=None, ge=0)
     filter_indexers: list[str] = Field(default_factory=list)
@@ -152,6 +160,24 @@ class JackettSearchRequest(BaseModel):
         if not match:
             raise ValueError("Release year must include four digits.")
         return match.group(1)
+
+    @field_validator(
+        "artist",
+        "album",
+        "track",
+        "label",
+        "title",
+        "author",
+        "publisher",
+        "genre",
+        mode="before",
+    )
+    @classmethod
+    def normalize_optional_text(cls, value: object | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
 
     @field_validator(
         "keywords_all",
@@ -325,6 +351,10 @@ class JackettSearchResult(BaseModel):
     torznab_attrs: dict[str, str] = Field(default_factory=dict)
     text_surface: str = ""
     source_kind: SearchSourceKind = SearchSourceKind.JACKETT_ACTIVE_SEARCH
+    grouped_links: list[str] = Field(default_factory=list)
+    grouped_indexers: list[str] = Field(default_factory=list)
+    grouped_trackers: list[str] = Field(default_factory=list)
+    duplicate_count: int = 1
 
 
 class JackettSearchRun(BaseModel):
@@ -400,10 +430,41 @@ class SearchQueueRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     link: str = Field(min_length=1)
+    links: list[str] = Field(default_factory=list)
+    info_hash: str | None = None
+    tracker_urls: list[str] = Field(default_factory=list)
     rule_id: str | None = None
     add_paused: bool | None = None
     sequential_download: bool = False
     first_last_piece_prio: bool = False
+
+    @field_validator("links", "tracker_urls", mode="before")
+    @classmethod
+    def normalize_string_list(cls, value: list[str] | str | None) -> list[str]:
+        return JackettSearchRequest.normalize_keyword_list(value)
+
+    @field_validator("info_hash", mode="before")
+    @classmethod
+    def normalize_info_hash(cls, value: object | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = str(value).strip().casefold()
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def normalize_queue_links(self) -> SearchQueueRequest:
+        normalized_links: list[str] = []
+        seen_links: set[str] = set()
+        seed_links = [self.link, *list(self.links or [])]
+        for raw_link in seed_links:
+            candidate = str(raw_link or "").strip()
+            if not candidate or candidate in seen_links:
+                continue
+            seen_links.add(candidate)
+            normalized_links.append(candidate)
+        self.link = normalized_links[0]
+        self.links = normalized_links
+        return self
 
 
 class RuleFormPayload(BaseModel):
@@ -523,6 +584,8 @@ class SettingsFormPayload(BaseModel):
     jellyfin_auto_sync_enabled: bool = True
     jellyfin_auto_sync_interval_seconds: int = Field(default=30, ge=5, le=3600)
     stremio_local_storage_path: str | None = None
+    stremio_preferred_languages: str | None = None
+    stremio_stream_provider_manifests: str | None = None
     stremio_auto_sync_enabled: bool = True
     stremio_auto_sync_interval_seconds: int = Field(default=30, ge=5, le=3600)
     metadata_provider: MetadataProvider = MetadataProvider.OMDB

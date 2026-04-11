@@ -2,16 +2,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+import httpx
 import pytest
 
 from app.models import MediaType, QualityProfile, Rule
 from app.services.qbittorrent import QbittorrentClient
 from app.services.selective_queue import (
+    ParsedTorrentInfo,
     QueueResult,
     SelectiveQueueError,
+    TorrentFileEntry,
     build_episode_file_selection_plan,
     find_episode_file_entry,
     parse_torrent_info,
+    queue_grouped_search_results,
     queue_result_with_optional_file_selection,
     select_missing_episode_file_ids,
     text_matches_episode,
@@ -131,7 +135,29 @@ def test_text_matches_episode_and_find_episode_file_entry_support_ranges() -> No
         episode_number=4,
     )
     assert entry is not None
-    assert entry.file_id == 0
+    assert entry.file_id == 1
+
+
+def test_find_episode_file_entry_prefers_filename_episode_over_parent_pack_range() -> None:
+    files = [
+        TorrentFileEntry(
+            file_id=10,
+            path="The.Rookie.S08E01-E14.1080p.WEB-DL/The.Rookie.S08E10.1080p.mkv",
+        ),
+        TorrentFileEntry(
+            file_id=12,
+            path="The.Rookie.S08E01-E14.1080p.WEB-DL/The.Rookie.S08E12.1080p.mkv",
+        ),
+    ]
+
+    entry = find_episode_file_entry(
+        files,
+        season_number=8,
+        episode_number=12,
+    )
+
+    assert entry is not None
+    assert entry.file_id == 12
 
 
 def test_queue_result_with_optional_file_selection_applies_qb_file_priorities(monkeypatch) -> None:
@@ -215,6 +241,141 @@ def test_queue_result_with_optional_file_selection_applies_qb_file_priorities(mo
     assert priority_calls[1][2] == 1
 
 
+def test_queue_result_with_optional_file_selection_uploads_http_torrent_file_without_rule(
+    monkeypatch,
+) -> None:
+    torrent_bytes = _build_multi_file_torrent_bytes("Shrinking.S03E08.mkv")
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "app.services.selective_queue._download_torrent_bytes",
+        lambda link: (torrent_bytes, "shrinking-s03.torrent"),
+    )
+
+    def fake_add_torrent_file(
+        self,
+        *,
+        torrent_bytes: bytes,
+        filename: str,
+        category: str = "",
+        save_path: str = "",
+        paused: bool = True,
+        sequential_download: bool = False,
+        first_last_piece_prio: bool = False,
+    ) -> None:
+        captured.update(
+            {
+                "torrent_bytes": torrent_bytes,
+                "filename": filename,
+                "category": category,
+                "save_path": save_path,
+                "paused": paused,
+                "sequential_download": sequential_download,
+                "first_last_piece_prio": first_last_piece_prio,
+            }
+        )
+
+    def fail_add_torrent_url(self, **kwargs) -> None:
+        raise AssertionError(f"Unexpected add_torrent_url call: {kwargs!r}")
+
+    monkeypatch.setattr(QbittorrentClient, "add_torrent_file", fake_add_torrent_file)
+    monkeypatch.setattr(QbittorrentClient, "add_torrent_url", fail_add_torrent_url)
+
+    result = queue_result_with_optional_file_selection(
+        qb_base_url="http://127.0.0.1:8080",
+        qb_username="admin",
+        qb_password="secret",
+        link="http://localhost:9117/dl/bitru/?jackett_apikey=secret&path=abc",
+        category="Series/Shrinking [imdbid-tt15153834]",
+        save_path="/data/shrinking",
+        paused=False,
+        sequential_download=True,
+        first_last_piece_prio=True,
+        rule=None,
+    )
+
+    assert result.queued_via_torrent_file is True
+    assert captured == {
+        "torrent_bytes": torrent_bytes,
+        "filename": "shrinking-s03.torrent",
+        "category": "Series/Shrinking [imdbid-tt15153834]",
+        "save_path": "/data/shrinking",
+        "paused": False,
+        "sequential_download": True,
+        "first_last_piece_prio": True,
+    }
+
+
+def test_queue_result_with_optional_file_selection_does_not_remote_fetch_broken_local_jackett_url(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.selective_queue._download_torrent_bytes",
+        lambda link: (_ for _ in ()).throw(httpx.HTTPError("boom")),
+    )
+
+    def fail_add_torrent_url(self, **kwargs) -> None:
+        raise AssertionError(f"Unexpected add_torrent_url call: {kwargs!r}")
+
+    monkeypatch.setattr(QbittorrentClient, "add_torrent_url", fail_add_torrent_url)
+
+    with pytest.raises(
+        SelectiveQueueError,
+        match="Could not fetch a valid torrent file from the local Jackett-style URL",
+    ):
+        queue_result_with_optional_file_selection(
+            qb_base_url="http://127.0.0.1:8080",
+            qb_username="admin",
+            qb_password="secret",
+            link="http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc",
+            category="",
+            save_path="",
+            paused=True,
+            sequential_download=False,
+            first_last_piece_prio=False,
+            rule=None,
+        )
+
+
+def test_queue_result_with_optional_file_selection_rewrites_jackett_qb_url_for_app_fetch(
+    monkeypatch,
+) -> None:
+    torrent_bytes = _build_multi_file_torrent_bytes("Shrinking.S03E08.mkv")
+    seen_links: list[str] = []
+
+    def fake_download(link):
+        seen_links.append(link)
+        return torrent_bytes, "shrinking-s03.torrent"
+
+    monkeypatch.setattr(
+        "app.services.selective_queue._download_torrent_bytes",
+        fake_download,
+    )
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "add_torrent_file",
+        lambda self, **kwargs: None,
+    )
+
+    result = queue_result_with_optional_file_selection(
+        qb_base_url="http://127.0.0.1:8080",
+        qb_username="admin",
+        qb_password="secret",
+        link="http://docker-host:9117/dl/kinozal/?jackett_apikey=secret&path=abc",
+        jackett_api_url="http://localhost:9117",
+        jackett_qb_url="http://docker-host:9117",
+        category="",
+        save_path="",
+        paused=True,
+        sequential_download=False,
+        first_last_piece_prio=False,
+        rule=None,
+    )
+
+    assert result.queued_via_torrent_file is True
+    assert seen_links == ["http://localhost:9117/dl/kinozal/?jackett_apikey=secret&path=abc"]
+
+
 def test_queue_result_with_optional_file_selection_rejects_torrents_without_missing_files(
     monkeypatch,
 ) -> None:
@@ -249,3 +410,93 @@ def test_queue_result_with_optional_file_selection_rejects_torrents_without_miss
             first_last_piece_prio=True,
             rule=rule,
         )
+
+
+def test_queue_grouped_search_results_merges_missing_trackers(monkeypatch) -> None:
+    torrent_bytes = _bencode(
+        {
+            b"announce": b"https://tracker.two/announce",
+            b"info": {
+                b"name": b"Shrinking.S03",
+                b"piece length": 16384,
+                b"pieces": b"01234567890123456789",
+                b"files": [
+                    {
+                        b"length": 1,
+                        b"path": [b"Shrinking.S03E08.mkv"],
+                    }
+                ],
+            },
+        }
+    )
+    inspected_links: list[str] = []
+    add_tracker_calls: list[tuple[str, list[str]]] = []
+
+    monkeypatch.setattr(
+        "app.services.selective_queue.queue_result_with_optional_file_selection",
+        lambda **kwargs: QueueResult(message="Queued in qBittorrent."),
+    )
+
+    def fake_download_torrent_bytes(link):
+        inspected_links.append(link)
+        return torrent_bytes, "grouped-variant.torrent"
+
+    monkeypatch.setattr(
+        "app.services.selective_queue._download_torrent_bytes",
+        fake_download_torrent_bytes,
+    )
+    monkeypatch.setattr(
+        "app.services.selective_queue.parse_torrent_info",
+        lambda torrent_bytes, *, source_name="queued-result.torrent": ParsedTorrentInfo(
+            info_hash="0123456789abcdef0123456789abcdef01234567",
+            filename=source_name,
+            files=[],
+            tracker_urls=["https://tracker.two/announce"],
+        ),
+    )
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "get_torrent",
+        lambda self, info_hash: {"hash": info_hash},
+    )
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "get_torrent_trackers",
+        lambda self, info_hash: [{"url": "https://tracker.example/announce"}],
+    )
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "add_trackers",
+        lambda self, info_hash, tracker_urls: add_tracker_calls.append(
+            (info_hash, list(tracker_urls))
+        ),
+    )
+
+    result = queue_grouped_search_results(
+        qb_base_url="http://127.0.0.1:8080",
+        qb_username="admin",
+        qb_password="secret",
+        links=[
+            "magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567&tr=https://tracker.example/announce",
+            "https://example.com/grouped-variant.torrent",
+        ],
+        info_hash="0123456789abcdef0123456789abcdef01234567",
+        tracker_urls=["https://tracker.example/announce"],
+        category="",
+        save_path="",
+        paused=True,
+        sequential_download=False,
+        first_last_piece_prio=False,
+        rule=None,
+    )
+
+    assert isinstance(result, QueueResult)
+    assert "Processed 2 same-hash variants" in result.message
+    assert "Added 1 missing trackers" in result.message
+    assert inspected_links == ["https://example.com/grouped-variant.torrent"]
+    assert add_tracker_calls == [
+        (
+            "0123456789abcdef0123456789abcdef01234567",
+            ["https://tracker.two/announce"],
+        )
+    ]

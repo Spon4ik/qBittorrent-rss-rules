@@ -2204,7 +2204,6 @@ function initSearchPage(container) {
     "mvo",
     "pack",
     "pilot",
-    "proper",
     "ray",
     "remux",
     "repack",
@@ -2215,7 +2214,6 @@ function initSearchPage(container) {
     "sub",
     "telecine",
     "truehd",
-    "ts",
     "uhd",
     "uncut",
     "ukr",
@@ -2317,17 +2315,15 @@ function initSearchPage(container) {
     const payloadImdbId = normalizeSearchImdbId(filters.imdbId || "");
     const resultImdbId = normalizeSearchImdbId(entry.imdbId || "");
     const imdbExactMatch = Boolean(payloadImdbId && resultImdbId && payloadImdbId === resultImdbId);
-    const isPrecisePrimaryRow = Boolean(payloadImdbId && (entry.querySourceKeys || []).includes("primary"));
-    if (!imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {
+    const isPrecisePrimaryRow = Boolean(
+      payloadImdbId && effectiveQuerySourceKeys(entry, filters).includes("primary")
+    );
+    if (!isPrecisePrimaryRow && !imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {
       const queryLabel = getSearchQueryLabel();
       return queryLabel
         ? `Title does not match query "${queryLabel}".`
         : "Title does not match the current query.";
     }
-    if (isPrecisePrimaryRow && !imdbExactMatch && !matchesPreciseTitleIdentity(entry.title, filters.query)) {
-      return "Title does not match the exact query identity.";
-    }
-
     if (!isPrecisePrimaryRow) {
       for (const keyword of filters.keywordsAll) {
         if (!containsTerm(entry.textSurface, keyword)) {
@@ -2415,11 +2411,67 @@ function initSearchPage(container) {
     return entryFilterFailure(entry, filters) === null;
   };
 
+  const effectiveQuerySourceKeys = (entry, filters) => {
+    const baseKeys = Array.isArray(entry.querySourceKeys) ? entry.querySourceKeys : [];
+    if (!baseKeys.includes("primary")) {
+      return baseKeys;
+    }
+    const payloadImdbId = normalizeSearchImdbId(filters.imdbId || "");
+    const resultImdbId = normalizeSearchImdbId(entry.imdbId || "");
+    const imdbExactMatch = Boolean(payloadImdbId && resultImdbId && payloadImdbId === resultImdbId);
+    if (!payloadImdbId || imdbExactMatch || matchesPreciseTitleIdentity(entry.title, filters.query)) {
+      return baseKeys;
+    }
+    const demotedKeys = baseKeys.filter((item) => item !== "primary");
+    if (!demotedKeys.includes("fallback")) {
+      demotedKeys.push("fallback");
+    }
+    return demotedKeys;
+  };
+
+  const effectiveQuerySourcePriority = (entry, filters) => {
+    return querySourcePriority(effectiveQuerySourceKeys(entry, filters));
+  };
+
+  const effectiveQuerySourcePresentation = (entry, filters) => {
+    const sourceKeys = effectiveQuerySourceKeys(entry, filters);
+    const hasPrimary = sourceKeys.includes("primary");
+    const hasFallback = sourceKeys.includes("fallback");
+    if (hasPrimary && hasFallback) {
+      return {
+        key: "primary+fallback",
+        label: entry.querySourceLabel || "Precise results + Title fallback",
+      };
+    }
+    if (hasPrimary) {
+      return {
+        key: "primary",
+        label: entry.querySourceLabelPrimary || entry.querySourceLabel || "Precise results",
+      };
+    }
+    if (hasFallback) {
+      return {
+        key: "fallback",
+        label: entry.querySourceLabelFallback || "Title fallback",
+      };
+    }
+    return {
+      key: String(entry.querySourceKey || "").trim().toLowerCase(),
+      label: entry.querySourceLabel || "Primary query",
+    };
+  };
+
   const getSortCriteria = () => {
     return controlState.sortCriteria;
   };
 
-  const compareEntries = (left, right, criteria) => {
+  const compareEntries = (left, right, criteria, filters) => {
+    const leftQueryPriority = effectiveQuerySourcePriority(left, filters);
+    const rightQueryPriority = effectiveQuerySourcePriority(right, filters);
+    if (leftQueryPriority !== rightQueryPriority) {
+      return leftQueryPriority - rightQueryPriority;
+    }
+
     const compareValue = (field) => {
       if (field === "size_bytes") {
         return { type: "number", left: left.sizeBytes, right: right.sizeBytes };
@@ -2531,6 +2583,21 @@ function initSearchPage(container) {
       .map((item) => item.trim())
       .filter((item) => item === "primary" || item === "fallback");
   };
+  const querySourcePriority = (keys) => {
+    const normalizedKeys = Array.isArray(keys) ? keys : [];
+    const hasPrimary = normalizedKeys.includes("primary");
+    const hasFallback = normalizedKeys.includes("fallback");
+    if (hasPrimary && hasFallback) {
+      return 1;
+    }
+    if (hasPrimary) {
+      return 0;
+    }
+    if (hasFallback) {
+      return 2;
+    }
+    return 9;
+  };
 
   const sectionState = Object.fromEntries(
     sections.map((section) => {
@@ -2572,6 +2639,21 @@ function initSearchPage(container) {
         querySourceKeys: parseQuerySourceKeys(
           card.dataset.querySourceKey || card.dataset.querySource || ""
         ),
+        querySourceKey: String(card.dataset.querySourceKey || card.dataset.querySource || "").trim(),
+        querySourceLabel: String(card.dataset.querySource || "").trim(),
+        querySourceLabelPrimary:
+          String(card.dataset.querySource || "").trim().split(" + ", 1)[0].trim()
+          || "Precise results",
+        querySourceLabelFallback:
+          String(card.dataset.querySource || "").trim().includes(" + ")
+            ? String(card.dataset.querySource || "").trim().split(" + ").slice(-1)[0].trim()
+            : "Title fallback",
+        querySourcePriority: querySourcePriority(
+          parseQuerySourceKeys(card.dataset.querySourceKey || card.dataset.querySource || "")
+        ),
+        cardQuerySourceChipElement: card.querySelector(".rule-card-top .status-chip"),
+        cardQuerySourceDetailElement: card.querySelector(".detail-list div:first-child dd"),
+        rowQuerySourceElement: rows[index]?.querySelector("td:first-child") || null,
       }));
 
       return [
@@ -2947,7 +3029,7 @@ function initSearchPage(container) {
       return { visibleEntries: [], hiddenEntries: [] };
     }
 
-    const sortedEntries = [...state.entries].sort((left, right) => compareEntries(left, right, sortCriteria));
+    const sortedEntries = [...state.entries].sort((left, right) => compareEntries(left, right, sortCriteria, filters));
     if (state.cardContainer) {
       for (const entry of sortedEntries) {
         state.cardContainer.appendChild(entry.card);
@@ -2967,6 +3049,22 @@ function initSearchPage(container) {
     for (const entry of sortedEntries) {
       const failure = entryFilterFailure(entry, filters);
       const visible = failure === null;
+      const effectiveSource = effectiveQuerySourcePresentation(entry, filters);
+      entry.card.dataset.querySourceKey = effectiveSource.key;
+      entry.card.dataset.querySource = effectiveSource.label;
+      if (entry.row) {
+        entry.row.dataset.querySourceKey = effectiveSource.key;
+        entry.row.dataset.querySource = effectiveSource.label;
+      }
+      if (entry.cardQuerySourceChipElement) {
+        entry.cardQuerySourceChipElement.textContent = effectiveSource.label;
+      }
+      if (entry.cardQuerySourceDetailElement) {
+        entry.cardQuerySourceDetailElement.textContent = effectiveSource.label;
+      }
+      if (entry.rowQuerySourceElement) {
+        entry.rowQuerySourceElement.textContent = effectiveSource.label;
+      }
       entry.card.hidden = !visible;
       if (entry.row) {
         entry.row.hidden = !(visible || controlState.showHiddenRows);
@@ -3029,8 +3127,9 @@ function initSearchPage(container) {
       }
       visibleBySource.set(source.key, 0);
     }
+    const filters = getActiveFilters();
     for (const entry of visibleCombinedEntries) {
-      for (const sourceKey of entry.querySourceKeys || []) {
+      for (const sourceKey of effectiveQuerySourceKeys(entry, filters)) {
         if (!visibleBySource.has(sourceKey)) {
           continue;
         }
@@ -3264,12 +3363,18 @@ function initResultQueueActions(root = document) {
         setQueueStatus(button, "Could not queue: missing result link.", true);
         return;
       }
+      const groupedLinks = parseJsonData(button.dataset.resultLinks || "[]", []);
+      const trackerUrls = parseJsonData(button.dataset.resultTrackerUrls || "[]", []);
+      const resultInfoHash = String(button.dataset.resultInfoHash || "").trim().toLowerCase();
       const ruleId = String(button.dataset.resultRuleId || "").trim();
       const queueOptions = readQueueOptions(button);
       const originalLabel = button.textContent;
       button.disabled = true;
       button.textContent = "Queueing...";
-      setQueueStatus(button, "Queueing result in qBittorrent...");
+      const queueingLabel = Array.isArray(groupedLinks) && groupedLinks.length > 1
+        ? "Queueing grouped same-hash results in qBittorrent..."
+        : "Queueing result in qBittorrent...";
+      setQueueStatus(button, queueingLabel);
 
       try {
         const response = await fetch("/api/search/queue", {
@@ -3279,6 +3384,9 @@ function initResultQueueActions(root = document) {
           },
           body: JSON.stringify({
             link: resultLink,
+            links: Array.isArray(groupedLinks) && groupedLinks.length > 0 ? groupedLinks : [resultLink],
+            info_hash: resultInfoHash || null,
+            tracker_urls: Array.isArray(trackerUrls) ? trackerUrls : [],
             rule_id: ruleId || null,
             add_paused: queueOptions.addPaused,
             sequential_download: queueOptions.sequentialDownload,

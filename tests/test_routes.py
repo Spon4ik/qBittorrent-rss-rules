@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from sqlalchemy import select
 
@@ -18,11 +19,13 @@ from app.models import (
     AppSettings,
     IndexerCategoryCatalog,
     MediaType,
+    MetadataProvider,
     QualityProfile,
     Rule,
     RuleSearchSnapshot,
     SyncStatus,
 )
+from app.routes.pages import _auto_imdb_first_payload
 from app.schemas import (
     JackettSearchRequest,
     JackettSearchResult,
@@ -34,6 +37,7 @@ from app.services import quality_filters
 from app.services.hover_debug import clear_hover_events
 from app.services.jackett import JackettClient, clamp_search_query_text
 from app.services.metadata import MetadataClient
+from app.services.selective_queue import ParsedTorrentInfo
 from tests.jellyfin_test_utils import (
     add_jellyfin_episode,
     add_jellyfin_series,
@@ -86,7 +90,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "0.8.5"
+    assert payload["app_version"] == "0.9.0"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -817,7 +821,7 @@ def test_inline_local_filters_enforce_query_and_imdb_parity() -> None:
         in app_js_source
     )
     assert (
-        "if (!imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {"
+        "if (!isPrecisePrimaryRow && !imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {"
         in app_js_source
     )
 
@@ -829,14 +833,9 @@ def test_inline_local_filters_keep_precise_primary_rows_separate_from_fallback_r
     app_js_source = app_js_path.read_text(encoding="utf-8")
 
     assert "const matchesPreciseTitleIdentity = (title, queryValue) => {" in app_js_source
-    assert (
-        'const isPrecisePrimaryRow = Boolean(payloadImdbId && (entry.querySourceKeys || []).includes("primary"));'
-        in app_js_source
-    )
-    assert (
-        "if (isPrecisePrimaryRow && !imdbExactMatch && !matchesPreciseTitleIdentity(entry.title, filters.query)) {"
-        in app_js_source
-    )
+    assert "payloadImdbId && effectiveQuerySourceKeys(entry, filters).includes(\"primary\")" in app_js_source
+    assert "const effectiveQuerySourceKeys = (entry, filters) => {" in app_js_source
+    assert "if (!payloadImdbId || imdbExactMatch || matchesPreciseTitleIdentity(entry.title, filters.query)) {" in app_js_source
     assert (
         "if (!isPrecisePrimaryRow && filters.generatedPatternRegex && !filters.generatedPatternRegex.test(entry.regexSurface)) {"
         in app_js_source
@@ -1015,6 +1014,71 @@ def test_search_page_embeds_raw_cache_payload_for_local_refinement(app_client, m
     assert 'data-search-filtered-count="combined"' in response.text
     assert 'data-search-fetched-count="combined"' in response.text
     assert "data-search-category-scope-status" in response.text
+    assert "data-result-links=" in response.text
+    assert "data-result-info-hash=" in response.text
+
+
+def test_search_page_keeps_exact_rows_ahead_of_fallback_rows(app_client, monkeypatch) -> None:
+    def fake_search(self, payload):
+        return JackettSearchRun(
+            query_variants=["Dune Part Two"],
+            raw_results=[
+                JackettSearchResult(
+                    merge_key="hash:exact111",
+                    title="Dune Part Two Exact 2160p",
+                    link="magnet:?xt=urn:btih:EXACT111",
+                    info_hash="exact111",
+                    indexer="rutracker",
+                )
+            ],
+            results=[
+                JackettSearchResult(
+                    merge_key="hash:exact111",
+                    title="Dune Part Two Exact 2160p",
+                    link="magnet:?xt=urn:btih:EXACT111",
+                    info_hash="exact111",
+                    indexer="rutracker",
+                )
+            ],
+            raw_fallback_results=[
+                JackettSearchResult(
+                    merge_key="hash:fallback222",
+                    title="Dune Part Two Fallback 1080p",
+                    link="magnet:?xt=urn:btih:FALLBACK222",
+                    info_hash="fallback222",
+                    indexer="kinozal",
+                )
+            ],
+            fallback_results=[
+                JackettSearchResult(
+                    merge_key="hash:fallback222",
+                    title="Dune Part Two Fallback 1080p",
+                    link="magnet:?xt=urn:btih:FALLBACK222",
+                    info_hash="fallback222",
+                    indexer="kinozal",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "Dune Part Two",
+            "media_type": "movie",
+            "imdb_id": "tt15239678",
+        },
+    )
+
+    assert response.status_code == 200
+    table_body = response.text.split('<tbody data-search-table-body="combined">', 1)[1].split(
+        "</tbody>",
+        1,
+    )[0]
+    assert table_body.index("Dune Part Two Exact 2160p") < table_body.index(
+        "Dune Part Two Fallback 1080p"
+    )
 
 
 def test_search_page_persists_indexer_category_catalog_entries(
@@ -1724,6 +1788,186 @@ def test_search_page_from_rule_carries_series_episode_floor_into_imdb_search(
     assert response.status_code == 200
     assert "series floor S03E07" in response.text
     assert "IMDb-enforced Jackett lookup" in response.text
+
+
+def test_search_page_auto_derives_series_episode_floor_from_query_for_imdb_search(
+    app_client,
+    monkeypatch,
+) -> None:
+    def fake_search(self, payload):
+        assert payload.query == "The Rookie S08E13"
+        assert payload.imdb_id == "tt7587890"
+        assert payload.imdb_id_only is True
+        assert payload.season_number == 8
+        assert payload.episode_number == 13
+        assert payload.release_year is None
+        return JackettSearchRun(query_variants=["The Rookie S08E13"], results=[])
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "The Rookie S08E13",
+            "media_type": "series",
+            "imdb_id": "tt7587890",
+            "release_year": "2026",
+            "include_release_year": "1",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "series floor S08E13" in response.text
+    assert "IMDb-enforced Jackett lookup" in response.text
+    assert 'name="release_year" value=""' in response.text
+
+
+def test_search_page_uses_addon_parity_as_desktop_baseline_and_standard_search_as_fallback(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("jackett-key"),
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    captured_payloads: list[JackettSearchRequest] = []
+
+    def fake_search(self, payload):
+        captured_payloads.append(payload)
+        return JackettSearchRun(
+            query_variants=[payload.query],
+            request_variants=[f't=search q="{payload.query}"'],
+            raw_results=[
+                JackettSearchResult(
+                    merge_key="desktop-fallback-pack",
+                    title="Jury Duty Company Retreat fallback pack",
+                    link="magnet:?xt=urn:btih:AAA111",
+                    indexer="FallbackIndexer",
+                )
+            ],
+            results=[
+                JackettSearchResult(
+                    merge_key="desktop-fallback-pack",
+                    title="Jury Duty Company Retreat fallback pack",
+                    link="magnet:?xt=urn:btih:AAA111",
+                    indexer="FallbackIndexer",
+                )
+            ],
+            raw_fallback_results=[],
+            fallback_results=[],
+        )
+
+    def fake_collect_enriched_search_run(self, *, payload):
+        assert payload.imdb_id == "tt22074164"
+        assert payload.season_number == 1
+        assert payload.episode_number == 1
+        enriched_result = JackettSearchResult(
+            merge_key="wanted-season-pack",
+            title="Jury Duty Presents: Company Retreat S01E01 1080p RU",
+            link="magnet:?xt=urn:btih:14544b87fe01a84ffb8a3b75c5c9094180029fd9",
+            info_hash="14544b87fe01a84ffb8a3b75c5c9094180029fd9",
+            indexer="MegaPeer",
+            size_bytes=19_200_000_000,
+            size_label="19.2 GB",
+            seeders=13,
+            peers=33,
+            torznab_attrs={"querysource": "Addon parity"},
+        )
+        return JackettSearchRun(
+            raw_results=[enriched_result],
+            results=[enriched_result],
+            raw_fallback_results=[],
+            fallback_results=[],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(
+        "app.routes.pages.StremioAddonService.collect_enriched_search_run",
+        fake_collect_enriched_search_run,
+    )
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "Jury Duty Presents: Company Retreat S01E01",
+            "media_type": "series",
+            "imdb_id": "tt22074164",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured_payloads
+    assert captured_payloads[0].imdb_id is None
+    assert captured_payloads[0].imdb_id_only is False
+    assert captured_payloads[0].query == "Jury Duty Presents: Company Retreat S01E01"
+    assert "Jury Duty Presents: Company Retreat S01E01 1080p RU" in response.text
+    assert "Jury Duty Company Retreat fallback pack" in response.text
+    assert "14544b87fe01a84ffb8a3b75c5c9094180029fd9" in response.text
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_season", "expected_episode"),
+    [
+        ("The Rookie S08E13", 8, 13),
+        ("Death in Paradise 14x01", 14, 1),
+    ],
+)
+def test_auto_imdb_first_payload_derives_episode_floor_from_query(
+    query: str,
+    expected_season: int,
+    expected_episode: int,
+) -> None:
+    payload = JackettSearchRequest(
+        query=query,
+        media_type=MediaType.SERIES,
+        imdb_id="tt1234567",
+    )
+
+    transformed = _auto_imdb_first_payload(payload)
+
+    assert transformed.imdb_id_only is True
+    assert transformed.season_number == expected_season
+    assert transformed.episode_number == expected_episode
+    assert transformed.query == query
+
+
+def test_auto_imdb_first_payload_clears_release_year_for_episode_query() -> None:
+    payload = JackettSearchRequest(
+        query="The Rookie S08E13",
+        media_type=MediaType.SERIES,
+        imdb_id="tt7587890",
+        release_year="2026",
+    )
+
+    transformed = _auto_imdb_first_payload(payload)
+
+    assert transformed.imdb_id_only is True
+    assert transformed.season_number == 8
+    assert transformed.episode_number == 13
+    assert transformed.release_year is None
+
+
+def test_auto_imdb_first_payload_clears_release_year_for_explicit_series_episode_floor() -> None:
+    payload = JackettSearchRequest(
+        query="Jury Duty Presents: Company Retreat",
+        media_type=MediaType.SERIES,
+        imdb_id="tt22074164",
+        season_number=1,
+        episode_number=3,
+        release_year="2024",
+    )
+
+    transformed = _auto_imdb_first_payload(payload)
+
+    assert transformed.imdb_id_only is True
+    assert transformed.season_number == 1
+    assert transformed.episode_number == 3
+    assert transformed.release_year is None
 
 
 def test_search_page_falls_back_to_title_when_rule_derivation_validation_fails(
@@ -2675,6 +2919,169 @@ def test_queue_search_result_api_uses_settings_default_pause_when_no_rule(
     assert captured["paused"] is False
 
 
+def test_queue_search_result_api_uploads_http_torrent_file_to_qb_instead_of_remote_url_fetch(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jackett_api_url="http://localhost:9117",
+        jackett_qb_url="http://docker-host:9117",
+        default_add_paused=True,
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    torrent_bytes = b"d4:infod4:name8:test.mkv6:lengthi1eee"
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "app.services.selective_queue._download_torrent_bytes",
+        lambda link: (torrent_bytes, "jackett-result.torrent"),
+    )
+
+    def fake_add_torrent_file(
+        self,
+        *,
+        torrent_bytes: bytes,
+        filename: str,
+        category: str = "",
+        save_path: str = "",
+        paused: bool = True,
+        sequential_download: bool = False,
+        first_last_piece_prio: bool = False,
+    ) -> None:
+        captured.update(
+            {
+                "torrent_bytes": torrent_bytes,
+                "filename": filename,
+                "category": category,
+                "save_path": save_path,
+                "paused": paused,
+                "sequential_download": sequential_download,
+                "first_last_piece_prio": first_last_piece_prio,
+            }
+        )
+
+    def fail_add_torrent_url(self, **kwargs) -> None:
+        raise AssertionError(f"Unexpected add_torrent_url call: {kwargs!r}")
+
+    monkeypatch.setattr("app.routes.api.QbittorrentClient.add_torrent_file", fake_add_torrent_file)
+    monkeypatch.setattr("app.routes.api.QbittorrentClient.add_torrent_url", fail_add_torrent_url)
+
+    response = app_client.post(
+        "/api/search/queue",
+        json={
+            "link": "http://localhost:9117/dl/bitru/?jackett_apikey=secret&path=abc",
+            "sequential_download": True,
+            "first_last_piece_prio": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "queued"
+    assert payload["queued_via_torrent_file"] is True
+    assert captured == {
+        "torrent_bytes": torrent_bytes,
+        "filename": "jackett-result.torrent",
+        "category": "",
+        "save_path": "",
+        "paused": True,
+        "sequential_download": True,
+        "first_last_piece_prio": True,
+    }
+
+
+def test_queue_search_result_api_rejects_broken_local_jackett_url_instead_of_remote_fetching(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jackett_api_url="http://localhost:9117",
+        default_add_paused=True,
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.selective_queue._download_torrent_bytes",
+        lambda link: (_ for _ in ()).throw(httpx.HTTPError("boom")),
+    )
+
+    def fail_add_torrent_url(self, **kwargs) -> None:
+        raise AssertionError(f"Unexpected add_torrent_url call: {kwargs!r}")
+
+    monkeypatch.setattr("app.routes.api.QbittorrentClient.add_torrent_url", fail_add_torrent_url)
+
+    response = app_client.post(
+        "/api/search/queue",
+        json={
+            "link": "http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc",
+        },
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["error"]
+        == "Could not fetch a valid torrent file from the local Jackett-style URL, so the app did not hand it off to qBittorrent for remote fetching."
+    )
+
+
+def test_queue_search_result_api_rewrites_jackett_qb_url_for_app_fetch(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jackett_api_url="http://localhost:9117",
+        jackett_qb_url="http://docker-host:9117",
+        default_add_paused=True,
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    torrent_bytes = b"d4:infod4:name8:Example12:piece lengthi1e6:pieces20:01234567890123456789ee"
+    seen_links: list[str] = []
+
+    def fake_download(link):
+        seen_links.append(link)
+        return torrent_bytes, "jackett-result.torrent"
+
+    monkeypatch.setattr("app.services.selective_queue._download_torrent_bytes", fake_download)
+    monkeypatch.setattr(
+        "app.services.selective_queue.parse_torrent_info",
+        lambda torrent_bytes, *, source_name="queued-result.torrent": ParsedTorrentInfo(
+            info_hash="0123456789abcdef0123456789abcdef01234567",
+            filename=source_name,
+            files=[],
+            tracker_urls=[],
+        ),
+    )
+    monkeypatch.setattr(
+        "app.routes.api.QbittorrentClient.add_torrent_file",
+        lambda self, **kwargs: None,
+    )
+
+    response = app_client.post(
+        "/api/search/queue",
+        json={
+            "link": "http://docker-host:9117/dl/kinozal/?jackett_apikey=secret&path=abc",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["queued_via_torrent_file"] is True
+    assert seen_links == ["http://localhost:9117/dl/kinozal/?jackett_apikey=secret&path=abc"]
+
+
 def test_queue_search_result_api_reports_missing_only_selection_details(
     app_client, db_session, monkeypatch
 ) -> None:
@@ -2724,6 +3131,54 @@ def test_queue_search_result_api_reports_missing_only_selection_details(
     assert payload["skipped_file_count"] == 1
     assert payload["queued_via_torrent_file"] is True
     assert payload["deferred_file_selection"] is False
+
+
+def test_queue_search_result_api_uses_grouped_queue_flow(app_client, db_session, monkeypatch) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        default_add_paused=True,
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "app.routes.api.queue_grouped_search_results",
+        lambda **kwargs: captured.update(kwargs)
+        or SimpleNamespace(
+            message="Processed grouped queue.",
+            selected_file_count=0,
+            skipped_file_count=0,
+            deferred_file_selection=False,
+            queued_via_torrent_file=False,
+        ),
+    )
+
+    response = app_client.post(
+        "/api/search/queue",
+        json={
+            "link": "magnet:?xt=urn:btih:ABC123",
+            "links": [
+                "magnet:?xt=urn:btih:ABC123",
+                "https://example.com/variant.torrent",
+            ],
+            "info_hash": "abc123",
+            "tracker_urls": ["https://tracker.one/announce"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "Processed grouped queue."
+    assert captured["links"] == [
+        "magnet:?xt=urn:btih:ABC123",
+        "https://example.com/variant.torrent",
+    ]
+    assert captured["info_hash"] == "abc123"
+    assert captured["tracker_urls"] == ["https://tracker.one/announce"]
 
 
 def test_save_search_preferences_api_persists_defaults(app_client, db_session) -> None:
@@ -3217,6 +3672,96 @@ def test_test_stremio_settings_reports_success(app_client, monkeypatch, tmp_path
     assert "Stremio connection test succeeded." in response.text
     assert "Auth source: local storage." in response.text
     assert "Active movie/series library items: 1 of 1." in response.text
+
+
+def test_settings_page_renders_stremio_preferred_languages_field(app_client, db_session) -> None:
+    settings = AppSettings(
+        id="default",
+        stremio_preferred_languages="ru,en",
+        metadata_provider=MetadataProvider.DISABLED,
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    response = app_client.get("/settings")
+
+    assert response.status_code == 200
+    assert 'name="stremio_preferred_languages"' in response.text
+    assert 'value="ru,en"' in response.text
+
+
+def test_settings_page_renders_stremio_stream_provider_manifests_field(
+    app_client, db_session
+) -> None:
+    settings = AppSettings(
+        id="default",
+        stremio_stream_provider_manifests=(
+            "Torrentio|https://torrentio.strem.fun/manifest.json"
+        ),
+        metadata_provider=MetadataProvider.DISABLED,
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    response = app_client.get("/settings")
+
+    assert response.status_code == 200
+    assert 'name="stremio_stream_provider_manifests"' in response.text
+    assert "Torrentio|https://torrentio.strem.fun/manifest.json" in response.text
+
+
+def test_save_settings_persists_stremio_preferred_languages(app_client, db_session) -> None:
+    response = app_client.post(
+        "/api/settings",
+        data={
+            "stremio_preferred_languages": "ru, en",
+            "metadata_provider": "disabled",
+            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
+            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
+            "save_path_template": "",
+            "default_enabled": "on",
+            "default_add_paused": "on",
+            "default_sequential_download": "on",
+            "default_first_last_piece_prio": "on",
+            "default_quality_profile": "2160p_hdr",
+        },
+    )
+
+    assert response.status_code == 200
+    settings = db_session.get(AppSettings, "default")
+    assert settings is not None
+    assert settings.stremio_preferred_languages == "ru,en"
+
+
+def test_save_settings_persists_stremio_stream_provider_manifests(
+    app_client, db_session
+) -> None:
+    response = app_client.post(
+        "/api/settings",
+        data={
+            "stremio_stream_provider_manifests": (
+                "Torrentio|https://torrentio.strem.fun/manifest.json\n"
+                "MediaFusion|https://mediafusion.example/manifest.json"
+            ),
+            "metadata_provider": "disabled",
+            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
+            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
+            "save_path_template": "",
+            "default_enabled": "on",
+            "default_add_paused": "on",
+            "default_sequential_download": "on",
+            "default_first_last_piece_prio": "on",
+            "default_quality_profile": "2160p_hdr",
+        },
+    )
+
+    assert response.status_code == 200
+    settings = db_session.get(AppSettings, "default")
+    assert settings is not None
+    assert settings.stremio_stream_provider_manifests == (
+        "Torrentio|https://torrentio.strem.fun/manifest.json\n"
+        "MediaFusion|https://mediafusion.example/manifest.json"
+    )
 
 
 def test_test_stremio_settings_compat_path_reports_success(

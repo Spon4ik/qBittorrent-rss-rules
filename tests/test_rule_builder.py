@@ -166,6 +166,48 @@ def test_build_qb_rule_enables_regex_when_generated_conditions_are_present() -> 
     assert qb_rule["mustContain"] == r"(?i)(?=.*anaconda)(?=.*remux)"
 
 
+def test_build_qb_rule_rewrites_jackett_feed_urls_for_qb_host() -> None:
+    settings = AppSettings(
+        jackett_api_url="http://127.0.0.1:9117",
+        jackett_qb_url="http://docker-host:9117",
+    )
+    builder = RuleBuilder(settings=settings)
+
+    qb_rule = builder.build_qb_rule(
+        build_rule(
+            feed_urls=[
+                "http://127.0.0.1:9117/api/v2.0/indexers/kinozal/results/torznab/api?apikey=abc&t=search",
+                "https://other.example/feed.xml",
+            ]
+        )
+    )
+
+    assert qb_rule["affectedFeeds"] == [
+        "http://docker-host:9117/api/v2.0/indexers/kinozal/results/torznab/api?apikey=abc&t=search",
+        "https://other.example/feed.xml",
+    ]
+
+
+def test_build_qb_rule_rewrites_loopback_feed_urls_when_settings_use_localhost() -> None:
+    settings = AppSettings(
+        jackett_api_url="http://localhost:9117",
+        jackett_qb_url="http://localhost:9117",
+    )
+    builder = RuleBuilder(settings=settings)
+
+    qb_rule = builder.build_qb_rule(
+        build_rule(
+            feed_urls=[
+                "http://127.0.0.1:9117/api/v2.0/indexers/kinozal/results/torznab/api?apikey=abc&t=search",
+            ]
+        )
+    )
+
+    assert qb_rule["affectedFeeds"] == [
+        "http://localhost:9117/api/v2.0/indexers/kinozal/results/torznab/api?apikey=abc&t=search",
+    ]
+
+
 def test_build_generated_pattern_appends_manual_must_contain_fragments() -> None:
     builder = RuleBuilder(settings=None)
     pattern = builder.build_generated_pattern(

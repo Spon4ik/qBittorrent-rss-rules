@@ -39,6 +39,18 @@ RULES_PAGE_SORT_FIELDS = {
     "last_snapshot_at",
 }
 RULES_FETCH_SCHEDULE_SCOPES = {"enabled", "all"}
+NULLISH_TEXT_VALUES = {"none", "null", "undefined"}
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if cleaned.casefold() in NULLISH_TEXT_VALUES:
+        return None
+    return cleaned
 
 
 class FeedOption(BaseModel):
@@ -467,6 +479,49 @@ class SearchQueueRequest(BaseModel):
         return self
 
 
+class StremioQueueRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    info_hash: str = Field(min_length=40, max_length=40)
+    tracker_urls: list[str] = Field(default_factory=list)
+    display_name: str | None = None
+    file_idx: int | None = Field(default=None, ge=0)
+    rule_id: str | None = None
+    add_paused: bool | None = None
+    sequential_download: bool = False
+    first_last_piece_prio: bool = False
+
+    @field_validator("info_hash")
+    @classmethod
+    def normalize_info_hash(cls, value: str) -> str:
+        cleaned = str(value or "").strip().casefold()
+        if len(cleaned) != 40 or any(char not in "0123456789abcdef" for char in cleaned):
+            raise ValueError("Info hash must be a 40-character hex string.")
+        return cleaned
+
+    @field_validator("tracker_urls")
+    @classmethod
+    def normalize_tracker_urls(cls, value: list[str]) -> list[str]:
+        cleaned_urls: list[str] = []
+        seen_urls: set[str] = set()
+        for item in value:
+            cleaned = str(item or "").strip()
+            if not cleaned:
+                continue
+            if cleaned.casefold().startswith("tracker:"):
+                cleaned = cleaned.split(":", 1)[1].strip()
+            elif cleaned.casefold().startswith("dht:"):
+                continue
+            if not cleaned:
+                continue
+            normalized = cleaned.casefold()
+            if normalized in seen_urls:
+                continue
+            seen_urls.add(normalized)
+            cleaned_urls.append(cleaned)
+        return cleaned_urls
+
+
 class RuleFormPayload(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -602,6 +657,25 @@ class SettingsFormPayload(BaseModel):
     profile_2160p_hdr_include_tokens: list[str] = Field(default_factory=list)
     profile_2160p_hdr_exclude_tokens: list[str] = Field(default_factory=list)
     default_quality_profile: QualityProfile = QualityProfile.UHD_2160P_HDR
+
+    @field_validator(
+        "qb_base_url",
+        "qb_username",
+        "qb_password",
+        "jackett_api_url",
+        "jackett_qb_url",
+        "jackett_api_key",
+        "jellyfin_db_path",
+        "jellyfin_user_name",
+        "stremio_local_storage_path",
+        "omdb_api_key",
+        mode="before",
+    )
+    @classmethod
+    def normalize_optional_text_fields(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_optional_text(str(value))
 
     @field_validator(
         "profile_1080p_include_tokens",

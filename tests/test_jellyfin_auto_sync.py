@@ -30,8 +30,9 @@ def test_jellyfin_auto_sync_runs_on_start_and_on_db_changes(
 
     calls: list[str] = []
 
-    def fake_execute(session, *, settings):
+    def fake_execute(session, *, settings, allow_metadata_requests=True):
         calls.append(str(settings.jellyfin_db_path))
+        assert allow_metadata_requests is False
         return SimpleNamespace(
             message_level="success",
             render_message=lambda prefix="Jellyfin sync completed for": (

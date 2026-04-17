@@ -73,6 +73,48 @@
   </article>
 </section>
 
+<section class="summary-strip" data-stremio-queue-form>
+  <div>
+    <p class="eyebrow">Queue Stremio Variant</p>
+    <strong>Paste a stream object from AIOStreams or Stremio and send that exact variant to qBittorrent</strong>
+    <p class="helper-text">Accepts either one stream object or a full <code>{"streams":[...]}</code> response. Tracker entries like <code>tracker:udp://...</code> are cleaned automatically.</p>
+  </div>
+  <div class="search-local-grid">
+    <label class="search-field full-span">
+      Stream JSON
+      <textarea rows="4" data-stremio-stream-json placeholder='Paste one stream object or a full {"streams":[...]} response'></textarea>
+      <span class="helper-text">Use the first stream in the payload when pasting a full response.</span>
+    </label>
+    <label class="search-field">
+      Display name
+      <input type="text" data-stremio-display-name placeholder="The Beauty S01E01 2160p" />
+    </label>
+    <label class="search-field">
+      Info hash
+      <input type="text" data-stremio-info-hash placeholder="40-character torrent info hash" />
+    </label>
+    <label class="search-field">
+      File index
+      <input type="number" min="0" data-stremio-file-idx placeholder="Optional exact file index" />
+    </label>
+    <label class="search-field full-span">
+      Tracker URLs
+      <textarea rows="3" data-stremio-trackers placeholder="One tracker per line, or comma separated"></textarea>
+      <span class="helper-text">Optional, but adding trackers usually makes the queued magnet more useful.</span>
+    </label>
+    <input type="hidden" data-stremio-rule-id value="{{ queue_defaults.rule_id }}" />
+  </div>
+  <div class="card-actions">
+    <button type="button" data-stremio-parse-button>Parse Stream JSON</button>
+    <button type="button" class="button-link" data-stremio-queue-button>Queue Variant</button>
+  </div>
+  <label class="search-field full-span">
+    Magnet link
+    <textarea rows="2" readonly data-stremio-magnet-output placeholder="Returned magnet link will appear here after queueing"></textarea>
+  </label>
+  <p class="helper-text" data-stremio-queue-status aria-live="polite"></p>
+</section>
+
 {% if derivation_notice %}
 <section class="flash flash-warning">
   {{ derivation_notice }}

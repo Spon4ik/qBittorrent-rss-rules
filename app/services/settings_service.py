@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.config import get_environment_settings, obfuscate_secret, reveal_secret
 from app.models import AppSettings, MetadataProvider, QualityProfile
 from app.schemas import SettingsFormPayload
+from app.services.metadata import normalize_omdb_api_key
 from app.services.quality_filters import (
     DEFAULT_QUALITY_PROFILE_RULES,
     LEGACY_DEFAULT_QUALITY_PROFILE_RULES,
@@ -70,6 +71,19 @@ DEFAULT_STREMIO_AUTO_SYNC_ENABLED = True
 DEFAULT_STREMIO_AUTO_SYNC_INTERVAL_SECONDS = 30
 MIN_STREMIO_AUTO_SYNC_INTERVAL_SECONDS = 5
 MAX_STREMIO_AUTO_SYNC_INTERVAL_SECONDS = 3600
+NULLISH_TEXT_VALUES = frozenset({"none", "null", "undefined"})
+
+
+def _normalize_optional_text(value: object | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    if not cleaned:
+        return None
+    if cleaned.casefold() in NULLISH_TEXT_VALUES:
+        return None
+    return cleaned
+
 STREMIO_LANGUAGE_TOKEN_ALIASES: dict[str, tuple[str, ...]] = {
     "en": ("en", "eng", "english"),
     "ru": ("ru", "rus", "russian"),
@@ -462,14 +476,14 @@ class SettingsService:
         if normalized_default_feeds != (settings.default_feed_urls or []):
             settings.default_feed_urls = normalized_default_feeds
             changed = True
-        normalized_jellyfin_db_path = (
-            str(getattr(settings, "jellyfin_db_path", "") or "").strip() or None
+        normalized_jellyfin_db_path = _normalize_optional_text(
+            getattr(settings, "jellyfin_db_path", None)
         )
         if normalized_jellyfin_db_path != getattr(settings, "jellyfin_db_path", None):
             settings.jellyfin_db_path = normalized_jellyfin_db_path
             changed = True
-        normalized_jellyfin_user_name = (
-            str(getattr(settings, "jellyfin_user_name", "") or "").strip() or None
+        normalized_jellyfin_user_name = _normalize_optional_text(
+            getattr(settings, "jellyfin_user_name", None)
         )
         if normalized_jellyfin_user_name != getattr(settings, "jellyfin_user_name", None):
             settings.jellyfin_user_name = normalized_jellyfin_user_name
@@ -520,8 +534,8 @@ class SettingsService:
         ):
             settings.jellyfin_auto_sync_last_message = normalized_jellyfin_auto_sync_message
             changed = True
-        normalized_stremio_storage_path = (
-            str(getattr(settings, "stremio_local_storage_path", "") or "").strip() or None
+        normalized_stremio_storage_path = _normalize_optional_text(
+            getattr(settings, "stremio_local_storage_path", None)
         )
         if normalized_stremio_storage_path != getattr(settings, "stremio_local_storage_path", None):
             settings.stremio_local_storage_path = normalized_stremio_storage_path
@@ -546,6 +560,15 @@ class SettingsService:
             settings, "stremio_stream_provider_manifests", None
         ):
             settings.stremio_stream_provider_manifests = normalized_stream_provider_manifests
+            changed = True
+        normalized_saved_omdb_key = normalize_omdb_api_key(
+            reveal_secret(getattr(settings, "omdb_api_key_encrypted", None))
+        )
+        normalized_saved_omdb_key_encrypted = (
+            obfuscate_secret(normalized_saved_omdb_key) if normalized_saved_omdb_key else None
+        )
+        if normalized_saved_omdb_key_encrypted != getattr(settings, "omdb_api_key_encrypted", None):
+            settings.omdb_api_key_encrypted = normalized_saved_omdb_key_encrypted
             changed = True
         normalized_stremio_auto_sync_enabled = bool(
             getattr(settings, "stremio_auto_sync_enabled", DEFAULT_STREMIO_AUTO_SYNC_ENABLED)
@@ -734,7 +757,9 @@ class SettingsService:
         if payload.jackett_api_key:
             settings.jackett_api_key_encrypted = obfuscate_secret(payload.jackett_api_key)
         if payload.omdb_api_key:
-            settings.omdb_api_key_encrypted = obfuscate_secret(payload.omdb_api_key)
+            normalized_omdb_api_key = normalize_omdb_api_key(payload.omdb_api_key)
+            if normalized_omdb_api_key:
+                settings.omdb_api_key_encrypted = obfuscate_secret(normalized_omdb_api_key)
         return settings
 
     @staticmethod
@@ -754,8 +779,10 @@ class SettingsService:
         provider = settings.metadata_provider if settings else MetadataProvider.OMDB
         return ResolvedMetadataConfig(
             provider=provider,
-            api_key=env.omdb_api_key
-            or reveal_secret(settings.omdb_api_key_encrypted if settings else None),
+            api_key=normalize_omdb_api_key(
+                env.omdb_api_key
+                or reveal_secret(settings.omdb_api_key_encrypted if settings else None)
+            ),
         )
 
     @staticmethod
@@ -776,8 +803,8 @@ class SettingsService:
         db_path = env.jellyfin_db_path or (settings.jellyfin_db_path if settings else None)
         user_name = env.jellyfin_user_name or (settings.jellyfin_user_name if settings else None)
         return ResolvedJellyfinConfig(
-            db_path=str(db_path).strip() or None if db_path is not None else None,
-            user_name=str(user_name).strip() or None if user_name is not None else None,
+            db_path=_normalize_optional_text(db_path),
+            user_name=_normalize_optional_text(user_name),
             auto_sync_enabled=bool(
                 getattr(settings, "jellyfin_auto_sync_enabled", DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED)
             )
@@ -801,9 +828,7 @@ class SettingsService:
             getattr(settings, "stremio_local_storage_path", None) if settings is not None else None
         )
         return ResolvedStremioConfig(
-            local_storage_path=(
-                str(local_storage_path).strip() or None if local_storage_path is not None else None
-            ),
+            local_storage_path=_normalize_optional_text(local_storage_path),
             auth_key=(
                 str(env.stremio_auth_key).strip() or None
                 if env.stremio_auth_key is not None

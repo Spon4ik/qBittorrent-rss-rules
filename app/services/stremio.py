@@ -231,10 +231,11 @@ def _resolved_rule_title(rule: Rule) -> str:
 
 
 class StremioService:
-    def __init__(self, settings: AppSettings | None) -> None:
+    def __init__(self, settings: AppSettings | None, *, allow_metadata_requests: bool = True) -> None:
         self.settings = settings
         self.config = SettingsService.resolve_stremio(settings)
         self.metadata_config = SettingsService.resolve_metadata(settings)
+        self.allow_metadata_requests = allow_metadata_requests
         self._request_timeout = get_environment_settings().request_timeout
         self._metadata_client: MetadataClient | None = None
         self._catalog_imdb_id_cache: dict[str, str | None] = {}
@@ -1013,6 +1014,8 @@ class StremioService:
         return normalized_imdb_id
 
     def _metadata_client_for_catalog(self) -> MetadataClient | None:
+        if not self.allow_metadata_requests:
+            return None
         if self.metadata_config.provider.value == "disabled":
             return None
         if not self.metadata_config.api_key:

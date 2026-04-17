@@ -11,12 +11,15 @@ from app.services.selective_queue import (
     ParsedTorrentInfo,
     QueueResult,
     SelectiveQueueError,
+    StremioQueueSelection,
     TorrentFileEntry,
     build_episode_file_selection_plan,
+    build_magnet_link,
     find_episode_file_entry,
     parse_torrent_info,
     queue_grouped_search_results,
     queue_result_with_optional_file_selection,
+    queue_stremio_stream_selection,
     select_missing_episode_file_ids,
     text_matches_episode,
 )
@@ -410,6 +413,68 @@ def test_queue_result_with_optional_file_selection_rejects_torrents_without_miss
             first_last_piece_prio=True,
             rule=rule,
         )
+
+
+def test_build_magnet_link_includes_display_name_and_unique_trackers() -> None:
+    magnet_link = build_magnet_link(
+        info_hash="abcdef1234567890abcdef1234567890abcdef12",
+        tracker_urls=[
+            "udp://tracker.example:1337/announce",
+            "udp://tracker.example:1337/announce",
+            "https://tracker.example/announce",
+        ],
+        display_name="The Beauty S01E01 2160p",
+    )
+
+    assert magnet_link.startswith("magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12")
+    assert "dn=The%20Beauty%20S01E01%202160p" in magnet_link
+    assert magnet_link.count("tr=") == 2
+
+
+def test_queue_stremio_stream_selection_queues_exact_variant_and_returns_magnet(
+    monkeypatch,
+) -> None:
+    queued: dict[str, object] = {}
+    exact_worker_calls: list[tuple[str, int]] = []
+
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "add_torrent_url",
+        lambda self, **kwargs: queued.update(kwargs),
+    )
+    monkeypatch.setattr(
+        "app.services.selective_queue._start_exact_file_selection_worker",
+        lambda **kwargs: exact_worker_calls.append((kwargs["info_hash"], kwargs["file_idx"])),
+    )
+
+    result, magnet_link = queue_stremio_stream_selection(
+        qb_base_url="http://127.0.0.1:8080",
+        qb_username="admin",
+        qb_password="secret",
+        selection=StremioQueueSelection(
+            info_hash="abcdef1234567890abcdef1234567890abcdef12",
+            tracker_urls=["udp://tracker.example:1337/announce"],
+            display_name="The Beauty S01E01 2160p",
+            file_idx=5,
+        ),
+        category="Series/The Beauty [imdbid-tt33517752]",
+        save_path="/data/the-beauty",
+        paused=True,
+        sequential_download=True,
+        first_last_piece_prio=True,
+    )
+
+    assert isinstance(result, QueueResult)
+    assert result.deferred_file_selection is True
+    assert "prioritized" in result.message
+    assert magnet_link == queued["link"]
+    assert "tr=udp%3A%2F%2Ftracker.example%3A1337%2Fannounce" in magnet_link
+    assert queued["category"] == "Series/The Beauty [imdbid-tt33517752]"
+    assert queued["save_path"] == "/data/the-beauty"
+    assert queued["paused"] is True
+    assert queued["sequential_download"] is True
+    assert queued["first_last_piece_prio"] is True
+    assert exact_worker_calls == [("abcdef1234567890abcdef1234567890abcdef12", 5)]
 
 
 def test_queue_grouped_search_results_merges_missing_trackers(monkeypatch) -> None:

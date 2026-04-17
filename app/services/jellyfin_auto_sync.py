@@ -92,7 +92,11 @@ class JellyfinAutoSyncService:
             if not should_sync:
                 return wait_seconds
 
-            execution = execute_jellyfin_sync(session, settings=settings)
+            execution = execute_jellyfin_sync(
+                session,
+                settings=settings,
+                allow_metadata_requests=False,
+            )
             self._last_seen_db_path = current_db_path
             self._last_seen_db_mtime_ns = current_mtime_ns
             self._record_status(

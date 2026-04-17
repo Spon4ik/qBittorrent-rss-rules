@@ -132,9 +132,10 @@ def _as_nonnegative_int(value: object | None) -> int | None:
 
 
 class JellyfinService:
-    def __init__(self, settings: AppSettings | None) -> None:
+    def __init__(self, settings: AppSettings | None, *, allow_metadata_requests: bool = True) -> None:
         self.config = SettingsService.resolve_jellyfin(settings)
         self.metadata_config = SettingsService.resolve_metadata(settings)
+        self.allow_metadata_requests = allow_metadata_requests
         self._metadata_client: MetadataClient | None = None
         self._catalog_imdb_id_cache: dict[str, str | None] = {}
         self._catalog_season_cache: dict[tuple[str, int], list[int] | None] = {}
@@ -511,6 +512,8 @@ class JellyfinService:
         return int(row["Played"] or 0) > 0 or int(row["PlayCount"] or 0) > 0
 
     def _metadata_client_for_catalog(self) -> MetadataClient | None:
+        if not self.allow_metadata_requests:
+            return None
         if self.metadata_config.provider.value == "disabled":
             return None
         if not self.metadata_config.api_key:

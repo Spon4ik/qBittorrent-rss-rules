@@ -360,7 +360,7 @@ class MetadataClient:
         except httpx.HTTPStatusError as exc:
             if provider_label == "OMDb" and exc.response.status_code in {401, 403}:
                 raise MetadataLookupError(
-                    "OMDb rejected the API key. Paste only the API key value, not the full OMDb URL."
+                    "OMDb rejected the API key. Use the raw API key value only; if you already did, the key may be invalid, inactive, or not yet approved by OMDb."
                 ) from exc
             raise MetadataLookupError(f"{provider_label} lookup failed: {exc}") from exc
         except httpx.HTTPError as exc:

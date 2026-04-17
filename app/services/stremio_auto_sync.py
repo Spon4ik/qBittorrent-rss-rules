@@ -80,7 +80,11 @@ class StremioAutoSyncService:
             if not should_sync:
                 return wait_seconds
 
-            execution = execute_stremio_sync(session, settings=settings)
+            execution = execute_stremio_sync(
+                session,
+                settings=settings,
+                allow_metadata_requests=False,
+            )
             self._last_seen_signature = current_signature
             self._record_status(
                 session,

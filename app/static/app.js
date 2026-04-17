@@ -3423,6 +3423,219 @@ function initResultQueueActions(root = document) {
   }
 }
 
+function initStremioVariantQueueForms(root = document) {
+  const forms = Array.from(root.querySelectorAll("[data-stremio-queue-form]"));
+  if (forms.length === 0) {
+    return;
+  }
+
+  const normalizeTrackerUrls = (value) => {
+    const values = Array.isArray(value)
+      ? value
+      : String(value || "").split(/[\r\n,]+/u);
+    const trackers = [];
+    const seen = new Set();
+    for (const item of values) {
+      let candidate = String(item || "").trim();
+      if (!candidate) {
+        continue;
+      }
+      if (candidate.toLocaleLowerCase().startsWith("tracker:")) {
+        candidate = candidate.slice("tracker:".length).trim();
+      } else if (candidate.toLocaleLowerCase().startsWith("dht:")) {
+        continue;
+      }
+      if (!candidate) {
+        continue;
+      }
+      const normalized = candidate.toLocaleLowerCase();
+      if (seen.has(normalized)) {
+        continue;
+      }
+      seen.add(normalized);
+      trackers.push(candidate);
+    }
+    return trackers;
+  };
+
+  const parseOptionalNonNegativeInt = (value) => {
+    const cleaned = String(value ?? "").trim();
+    if (!cleaned) {
+      return null;
+    }
+    const parsed = Number(cleaned);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      return null;
+    }
+    return parsed;
+  };
+
+  const extractPastedStream = (rawValue) => {
+    const parsed = JSON.parse(String(rawValue || "").trim());
+    if (Array.isArray(parsed)) {
+      if (parsed.length === 0 || typeof parsed[0] !== "object" || !parsed[0]) {
+        throw new Error("The pasted JSON array does not contain a usable stream object.");
+      }
+      return parsed[0];
+    }
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.streams)) {
+      if (parsed.streams.length === 0 || typeof parsed.streams[0] !== "object" || !parsed.streams[0]) {
+        throw new Error("The pasted response does not contain any stream objects.");
+      }
+      return parsed.streams[0];
+    }
+    if (parsed && typeof parsed === "object") {
+      return parsed;
+    }
+    throw new Error("Paste a stream object or a response with a streams array.");
+  };
+
+  const populateFromStream = (form, stream) => {
+    const displayNameInput = form.querySelector("[data-stremio-display-name]");
+    const infoHashInput = form.querySelector("[data-stremio-info-hash]");
+    const fileIdxInput = form.querySelector("[data-stremio-file-idx]");
+    const trackersInput = form.querySelector("[data-stremio-trackers]");
+
+    const behaviorHints = stream?.behaviorHints && typeof stream.behaviorHints === "object"
+      ? stream.behaviorHints
+      : {};
+    const displayName = String(
+      behaviorHints.filename
+      || stream.title
+      || stream.name
+      || ""
+    ).trim();
+    const infoHash = String(
+      stream.infoHash
+      || stream._dedupeInfoHash
+      || ""
+    ).trim();
+    const fileIdx = parseOptionalNonNegativeInt(stream.fileIdx);
+    const trackers = normalizeTrackerUrls(stream.sources || []);
+
+    if (displayNameInput && displayName) {
+      displayNameInput.value = displayName;
+    }
+    if (infoHashInput && infoHash) {
+      infoHashInput.value = infoHash;
+    }
+    if (fileIdxInput) {
+      fileIdxInput.value = fileIdx === null ? "" : String(fileIdx);
+    }
+    if (trackersInput) {
+      trackersInput.value = trackers.join("\n");
+    }
+  };
+
+  const resolveQueueOptions = (form) => {
+    const localScope = form.closest("[data-search-page], #inline-search-results");
+    const optionsContainer = localScope?.querySelector("[data-result-queue-options]");
+    const pausedInput = optionsContainer?.querySelector('[data-result-queue-option="paused"]');
+    const sequentialInput = optionsContainer?.querySelector('[data-result-queue-option="sequential"]');
+    const firstLastInput = optionsContainer?.querySelector('[data-result-queue-option="first_last_piece_prio"]');
+    return {
+      addPaused: pausedInput ? Boolean(pausedInput.checked) : true,
+      sequentialDownload: Boolean(sequentialInput?.checked),
+      firstLastPiecePrio: Boolean(firstLastInput?.checked),
+    };
+  };
+
+  for (const form of forms) {
+    const jsonInput = form.querySelector("[data-stremio-stream-json]");
+    const displayNameInput = form.querySelector("[data-stremio-display-name]");
+    const infoHashInput = form.querySelector("[data-stremio-info-hash]");
+    const fileIdxInput = form.querySelector("[data-stremio-file-idx]");
+    const trackersInput = form.querySelector("[data-stremio-trackers]");
+    const ruleIdInput = form.querySelector("[data-stremio-rule-id]");
+    const magnetOutput = form.querySelector("[data-stremio-magnet-output]");
+    const parseButton = form.querySelector("[data-stremio-parse-button]");
+    const queueButton = form.querySelector("[data-stremio-queue-button]");
+    const statusElement = form.querySelector("[data-stremio-queue-status]");
+
+    const setStatus = (message, isError = false) => {
+      if (!statusElement) {
+        return;
+      }
+      statusElement.textContent = message;
+      statusElement.style.color = isError ? "var(--danger)" : "";
+    };
+
+    parseButton?.addEventListener("click", () => {
+      try {
+        const stream = extractPastedStream(jsonInput?.value || "");
+        populateFromStream(form, stream);
+        setStatus("Parsed Stremio stream payload.");
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Could not parse the pasted stream JSON.", true);
+      }
+    });
+
+    queueButton?.addEventListener("click", async () => {
+      const infoHash = String(infoHashInput?.value || "").trim();
+      if (!/^[a-fA-F0-9]{40}$/u.test(infoHash)) {
+        setStatus("Enter a valid 40-character torrent info hash first.", true);
+        return;
+      }
+      const trackerUrls = normalizeTrackerUrls(trackersInput?.value || "");
+      const displayName = String(displayNameInput?.value || "").trim();
+      const fileIdx = parseOptionalNonNegativeInt(fileIdxInput?.value);
+      const queueOptions = resolveQueueOptions(form);
+      const originalLabel = queueButton.textContent;
+      queueButton.disabled = true;
+      queueButton.textContent = "Queueing...";
+      setStatus("Queueing selected Stremio variant in qBittorrent...");
+
+      try {
+        const response = await fetch("/api/stremio/queue", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            info_hash: infoHash,
+            tracker_urls: trackerUrls,
+            display_name: displayName || null,
+            file_idx: fileIdx,
+            rule_id: String(ruleIdInput?.value || "").trim() || null,
+            add_paused: queueOptions.addPaused,
+            sequential_download: queueOptions.sequentialDownload,
+            first_last_piece_prio: queueOptions.firstLastPiecePrio,
+          }),
+        });
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch {
+          payload = {};
+        }
+        if (!response.ok) {
+          throw new Error(String(payload?.error || "Could not queue this Stremio variant."));
+        }
+        if (magnetOutput) {
+          magnetOutput.value = String(payload?.magnet_link || "");
+        }
+        const summary = [
+          "Queued in qBittorrent.",
+          payload?.message ? String(payload.message) : "",
+          payload?.category ? `Category: ${payload.category}.` : "",
+          payload?.save_path ? `Save path: ${payload.save_path}.` : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        setStatus(summary);
+      } catch (error) {
+        setStatus(
+          error instanceof Error ? error.message : "Could not queue this Stremio variant.",
+          true
+        );
+      } finally {
+        queueButton.disabled = false;
+        queueButton.textContent = originalLabel;
+      }
+    });
+  }
+}
+
 function initRuleForm(form) {
   const qualityOptions = parseJsonData(form.dataset.qualityOptions, []);
   const qualityPatternMap = buildQualityPatternMap(qualityOptions);
@@ -5025,6 +5238,7 @@ function initRulesPage(container) {
 
 document.addEventListener("DOMContentLoaded", () => {
   initResultQueueActions(document);
+  initStremioVariantQueueForms(document);
 
   const searchPage = document.querySelector("[data-search-page]");
   if (searchPage) {

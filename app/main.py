@@ -44,7 +44,7 @@ def create_app() -> FastAPI:
     static_dir = Path(__file__).resolve().parent / "static"
     app = FastAPI(
         title="qBittorrent RSS Rule Manager",
-        version="0.9.1",
+        version="0.9.2",
     )
     app.state.static_asset_version = compute_static_asset_version(static_dir) or app.version
     app.state.desktop_backend_contract = DESKTOP_BACKEND_CONTRACT

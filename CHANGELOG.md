@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.9.2] - 2026-04-17
+
+- Cleaned local machine-generated repo noise by removing stray `*-DESKTOP-*` Python backup copies that were no longer part of the tracked application.
+- Ignored the accidental repo-root `app.db` artifact so the app’s real SQLite datastore remains the intended `data/qb_rules.db` without extra release noise.
+- Revalidated the cleanup with focused pytest coverage across release/versioning, routes, Stremio addon, queueing, and settings flows, plus Ruff across `app`, `tests`, and `scripts`.
 ## [0.9.1] - 2026-04-17
 
 - Added release-prep automation so patch/minor/major version bumps can synchronize repo touchpoints and scaffold changelog entries from one script-driven path.

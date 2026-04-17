@@ -32,6 +32,7 @@ from app.schemas import (
     SearchQueueRequest,
     SearchViewPreferencesPayload,
     SettingsFormPayload,
+    StremioQueueRequest,
 )
 from app.services.hover_debug import (
     clear_hover_events,
@@ -78,7 +79,9 @@ from app.services.rule_fetch_ops import (
 )
 from app.services.selective_queue import (
     SelectiveQueueError,
+    StremioQueueSelection,
     queue_result_with_optional_file_selection,
+    queue_stremio_stream_selection,
 )
 from app.services.settings_service import SettingsService
 from app.services.static_assets import compute_static_asset_version
@@ -585,6 +588,72 @@ def queue_search_result(
             "skipped_file_count": queue_result.skipped_file_count,
             "deferred_file_selection": queue_result.deferred_file_selection,
             "queued_via_torrent_file": queue_result.queued_via_torrent_file,
+        }
+    )
+
+
+@router.post("/stremio/queue")
+def queue_stremio_stream(
+    payload: StremioQueueRequest,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    settings = SettingsService.get_or_create(session)
+    connection = SettingsService.resolve_qb_connection(settings)
+    if not connection.is_configured:
+        return JSONResponse({"error": "qBittorrent connection is not configured."}, status_code=400)
+
+    category = ""
+    save_path = ""
+    add_paused = payload.add_paused
+    rule: Rule | None = None
+    if payload.rule_id:
+        rule = session.get(Rule, payload.rule_id)
+        if rule is None:
+            return JSONResponse({"error": "Rule not found for queue defaults."}, status_code=404)
+        builder = RuleBuilder(settings)
+        category = builder.render_category(rule)
+        save_path = builder.render_save_path(rule)
+        if add_paused is None:
+            add_paused = rule.add_paused
+    if add_paused is None:
+        add_paused = settings.default_add_paused
+
+    try:
+        queue_result, magnet_link = queue_stremio_stream_selection(
+            qb_base_url=connection.base_url or "",
+            qb_username=connection.username or "",
+            qb_password=connection.password or "",
+            selection=StremioQueueSelection(
+                info_hash=payload.info_hash,
+                tracker_urls=payload.tracker_urls,
+                display_name=payload.display_name,
+                file_idx=payload.file_idx,
+            ),
+            category=category,
+            save_path=save_path,
+            paused=bool(add_paused),
+            sequential_download=payload.sequential_download,
+            first_last_piece_prio=payload.first_last_piece_prio,
+        )
+    except SelectiveQueueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except QbittorrentClientError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return JSONResponse(
+        {
+            "status": "queued",
+            "category": category,
+            "save_path": save_path,
+            "add_paused": add_paused,
+            "sequential_download": payload.sequential_download,
+            "first_last_piece_prio": payload.first_last_piece_prio,
+            "message": queue_result.message,
+            "selected_file_count": queue_result.selected_file_count,
+            "skipped_file_count": queue_result.skipped_file_count,
+            "deferred_file_selection": queue_result.deferred_file_selection,
+            "queued_via_torrent_file": queue_result.queued_via_torrent_file,
+            "magnet_link": magnet_link,
         }
     )
 

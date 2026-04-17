@@ -4,15 +4,13 @@ import json
 import re
 import shutil
 import subprocess
-import threading
-import time
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
 
-from app.config import obfuscate_secret
+from app.config import obfuscate_secret, reveal_secret
 from app.main import DESKTOP_BACKEND_CAPABILITIES, DESKTOP_BACKEND_CONTRACT
 from app.models import (
     AppSettings,
@@ -86,7 +84,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "0.8.5"
+    assert payload["app_version"] == "0.9.0"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -366,7 +364,7 @@ def test_rules_page_filters_by_exact_state(app_client, db_session) -> None:
     assert 'value="exact" selected' in response.text
 
 
-def test_rules_page_defers_missing_poster_backfill_from_response_render(
+def test_rules_page_does_not_trigger_automatic_poster_backfill(
     app_client,
     db_session,
     monkeypatch,
@@ -390,13 +388,8 @@ def test_rules_page_defers_missing_poster_backfill_from_response_render(
     db_session.commit()
 
     seen_imdb_ids: list[str] = []
-    lookup_started = threading.Event()
-    release_lookup = threading.Event()
-
     def fake_lookup_by_imdb_id(self, imdb_id):
         seen_imdb_ids.append(imdb_id)
-        lookup_started.set()
-        assert release_lookup.wait(timeout=1)
         return MetadataResult(
             title="Posterless Rule",
             provider=MetadataLookupProvider.OMDB,
@@ -412,24 +405,11 @@ def test_rules_page_defers_missing_poster_backfill_from_response_render(
     response = app_client.get("/")
 
     assert response.status_code == 200
-    assert lookup_started.wait(timeout=1)
-    assert seen_imdb_ids == ["tt13016388"]
-    assert 'data-rule-poster-url="https://images.example/posterless-rule.jpg"' not in response.text
-
-    release_lookup.set()
-    updated_rule = None
-    for _ in range(20):
-        db_session.expire_all()
-        updated_rule = db_session.get(Rule, rule.id)
-        if (
-            updated_rule is not None
-            and updated_rule.poster_url == "https://images.example/posterless-rule.jpg"
-        ):
-            break
-        time.sleep(0.05)
-
+    assert seen_imdb_ids == []
+    db_session.expire_all()
+    updated_rule = db_session.get(Rule, rule.id)
     assert updated_rule is not None
-    assert updated_rule.poster_url == "https://images.example/posterless-rule.jpg"
+    assert updated_rule.poster_url is None
 
 
 def test_save_rules_page_preferences_api_persists_defaults(app_client, db_session) -> None:
@@ -843,6 +823,15 @@ def test_inline_local_filters_keep_precise_primary_rows_separate_from_fallback_r
     )
 
 
+def test_search_page_js_supports_stremio_variant_queue_bridge() -> None:
+    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+    app_js_source = app_js_path.read_text(encoding="utf-8")
+
+    assert 'querySelectorAll("[data-stremio-queue-form]")' in app_js_source
+    assert 'await fetch("/api/stremio/queue"' in app_js_source
+    assert 'extractPastedStream' in app_js_source
+
+
 def test_run_rule_search_route_redirects_to_inline_rule_page(app_client, db_session) -> None:
     rule = Rule(
         rule_name="Rule Search Redirect",
@@ -930,6 +919,7 @@ def test_search_page_renders_jackett_as_separate_source(app_client) -> None:
     assert response.status_code == 200
     assert "Active Jackett search" in response.text
     assert "Not mixed with RSS feeds" in response.text
+    assert "Queue Stremio Variant" in response.text
 
 
 def test_search_page_prefills_new_rule_from_active_search(app_client, monkeypatch) -> None:
@@ -2726,6 +2716,90 @@ def test_queue_search_result_api_reports_missing_only_selection_details(
     assert payload["deferred_file_selection"] is False
 
 
+def test_queue_stremio_stream_api_returns_magnet_and_rule_defaults(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        default_add_paused=True,
+    )
+    rule = Rule(
+        rule_name="Queue Stremio Rule",
+        content_name="Queue Stremio Rule",
+        normalized_title="Queue Stremio Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/queue-stremio"],
+        assigned_category="Series/The Beauty [imdbid-tt33517752]",
+        save_path="/data/the-beauty",
+        add_paused=False,
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    captured: dict[str, object] = {}
+
+    def fake_queue_stremio_stream_selection(**kwargs):
+        captured.update(kwargs)
+        return (
+            SimpleNamespace(
+                message="Queued exact stream magnet in qBittorrent.",
+                selected_file_count=0,
+                skipped_file_count=0,
+                deferred_file_selection=True,
+                queued_via_torrent_file=False,
+            ),
+            "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12",
+        )
+
+    monkeypatch.setattr(
+        "app.routes.api.queue_stremio_stream_selection",
+        fake_queue_stremio_stream_selection,
+    )
+
+    response = app_client.post(
+        "/api/stremio/queue",
+        json={
+            "info_hash": "abcdef1234567890abcdef1234567890abcdef12",
+            "tracker_urls": ["tracker:udp://tracker.example:1337/announce", "dht:ignored"],
+            "display_name": "The Beauty S01E01 2160p",
+            "file_idx": 5,
+            "rule_id": rule.id,
+            "sequential_download": True,
+            "first_last_piece_prio": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "queued"
+    assert payload["category"] == "Series/The Beauty [imdbid-tt33517752]"
+    assert payload["save_path"] == "/data/the-beauty"
+    assert payload["add_paused"] is False
+    assert payload["deferred_file_selection"] is True
+    assert payload["magnet_link"] == "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12"
+    assert captured["category"] == "Series/The Beauty [imdbid-tt33517752]"
+    assert captured["save_path"] == "/data/the-beauty"
+    assert captured["paused"] is False
+    selection = captured["selection"]
+    assert selection.info_hash == "abcdef1234567890abcdef1234567890abcdef12"
+    assert selection.file_idx == 5
+    assert selection.tracker_urls == ["udp://tracker.example:1337/announce"]
+
+
+def test_queue_stremio_stream_api_requires_configured_qb(app_client) -> None:
+    response = app_client.post(
+        "/api/stremio/queue",
+        json={"info_hash": "abcdef1234567890abcdef1234567890abcdef12"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "qBittorrent connection is not configured."
+
+
 def test_save_search_preferences_api_persists_defaults(app_client, db_session) -> None:
     response = app_client.post(
         "/api/search/preferences",
@@ -3160,6 +3234,93 @@ def test_save_settings_persists_profile_management_tokens(app_client, db_session
     assert settings.quality_profile_rules["1080p"]["exclude_tokens"] == ["360p"]
     assert settings.quality_profile_rules["2160p_hdr"]["include_tokens"] == ["ultra_hd", "2160p"]
     assert settings.quality_profile_rules["2160p_hdr"]["exclude_tokens"] == ["bdremux", "ts"]
+
+
+def test_save_settings_normalizes_omdb_full_url_to_api_key(app_client, db_session) -> None:
+    response = app_client.post(
+        "/api/settings",
+        data={
+            "omdb_api_key": "https://www.omdbapi.com/?apikey=191938ea",
+            "metadata_provider": "omdb",
+            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
+            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
+            "save_path_template": "",
+            "default_enabled": "on",
+            "default_add_paused": "on",
+            "default_sequential_download": "on",
+            "default_first_last_piece_prio": "on",
+            "default_quality_profile": "2160p_hdr",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    settings = db_session.get(AppSettings, "default")
+    assert settings is not None
+    assert reveal_secret(settings.omdb_api_key_encrypted) == "191938ea"
+
+
+def test_save_settings_treats_literal_none_stremio_path_as_empty(app_client, db_session) -> None:
+    response = app_client.post(
+        "/api/settings",
+        data={
+            "stremio_local_storage_path": "None",
+            "stremio_auto_sync_enabled": "on",
+            "metadata_provider": "disabled",
+            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
+            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
+            "save_path_template": "",
+            "default_enabled": "on",
+            "default_add_paused": "on",
+            "default_sequential_download": "on",
+            "default_first_last_piece_prio": "on",
+            "default_quality_profile": "2160p_hdr",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    settings = db_session.get(AppSettings, "default")
+    assert settings is not None
+    assert settings.stremio_local_storage_path is None
+
+
+def test_test_metadata_settings_accepts_full_omdb_url_value(app_client, monkeypatch) -> None:
+    seen_imdb_ids: list[str] = []
+
+    def fake_lookup_by_imdb_id(self, imdb_id):
+        seen_imdb_ids.append(imdb_id)
+        assert self.api_key == "191938ea"
+        return MetadataResult(
+            title="Game of Thrones",
+            provider=MetadataLookupProvider.OMDB,
+            imdb_id=imdb_id,
+            source_id=imdb_id,
+            media_type=MediaType.SERIES,
+            year="2011",
+        )
+
+    monkeypatch.setattr(MetadataClient, "lookup_by_imdb_id", fake_lookup_by_imdb_id)
+
+    response = app_client.post(
+        "/api/settings/test-metadata",
+        data={
+            "omdb_api_key": "https://www.omdbapi.com/?apikey=191938ea",
+            "metadata_provider": "omdb",
+            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
+            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
+            "save_path_template": "",
+            "default_enabled": "on",
+            "default_add_paused": "on",
+            "default_sequential_download": "on",
+            "default_first_last_piece_prio": "on",
+            "default_quality_profile": "2160p_hdr",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Metadata lookup test succeeded." in response.text
+    assert seen_imdb_ids == ["tt0944947"]
 
 
 def test_test_jellyfin_settings_reports_success(app_client, tmp_path) -> None:

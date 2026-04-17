@@ -37,7 +37,7 @@ def test_stremio_manifest_route_exposes_catalog_and_stream_resources(app_client)
     assert response.headers["access-control-allow-methods"] == "GET, OPTIONS"
     payload = response.json()
     assert payload["id"] == "org.qbrssrules.stremio.local"
-    assert payload["version"] == "0.8.5+stremio.1"
+    assert payload["version"] == "0.9.0+stremio.1"
     assert any(resource["name"] == "catalog" for resource in payload["resources"])
     assert any(resource["name"] == "stream" for resource in payload["resources"])
     assert any(

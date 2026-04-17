@@ -72,12 +72,16 @@ def execute_jellyfin_sync(
     session: Session,
     *,
     settings: AppSettings | None,
+    allow_metadata_requests: bool = True,
 ) -> JellyfinSyncExecution:
     if not _SYNC_LOCK.acquire(blocking=False):
         raise JellyfinSyncBusyError("Jellyfin sync is already in progress.")
 
     try:
-        summary = JellyfinService(settings).sync_rules(session)
+        summary = JellyfinService(
+            settings,
+            allow_metadata_requests=allow_metadata_requests,
+        ).sync_rules(session)
         qb_sync_success_count = 0
         qb_sync_error_messages: list[str] = []
         qb_sync_skipped = False

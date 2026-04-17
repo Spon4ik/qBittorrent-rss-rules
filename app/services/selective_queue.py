@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 import httpx
 
@@ -71,6 +71,14 @@ class QueueResult:
     skipped_file_count: int = 0
     deferred_file_selection: bool = False
     queued_via_torrent_file: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class StremioQueueSelection:
+    info_hash: str
+    tracker_urls: list[str]
+    display_name: str | None = None
+    file_idx: int | None = None
 
 
 def find_episode_file_entry(
@@ -152,6 +160,84 @@ def parse_magnet_info_hash(link: str) -> str | None:
             except Exception:
                 continue
     return None
+
+
+def build_magnet_link(
+    *,
+    info_hash: str,
+    tracker_urls: list[str] | tuple[str, ...] = (),
+    display_name: str | None = None,
+) -> str:
+    cleaned_hash = str(info_hash or "").strip().casefold()
+    if len(cleaned_hash) != 40 or any(char not in "0123456789abcdef" for char in cleaned_hash):
+        raise SelectiveQueueError("A valid 40-character hex info hash is required.")
+
+    magnet_parts = [f"magnet:?xt=urn:btih:{cleaned_hash}"]
+    cleaned_name = str(display_name or "").strip()
+    if cleaned_name:
+        magnet_parts.append(f"dn={quote(cleaned_name)}")
+
+    seen_trackers: set[str] = set()
+    for tracker_url in tracker_urls:
+        cleaned_tracker = str(tracker_url or "").strip()
+        if not cleaned_tracker:
+            continue
+        normalized_tracker = cleaned_tracker.casefold()
+        if normalized_tracker in seen_trackers:
+            continue
+        seen_trackers.add(normalized_tracker)
+        magnet_parts.append(f"tr={quote(cleaned_tracker, safe='')}")
+
+    return "&".join(magnet_parts)
+
+
+def queue_stremio_stream_selection(
+    *,
+    qb_base_url: str,
+    qb_username: str,
+    qb_password: str,
+    selection: StremioQueueSelection,
+    category: str,
+    save_path: str,
+    paused: bool,
+    sequential_download: bool,
+    first_last_piece_prio: bool,
+) -> tuple[QueueResult, str]:
+    magnet_link = build_magnet_link(
+        info_hash=selection.info_hash,
+        tracker_urls=selection.tracker_urls,
+        display_name=selection.display_name,
+    )
+    with QbittorrentClient(qb_base_url, qb_username, qb_password) as client:
+        client.add_torrent_url(
+            link=magnet_link,
+            category=category,
+            save_path=save_path,
+            paused=paused,
+            sequential_download=sequential_download,
+            first_last_piece_prio=first_last_piece_prio,
+        )
+
+    if selection.file_idx is None:
+        return QueueResult(message="Queued exact stream magnet in qBittorrent."), magnet_link
+
+    _start_exact_file_selection_worker(
+        qb_base_url=qb_base_url,
+        qb_username=qb_username,
+        qb_password=qb_password,
+        info_hash=selection.info_hash,
+        file_idx=selection.file_idx,
+    )
+    return (
+        QueueResult(
+            message=(
+                "Queued exact stream magnet in qBittorrent. The selected Stremio file "
+                "variant will be prioritized when torrent metadata becomes available."
+            ),
+            deferred_file_selection=True,
+        ),
+        magnet_link,
+    )
 
 
 def parse_torrent_info(
@@ -352,6 +438,29 @@ def _start_deferred_file_selection_worker(
     worker.start()
 
 
+def _start_exact_file_selection_worker(
+    *,
+    qb_base_url: str,
+    qb_username: str,
+    qb_password: str,
+    info_hash: str,
+    file_idx: int,
+) -> None:
+    worker = threading.Thread(
+        target=_apply_exact_file_selection,
+        kwargs={
+            "qb_base_url": qb_base_url,
+            "qb_username": qb_username,
+            "qb_password": qb_password,
+            "info_hash": info_hash,
+            "file_idx": file_idx,
+        },
+        daemon=True,
+        name=f"qb-stremio-exact-queue-{info_hash[:8]}",
+    )
+    worker.start()
+
+
 def _apply_deferred_file_selection(
     *,
     qb_base_url: str,
@@ -376,6 +485,35 @@ def _apply_deferred_file_selection(
                 all_file_ids = [entry.file_id for entry in files]
                 client.set_file_priority(info_hash, all_file_ids, 0)
                 client.set_file_priority(info_hash, selection_result.selected_file_ids, 1)
+                return
+        except QbittorrentClientError:
+            return
+        time.sleep(poll_interval)
+
+
+def _apply_exact_file_selection(
+    *,
+    qb_base_url: str,
+    qb_username: str,
+    qb_password: str,
+    info_hash: str,
+    file_idx: int,
+) -> None:
+    deadline = time.monotonic() + 45.0
+    poll_interval = 2.0
+    while time.monotonic() < deadline:
+        try:
+            with QbittorrentClient(qb_base_url, qb_username, qb_password) as client:
+                raw_files = client.get_torrent_files(info_hash)
+                files = _normalize_qb_torrent_files(raw_files)
+                if not files:
+                    time.sleep(poll_interval)
+                    continue
+                available_file_ids = [entry.file_id for entry in files]
+                if file_idx not in available_file_ids:
+                    return
+                client.set_file_priority(info_hash, available_file_ids, 0)
+                client.set_file_priority(info_hash, [file_idx], 1)
                 return
         except QbittorrentClientError:
             return

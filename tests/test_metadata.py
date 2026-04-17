@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 
 from app.models import MediaType, MetadataProvider
 from app.schemas import MetadataLookupProvider
-from app.services.metadata import MetadataClient
+from app.services.metadata import MetadataClient, MetadataLookupError
 
 
 def test_metadata_client_omdb_supports_season_lookup() -> None:
@@ -186,6 +187,25 @@ def test_metadata_client_omdb_search_supports_skip_and_limit() -> None:
 
     assert seen_pages == ["2"]
     assert [item.imdb_id for item in results] == ["tt1000002", "tt1000003", "tt1000004"]
+
+
+def test_metadata_client_omdb_reports_invalid_or_inactive_api_key_clearly() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"Response": "False", "Error": "Invalid API key!"})
+
+    client = MetadataClient(
+        MetadataProvider.OMDB,
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(MetadataLookupError) as excinfo:
+        client.lookup_by_imdb_id("tt0944947")
+
+    assert (
+        str(excinfo.value)
+        == "OMDb rejected the API key. Use the raw API key value only; if you already did, the key may be invalid, inactive, or not yet approved by OMDb."
+    )
 
 
 def test_metadata_client_musicbrainz_supports_search_lookup() -> None:

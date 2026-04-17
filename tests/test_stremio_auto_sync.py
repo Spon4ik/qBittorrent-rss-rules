@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from app.db import get_session_factory, init_db
 from app.models import AppSettings
+from app.services.settings_service import SettingsService
 from app.services.stremio_auto_sync import StremioAutoSyncService
 
 
@@ -35,8 +36,9 @@ def test_stremio_auto_sync_runs_on_start_and_on_library_changes(
         lambda self: True,
     )
 
-    def fake_execute(session, *, settings):
+    def fake_execute(session, *, settings, allow_metadata_requests=True):
         calls.append(str(settings.stremio_local_storage_path))
+        assert allow_metadata_requests is False
         return SimpleNamespace(
             message_level="success",
             render_message=lambda prefix="Stremio sync completed": (
@@ -65,3 +67,17 @@ def test_stremio_auto_sync_runs_on_start_and_on_library_changes(
 
     service.run_once(force=False)
     assert calls == [str(tmp_path / "stremio"), str(tmp_path / "stremio")]
+
+
+def test_settings_service_normalizes_legacy_none_stremio_storage_path(db_session) -> None:
+    init_db()
+    settings = AppSettings(
+        id="default",
+        stremio_local_storage_path="None",
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    normalized = SettingsService.get_or_create(db_session)
+
+    assert normalized.stremio_local_storage_path is None

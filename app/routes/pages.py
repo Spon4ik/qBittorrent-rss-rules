@@ -825,8 +825,6 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
         rules_query = rules_query.where(Rule.enabled.is_(enabled_filter == "true"))
 
     rules = session.scalars(rules_query).all()
-    if not request.query_params:
-        _queue_rule_poster_backfill(rules)
 
     snapshot_by_rule_id: dict[str, RuleSearchSnapshot] = {}
     if rules:

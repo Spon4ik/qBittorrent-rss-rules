@@ -22,6 +22,24 @@
 
 ## Implemented
 
+- Added an exact-variant Stremio-to-qB queue bridge on 2026-04-12 while evaluating AIOStreams as a possible Stremio-side replacement surface:
+  - verified the local evaluation stack end-to-end: AIOStreams at `:3000`, Jackett at `:9117`, qBittorrent at `:8080`, and the local native addon at `:8000` are all reachable, while the seeded AIOStreams profile was incorrectly carrying `requiredLanguages=["Russian"]` from the app's saved Stremio preference and has now been corrected to prefer `Hebrew` and `English` without requiring Russian;
+  - confirmed the current AIOStreams comparison is not blocked by install/config plumbing but by product behavior: Torrentio returns valid stream rows for `tt33517752:1:1`, while the wrapped qB RSS addon returns `0` rows for the same request through AIOStreams, so the immediate gap is still qB-side stream availability and the lack of a clean "take this chosen Stremio variant and send it to qB" workflow;
+  - implemented a repo-native bridge in `app/services/selective_queue.py`, `app/routes/api.py`, and `app/schemas.py` so Stremio-style selections can now be converted into an exact magnet and queued through `/api/stremio/queue`, including optional deferred file-priority selection when a stream exposes `fileIdx`;
+  - added a search-workspace helper panel in `app/templates/search.html` plus client-side parsing/queue wiring in `app/static/app.js` so a pasted AIOStreams/Stremio stream object can be auto-parsed and queued without hand-crafting JSON requests;
+  - validated the bridge with `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_selective_queue.py tests\\test_routes.py -k "stremio_queue or queue_search_result or queue_stremio_stream or build_magnet_link"` (`8 passed`) plus `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py -k "search_page_renders_jackett_as_separate_source or search_page_js_supports_stremio_variant_queue_bridge or queue_stremio_stream"` (`4 passed`), and focused Ruff checks on the touched Python files (`All checks passed`).
+
+- Fixed the OMDb settings/runtime mismatch and repo-local desktop/backend version skew on 2026-04-11:
+  - normalized OMDb key handling in `app/services/settings_service.py` so saving or testing metadata now accepts either the raw API key or a pasted OMDb URL, and already-saved URL-shaped secrets are auto-healed to the clean key on settings load;
+  - synchronized repo-local version touchpoints to the active `0.9.0` phase target in `pyproject.toml`, `app/main.py`, `QbRssRulesDesktop/Views/MainPage.xaml.cs`, and the focused backend/addon regressions so the desktop shell no longer rejects the rebuilt local backend as `expected app version 0.9.0, got 0.8.5`;
+  - validated the fix with `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py -k "health_endpoint or save_settings_normalizes_omdb_full_url_to_api_key or test_metadata_settings_accepts_full_omdb_url_value or save_settings_persists_profile_management_tokens"` (`4 passed`), `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_stremio_addon.py -k manifest` (`1 passed`), and `dotnet build QbRssRulesDesktop\\QbRssRulesDesktop.csproj -p:Platform=x64` (`Build succeeded`).
+
+- Fixed hidden OMDb quota consumption on 2026-04-11 after live evidence showed the first visible manual lookup was already hitting OMDb's `Request limit reached!` response:
+  - confirmed the local app had automatic Stremio sync enabled every `20` seconds for `130` active titles, automatic Jellyfin sync enabled every `30` seconds, and `47` rules still missing posters, which made background OMDb usage the likely quota drain rather than the explicit manual lookup flow;
+  - changed `app/services/stremio_auto_sync.py` and `app/services/jellyfin_auto_sync.py` to run background sync with `allow_metadata_requests=False`, wired through `app/services/stremio_sync_ops.py`, `app/services/jellyfin_sync_ops.py`, `app/services/stremio.py`, and `app/services/jellyfin.py`, so automatic sync no longer spends OMDb quota on title-to-IMDb resolution or OMDb season lookups;
+  - stopped the default rules-page load from silently triggering OMDb poster backfill in `app/routes/pages.py`, keeping OMDb usage on explicit/manual lookup paths instead of passive page views;
+  - validated the hardening with `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py -k "rules_page_does_not_trigger_automatic_poster_backfill or health_endpoint or save_settings_normalizes_omdb_full_url_to_api_key or test_metadata_settings_accepts_full_omdb_url_value" tests\\test_stremio_auto_sync.py tests\\test_jellyfin_auto_sync.py tests\\test_metadata.py` (`4 passed`, focused selection), plus `ruff check` on the touched services/routes/tests (`All checks passed`).
+
 - Completed the `v0.8.5` maintenance release on 2026-04-03:
   - split the overloaded quality taxonomy so `bluray` now matches explicit BluRay labels while `BDRip/BRRip` uses its own `bdrip` token, preventing exact 4K HDR disc-rip rows from being hidden just because a rule excludes `bluray`;
   - added focused taxonomy and Jackett regressions in `tests/test_quality_filters.py` and `tests/test_jackett.py`, plus a deterministic browser-closeout rule that keeps a `BDRip` exact movie row visible when only `bluray` and `bdremux` are excluded;
@@ -850,15 +868,25 @@
 ## In progress
 
 - Phase 23 remains the active `v0.9.0` minor slice: the remaining work is still true cross-addon/provider aggregation so qB RSS and Torrentio-compatible rows can be ranked inside one merged addon surface.
+- Phase 23 scope now also includes a qB-side language-routing track after live Jackett inspection on 2026-04-17 proved the configured instance returns complete per-indexer language metadata (`ru-RU`, `en-US`, `he-IL`) and honors `lang:<code>` filter-indexer expressions, which makes rule-level preferred-language routing viable for this machine.
+- A release/versioning automation slice has started in parallel so future patch/minor follow-ups can move through synchronized version bumps, changelog prep, branch naming, push, and PR creation with less manual drift.
+- The AIOStreams evaluation is now partially de-risked but not yet a replacement decision: the local container/config flow works, Torrentio streams resolve through AIOStreams, but the wrapped qB RSS addon still returns `0` rows for the same probe and playback in Stremio remains `0 kbps`, so the current evidence supports a queue/selection bridge rather than a "drop the custom addon today" conclusion.
 - The qB-side precursor track is now release-validated through `v0.8.5`: row attribution is richer, series episode floors survive edit/save round trips, aggregate-empty IMDb searches still probe direct IMDb-capable indexers, primary exact rows stay separate from fallback-only regex/manual text refinement, rules-page exact counts/filters are visible, and `bluray` no longer over-matches `BDRip/BRRip`.
 - The final `v0.8.5` validation pass also fixed a live-addon cold-path gap: the HTTP Stremio route now keeps the full `The Beauty` episode stream set on first request instead of degrading to a single local row because the episode search collection budget expired too early.
 - The main architectural constraint for phase 23 is the Stremio client behavior observed in the real desktop smoke: separate addons render as separate grouped sections, so true global ordering will require aggregation rather than another qB RSS-only sort tweak.
 - The real desktop addon smoke and the backend addon smoke remain the standing regression pair for future Stremio addon changes; the repo-local HTTP/service addon smoke pair was rerun successfully during the `v0.8.5` closeout.
-- The main unresolved runtime follow-up is still metadata-provider quality on this machine: item-page playback is fixed, but search-catalog parity still depends on correcting the saved OMDb key or broadening provider fallbacks.
+- The main unresolved runtime follow-up is now metadata-provider breadth rather than saved-key format: item-page playback is fixed, OMDb key persistence accepts both raw keys and pasted URLs, and search-catalog parity still depends on a working metadata provider or broader provider fallbacks.
+- Hidden OMDb consumption is now treated as a resolved runtime bug for this machine: background Stremio/Jellyfin sync and passive rules-page rendering no longer spend OMDb quota, so future OMDb usage should come from explicit metadata/test/catalog actions only.
 
 ## Next actions
 
 - Keep `Death in Paradise` season 14/15 routes in the live Stremio addon regression set.
+- Implement rule-level preferred-language storage and request-building so rules can prefer `ru` while allowing ordered fallback to `he` and/or `en`.
+- Add a Jackett routing diagnostic that reads `t=indexers&configured=true`, reports per-language counts and missing metadata, and gates language-only automation if coverage regresses.
+- Decide when manual affected-feed selection can move behind an advanced override once language-aware routing has enough live validation.
+- Expand the new release-prep tooling from synchronized version touchpoints into push/PR/checklist automation for sub-version releases.
+- Wire the new `/api/stremio/queue` bridge into whichever UI surface is chosen for manual Stremio-variant fallback so a selected `infoHash`/tracker set can be copied or sent directly to qB without re-searching by hand.
+- Investigate why the wrapped qB RSS addon returns `0` streams for `tt33517752:1:1` through AIOStreams while Torrentio returns many valid rows for the same request.
 - Decide the phase-23 provider aggregation architecture for globally ordering qB RSS and Torrentio-compatible rows inside one addon surface.
 - Prototype the merged row contract plus the Torrentio-compatible provider adapter needed so provider attribution survives the global sort inside one addon block.
 - Keep the new season-finale `E00` edit-form/browser regression in the focused QA set whenever rule-floor or rule-form serialization changes.
@@ -868,7 +896,8 @@
 - Keep the new rules-page exact-result indicator/filter plus the phase-23 browser matrix in `scripts\\closeout_browser_qa.py` whenever precise-vs-fallback classification or rules-page snapshot summaries change.
 - Keep `scripts\\stremio_addon_smoke.py` and `scripts\\stremio_desktop_smoke.py` as the required acceptance pair before changing native addon stream/search behavior again.
 - Repair the mock-addon install path inside `scripts\\stremio_desktop_variant_matrix.py` so the temporary QA addon reaches the stream-request stage and can keep bisecting future acceptance regressions automatically.
-- Correct the saved OMDb API key so `/stremio/catalog/...` can contribute search results again; stream lookups now degrade through Cinemeta metadata for known IMDb items, but title-search catalog results still depend on a working metadata provider.
+- If `/stremio/catalog/...` still returns no search rows after the OMDb key-format hardening, verify the actual OMDb credential/provider availability on this machine; stream lookups still degrade through Cinemeta metadata for known IMDb items, but title-search catalog results depend on a working metadata provider.
+- If OMDb quota still drains unexpectedly after this hardening, add request-level metadata call telemetry before widening provider usage again.
 - Run one live `/settings` verification pass against the signed-in desktop session to confirm `Test Stremio`, `Save + Sync Stremio Now`, and the shared completed-movie disablement path on real library data.
 - Run one live Jellyfin verification pass after the shared movie-completion change to confirm completed movies stay disabled for the new centralized reason and unfinished movies remain enabled.
 - Decide whether the next catalog step expands beyond OMDb into richer providers or more explicit release-calendar logic.

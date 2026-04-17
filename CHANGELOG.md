@@ -8,6 +8,12 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.9.1] - 2026-04-17
+
+- Added release-prep automation so patch/minor/major version bumps can synchronize repo touchpoints and scaffold changelog entries from one script-driven path.
+- Added an exact-variant Stremio-to-qB queue bridge so a chosen Stremio stream can be turned into a magnet, queued in qBittorrent, and optionally prioritized to the exact `fileIdx` once metadata is available.
+- Hardened OMDb handling by normalizing pasted OMDb URLs down to raw API keys, auto-healing previously saved URL-shaped secrets, and preventing background Stremio/Jellyfin sync plus passive rules-page loads from silently consuming OMDb quota.
+- Improved qB/Stremio queueing and search parity by keeping grouped same-hash metadata, merging newly discovered trackers into existing qB torrents, and preserving the merged `v0.9.0` follow-up work in a clean post-release patch.
 ## [0.9.0] - 2026-04-11
 
 - Completed the phase-23 cross-addon Stremio aggregation release so the local addon can merge qB RSS rows with Torrentio-compatible provider manifests into one globally ranked stream response instead of relying on Stremio's per-addon grouping.

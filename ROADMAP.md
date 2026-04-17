@@ -6,6 +6,8 @@
 
 - Phase 24 is now closed and release-validated in `v0.8.3` as the hotfix for long-running Stremio series lookups that were over-constrained by the original series year, along with early phase 23 qB-side precursors for visibility and search precision.
 - Phase 23 is now the active `v0.9.0` minor slice, focused on merging external addon/provider streams into one globally ranked list instead of relying on Stremio's per-addon grouping.
+- Phase 23 scope now also includes rule-level Jackett language preferences and language-aware indexer routing as a qB-side precision track, based on live proof on 2026-04-17 that the configured Jackett instance exposes complete per-indexer language metadata (`ru-RU`, `en-US`, `he-IL`) and accepts `lang:<code>` filter-indexer expressions.
+- Start a release/versioning automation track so patch/minor follow-ups can move from synchronized version bumps through changelog prep, branch naming, push, and PR publication with less manual drift risk.
 - Phase 22 is now closed and release-validated in `v0.8.2` as the Stremio patch slice covering full qB RSS variant retention, global quality-first ordering, and exact-variant local playback marking after the `v0.8.1` release still suppressed rows too aggressively.
 - Phase 21 is now closed and release-validated in `v0.8.1` as the Stremio playback follow-up slice covering qB RSS stream ordering and qB-backed local playback acceleration so predownloaded torrents materially improve Stremio playback.
 - Phase 20 is now closed and release-validated in `v0.8.0` as the Stremio library sync and native addon parity slice, including real desktop proof that qB RSS rows render in Stremio for known items such as `The Beauty`.
@@ -97,6 +99,14 @@ Phase 6 detail pointer:
 
 - Decide whether the next catalog/addon step should expand beyond OMDb-backed title search into richer provider support or more explicit release-calendar reasoning.
 - Decide whether the next Stremio follow-up should tackle watched-progress arbitration, richer addon metadata, or provider-side configuration/options.
+- Add rule-level preferred-language routing for Jackett (`ru`, `he`, `en`) with ordered fallback and live diagnostics that show current language coverage across configured indexers before manual feed/indexer selection is deprecated.
+- Decide whether manual affected-feed selection should become an advanced override once language-aware Jackett routing is proven on real rules, instead of remaining the default authoring surface.
+- Add a settings diagnostic card for Jackett routing coverage: per-language indexer counts, missing language metadata, and which configured indexers support the active search modes for movie/series IMDb-first queries.
+- Extend search/rule snapshots with per-language provenance so result review can explain whether a row came from the primary language pool, a secondary fallback language, or an explicit manual override.
+- Add release-prep automation for SemVer bumps, changelog scaffolding, branch/tag naming, push/PR reminders, and stale-version consistency checks across backend, desktop, docs, and tests.
+- Add a release checklist surface or script output that validates version touchpoints, changelog state, required gates, and publish readiness before a tag is created.
+- Add optional GitHub release-note drafting from changelog/current-status data so patch releases can be published with less hand-edited duplication.
+- Consider provider trust controls beyond language: codec/source whitelists, preferred tracker types (`public`/`private`), health/test-passed filters, and optional per-rule minimum-capability requirements.
 - Replace the fixed quality-tag bank with a compact Settings UI that lets users add, remove, and reorganize quality tokens and aliases without editing raw taxonomy JSON.
 - Decide whether deleted-history persistence should stay rule-local or graduate to a broader watch-history/scrobble-compatible cache.
 - Reduce context and maintenance cost by splitting the largest rule/search/Jellyfin files along real domain boundaries.

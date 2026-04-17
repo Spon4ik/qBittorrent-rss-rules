@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any, cast
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
@@ -385,6 +386,42 @@ def _precise_title_segments(title: str) -> list[str]:
     return segments or [str(title or "")]
 
 
+def _query_surface_variants(query: str) -> list[str]:
+    cleaned_query = str(query or "").strip()
+    if not cleaned_query:
+        return []
+    variants: list[str] = []
+    seen: set[str] = set()
+
+    def add_variant(candidate: str) -> None:
+        cleaned_candidate = clamp_search_query_text(candidate, fallback="Search").strip()
+        if not cleaned_candidate:
+            return
+        key = cleaned_candidate.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        variants.append(cleaned_candidate)
+
+    add_variant(cleaned_query)
+    segments = _precise_title_segments(cleaned_query)
+    if ":" in cleaned_query:
+        colon_segments = [
+            segment.strip() for segment in cleaned_query.split(":") if segment.strip()
+        ]
+        for segment in colon_segments:
+            if len(_normalize_match_text(segment)) >= 4:
+                add_variant(segment)
+        if len(colon_segments) > 1:
+            add_variant(" ".join(colon_segments))
+    if len(segments) > 1:
+        add_variant(" ".join(segments))
+        for segment in segments:
+            if len(_normalize_match_text(segment)) >= 4:
+                add_variant(segment)
+    return variants
+
+
 def _is_allowed_precise_title_suffix_token(token: str) -> bool:
     normalized = _normalize_match_text(token)
     if not normalized:
@@ -566,6 +603,143 @@ def _result_text_surface(
     return _normalize_match_text(" ".join(parts))
 
 
+def _dedupe_strings(values: Sequence[str]) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        candidate = _coerce_text(item)
+        key = candidate.casefold()
+        if not candidate or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(candidate)
+    return cleaned
+
+
+def _tracker_urls_from_link(link: str | None) -> list[str]:
+    parsed = urlsplit(_coerce_text(link))
+    if parsed.scheme.casefold() != "magnet":
+        return []
+    return _dedupe_strings(parse_qs(parsed.query).get("tr", []))
+
+
+def _structured_media_fields_for_payload(payload: JackettSearchRequest) -> dict[str, str]:
+    structured_fields: dict[str, str] = {}
+    if payload.media_type == MediaType.MUSIC:
+        for field_name in ("artist", "album", "track", "label", "genre"):
+            value = _coerce_text(getattr(payload, field_name, None))
+            if value:
+                structured_fields[field_name] = value
+        return structured_fields
+    if payload.media_type == MediaType.AUDIOBOOK:
+        title_value = _coerce_text(payload.title)
+        if title_value:
+            structured_fields["title"] = title_value
+        for field_name in ("author", "publisher", "genre"):
+            value = _coerce_text(getattr(payload, field_name, None))
+            if value:
+                structured_fields[field_name] = value
+        return structured_fields
+    return structured_fields
+
+
+def _has_structured_media_search(payload: JackettSearchRequest) -> bool:
+    return bool(_structured_media_fields_for_payload(payload))
+
+
+def _merge_result_details(
+    existing: JackettSearchResult,
+    candidate: JackettSearchResult,
+) -> JackettSearchResult:
+    merged = existing.model_copy(deep=True)
+
+    grouped_links = _dedupe_strings(
+        [
+            *list(existing.grouped_links or []),
+            existing.link,
+            *list(candidate.grouped_links or []),
+            candidate.link,
+        ]
+    )
+    grouped_indexers = _dedupe_strings(
+        [
+            *list(existing.grouped_indexers or []),
+            str(existing.indexer or ""),
+            *list(candidate.grouped_indexers or []),
+            str(candidate.indexer or ""),
+        ]
+    )
+    grouped_trackers = _dedupe_strings(
+        [
+            *list(existing.grouped_trackers or []),
+            *_tracker_urls_from_link(existing.link),
+            *list(candidate.grouped_trackers or []),
+            *_tracker_urls_from_link(candidate.link),
+        ]
+    )
+
+    merged.grouped_links = grouped_links
+    merged.grouped_indexers = grouped_indexers
+    merged.grouped_trackers = grouped_trackers
+    merged.duplicate_count = max(
+        int(existing.duplicate_count or 1),
+        len(grouped_links) or 1,
+        len(grouped_indexers) or 1,
+    )
+
+    prefer_candidate = (
+        int(candidate.seeders or -1),
+        int(candidate.peers or -1),
+        int(candidate.grabs or -1),
+        int(bool(candidate.details_url)),
+        int(bool(candidate.indexer)),
+        int(bool(candidate.size_bytes)),
+    ) > (
+        int(existing.seeders or -1),
+        int(existing.peers or -1),
+        int(existing.grabs or -1),
+        int(bool(existing.details_url)),
+        int(bool(existing.indexer)),
+        int(bool(existing.size_bytes)),
+    )
+    preferred = candidate if prefer_candidate else existing
+
+    for field_name in (
+        "title",
+        "link",
+        "indexer",
+        "details_url",
+        "guid",
+        "info_hash",
+        "imdb_id",
+        "size_bytes",
+        "size_label",
+        "published_at",
+        "published_label",
+        "year",
+        "seeders",
+        "peers",
+        "leechers",
+        "grabs",
+        "download_volume_factor",
+        "upload_volume_factor",
+        "text_surface",
+    ):
+        setattr(merged, field_name, getattr(preferred, field_name))
+
+    merged.category_ids = _dedupe_strings(
+        [*list(existing.category_ids or []), *list(candidate.category_ids or [])]
+    )
+    merged.category_labels = _dedupe_strings(
+        [*list(existing.category_labels or []), *list(candidate.category_labels or [])]
+    )
+    merged.torznab_attrs = {
+        **dict(existing.torznab_attrs or {}),
+        **dict(candidate.torznab_attrs or {}),
+    }
+    return merged
+
+
 def _normalize_category_filter_token(value: str) -> str:
     return _normalize_match_text(value)
 
@@ -636,6 +810,8 @@ def _torznab_categories_for_media_type(media_type: MediaType) -> tuple[str, ...]
 def _torznab_mode_for_payload(payload: JackettSearchRequest) -> str:
     if payload.media_type == MediaType.OTHER:
         return "search"
+    if _has_structured_media_search(payload):
+        return TORZNAB_MODE_BY_MEDIA_TYPE.get(payload.media_type, "search")
     if payload.imdb_id or payload.release_year or payload.season_number is not None:
         return TORZNAB_MODE_BY_MEDIA_TYPE.get(payload.media_type, "search")
     return "search"
@@ -1244,41 +1420,53 @@ class JackettClient:
         merged: dict[str, tuple[datetime | None, JackettSearchResult]] = {}
         last_timeout_error: JackettTimeoutError | None = None
         last_http_error: JackettHTTPError | None = None
-        for variant in query_variants:
-            request_params = self._search_params_for_variant(remote_payload, variant)
-            fallback_params = self._fallback_search_params_for_variant(
-                remote_payload, variant, request_params
+        if _has_structured_media_search(payload):
+            structured_results, structured_requests, structured_warnings = (
+                self._search_structured_media_first(payload)
             )
-            for indexer_group in remote_indexer_groups:
-                group_had_success = False
-                for indexer in indexer_group:
-                    try:
-                        variant_results, successful_params, _, timeout_messages = (
-                            self._search_variant(
-                                indexer,
-                                request_params,
-                                fallback_params=fallback_params,
+            for request_params in structured_requests:
+                self._add_request_label(request_variants, seen_request_variants, request_params)
+            for message in structured_warnings:
+                self._add_warning(warning_messages, seen_warning_messages, message)
+            self._merge_results(merged, structured_results)
+
+        if not merged:
+            for variant in query_variants:
+                request_params = self._search_params_for_variant(remote_payload, variant)
+                fallback_params = self._fallback_search_params_for_variant(
+                    remote_payload, variant, request_params
+                )
+                for indexer_group in remote_indexer_groups:
+                    group_had_success = False
+                    for indexer in indexer_group:
+                        try:
+                            variant_results, successful_params, _, timeout_messages = (
+                                self._search_variant(
+                                    indexer,
+                                    request_params,
+                                    fallback_params=fallback_params,
+                                    continue_on_empty=bool(fallback_params),
+                                )
                             )
+                        except JackettTimeoutError as exc:
+                            last_timeout_error = exc
+                            self._add_warning(warning_messages, seen_warning_messages, str(exc))
+                            continue
+                        except JackettHTTPError as exc:
+                            if len(remote_indexer_groups) == 1 and len(indexer_group) == 1:
+                                raise
+                            last_http_error = exc
+                            self._add_warning(warning_messages, seen_warning_messages, str(exc))
+                            continue
+                        group_had_success = True
+                        self._add_request_label(
+                            request_variants, seen_request_variants, successful_params
                         )
-                    except JackettTimeoutError as exc:
-                        last_timeout_error = exc
-                        self._add_warning(warning_messages, seen_warning_messages, str(exc))
-                        continue
-                    except JackettHTTPError as exc:
-                        if len(remote_indexer_groups) == 1 and len(indexer_group) == 1:
-                            raise
-                        last_http_error = exc
-                        self._add_warning(warning_messages, seen_warning_messages, str(exc))
-                        continue
-                    group_had_success = True
-                    self._add_request_label(
-                        request_variants, seen_request_variants, successful_params
-                    )
-                    for message in timeout_messages:
-                        self._add_warning(warning_messages, seen_warning_messages, message)
-                    self._merge_results(merged, variant_results)
-                if group_had_success:
-                    break
+                        for message in timeout_messages:
+                            self._add_warning(warning_messages, seen_warning_messages, message)
+                        self._merge_results(merged, variant_results)
+                    if group_had_success:
+                        break
 
         if not request_variants and last_timeout_error is not None:
             raise last_timeout_error
@@ -1303,6 +1491,48 @@ class JackettClient:
         )
         self._log_search_run(payload, run)
         return run
+
+    def _search_structured_media_first(
+        self,
+        payload: JackettSearchRequest,
+    ) -> tuple[
+        list[tuple[datetime | None, JackettSearchResult]],
+        list[dict[str, object]],
+        list[str],
+    ]:
+        search_mode = TORZNAB_MODE_BY_MEDIA_TYPE.get(payload.media_type)
+        if search_mode not in {"music", "book"}:
+            return [], [], []
+        indexers = self._configured_indexers_for_mode(search_mode)
+        structured_results: list[tuple[datetime | None, JackettSearchResult]] = []
+        successful_requests: list[dict[str, object]] = []
+        warning_messages: list[str] = []
+        for indexer in indexers:
+            request_params = self._structured_media_params_for_indexer(
+                payload,
+                indexer=indexer.indexer_id,
+                supported_params=indexer.supported_params,
+            )
+            if not request_params:
+                continue
+            try:
+                parsed_results, successful_params, _attempted, timeout_messages = self._search_variant(
+                    indexer.indexer_id,
+                    request_params,
+                    continue_on_empty=True,
+                )
+            except JackettTimeoutError as exc:
+                warning_messages.append(str(exc))
+                continue
+            except JackettHTTPError as exc:
+                if exc.status_code != 400:
+                    raise
+                warning_messages.append(str(exc))
+                continue
+            successful_requests.append(successful_params)
+            warning_messages.extend(timeout_messages)
+            structured_results.extend(parsed_results)
+        return structured_results, successful_requests, warning_messages
 
     def enrich_result_category_labels(self, results: list[JackettSearchResult]) -> None:
         candidates = [result for result in results if list(result.category_ids or [])]
@@ -1378,7 +1608,8 @@ class JackettClient:
         query = payload.query.strip()
         if not query:
             return [clamp_search_query_text(payload.query, fallback="Search")]
-        return [query]
+        variants = _query_surface_variants(query)
+        return variants or [query]
 
     def _build_fallback_query_variants(self, payload: JackettSearchRequest) -> list[str]:
         return self._build_query_variants(payload)
@@ -1404,7 +1635,7 @@ class JackettClient:
                 payload.indexer,
                 request_params,
                 fallback_params=fallback_params,
-                continue_on_empty=True,
+                continue_on_empty=bool(fallback_params),
             )
             for attempted_request in attempted_requests:
                 self._add_request_label(request_variants, seen_request_variants, attempted_request)
@@ -1474,7 +1705,7 @@ class JackettClient:
         fallback_request_variants: list[str] = []
         seen_fallback_request_variants: set[str] = set()
         fallback_merged: dict[str, tuple[datetime | None, JackettSearchResult]] = {}
-        if self._needs_broad_fallback(payload):
+        if self._needs_broad_fallback(payload) or (payload.imdb_id_only and not primary_merged):
             fallback_results, fallback_requests, fallback_warnings = self._search_title_fallback(
                 payload,
                 existing_merge_keys=set(primary_merged),
@@ -1556,8 +1787,21 @@ class JackettClient:
         for published_at, result in variant_results:
             merge_key = self._merge_key(result)
             if merge_key in merged:
+                existing_published_at, existing_result = merged[merge_key]
+                merged_result = _merge_result_details(existing_result, result)
+                merged_published = existing_published_at
+                if existing_published_at is None or (
+                    published_at is not None and published_at > existing_published_at
+                ):
+                    merged_published = published_at
+                merged[merge_key] = (merged_published, merged_result)
                 continue
-            merged[merge_key] = (published_at, result)
+            initial_result = result.model_copy(deep=True)
+            initial_result.grouped_links = _dedupe_strings([result.link])
+            initial_result.grouped_indexers = _dedupe_strings([str(result.indexer or "")])
+            initial_result.grouped_trackers = _tracker_urls_from_link(result.link)
+            initial_result.duplicate_count = 1
+            merged[merge_key] = (published_at, initial_result)
 
     def _filter_results(
         self,
@@ -1784,6 +2028,10 @@ class JackettClient:
             params["season"] = int(payload.season_number)
             if payload.episode_number is not None:
                 params["ep"] = int(payload.episode_number)
+        if search_mode in {"music", "book"}:
+            params.update(_structured_media_fields_for_payload(payload))
+            if search_mode == "book" and "title" in params:
+                params.pop("q", None)
 
         return params
 
@@ -1793,9 +2041,6 @@ class JackettClient:
         query: str,
         params: dict[str, object],
     ) -> list[dict[str, object]]:
-        if params.get("t") == "search":
-            return []
-
         fallback_variants: list[dict[str, object]] = []
         seen_variants = {
             tuple(sorted((str(key), _coerce_text(value)) for key, value in params.items()))
@@ -1810,6 +2055,14 @@ class JackettClient:
                 return
             seen_variants.add(candidate_key)
             fallback_variants.append(candidate)
+
+        if category_param and "cat" in params:
+            candidate = dict(params)
+            candidate.pop("cat", None)
+            add_candidate(candidate)
+
+        if params.get("t") == "search":
+            return fallback_variants
 
         if "ep" in params:
             candidate = dict(params)
@@ -2066,18 +2319,15 @@ class JackettClient:
             forced_mode = TORZNAB_MODE_BY_MEDIA_TYPE.get(payload.media_type)
             if forced_mode:
                 params["t"] = forced_mode
+            fallback_params = self._fallback_search_params_for_variant(
+                fallback_payload,
+                query,
+                params,
+            )
             continue_on_empty = (
                 fallback_payload.season_number is not None
                 or fallback_payload.episode_number is not None
-            )
-            fallback_params = (
-                self._fallback_search_params_for_variant(
-                    fallback_payload,
-                    query,
-                    params,
-                )
-                if continue_on_empty
-                else []
+                or bool(fallback_params)
             )
 
             query_had_success = False
@@ -2090,7 +2340,7 @@ class JackettClient:
                                 indexer,
                                 params,
                                 fallback_params=fallback_params,
-                                continue_on_empty=continue_on_empty,
+                                continue_on_empty=continue_on_empty or bool(fallback_params),
                             )
                         )
                     except JackettTimeoutError as exc:
@@ -2155,17 +2405,15 @@ class JackettClient:
             forced_mode = TORZNAB_MODE_BY_MEDIA_TYPE.get(payload.media_type)
             if forced_mode:
                 params["t"] = forced_mode
-            continue_on_empty = (
-                title_payload.season_number is not None or title_payload.episode_number is not None
+            fallback_params = self._fallback_search_params_for_variant(
+                title_payload,
+                query,
+                params,
             )
-            fallback_params = (
-                self._fallback_search_params_for_variant(
-                    title_payload,
-                    query,
-                    params,
-                )
-                if continue_on_empty
-                else []
+            continue_on_empty = (
+                title_payload.season_number is not None
+                or title_payload.episode_number is not None
+                or bool(fallback_params)
             )
 
             query_had_success = False
@@ -2178,7 +2426,7 @@ class JackettClient:
                                 indexer,
                                 params,
                                 fallback_params=fallback_params,
-                                continue_on_empty=continue_on_empty,
+                                continue_on_empty=continue_on_empty or bool(fallback_params),
                             )
                         )
                     except JackettTimeoutError as exc:
@@ -2249,7 +2497,7 @@ class JackettClient:
                 )
                 break
 
-            if "imdbid" not in supported_params:
+            if search_mode in {"movie", "tvsearch"} and "imdbid" not in supported_params:
                 continue
             indexers.append(
                 JackettIndexerCapability(
@@ -2320,6 +2568,45 @@ class JackettClient:
         )
 
         return request_attempts
+
+    def _structured_media_params_for_indexer(
+        self,
+        payload: JackettSearchRequest,
+        *,
+        indexer: str,
+        supported_params: frozenset[str],
+    ) -> dict[str, object] | None:
+        search_mode = TORZNAB_MODE_BY_MEDIA_TYPE.get(payload.media_type)
+        if search_mode not in {"music", "book"}:
+            return None
+
+        structured_fields = _structured_media_fields_for_payload(payload)
+        if not structured_fields:
+            return None
+
+        category_param = self._category_param_for_payload(payload, indexer_hint=indexer)
+        if not category_param:
+            category_param = ",".join(_torznab_categories_for_media_type(payload.media_type))
+        params: dict[str, object] = {
+            "apikey": self.api_key or "",
+            "t": search_mode,
+        }
+        if category_param:
+            params["cat"] = category_param
+        if payload.release_year and "year" in supported_params:
+            params["year"] = payload.release_year
+        if "q" in supported_params and payload.query:
+            params["q"] = payload.query
+
+        for field_name, field_value in structured_fields.items():
+            if field_name in supported_params:
+                params[field_name] = field_value
+
+        if search_mode == "book" and "title" in params:
+            params.pop("q", None)
+        if len(params) <= 2:
+            return None
+        return params
 
     @classmethod
     def _collect_indexer_category_labels(

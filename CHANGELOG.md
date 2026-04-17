@@ -8,6 +8,14 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [0.9.0] - 2026-04-11
+
+- Completed the phase-23 cross-addon Stremio aggregation release so the local addon can merge qB RSS rows with Torrentio-compatible provider manifests into one globally ranked stream response instead of relying on Stremio's per-addon grouping.
+- Persisted provider manifest configuration in app settings, fixed manifest parsing for real provider URLs that contain commas in their option payloads, and URL-encoded episode item IDs so Torrentio-compatible episode requests resolve correctly.
+- Switched external provider fetches to a browser-like request profile that survives the current Torrentio edge protection, which restored live provider ingestion in the local addon and the real Stremio desktop smoke flow.
+- Improved qB-authored episode metadata so resolved season-pack rows show the selected file size first, keep pack size as secondary context, and expose `behaviorHints.videoSize` alongside filename and `fileIdx`, matching Torrentio-style file-specific detail more closely.
+- Revalidated the release with focused pytest/ruff/mypy checks, `scripts\\check.bat` (`337 passed`), `scripts\\closeout_qa.bat` (artifacts under `logs\\qa\\phase-closeout-20260410T222004Z\\`), `scripts\\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`), fresh HTTP addon smoke on `http://127.0.0.1:8001`, and a real Stremio desktop smoke under `logs\\qa\\stremio-desktop-smoke-20260410T221925Z\\`.
+
 ## [0.8.5] - 2026-04-03
 
 - Split the overloaded `bluray` quality token from `BDRip/BRRip` so `exclude bluray` no longer hides otherwise valid exact 4K HDR disc-rip results.

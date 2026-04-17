@@ -94,6 +94,8 @@ def _ensure_rule_columns() -> None:
         "jellyfin_auto_sync_last_status": "VARCHAR(32) NOT NULL DEFAULT 'idle'",
         "jellyfin_auto_sync_last_message": "TEXT NOT NULL DEFAULT ''",
         "stremio_local_storage_path": "VARCHAR(512)",
+        "stremio_preferred_languages": "VARCHAR(255)",
+        "stremio_stream_provider_manifests": "TEXT",
         "stremio_auto_sync_enabled": "BOOLEAN NOT NULL DEFAULT 1",
         "stremio_auto_sync_interval_seconds": "INTEGER NOT NULL DEFAULT 30",
         "stremio_auto_sync_last_run_at": "DATETIME",

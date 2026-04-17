@@ -61,6 +61,25 @@
         <legend>Jellyfin sync</legend>
         <p class="helper-text">Automatic Jellyfin sync runs when the app starts and keeps checking the Jellyfin DB for file changes while the app stays open. Use the manual action below any time you want to save the current settings and run a sync immediately.</p>
         <div class="form-grid">
+          <label>
+            Preferred stream languages
+            <input
+              type="text"
+              name="stremio_preferred_languages"
+              value="{{ form_data.stremio_preferred_languages }}"
+              placeholder="ru, en"
+            />
+            <span class="helper-text">Optional. Comma-separated language preference for addon stream selection, for example `ru` or `ru, en`. Environment override still wins when set.</span>
+          </label>
+          <label>
+            Stream provider manifests
+            <textarea
+              name="stremio_stream_provider_manifests"
+              rows="3"
+              placeholder="Torrentio|https://torrentio.strem.fun/manifest.json"
+            >{{ form_data.stremio_stream_provider_manifests }}</textarea>
+            <span class="helper-text">Optional. One `Label|manifest_url` entry per line to merge Torrentio-compatible stream providers into the local addon. Newline-separated entries are safer than commas because real Torrentio URLs can contain commas in their option list. Environment override still wins when set.</span>
+          </label>
           <label class="toggle">
             <input
               type="checkbox"
@@ -276,5 +295,6 @@
     <button type="submit" formaction="/api/settings/test-jackett">Test Jackett</button>
     <button type="submit" formaction="/api/settings/test-metadata">Test Metadata</button>
   </div>
+  <p class="helper-text">`Test ...` buttons validate the form values temporarily but do not save them. Rule sync uses the saved settings.</p>
 </form>
 {% endblock %}

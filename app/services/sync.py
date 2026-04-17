@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_environment_settings
 from app.models import AppSettings, Rule, RuleSearchSnapshot, SyncEvent, SyncStatus, utcnow
 from app.schemas import BatchSyncResult, SyncResult
 from app.services.qbittorrent import QbittorrentClient, QbittorrentClientError
@@ -34,6 +37,8 @@ class SyncService:
             action = "rename"
 
         builder = RuleBuilder(self.app_settings)
+        qb_rule = builder.build_qb_rule(rule)
+        qb_rule, feed_warnings = self._filter_unhealthy_jackett_feeds(qb_rule)
 
         try:
             with self._qb_client() as client:
@@ -45,7 +50,7 @@ class SyncService:
                     and rule.remote_rule_name_last_synced != rule.rule_name
                 ):
                     client.remove_rule(rule.remote_rule_name_last_synced)
-                client.set_rule(rule.rule_name, builder.build_qb_rule(rule))
+                client.set_rule(rule.rule_name, qb_rule)
         except (QbittorrentClientError, SyncServiceError) as exc:
             rule.last_sync_status = SyncStatus.ERROR
             rule.last_sync_error = str(exc)
@@ -65,12 +70,15 @@ class SyncService:
         rule.last_synced_at = utcnow()
         self._record_event(rule, action=action, status="ok", error_message=None)
         self.session.commit()
+        message = "Rule synced to qBittorrent."
+        if feed_warnings:
+            message = f"{message} {' '.join(feed_warnings)}"
         return SyncResult(
             success=True,
             action=action,
             rule_id=rule.id,
             rule_name=rule.rule_name,
-            message="Rule synced to qBittorrent.",
+            message=message,
         )
 
     def sync_all(self) -> BatchSyncResult:
@@ -167,3 +175,75 @@ class SyncService:
                 return client.get_rules()
         except (QbittorrentClientError, SyncServiceError):
             return None
+
+    def _filter_unhealthy_jackett_feeds(
+        self,
+        rule_def: dict[str, object],
+    ) -> tuple[dict[str, object], list[str]]:
+        raw_feed_urls = rule_def.get("affectedFeeds")
+        if not isinstance(raw_feed_urls, list):
+            return rule_def, []
+        feed_urls = [
+            str(item or "").strip()
+            for item in raw_feed_urls
+            if str(item or "").strip()
+        ]
+        if not feed_urls:
+            return rule_def, []
+
+        healthy_feed_urls: list[str] = []
+        skipped_hosts: list[str] = []
+        for feed_url in feed_urls:
+            if self._jackett_feed_sample_download_works(feed_url):
+                healthy_feed_urls.append(feed_url)
+                continue
+            skipped_hosts.append(self._feed_label(feed_url))
+
+        if not skipped_hosts:
+            return rule_def, []
+        if healthy_feed_urls:
+            updated_rule_def = dict(rule_def)
+            updated_rule_def["affectedFeeds"] = healthy_feed_urls
+            skipped_label = ", ".join(skipped_hosts[:5])
+            extra = len(skipped_hosts) - min(len(skipped_hosts), 5)
+            if extra > 0:
+                skipped_label = f"{skipped_label} (+{extra} more)"
+            return updated_rule_def, [
+                f"Skipped Jackett feeds with broken sample downloads: {skipped_label}."
+            ]
+        return rule_def, []
+
+    def _jackett_feed_sample_download_works(self, feed_url: str) -> bool:
+        timeout = min(float(get_environment_settings().request_timeout), 15.0)
+        try:
+            with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+                response = client.get(feed_url)
+                response.raise_for_status()
+                root = ET.fromstring(response.text)
+                item = root.find("./channel/item")
+                if item is None:
+                    return True
+                enclosure = item.find("enclosure")
+                download_url = ""
+                if enclosure is not None:
+                    download_url = str(enclosure.attrib.get("url") or "").strip()
+                if not download_url:
+                    download_url = str(item.findtext("link") or "").strip()
+                if not download_url:
+                    return True
+                download_response = client.get(download_url)
+                return download_response.status_code < 400
+        except (httpx.HTTPError, ET.ParseError):
+            return False
+
+    @staticmethod
+    def _feed_label(feed_url: str) -> str:
+        parsed = httpx.URL(feed_url)
+        segments = [segment for segment in parsed.path.split("/") if segment]
+        try:
+            index = segments.index("indexers")
+        except ValueError:
+            return feed_url
+        if index + 1 < len(segments):
+            return segments[index + 1]
+        return feed_url

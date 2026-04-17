@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import threading
 from collections.abc import Sequence
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -24,7 +25,7 @@ from app.models import (
     media_type_choices,
     media_type_label,
 )
-from app.schemas import JackettSearchRequest
+from app.schemas import JackettSearchRequest, JackettSearchResult, JackettSearchRun
 from app.services.category_catalog import (
     resolve_category_labels,
     sync_category_catalog_from_indexer_map,
@@ -87,6 +88,7 @@ from app.services.settings_service import (
     normalize_search_sort_criteria,
 )
 from app.services.static_assets import compute_static_asset_version
+from app.services.stremio_addon import StremioAddonService
 from app.services.watch_state import format_watch_state_source_labels
 
 router = APIRouter()
@@ -113,6 +115,159 @@ RULE_POSTER_BACKFILL_TIMEOUT_SECONDS = 2.0
 _RULE_POSTER_BACKFILL_RETRY_AFTER: dict[str, datetime] = {}
 _RULE_POSTER_BACKFILL_LOCK = threading.Lock()
 _RULE_POSTER_BACKFILL_IN_FLIGHT: set[str] = set()
+SERIES_EPISODE_QUERY_RE = re.compile(
+    r"(?i)\b(?:s(?P<season>\d{1,2})[\s._-]*e(?P<episode>\d{1,3})|(?P<season_x>\d{1,2})x(?P<episode_x>\d{1,3}))\b"
+)
+DESKTOP_FALLBACK_RESPONSE_BUDGET_SECONDS = 8.0
+
+
+def _dedupe_search_results(
+    results: Sequence[JackettSearchResult],
+    *,
+    excluded_keys: set[str] | None = None,
+) -> list[JackettSearchResult]:
+    deduped: list[JackettSearchResult] = []
+    seen_keys = set(excluded_keys or ())
+    for result in results:
+        merge_key = _search_result_key(result)
+        if merge_key in seen_keys:
+            continue
+        seen_keys.add(merge_key)
+        deduped.append(result)
+    return deduped
+
+
+def _desktop_fallback_payload_from_exact_payload(
+    payload: JackettSearchRequest,
+) -> JackettSearchRequest:
+    return payload.model_copy(
+        update={
+            "imdb_id": None,
+            "imdb_id_only": False,
+        }
+    )
+
+
+def _compose_desktop_run_from_enriched_baseline(
+    *,
+    baseline_run: JackettSearchRun,
+    fallback_run: JackettSearchRun | None,
+    fallback_warning: str | None = None,
+) -> JackettSearchRun:
+    primary_keys = {
+        _search_result_key(result)
+        for result in [*list(baseline_run.raw_results or []), *list(baseline_run.results or [])]
+    }
+    warning_candidates = list(baseline_run.warning_messages or [])
+    if fallback_run is not None:
+        warning_candidates.extend(list(fallback_run.warning_messages or []))
+    if fallback_warning:
+        warning_candidates.append(fallback_warning)
+    merged_warning_messages: list[str] = []
+    seen_warning_messages: set[str] = set()
+    for warning_message in warning_candidates:
+        cleaned = str(warning_message or "").strip()
+        normalized = cleaned.casefold()
+        if not cleaned or normalized in seen_warning_messages:
+            continue
+        seen_warning_messages.add(normalized)
+        merged_warning_messages.append(cleaned)
+
+    merged_fallback_request_variants: list[str] = []
+    seen_fallback_requests: set[str] = set()
+    merged_raw_fallback_results: list[JackettSearchResult] = []
+    merged_filtered_fallback_results: list[JackettSearchResult] = []
+    if fallback_run is not None:
+        for request_variant in [
+            *list(fallback_run.request_variants or []),
+            *list(fallback_run.fallback_request_variants or []),
+        ]:
+            cleaned = str(request_variant or "").strip()
+            normalized = cleaned.casefold()
+            if not cleaned or normalized in seen_fallback_requests:
+                continue
+            seen_fallback_requests.add(normalized)
+            merged_fallback_request_variants.append(cleaned)
+
+        merged_raw_fallback_results = _dedupe_search_results(
+            [
+                *list(fallback_run.raw_results or []),
+                *list(fallback_run.raw_fallback_results or []),
+            ],
+            excluded_keys=primary_keys,
+        )
+        merged_filtered_fallback_results = _dedupe_search_results(
+            [
+                *list(fallback_run.results or []),
+                *list(fallback_run.fallback_results or []),
+            ],
+            excluded_keys=primary_keys,
+        )
+
+    return baseline_run.model_copy(
+        update={
+            "query_variants": list(
+                (fallback_run.query_variants if fallback_run is not None else [])
+                or baseline_run.query_variants
+                or []
+            ),
+            "warning_messages": merged_warning_messages,
+            "fallback_request_variants": merged_fallback_request_variants,
+            "raw_fallback_results": merged_raw_fallback_results,
+            "fallback_results": merged_filtered_fallback_results,
+        },
+        deep=True,
+    )
+
+
+def _run_desktop_search_with_addon_baseline(
+    *,
+    settings: Any,
+    client: JackettClient,
+    payload: JackettSearchRequest,
+) -> JackettSearchRun:
+    parity_run = StremioAddonService(settings).collect_enriched_search_run(payload=payload)
+    if parity_run is None:
+        return client.search(payload)
+
+    fallback_payload = _desktop_fallback_payload_from_exact_payload(payload)
+    fallback_executor = ThreadPoolExecutor(max_workers=1)
+    fallback_future: Future[JackettSearchRun] | None = None
+    fallback_run: JackettSearchRun | None = None
+    fallback_warning: str | None = None
+    try:
+        fallback_future = fallback_executor.submit(client.search, fallback_payload)
+        done, pending = wait(
+            (fallback_future,),
+            timeout=DESKTOP_FALLBACK_RESPONSE_BUDGET_SECONDS,
+        )
+        if fallback_future in done:
+            fallback_run = fallback_future.result()
+        else:
+            fallback_warning = (
+                "Desktop fallback search exceeded the response budget; "
+                "showing addon-exact results first."
+            )
+            for pending_future in pending:
+                pending_future.cancel()
+    finally:
+        fallback_executor.shutdown(wait=False, cancel_futures=True)
+    return _compose_desktop_run_from_enriched_baseline(
+        baseline_run=parity_run,
+        fallback_run=fallback_run,
+        fallback_warning=fallback_warning,
+    )
+
+
+def _sync_search_form_data_with_payload(
+    form_data: dict[str, object],
+    payload: JackettSearchRequest,
+) -> None:
+    form_data["query"] = payload.query
+    form_data["media_type"] = payload.media_type.value
+    form_data["imdb_id"] = payload.imdb_id or ""
+    form_data["include_release_year"] = bool(payload.release_year)
+    form_data["release_year"] = payload.release_year or ""
 
 
 def _base_context(request: Request, page_title: str) -> dict[str, object]:
@@ -494,8 +649,28 @@ def _title_only_search_request_from_rule(rule: Rule) -> JackettSearchRequest | N
 
 
 def _auto_imdb_first_payload(payload: JackettSearchRequest) -> JackettSearchRequest:
-    if payload.imdb_id and payload.media_type in {MediaType.MOVIE, MediaType.SERIES}:
-        return payload.model_copy(update={"imdb_id_only": True})
+    if not payload.imdb_id or payload.media_type not in {MediaType.MOVIE, MediaType.SERIES}:
+        return payload
+
+    updates: dict[str, object] = {"imdb_id_only": True}
+    if payload.media_type == MediaType.SERIES:
+        if payload.season_number is not None or payload.episode_number is not None:
+            # Series floor-targeted searches should not inherit the parent series year.
+            updates["release_year"] = None
+        elif payload.season_number is None and payload.episode_number is None:
+            match = SERIES_EPISODE_QUERY_RE.search(str(payload.query or ""))
+            if match is not None:
+                season_value = match.group("season") or match.group("season_x")
+                episode_value = match.group("episode") or match.group("episode_x")
+                if season_value and episode_value:
+                    updates["season_number"] = int(season_value)
+                    updates["episode_number"] = int(episode_value)
+                    # Series episode queries should not inherit a year floor from the
+                    # broader series entry; it over-constrains long-running titles.
+                    updates["release_year"] = None
+
+    if updates:
+        return payload.model_copy(update=updates)
     return payload
 
 
@@ -1153,8 +1328,13 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
         if active_payload is not None and not errors:
             try:
                 active_payload = _auto_imdb_first_payload(active_payload)
+                _sync_search_form_data_with_payload(form_data, active_payload)
                 client = JackettClient(jackett_api_url, jackett_api_key)
-                result = client.search(active_payload)
+                result = _run_desktop_search_with_addon_baseline(
+                    settings=settings,
+                    client=client,
+                    payload=active_payload,
+                )
                 all_results = [
                     *list(result.raw_results or []),
                     *list(result.results or []),
@@ -1195,7 +1375,6 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                     else ("Saved rule search" if source_rule else "Jackett active search")
                 )
                 fallback_label = "Title fallback" if result.fallback_request_variants else ""
-                form_data["include_release_year"] = bool(active_payload.release_year)
                 summary_parts = ["Title"]
                 if active_payload.imdb_id_only:
                     summary_parts.append("IMDb-enforced Jackett lookup")
@@ -1594,7 +1773,11 @@ def edit_rule(
                     try:
                         payload_from_rule = _auto_imdb_first_payload(payload_from_rule)
                         client = JackettClient(jackett.api_url, jackett.api_key)
-                        result = client.search(payload_from_rule)
+                        result = _run_desktop_search_with_addon_baseline(
+                            settings=settings,
+                            client=client,
+                            payload=payload_from_rule,
+                        )
                         all_results = [
                             *list(result.raw_results or []),
                             *list(result.results or []),

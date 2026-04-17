@@ -257,7 +257,7 @@ def _match_qb_library_file_entry(
         matching_files = [
             item
             for item in video_files
-            if text_matches_episode(
+            if _qb_file_matches_requested_episode(
                 str(item.get("name") or ""),
                 season_number=season_number,
                 episode_number=episode_number,
@@ -267,6 +267,11 @@ def _match_qb_library_file_entry(
             return None
         matching_files.sort(
             key=lambda item: (
+                _qb_file_episode_match_rank(
+                    str(item.get("name") or ""),
+                    season_number=season_number,
+                    episode_number=episode_number,
+                ),
                 _coerce_int(item.get("index"))
                 if _coerce_int(item.get("index")) is not None
                 else 10_000,
@@ -362,6 +367,48 @@ def _strip_leading_root_component(relative_path: Path, root_name: str) -> Path:
     if len(parts) > 1 and parts[0].casefold() == str(root_name or "").strip().casefold():
         return Path(*parts[1:])
     return relative_path
+
+
+def _qb_file_matches_requested_episode(
+    path: str,
+    *,
+    season_number: int,
+    episode_number: int,
+) -> bool:
+    return _qb_file_episode_match_rank(
+        path,
+        season_number=season_number,
+        episode_number=episode_number,
+    ) < 10
+
+
+def _qb_file_episode_match_rank(
+    path: str,
+    *,
+    season_number: int,
+    episode_number: int,
+) -> int:
+    normalized_path = PurePosixPath(str(path or "").strip())
+    parts = list(normalized_path.parts)
+    if not parts:
+        return 10
+
+    filename = parts[-1]
+    if text_matches_episode(
+        filename,
+        season_number=season_number,
+        episode_number=episode_number,
+    ):
+        return 0
+
+    for parent_segment in reversed(parts[:-1]):
+        if text_matches_episode(
+            parent_segment,
+            season_number=season_number,
+            episode_number=episode_number,
+        ):
+            return 5
+    return 10
 
 
 def _is_video_path(value: str) -> bool:

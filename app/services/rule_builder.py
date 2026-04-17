@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 from dataclasses import dataclass
+from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 from app.models import AppSettings, MediaType, Rule
 from app.services.quality_filters import (
@@ -429,7 +431,7 @@ class RuleBuilder:
             "useRegex": effective_use_regex,
             "episodeFilter": rule.episode_filter or "",
             "smartFilter": rule.smart_filter,
-            "affectedFeeds": rule.feed_urls,
+            "affectedFeeds": self._render_qb_feed_urls(rule.feed_urls),
             "ignoreDays": rule.ignore_days,
             "addPaused": rule.add_paused,
             "assignedCategory": self.render_category(rule),
@@ -468,3 +470,76 @@ class RuleBuilder:
         include_set = set(include_tokens)
         exclude_tokens = [token for token in exclude_tokens if token not in include_set]
         return grouped_tokens_to_regex(include_tokens), tokens_to_regex(exclude_tokens)
+
+    def _render_qb_feed_urls(self, feed_urls: list[str] | None) -> list[str]:
+        cleaned_feed_urls = [str(item or "").strip() for item in list(feed_urls or []) if str(item or "").strip()]
+        if self.settings is None:
+            return cleaned_feed_urls
+        api_url = str(self.settings.jackett_api_url or "").strip()
+        qb_url = str(self.settings.jackett_qb_url or "").strip()
+        if not api_url or not qb_url:
+            return cleaned_feed_urls
+        return [_rewrite_base_url(candidate, source_base=api_url, target_base=qb_url) for candidate in cleaned_feed_urls]
+
+
+def _rewrite_base_url(value: str, *, source_base: str, target_base: str) -> str:
+    source = urlsplit(source_base.rstrip("/"))
+    target = urlsplit(target_base.rstrip("/"))
+    candidate = urlsplit(value)
+    if not source.scheme or not source.netloc or not target.scheme or not target.netloc:
+        return value
+    if (
+        candidate.scheme.casefold() != source.scheme.casefold()
+        or not _hosts_match_for_rewrite(candidate.hostname, source.hostname)
+        or _normalized_port(candidate) != _normalized_port(source)
+    ):
+        return value
+    source_path = source.path.rstrip("/")
+    candidate_path = candidate.path or ""
+    if source_path:
+        source_prefix = f"{source_path}/"
+        if candidate_path != source_path and not candidate_path.startswith(source_prefix):
+            return value
+        suffix_path = candidate_path[len(source_path) :]
+    else:
+        suffix_path = candidate_path
+    target_path = target.path.rstrip("/")
+    rewritten_path = f"{target_path}{suffix_path}" if target_path else suffix_path
+    return urlunsplit(
+        (
+            target.scheme,
+            target.netloc,
+            rewritten_path or "/",
+            candidate.query,
+            candidate.fragment,
+        )
+    )
+
+
+def _hosts_match_for_rewrite(candidate_host: str | None, source_host: str | None) -> bool:
+    candidate = str(candidate_host or "").strip().casefold()
+    source = str(source_host or "").strip().casefold()
+    if not candidate or not source:
+        return False
+    if candidate == source:
+        return True
+    return _is_loopback_host(candidate) and _is_loopback_host(source)
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _normalized_port(parts: SplitResult) -> int | None:
+    if parts.port is not None:
+        return int(parts.port)
+    if parts.scheme.casefold() == "http":
+        return 80
+    if parts.scheme.casefold() == "https":
+        return 443
+    return None

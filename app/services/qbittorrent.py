@@ -196,6 +196,16 @@ class QbittorrentClient:
             return item
         return None
 
+    def get_torrent_trackers(self, info_hash: str) -> list[dict[str, object]]:
+        payload = self._request(
+            "GET",
+            "/api/v2/torrents/trackers",
+            params={"hash": info_hash},
+        )
+        if not isinstance(payload, list):
+            raise QbittorrentClientError("Unexpected qBittorrent torrent trackers payload.")
+        return [item for item in payload if isinstance(item, dict)]
+
     def get_torrents(self, *, hashes: str | None = None) -> list[dict[str, object]]:
         params: dict[str, str] = {}
         cleaned_hashes = str(hashes or "").strip()
@@ -220,6 +230,28 @@ class QbittorrentClient:
                 "hash": info_hash,
                 "id": "|".join(str(file_id) for file_id in file_ids),
                 "priority": str(int(priority)),
+            },
+            expect_json=False,
+        )
+
+    def add_trackers(self, info_hash: str, tracker_urls: list[str]) -> None:
+        cleaned_urls: list[str] = []
+        seen_urls: set[str] = set()
+        for raw_url in tracker_urls:
+            candidate = str(raw_url or "").strip()
+            key = candidate.casefold()
+            if not candidate or key in seen_urls:
+                continue
+            seen_urls.add(key)
+            cleaned_urls.append(candidate)
+        if not cleaned_urls:
+            return
+        self._request(
+            "POST",
+            "/api/v2/torrents/addTrackers",
+            data={
+                "hash": info_hash,
+                "urls": "\n".join(cleaned_urls),
             },
             expect_json=False,
         )

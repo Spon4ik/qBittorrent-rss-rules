@@ -1,13 +1,11 @@
 # Roadmap
 
-## Current release target: v0.9.0 Global cross-addon stream ordering
+## Current release target: Post-v0.9.0 planning
 
 ### In progress
 
-- Phase 24 is now closed and release-validated in `v0.8.3` as the hotfix for long-running Stremio series lookups that were over-constrained by the original series year, along with early phase 23 qB-side precursors for visibility and search precision.
-- Phase 23 is now the active `v0.9.0` minor slice, focused on merging external addon/provider streams into one globally ranked list instead of relying on Stremio's per-addon grouping.
-- Phase 23 scope now also includes rule-level Jackett language preferences and language-aware indexer routing as a qB-side precision track, based on live proof on 2026-04-17 that the configured Jackett instance exposes complete per-indexer language metadata (`ru-RU`, `en-US`, `he-IL`) and accepts `lang:<code>` filter-indexer expressions.
-- Start a release/versioning automation track so patch/minor follow-ups can move from synchronized version bumps through changelog prep, branch naming, push, and PR publication with less manual drift risk.
+- Phase 23 is now closed and release-validated in `v0.9.0` as the Stremio cross-addon aggregation slice, including persisted provider manifests, live Torrentio-compatible provider ingestion inside the local addon, exact-first desktop/result-contract precursors, and real desktop smoke proof for merged provider ordering.
+- Phase 24 remains closed and release-validated in `v0.8.3` as the hotfix for long-running Stremio series lookups that were over-constrained by the original series year, along with early phase 23 qB-side precursors for visibility and search precision.
 - Phase 22 is now closed and release-validated in `v0.8.2` as the Stremio patch slice covering full qB RSS variant retention, global quality-first ordering, and exact-variant local playback marking after the `v0.8.1` release still suppressed rows too aggressively.
 - Phase 21 is now closed and release-validated in `v0.8.1` as the Stremio playback follow-up slice covering qB RSS stream ordering and qB-backed local playback acceleration so predownloaded torrents materially improve Stremio playback.
 - Phase 20 is now closed and release-validated in `v0.8.0` as the Stremio library sync and native addon parity slice, including real desktop proof that qB RSS rows render in Stremio for known items such as `The Beauty`.
@@ -15,12 +13,13 @@
 - Phase 18 is now closed and release-validated as the rule-form filter-profile live-update patch slice.
 - Phase 17 remains closed and release-validated as the shared watch-state arbitration foundation slice, with Stremio sync intentionally deferred to a later phase.
 - Decide whether the next Stremio-focused phase should prioritize richer catalog providers, watched-progress arbitration, or native addon metadata/configuration expansion.
+- Keep the explicit music/audiobook structured Jackett search follow-up as the next cleanup/backlog slice after the main phase-23 aggregation decision, so direct capable indexers and native `music` / `book` params can replace more manual regex-heavy narrowing.
 - Keep deterministic browser QA, static checks, full pytest, WinUI desktop builds, and the Stremio addon smoke pair as release gates for the next feature phase.
 
 ### Current phase track
 
 - Phase 24: Stremio long-running series year hotfix (implemented and release-validated in `v0.8.3`; `docs/plans/phase-24-stremio-long-running-series-year-hotfix.md`)
-- Phase 23: global cross-addon stream ordering (active track; `docs/plans/phase-23-global-cross-addon-stream-ordering.md`)
+- Phase 23: global cross-addon stream ordering (implemented and release-validated in `v0.9.0`; `docs/plans/phase-23-global-cross-addon-stream-ordering.md`)
 - Phase 22: Stremio variant parity and local playback marking (implemented and release-validated in `v0.8.2`; `docs/plans/phase-22-stremio-variant-parity-and-local-marking.md`)
 - Phase 21: Stremio stream ordering and qB-backed local playback acceleration (implemented and release-validated in `v0.8.1`; `docs/plans/phase-21-stremio-stream-ordering-and-local-playback.md`)
 - Phase 20: Stremio library sync and native addon parity (implemented and release-validated in `v0.8.0`; `docs/plans/phase-20-stremio-library-rule-sync.md`)
@@ -45,7 +44,7 @@ Phase 24 detail pointer:
 - Dated checklist, regression evidence, and scope for the active `v0.8.3` long-running series hotfix live in `docs/plans/phase-24-stremio-long-running-series-year-hotfix.md`.
 
 Phase 23 detail pointer:
-- Dated checklist, architectural options, and delivery risks for the planned `v0.9.0` cross-addon ordering slice live in `docs/plans/phase-23-global-cross-addon-stream-ordering.md`.
+- Dated checklist, release validation evidence, and follow-up notes for the delivered `v0.9.0` cross-addon ordering slice live in `docs/plans/phase-23-global-cross-addon-stream-ordering.md`.
 
 Phase 22 detail pointer:
 - Dated checklist, variant-retention decisions, and validation evidence for the completed `v0.8.2` Stremio patch slice live in `docs/plans/phase-22-stremio-variant-parity-and-local-marking.md`.
@@ -99,18 +98,17 @@ Phase 6 detail pointer:
 
 - Decide whether the next catalog/addon step should expand beyond OMDb-backed title search into richer provider support or more explicit release-calendar reasoning.
 - Decide whether the next Stremio follow-up should tackle watched-progress arbitration, richer addon metadata, or provider-side configuration/options.
-- Add rule-level preferred-language routing for Jackett (`ru`, `he`, `en`) with ordered fallback and live diagnostics that show current language coverage across configured indexers before manual feed/indexer selection is deprecated.
-- Decide whether manual affected-feed selection should become an advanced override once language-aware Jackett routing is proven on real rules, instead of remaining the default authoring surface.
-- Add a settings diagnostic card for Jackett routing coverage: per-language indexer counts, missing language metadata, and which configured indexers support the active search modes for movie/series IMDb-first queries.
-- Extend search/rule snapshots with per-language provenance so result review can explain whether a row came from the primary language pool, a secondary fallback language, or an explicit manual override.
-- Add release-prep automation for SemVer bumps, changelog scaffolding, branch/tag naming, push/PR reminders, and stale-version consistency checks across backend, desktop, docs, and tests.
-- Add a release checklist surface or script output that validates version touchpoints, changelog state, required gates, and publish readiness before a tag is created.
-- Add optional GitHub release-note drafting from changelog/current-status data so patch releases can be published with less hand-edited duplication.
-- Consider provider trust controls beyond language: codec/source whitelists, preferred tracker types (`public`/`private`), health/test-passed filters, and optional per-rule minimum-capability requirements.
 - Replace the fixed quality-tag bank with a compact Settings UI that lets users add, remove, and reorganize quality tokens and aliases without editing raw taxonomy JSON.
 - Decide whether deleted-history persistence should stay rule-local or graduate to a broader watch-history/scrobble-compatible cache.
 - Reduce context and maintenance cost by splitting the largest rule/search/Jellyfin files along real domain boundaries.
 - Keep deterministic browser QA and route/service regressions as release gates for every workflow change.
+
+## Release-validated: v0.9.0 (2026-04-11)
+
+- Shipped the phase-23 Stremio aggregation release so the local addon can merge qB RSS rows with Torrentio-compatible provider manifests into one globally ranked stream response instead of relying on Stremio's per-addon grouping.
+- Persisted provider manifest configuration in `/settings`, fixed comma-safe parsing for real provider URLs, URL-encoded episode item ids for provider stream URLs, and switched external provider fetches to a browser-like request profile that survives the current Torrentio edge protection.
+- Improved qB-authored episode rows so resolved season-pack results show the selected file size first, keep pack size as secondary context, and emit `behaviorHints.videoSize` alongside filename and `fileIdx`.
+- Revalidated the release with `scripts\\check.bat` (`337 passed`), `scripts\\closeout_qa.bat` (artifacts under `logs\\qa\\phase-closeout-20260410T222806Z\\`), `scripts\\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`), fresh HTTP addon smoke on `http://127.0.0.1:8002`, and real desktop smoke artifacts under `logs\\qa\\stremio-desktop-smoke-20260410T223201Z\\`.
 
 ## Release-validated: v0.8.3 (2026-04-02)
 

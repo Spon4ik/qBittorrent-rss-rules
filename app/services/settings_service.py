@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import platform
+import re
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
@@ -82,6 +83,17 @@ def _normalize_optional_text(value: object | None) -> str | None:
     if cleaned.casefold() in NULLISH_TEXT_VALUES:
         return None
     return cleaned
+
+STREMIO_LANGUAGE_TOKEN_ALIASES: dict[str, tuple[str, ...]] = {
+    "en": ("en", "eng", "english"),
+    "ru": ("ru", "rus", "russian"),
+    "he": ("he", "heb", "hebrew"),
+    "multi": ("multi",),
+}
+STREMIO_STREAM_PROVIDER_ENTRY_START_RE = re.compile(
+    r"(?:^|,)\s*(?:(?P<label>[^,\n|]+)\|)?https?://",
+    re.IGNORECASE,
+)
 
 
 def _is_wsl_runtime() -> bool:
@@ -280,6 +292,7 @@ class ResolvedJellyfinConfig:
 class ResolvedStremioConfig:
     local_storage_path: str | None
     auth_key: str | None
+    preferred_languages: tuple[str, ...]
     auto_sync_enabled: bool
     auto_sync_interval_seconds: int
 
@@ -292,7 +305,101 @@ class ResolvedStremioConfig:
         return bool(self.auth_key or self.local_storage_path)
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedStremioStreamProvider:
+    manifest_url: str
+    label: str | None = None
+
+
 class SettingsService:
+    @staticmethod
+    def _split_stream_provider_entries(raw_value: str) -> tuple[str, ...]:
+        normalized_lines = [
+            str(line or "").strip()
+            for line in str(raw_value or "").replace("\r", "\n").split("\n")
+            if str(line or "").strip()
+        ]
+        entries: list[str] = []
+        for line in normalized_lines:
+            start_matches = list(STREMIO_STREAM_PROVIDER_ENTRY_START_RE.finditer(line))
+            if len(start_matches) <= 1:
+                entries.append(line)
+                continue
+            for index, match in enumerate(start_matches):
+                entry_start = match.start()
+                if line[entry_start] == ",":
+                    entry_start += 1
+                entry_end = (
+                    start_matches[index + 1].start() if index + 1 < len(start_matches) else len(line)
+                )
+                candidate = line[entry_start:entry_end].strip().strip(",").strip()
+                if candidate:
+                    entries.append(candidate)
+        return tuple(entries)
+
+    @staticmethod
+    def normalize_stremio_preferred_languages(value: object | None) -> tuple[str, ...]:
+        cleaned_value = str(value or "").strip()
+        if not cleaned_value:
+            return ()
+        normalized_languages: list[str] = []
+        seen_languages: set[str] = set()
+        for raw_token in (
+            cleaned_value.replace("\r", "\n").replace(",", "\n").replace(";", "\n").split("\n")
+        ):
+            token = str(raw_token or "").strip().casefold()
+            if not token:
+                continue
+            normalized_token = token
+            for language_code, aliases in STREMIO_LANGUAGE_TOKEN_ALIASES.items():
+                if token == language_code or token in aliases:
+                    normalized_token = language_code
+                    break
+            if normalized_token in seen_languages:
+                continue
+            seen_languages.add(normalized_token)
+            normalized_languages.append(normalized_token)
+        return tuple(normalized_languages)
+
+    @staticmethod
+    def resolve_stremio_stream_providers(
+        settings: AppSettings | None = None,
+    ) -> tuple[ResolvedStremioStreamProvider, ...]:
+        raw_value = str(
+            get_environment_settings().stremio_stream_provider_manifests
+            or getattr(settings, "stremio_stream_provider_manifests", None)
+            or ""
+        ).strip()
+        if not raw_value:
+            return ()
+        providers: list[ResolvedStremioStreamProvider] = []
+        seen_manifest_urls: set[str] = set()
+        normalized_entries = SettingsService._split_stream_provider_entries(raw_value)
+        for raw_entry in normalized_entries:
+            cleaned_entry = str(raw_entry or "").strip()
+            if not cleaned_entry:
+                continue
+            label: str | None = None
+            manifest_url = cleaned_entry
+            if "|" in cleaned_entry:
+                raw_label, raw_manifest_url = cleaned_entry.split("|", 1)
+                label = str(raw_label or "").strip() or None
+                manifest_url = str(raw_manifest_url or "").strip()
+            if not manifest_url:
+                continue
+            normalized_manifest_url = manifest_url.rstrip("/")
+            dedupe_key = normalized_manifest_url.casefold()
+            if dedupe_key in seen_manifest_urls:
+                continue
+            seen_manifest_urls.add(dedupe_key)
+            providers.append(
+                ResolvedStremioStreamProvider(
+                    manifest_url=normalized_manifest_url,
+                    label=label,
+                )
+            )
+        return tuple(providers)
+
     @staticmethod
     def get_or_create(session: Session) -> AppSettings:
         settings = session.get(AppSettings, "default")
@@ -432,6 +539,27 @@ class SettingsService:
         )
         if normalized_stremio_storage_path != getattr(settings, "stremio_local_storage_path", None):
             settings.stremio_local_storage_path = normalized_stremio_storage_path
+            changed = True
+        normalized_stremio_preferred_languages = (
+            ",".join(
+                SettingsService.normalize_stremio_preferred_languages(
+                    getattr(settings, "stremio_preferred_languages", None)
+                )
+            )
+            or None
+        )
+        if normalized_stremio_preferred_languages != getattr(
+            settings, "stremio_preferred_languages", None
+        ):
+            settings.stremio_preferred_languages = normalized_stremio_preferred_languages
+            changed = True
+        normalized_stream_provider_manifests = (
+            str(getattr(settings, "stremio_stream_provider_manifests", "") or "").strip() or None
+        )
+        if normalized_stream_provider_manifests != getattr(
+            settings, "stremio_stream_provider_manifests", None
+        ):
+            settings.stremio_stream_provider_manifests = normalized_stream_provider_manifests
             changed = True
         normalized_saved_omdb_key = normalize_omdb_api_key(
             reveal_secret(getattr(settings, "omdb_api_key_encrypted", None))
@@ -595,6 +723,13 @@ class SettingsService:
         settings.jellyfin_auto_sync_enabled = payload.jellyfin_auto_sync_enabled
         settings.jellyfin_auto_sync_interval_seconds = payload.jellyfin_auto_sync_interval_seconds
         settings.stremio_local_storage_path = payload.stremio_local_storage_path or None
+        settings.stremio_preferred_languages = (
+            ",".join(SettingsService.normalize_stremio_preferred_languages(payload.stremio_preferred_languages))
+            or None
+        )
+        settings.stremio_stream_provider_manifests = (
+            str(payload.stremio_stream_provider_manifests or "").strip() or None
+        )
         settings.stremio_auto_sync_enabled = payload.stremio_auto_sync_enabled
         settings.stremio_auto_sync_interval_seconds = payload.stremio_auto_sync_interval_seconds
         settings.metadata_provider = payload.metadata_provider
@@ -699,6 +834,11 @@ class SettingsService:
                 if env.stremio_auth_key is not None
                 else None
             ),
+            preferred_languages=SettingsService.normalize_stremio_preferred_languages(
+                env.stremio_preferred_languages
+                if env.stremio_preferred_languages is not None
+                else getattr(settings, "stremio_preferred_languages", None)
+            ),
             auto_sync_enabled=bool(
                 getattr(settings, "stremio_auto_sync_enabled", DEFAULT_STREMIO_AUTO_SYNC_ENABLED)
             )
@@ -750,6 +890,14 @@ class SettingsService:
                 getattr(settings, "jellyfin_auto_sync_last_message", "") or ""
             ),
             "stremio_local_storage_path": getattr(settings, "stremio_local_storage_path", None)
+            or "",
+            "stremio_preferred_languages": getattr(
+                settings, "stremio_preferred_languages", None
+            )
+            or "",
+            "stremio_stream_provider_manifests": getattr(
+                settings, "stremio_stream_provider_manifests", None
+            )
             or "",
             "stremio_auto_sync_enabled": bool(
                 getattr(settings, "stremio_auto_sync_enabled", DEFAULT_STREMIO_AUTO_SYNC_ENABLED)

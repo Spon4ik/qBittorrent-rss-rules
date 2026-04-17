@@ -19,3 +19,6 @@ main.ipynb
 *-DESKTOP-*.html
 
 .history/*
+nppBackup/AGENTS.md.*.bak
+*.log
+.tmp_*.pid

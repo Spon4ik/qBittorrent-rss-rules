@@ -140,14 +140,41 @@ if errorlevel 1 (
 set "EXIT_CODE=0"
 goto :finish
 
+:desktop_stop_running
+powershell.exe -NoProfile -Command "$exe = [System.IO.Path]::GetFullPath('%PROJECT_DIR%\%WINUI_EXE%'); $running = Get-Process -Name 'QbRssRulesDesktop' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }; if (-not $running) { exit 1 }; $running | Stop-Process -Force; exit 0"
+set "EXIT_CODE=!ERRORLEVEL!"
+goto :finish
+
+:desktop_needs_rebuild
+if not exist "%WINUI_EXE%" exit /b 0
+powershell.exe -NoProfile -Command "$exe = Get-Item ([System.IO.Path]::GetFullPath('%PROJECT_DIR%\%WINUI_EXE%')); $desktopRoot = [System.IO.Path]::GetFullPath('%PROJECT_DIR%\QbRssRulesDesktop'); $sources = Get-ChildItem -Path $desktopRoot -Recurse -File -Include *.cs,*.xaml,*.csproj,*.props,*.targets; if ($sources | Where-Object { $_.LastWriteTimeUtc -gt $exe.LastWriteTimeUtc }) { exit 0 } else { exit 1 }"
+exit /b %ERRORLEVEL%
+
 :desktop
 powershell.exe -NoProfile -Command "$exe = [System.IO.Path]::GetFullPath('%PROJECT_DIR%\%WINUI_EXE%'); $running = Get-Process -Name 'QbRssRulesDesktop' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }; if ($running) { exit 0 } else { exit 1 }"
-if errorlevel 1 goto :desktop_build_and_run
+if errorlevel 1 goto :desktop_check_build
 
-echo WinUI desktop app is already running; skipping rebuild and reusing the existing instance.
+call :desktop_needs_rebuild
+if errorlevel 1 goto :desktop_reuse_running
+
+echo WinUI desktop app is running but its binary is older than the current desktop sources; restarting with a rebuilt shell.
+call "%~f0" desktop-stop-running
+if errorlevel 1 (
+  echo Could not stop the running WinUI desktop app automatically.
+  set "EXIT_CODE=!ERRORLEVEL!"
+  goto :finish
+)
+goto :desktop_build_and_run
+
+:desktop_reuse_running
+echo WinUI desktop app is already running and up to date; reusing the existing instance.
 call "%~f0" desktop-run
 set "EXIT_CODE=!ERRORLEVEL!"
 goto :finish
+
+:desktop_check_build
+call :desktop_needs_rebuild
+if errorlevel 1 goto :desktop_run
 
 :desktop_build_and_run
 call "%~f0" desktop-build

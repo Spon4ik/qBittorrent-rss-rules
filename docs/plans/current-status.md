@@ -22,6 +22,11 @@
 
 ## Implemented
 
+- Hardened the dev desktop shell workflow on 2026-04-18 so backend version enforcement stops being a dead-end mismatch:
+  - updated `scripts/run_dev.bat` so `desktop` no longer blindly reuses an already running WinUI shell; if the compiled desktop binary is older than the current WinUI project sources, the script now stops the running shell, rebuilds it, and relaunches the fresh binary instead of leaving an old desktop attached to a newer backend;
+  - updated `QbRssRulesDesktop/Views/MainPage.xaml.cs` so backend health failures caused by a higher backend `app_version` now explicitly tell the user that the desktop shell is older than the running backend and point to `scripts\run_dev.bat desktop` as the recovery path, instead of looking like a generic unreachable-backend failure;
+  - the intent is to keep the strict desktop/backend version gate, but make the standard repo-local desktop launcher converge the shell onto the current backend instead of freezing on stale WinUI instances across patch bumps.
+
 - Completed the `v0.9.0` phase-23 release closeout on 2026-04-11:
   - updated `app/models.py`, `app/db.py`, `app/schemas.py`, `app/routes/api.py`, `app/services/settings_service.py`, and `app/templates/settings.html` so external Stremio provider manifests are now persisted through `/settings`, normalized safely even when real manifest URLs contain commas inside provider/language options, and resolved in a deterministic env-overrides-settings order;
   - updated `app/services/stremio_addon.py` so external provider stream URLs now URL-encode episode item ids, provider fetches use browser-like headers that survive Torrentio's current edge protection, and focused regression coverage now locks both the quoted item-id contract and the provider-fetch header shape;

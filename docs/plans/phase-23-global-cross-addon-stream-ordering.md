@@ -2,6 +2,7 @@
 
 ## Status
 
+- A latest desktop-shell follow-up landed on 2026-04-18 after a repo-local mismatch repro showed the WinUI shell could keep expecting `0.9.0` while the API had already been bumped to `0.9.2`: `scripts/run_dev.bat desktop` now stops/rebuilds a stale running desktop when the WinUI sources are newer than the existing executable, and the desktop offline panel now explicitly says when the shell is older than the running backend instead of presenting that state as a generic backend outage.
 - Plan created on 2026-03-28 immediately after the `v0.8.2` phase-22 release closeout.
 - Phase 23 is now closed and release-validated in `v0.9.0`.
 - Implementation started on 2026-03-30 after a user-reported follow-up confirmed three linked gaps: Stremio still groups Torrentio, IMDb info, and qB RSS into separate blocks; qB-authored stream rows are less descriptive than Torrentio rows; and the main qB RSS app still falls back too quickly on ambiguous series because it does not carry the rule episode-floor context into the Jackett IMDb-first path.

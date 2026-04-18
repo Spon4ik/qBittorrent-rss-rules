@@ -42,6 +42,7 @@ namespace QbRssRulesDesktop.Views
         private readonly bool usesConfiguredBackendUrl;
         private Process? managedBackendProcess;
         private bool autoStartAttempted;
+        private bool backendVersionMismatchDetected;
         private bool isDisposing;
         private bool hasAttachedCloseHandlers;
         private bool hasAttachedWindowActivatedHandler;
@@ -191,6 +192,8 @@ namespace QbRssRulesDesktop.Views
             ConnectionStatusText.Text = "Backend unavailable";
             var guidance = repositoryRoot is null
                 ? "Install the full qB RSS Rules Desktop bundle so the desktop app can launch the backend for you."
+                : backendVersionMismatchDetected
+                    ? "Run scripts\\run_dev.bat desktop to rebuild and relaunch the desktop shell so it matches the current backend."
                 : HasDevCheckoutScripts()
                     ? "You can also run scripts\\run_dev.bat api (API only) or scripts\\run_dev.bat full (API + desktop) manually."
                     : "Reinstall the full qB RSS Rules Desktop bundle if the bundled backend runtime is missing or damaged.";
@@ -226,6 +229,7 @@ namespace QbRssRulesDesktop.Views
         private async Task<bool> IsBackendReachableAsync()
         {
             lastBackendProbeFailure = "";
+            backendVersionMismatchDetected = false;
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(backendUri, "/health"));
@@ -261,9 +265,10 @@ namespace QbRssRulesDesktop.Views
                     : "";
                 if (!string.Equals(appVersion, RequiredDesktopBackendAppVersion, StringComparison.Ordinal))
                 {
+                    backendVersionMismatchDetected = true;
                     lastBackendProbeFailure = string.IsNullOrWhiteSpace(appVersion)
                         ? $"An incompatible backend is already listening at {backendUri}; expected app version {RequiredDesktopBackendAppVersion}."
-                        : $"An incompatible backend is already listening at {backendUri}; expected app version {RequiredDesktopBackendAppVersion}, got {appVersion}.";
+                        : $"An incompatible backend is already listening at {backendUri}; expected app version {RequiredDesktopBackendAppVersion}, got {appVersion}. The desktop shell is older than the running backend.";
                     return false;
                 }
 

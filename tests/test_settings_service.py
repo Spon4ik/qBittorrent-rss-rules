@@ -158,77 +158,6 @@ def test_resolve_jellyfin_prefers_env_overrides(monkeypatch: pytest.MonkeyPatch)
     assert resolved.auto_sync_interval_seconds == 30
 
 
-def test_resolve_stremio_stream_providers_uses_saved_settings_when_env_absent(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("QB_RULES_STREMIO_STREAM_PROVIDER_MANIFESTS", raising=False)
-    _clear_env_cache()
-
-    settings = AppSettings(
-        id="default",
-        stremio_stream_provider_manifests=(
-            "Torrentio|https://torrentio.strem.fun/manifest.json\n"
-            "MediaFusion|https://mediafusion.example/manifest.json"
-        ),
-    )
-
-    resolved = SettingsService.resolve_stremio_stream_providers(settings)
-
-    assert [provider.label for provider in resolved] == ["Torrentio", "MediaFusion"]
-    assert [provider.manifest_url for provider in resolved] == [
-        "https://torrentio.strem.fun/manifest.json",
-        "https://mediafusion.example/manifest.json",
-    ]
-
-
-def test_resolve_stremio_stream_providers_prefers_env_over_saved_settings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(
-        "QB_RULES_STREMIO_STREAM_PROVIDER_MANIFESTS",
-        "EnvProvider|https://env.example/manifest.json",
-    )
-    _clear_env_cache()
-
-    settings = AppSettings(
-        id="default",
-        stremio_stream_provider_manifests=(
-            "SavedProvider|https://saved.example/manifest.json"
-        ),
-    )
-
-    resolved = SettingsService.resolve_stremio_stream_providers(settings)
-
-    assert [provider.label for provider in resolved] == ["EnvProvider"]
-    assert [provider.manifest_url for provider in resolved] == [
-        "https://env.example/manifest.json"
-    ]
-
-
-def test_resolve_stremio_stream_providers_keeps_commas_inside_manifest_url(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("QB_RULES_STREMIO_STREAM_PROVIDER_MANIFESTS", raising=False)
-    _clear_env_cache()
-
-    settings = AppSettings(
-        id="default",
-        stremio_stream_provider_manifests=(
-            "Torrentio|https://torrentio.strem.fun/providers=rutor,rutracker|"
-            "sort=qualitysize|language=russian,hebrew|limit=20/manifest.json"
-        ),
-    )
-
-    resolved = SettingsService.resolve_stremio_stream_providers(settings)
-
-    assert len(resolved) == 1
-    assert resolved[0].label == "Torrentio"
-    assert resolved[0].manifest_url == (
-        "https://torrentio.strem.fun/providers=rutor,rutracker|"
-        "sort=qualitysize|language=russian,hebrew|limit=20/manifest.json"
-    )
-
-
 def test_get_or_create_normalizes_jellyfin_settings(db_session) -> None:
     settings = AppSettings(
         id="default",
@@ -248,22 +177,6 @@ def test_get_or_create_normalizes_jellyfin_settings(db_session) -> None:
     assert normalized.jellyfin_auto_sync_enabled is True
     assert normalized.jellyfin_auto_sync_interval_seconds == 5
     assert normalized.jellyfin_auto_sync_last_status == "idle"
-
-
-def test_get_or_create_normalizes_stremio_stream_provider_manifests(db_session) -> None:
-    settings = AppSettings(
-        id="default",
-        stremio_stream_provider_manifests="  Torrentio|https://torrentio.strem.fun/manifest.json  ",
-    )
-    db_session.add(settings)
-    db_session.commit()
-
-    normalized = SettingsService.get_or_create(db_session)
-
-    assert (
-        normalized.stremio_stream_provider_manifests
-        == "Torrentio|https://torrentio.strem.fun/manifest.json"
-    )
 
 
 def test_get_or_create_normalizes_rules_page_and_schedule_defaults(db_session) -> None:

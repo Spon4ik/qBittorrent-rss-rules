@@ -11,7 +11,6 @@ from app.services.selective_queue import (
     ParsedTorrentInfo,
     QueueResult,
     SelectiveQueueError,
-    StremioQueueSelection,
     TorrentFileEntry,
     build_episode_file_selection_plan,
     build_magnet_link,
@@ -19,7 +18,6 @@ from app.services.selective_queue import (
     parse_torrent_info,
     queue_grouped_search_results,
     queue_result_with_optional_file_selection,
-    queue_stremio_stream_selection,
     select_missing_episode_file_ids,
     text_matches_episode,
 )
@@ -327,7 +325,7 @@ def test_queue_result_with_optional_file_selection_does_not_remote_fetch_broken_
         match="Could not fetch a valid torrent file from the local Jackett-style URL",
     ):
         queue_result_with_optional_file_selection(
-            qb_base_url="http://127.0.0.1:8080",
+            qb_base_url="http://docker-host:8080",
             qb_username="admin",
             qb_password="secret",
             link="http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc",
@@ -377,6 +375,131 @@ def test_queue_result_with_optional_file_selection_rewrites_jackett_qb_url_for_a
 
     assert result.queued_via_torrent_file is True
     assert seen_links == ["http://localhost:9117/dl/kinozal/?jackett_apikey=secret&path=abc"]
+
+
+def test_queue_result_with_optional_file_selection_uses_redirected_local_jackett_magnet(
+    monkeypatch,
+) -> None:
+    queued_links: list[str] = []
+
+    monkeypatch.setattr(
+        "app.services.selective_queue._resolve_local_jackett_redirect_magnet_link",
+        lambda link: (
+            "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12"
+            "&tr=https://tracker.example/announce"
+        ),
+    )
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "add_torrent_url",
+        lambda self, **kwargs: queued_links.append(str(kwargs["link"])),
+    )
+
+    result = queue_result_with_optional_file_selection(
+        qb_base_url="http://127.0.0.1:8080",
+        qb_username="admin",
+        qb_password="secret",
+        link="http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc",
+        category="",
+        save_path="",
+        paused=True,
+        sequential_download=False,
+        first_last_piece_prio=False,
+        rule=None,
+    )
+
+    assert result.queued_via_torrent_file is False
+    assert queued_links == [
+        "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12"
+        "&tr=https://tracker.example/announce"
+    ]
+
+
+def test_queue_result_with_optional_file_selection_allows_local_remote_fetch_when_qb_is_loopback(
+    monkeypatch,
+) -> None:
+    queued_links: list[str] = []
+
+    monkeypatch.setattr(
+        "app.services.selective_queue._download_torrent_bytes",
+        lambda link: (_ for _ in ()).throw(httpx.ReadTimeout("slow jackett")),
+    )
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "add_torrent_url",
+        lambda self, **kwargs: queued_links.append(str(kwargs["link"])),
+    )
+
+    result = queue_result_with_optional_file_selection(
+        qb_base_url="http://127.0.0.1:8080",
+        qb_username="admin",
+        qb_password="secret",
+        link="http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc",
+        category="",
+        save_path="",
+        paused=True,
+        sequential_download=False,
+        first_last_piece_prio=False,
+        rule=None,
+    )
+
+    assert result.queued_via_torrent_file is False
+    assert queued_links == [
+        "http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc"
+    ]
+
+
+def test_resolve_local_jackett_redirect_magnet_link_follows_http_redirect_chain(
+    monkeypatch,
+) -> None:
+    seen_links: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, *, is_redirect: bool, location: str | None = None) -> None:
+            self.is_redirect = is_redirect
+            self.headers = {"location": location} if location is not None else {}
+
+    class FakeClient:
+        def __init__(self, *, timeout, follow_redirects) -> None:
+            assert follow_redirects is False
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def get(self, link: str) -> FakeResponse:
+            seen_links.append(link)
+            if len(seen_links) == 1:
+                return FakeResponse(
+                    is_redirect=True,
+                    location="/download/intermediate?id=123",
+                )
+            return FakeResponse(
+                is_redirect=True,
+                location=(
+                    "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12"
+                    "&tr=https://tracker.example/announce"
+                ),
+            )
+
+    monkeypatch.setattr("app.services.selective_queue.httpx.Client", FakeClient)
+
+    from app.services.selective_queue import _resolve_local_jackett_redirect_magnet_link
+
+    magnet_link = _resolve_local_jackett_redirect_magnet_link(
+        "http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc"
+    )
+
+    assert magnet_link == (
+        "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12"
+        "&tr=https://tracker.example/announce"
+    )
+    assert seen_links == [
+        "http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc",
+        "http://127.0.0.1:9117/download/intermediate?id=123",
+    ]
 
 
 def test_queue_result_with_optional_file_selection_rejects_torrents_without_missing_files(
@@ -429,52 +552,6 @@ def test_build_magnet_link_includes_display_name_and_unique_trackers() -> None:
     assert magnet_link.startswith("magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12")
     assert "dn=The%20Beauty%20S01E01%202160p" in magnet_link
     assert magnet_link.count("tr=") == 2
-
-
-def test_queue_stremio_stream_selection_queues_exact_variant_and_returns_magnet(
-    monkeypatch,
-) -> None:
-    queued: dict[str, object] = {}
-    exact_worker_calls: list[tuple[str, int]] = []
-
-    monkeypatch.setattr(
-        QbittorrentClient,
-        "add_torrent_url",
-        lambda self, **kwargs: queued.update(kwargs),
-    )
-    monkeypatch.setattr(
-        "app.services.selective_queue._start_exact_file_selection_worker",
-        lambda **kwargs: exact_worker_calls.append((kwargs["info_hash"], kwargs["file_idx"])),
-    )
-
-    result, magnet_link = queue_stremio_stream_selection(
-        qb_base_url="http://127.0.0.1:8080",
-        qb_username="admin",
-        qb_password="secret",
-        selection=StremioQueueSelection(
-            info_hash="abcdef1234567890abcdef1234567890abcdef12",
-            tracker_urls=["udp://tracker.example:1337/announce"],
-            display_name="The Beauty S01E01 2160p",
-            file_idx=5,
-        ),
-        category="Series/The Beauty [imdbid-tt33517752]",
-        save_path="/data/the-beauty",
-        paused=True,
-        sequential_download=True,
-        first_last_piece_prio=True,
-    )
-
-    assert isinstance(result, QueueResult)
-    assert result.deferred_file_selection is True
-    assert "prioritized" in result.message
-    assert magnet_link == queued["link"]
-    assert "tr=udp%3A%2F%2Ftracker.example%3A1337%2Fannounce" in magnet_link
-    assert queued["category"] == "Series/The Beauty [imdbid-tt33517752]"
-    assert queued["save_path"] == "/data/the-beauty"
-    assert queued["paused"] is True
-    assert queued["sequential_download"] is True
-    assert queued["first_last_piece_prio"] is True
-    assert exact_worker_calls == [("abcdef1234567890abcdef1234567890abcdef12", 5)]
 
 
 def test_queue_grouped_search_results_merges_missing_trackers(monkeypatch) -> None:

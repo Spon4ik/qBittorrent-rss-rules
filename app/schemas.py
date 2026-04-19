@@ -479,49 +479,6 @@ class SearchQueueRequest(BaseModel):
         return self
 
 
-class StremioQueueRequest(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    info_hash: str = Field(min_length=40, max_length=40)
-    tracker_urls: list[str] = Field(default_factory=list)
-    display_name: str | None = None
-    file_idx: int | None = Field(default=None, ge=0)
-    rule_id: str | None = None
-    add_paused: bool | None = None
-    sequential_download: bool = False
-    first_last_piece_prio: bool = False
-
-    @field_validator("info_hash")
-    @classmethod
-    def normalize_info_hash(cls, value: str) -> str:
-        cleaned = str(value or "").strip().casefold()
-        if len(cleaned) != 40 or any(char not in "0123456789abcdef" for char in cleaned):
-            raise ValueError("Info hash must be a 40-character hex string.")
-        return cleaned
-
-    @field_validator("tracker_urls")
-    @classmethod
-    def normalize_tracker_urls(cls, value: list[str]) -> list[str]:
-        cleaned_urls: list[str] = []
-        seen_urls: set[str] = set()
-        for item in value:
-            cleaned = str(item or "").strip()
-            if not cleaned:
-                continue
-            if cleaned.casefold().startswith("tracker:"):
-                cleaned = cleaned.split(":", 1)[1].strip()
-            elif cleaned.casefold().startswith("dht:"):
-                continue
-            if not cleaned:
-                continue
-            normalized = cleaned.casefold()
-            if normalized in seen_urls:
-                continue
-            seen_urls.add(normalized)
-            cleaned_urls.append(cleaned)
-        return cleaned_urls
-
-
 class RuleFormPayload(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -639,8 +596,6 @@ class SettingsFormPayload(BaseModel):
     jellyfin_auto_sync_enabled: bool = True
     jellyfin_auto_sync_interval_seconds: int = Field(default=30, ge=5, le=3600)
     stremio_local_storage_path: str | None = None
-    stremio_preferred_languages: str | None = None
-    stremio_stream_provider_manifests: str | None = None
     stremio_auto_sync_enabled: bool = True
     stremio_auto_sync_interval_seconds: int = Field(default=30, ge=5, le=3600)
     metadata_provider: MetadataProvider = MetadataProvider.OMDB

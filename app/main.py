@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.config import ensure_runtime_dirs, get_environment_settings
@@ -11,7 +10,6 @@ from app.db import get_session_factory, init_db
 from app.routes.api import compat_router as api_compat_router
 from app.routes.api import router as api_router
 from app.routes.pages import router as pages_router
-from app.routes.stremio_addon import router as stremio_addon_router
 from app.services.jellyfin_auto_sync import (
     start_jellyfin_auto_sync_service,
     stop_jellyfin_auto_sync_service,
@@ -26,13 +24,12 @@ from app.services.stremio_auto_sync import (
     stop_stremio_auto_sync_service,
 )
 
-DESKTOP_BACKEND_CONTRACT = "2026-03-22"
+DESKTOP_BACKEND_CONTRACT = "2026-04-18"
 DESKTOP_BACKEND_CAPABILITIES = (
     "hover_debug_telemetry",
     "search_hidden_result_diagnostics",
     "jellyfin_auto_sync",
     "stremio_library_sync",
-    "stremio_native_addon",
 )
 
 
@@ -44,26 +41,11 @@ def create_app() -> FastAPI:
     static_dir = Path(__file__).resolve().parent / "static"
     app = FastAPI(
         title="qBittorrent RSS Rule Manager",
-        version="0.9.2",
+        version="1.0.0",
     )
     app.state.static_asset_version = compute_static_asset_version(static_dir) or app.version
     app.state.desktop_backend_contract = DESKTOP_BACKEND_CONTRACT
     app.state.desktop_capabilities = DESKTOP_BACKEND_CAPABILITIES
-
-    @app.middleware("http")
-    async def _apply_stremio_addon_cors(
-        request: Request,
-        call_next: Callable[[Request], Awaitable[Response]],
-    ) -> Response:
-        if request.url.path.startswith("/stremio/") and request.method.upper() == "OPTIONS":
-            response = Response(status_code=204)
-        else:
-            response = await call_next(request)
-        if request.url.path.startswith("/stremio/"):
-            response.headers["Access-Control-Allow-Origin"] = "*"
-            response.headers["Access-Control-Allow-Headers"] = "*"
-            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        return response
 
     app.mount(
         "/static",
@@ -71,7 +53,6 @@ def create_app() -> FastAPI:
         name="static",
     )
     app.include_router(pages_router)
-    app.include_router(stremio_addon_router)
     app.include_router(api_compat_router)
     app.include_router(api_router)
 

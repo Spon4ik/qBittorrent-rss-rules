@@ -85,6 +85,13 @@ VERSION_TOUCHPOINTS: tuple[VersionTouchpoint, ...] = (
         ),
         replacement_template='\\g<prefix>{version}\\3',
     ),
+    VersionTouchpoint(
+        relative_path="tests/test_routes.py",
+        pattern=re.compile(
+            r'(?m)^(\s*assert payload\["app_version"\] == ")([^"]+)(")$'
+        ),
+        replacement_template='\\g<1>{version}\\g<3>',
+    ),
 )
 
 

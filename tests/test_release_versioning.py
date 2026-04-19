@@ -26,6 +26,12 @@ def _seed_release_files(tmp_path: Path) -> None:
         'private const string RequiredDesktopBackendAppVersion = "0.9.0";\n',
         encoding="utf-8",
     )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_routes.py").write_text(
+        'def test_health_endpoint(app_client) -> None:\n'
+        '    assert payload["app_version"] == "0.9.0"\n',
+        encoding="utf-8",
+    )
     (tmp_path / "CHANGELOG.md").write_text(
         "# Changelog\n\n## [Unreleased]\n\n- No entries yet.\n",
         encoding="utf-8",
@@ -49,14 +55,16 @@ def test_apply_version_bump_updates_all_touchpoints(tmp_path: Path) -> None:
         "pyproject.toml",
         "app/main.py",
         "QbRssRulesDesktop/Views/MainPage.xaml.cs",
+        "tests/test_routes.py",
     ]
     assert current_version(tmp_path) == "0.9.1"
     assert 'version="0.9.1"' in (tmp_path / "app" / "main.py").read_text(encoding="utf-8")
     assert '"0.9.1";' in (
         tmp_path / "QbRssRulesDesktop" / "Views" / "MainPage.xaml.cs"
     ).read_text(encoding="utf-8")
-
-
+    assert 'assert payload["app_version"] == "0.9.1"' in (
+        tmp_path / "tests" / "test_routes.py"
+    ).read_text(encoding="utf-8")
 def test_ensure_changelog_entry_scaffolds_release_heading(tmp_path: Path) -> None:
     _seed_release_files(tmp_path)
 

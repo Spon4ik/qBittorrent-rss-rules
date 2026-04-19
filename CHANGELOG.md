@@ -8,6 +8,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.0.0] - 2026-04-19
+
+- Removed the native Stremio add-on host, provider-ingestion surface, local-playback route, and Stremio queue bridge from qBittorrent RSS Rules now that addon ownership moved to `jackett-stremio-fork`.
+- Kept Stremio library and watch-progress synchronization in place, including live settings test/sync flows and the background Stremio auto-sync scheduler.
+- Removed addon-only settings, search UI controls, smoke scripts, and release-version touchpoints, while keeping the old addon-era DB columns as deferred compatibility cleanup instead of bundling a schema migration into the split.
+- Revalidated the breaking-change release with focused pytest/ruff coverage, live HTTP checks proving `/stremio/manifest.json` now returns `404`, real Stremio test/sync requests against the local desktop data, and a rebuilt desktop shell against backend version `1.0.0`.
+
 ## [0.9.2] - 2026-04-17
 
 - Cleaned local machine-generated repo noise by removing stray `*-DESKTOP-*` Python backup copies that were no longer part of the tracked application.

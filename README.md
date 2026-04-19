@@ -65,6 +65,13 @@ The app binds to `127.0.0.1` by default and creates its SQLite DB under `./data`
 6. Manual fallback commands: `scripts\run_dev.bat api` (API only). `scripts\run_dev.bat full` is now a compatibility alias for `desktop`, because the desktop app handles backend auto-start itself.
 7. To point the desktop at a different backend (including one running in Docker), set `QB_RSS_DESKTOP_URL` before launching the app.
 
+### Desktop ↔ backend version expectations
+
+The WinUI app ships with a **fixed expected** backend semver (`RequiredDesktopBackendAppVersion` in `QbRssRulesDesktop/Views/MainPage.xaml.cs`). It must equal the FastAPI `version` in `app/main.py` (and `pyproject.toml`); otherwise the shell treats the loopback server as incompatible and stays offline.
+
+- After pulling or bumping the app version, run `python scripts/release_prep.py patch --apply` (or `minor` / `major`) from the repo root so the WinUI constant and pytest `/health` assert stay synchronized, then rebuild with `scripts\run_dev.bat desktop-build` (or `desktop`) so the EXE you run embeds the new value. An older `QbRssRulesDesktop.exe` will keep expecting the version it was built with.
+- Contract bumps (`DESKTOP_BACKEND_CONTRACT` / capabilities in `app/main.py`) must be mirrored in `MainPage.xaml.cs` (`RequiredDesktopBackendContract` / `RequiredDesktopBackendCapabilities`).
+
 ## Windows bundle / install flow
 
 1. Run `scripts\run_dev.bat desktop-package` to publish the desktop app and stage a portable Windows bundle under `dist\qB RSS Rules Desktop-win-x64\`.

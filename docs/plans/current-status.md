@@ -2,6 +2,7 @@
 
 ## Current focus
 
+- Phase 25 is now active for the repo boundary split: qBittorrent RSS Rules is removing the native Stremio addon host/queue/provider surface and keeping only Stremio library/watch-progress synchronization now that addon ownership moved to `jackett-stremio-fork`.
 - Phase 23 is now closed and release-validated in `v0.9.0` as the Stremio cross-addon aggregation slice, merging qB RSS and Torrentio-compatible provider rows into one locally owned addon response with global ordering, persisted provider configuration, and real desktop proof.
 - Phase 24 remains closed and release-validated in `v0.8.3` as the hotfix slice for Stremio long-running series episode lookups that disappear because the addon applies the original series year as a hard search filter.
 - Phase 22 is now closed and release-validated in `v0.8.2` as the Stremio variant-parity follow-up, keeping the broader qB RSS variant set, sorting it by quality then seeds, and upgrading exact locally available variants in-place instead of suppressing the rest of the addon rows.
@@ -21,6 +22,40 @@
 - The retained desktop direction remains the WinUI WebView-shell + companion-process lifecycle baseline introduced in `v0.6.0`.
 
 ## Implemented
+
+- Started the phase-25 Stremio boundary cleanup on 2026-04-19 so qBittorrent RSS Rules no longer owns the native Stremio addon surface:
+  - removed the addon host code from the live app by deleting `app/routes/stremio_addon.py`, `app/services/stremio_addon.py`, and `app/services/local_playback.py`, removing the router/CORS/capability hooks from `app/main.py`, and dropping the desktop/addon-baseline search dependency from `app/routes/pages.py`;
+  - removed addon-only product surfaces from the app UI/API by deleting `/api/stremio/queue`, the search-page `Queue Stremio Variant` controls, addon manifest/provider/preferred-language settings fields, addon-only queue helpers in `app/services/selective_queue.py`, and the matching release-version touchpoint in `app/services/release_versioning.py`;
+  - removed addon-only smoke/tests/scripts (`tests/test_stremio_addon.py`, `tests/test_local_playback.py`, `scripts/stremio_addon_smoke.py`, `scripts/stremio_desktop_smoke.py`, `scripts/stremio_desktop_variant_matrix.py`) while keeping the Stremio sync/test routes and scheduler paths intact;
+  - focused verification is already green with `.\\.venv\\Scripts\\python.exe -m ruff check app\\main.py app\\routes\\api.py app\\routes\\pages.py app\\services\\settings_service.py app\\services\\selective_queue.py app\\services\\release_versioning.py tests\\test_routes.py tests\\test_selective_queue.py tests\\test_settings_service.py tests\\test_release_versioning.py` and `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_selective_queue.py tests\\test_settings_service.py tests\\test_release_versioning.py tests\\test_routes.py -q`;
+  - real local validation is now green on the released `1.0.0` candidate: `/health` reports only sync-era Stremio capabilities, `/stremio/manifest.json` returns `404`, `/settings` and `/search` no longer expose addon/provider/variant-queue surfaces, `/api/settings/test-stremio` succeeds against the real local desktop WebView storage, `/api/settings/sync-stremio` completes for `147 active title(s)`, `cmd /c scripts\\check.bat` passes (`308 passed`), and `cmd /c scripts\\run_dev.bat desktop-build` succeeds with `0 Warning(s)` / `0 Error(s)`;
+  - backward-compatible DB/ORM fields for the old addon preferences were intentionally left in place for this release to avoid bundling a destructive schema migration into the repo split; they are now documented as deferred cleanup debt rather than active product surface.
+
+- Fixed a live IMDb-episode precision leak on 2026-04-18 for rule `d434196a-c1b6-4202-a1ad-c62bc4294b43` (`Elsbeth`) after real-world inspection showed the rule page still surfacing `S3E1-15`, `S1-3E1-43`, and other wrong-season/wrong-episode packs inside the `Precise results` lane even though the shared Jackett episode matcher would correctly reject them:
+  - traced the root cause to the desktop rule-search/addon-baseline path in `app/services/stremio_addon.py`: `collect_enriched_search_run(...)` was classifying every non-`Fallback` collected row as precise without reapplying the active rule payload's season/episode filter, so addon-baseline rows that were broad season packs could bypass the stricter Jackett local filter and get serialized as exact/primary results;
+  - updated `collect_enriched_search_run(...)` so it now runs the same primary local payload filter (`JackettClient._local_filter_payload(...)` + `_matches_payload_terms_with_reason(...)`) before admitting a row into the precise lane, demoting non-matching rows back into fallback/debug instead of letting them masquerade as exact episode hits;
+  - added focused regression coverage in `tests/test_stremio_addon.py` for the concrete failure shape (`Elsbeth - S3E1-15` must not survive as a precise `S03E16` result), and validated both the targeted tests and a real rerun of the live rule URL after a clean backend restart;
+  - the refreshed snapshot for rule `d434196a-c1b6-4202-a1ad-c62bc4294b43` now records `exact_filtered_count=0`, `raw_results=0`, `fallback_results=1`, `raw_fallback_results=42`, and the live page shows `No filtered matches` instead of false `Precise results`.
+
+- Adjusted the queue fallback policy on 2026-04-18 after live end-to-end verification against the real `Georgie & Mandy's First Marriage` rule showed the app and qB did not have the same failure mode for local Jackett downloads:
+  - reproduced the live queue action against rule `7af1ab04-85cb-468c-a0ec-9e3e3dbe7ec0` and confirmed the app-side fetch of the saved BitRu `http://localhost:9117/dl/...` link timed out even after a long direct probe, while qB `v5.1.4` on the same local machine accepted that exact URL immediately through WebUI;
+  - updated `app/services/selective_queue.py` so loopback/private Jackett URLs still fail closed when qB is not clearly local, but now fall back to qB remote URL fetch when qB itself is also on loopback and therefore shares the same localhost view as the app;
+  - the live backend retest against `/api/search/queue` for that exact saved result now succeeds with `status=queued` and the message `Queued full torrent because selective missing/unseen file inspection was not available for this result.`, while the focused regressions in `tests/test_selective_queue.py` and `tests/test_routes.py` now lock both the loopback-allowed and non-loopback-rejected paths.
+
+- Hardened qB file-priority compatibility on 2026-04-18 for WebUI instances that still expose only the legacy priority endpoint:
+  - updated `app/services/qbittorrent.py` so `set_file_priority(...)` now tries `/api/v2/torrents/filePrio` first, but falls back to the older `/command/setFilePrio` path when qB responds with `404 Not Found` for the modern endpoint;
+  - the legacy fallback replays file-priority changes one file at a time, which keeps the current grouped-selection behavior working on older qB WebUI builds without regressing newer installs that support the multi-id API v2 route;
+  - added focused regression coverage in `tests/test_qbittorrent_client.py` and revalidated with `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_qbittorrent_client.py -k "set_file_priority" -q`, `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_selective_queue.py -k "applies_qb_file_priorities or queue_stremio_stream_selection" -q`, and `.\\.venv\\Scripts\\python.exe -m ruff check app\\services\\qbittorrent.py tests\\test_qbittorrent_client.py`.
+
+- Added an in-app backend restart control to the WinUI desktop shell on 2026-04-18:
+  - updated `QbRssRulesDesktop/Views/MainPage.xaml` so both the main header toolbar and the offline panel now expose a `Restart Backend` button beside the existing start/shutdown actions;
+  - updated `QbRssRulesDesktop/Views/MainPage.xaml.cs` so restart reuses the existing controllable local-backend shutdown path, then immediately starts the backend again from the desktop shell instead of asking the user to run an external script;
+  - this closes the UX gap where the shell could tell the user to restart, but only exposed separate start/shutdown controls and script-based recovery outside the app.
+
+- Hardened the qB queue path again on 2026-04-18 for Jackett local download URLs that redirect to magnets:
+  - updated `app/services/selective_queue.py` so loopback/private Jackett-style `dl/...` links now probe for a direct `magnet:` redirect before the app declares the local torrent fetch invalid;
+  - this preserves the earlier safety rule that genuinely broken local Jackett URLs should not be handed to qB for noisy remote fetching, while still recovering queueable results from indexers whose Jackett download path resolves to a magnet rather than raw `.torrent` bytes;
+  - added focused regressions in `tests/test_selective_queue.py` and `tests/test_routes.py` for the redirected-magnet queue path, and revalidated with `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_selective_queue.py -k "redirected_local_jackett_magnet or broken_local_jackett_url or rewrites_jackett_qb_url_for_app_fetch" -q`, `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py -k "redirected_local_jackett_magnet or broken_local_jackett_url or rewrites_jackett_qb_url_for_app_fetch" -q`, and `.\\.venv\\Scripts\\python.exe -m ruff check app\\services\\selective_queue.py tests\\test_selective_queue.py tests\\test_routes.py`.
 
 - Hardened the dev desktop shell workflow on 2026-04-18 so backend version enforcement stops being a dead-end mismatch:
   - updated `scripts/run_dev.bat` so `desktop` no longer blindly reuses an already running WinUI shell; if the compiled desktop binary is older than the current WinUI project sources, the script now stops the running shell, rebuilds it, and relaunches the fresh binary instead of leaving an old desktop attached to a newer backend;
@@ -1019,6 +1054,9 @@
 - Keep the new desktop exact-row filtering contract in place whenever local refinement changes again: precise IMDb-backed rows should be governed by structured metadata fields, while broader title/pattern filtering stays on fallback rows.
 - Keep the new exact-first combined-table ordering, grouped same-hash queue/tracker merge, and richer Stremio provenance-label regressions in the focused route/service test slice whenever desktop search or addon row rendering changes again.
 - Keep the new broken-local-Jackett queue regression in the focused queue/API slice whenever HTTP torrent queue fallback behavior changes again.
+- Keep the new local-Jackett redirected-magnet queue regression in the focused queue/API slice whenever Jackett `dl/...` handling or app-side torrent validation changes again.
+- Keep the new localhost-qB remote-fetch fallback regression in the focused queue/API slice whenever local/private Jackett queue handling changes again.
+- Keep the new qB legacy file-priority fallback regression in the focused qB/queue test slice whenever selective file download behavior or qB WebUI endpoint handling changes again.
 - Keep the new season-finale `E00` edit-form/browser regression in the focused QA set whenever rule-floor or rule-form serialization changes.
 - Keep the new aggregate-empty IMDb precision regression in the focused Jackett test set whenever the qB RSS IMDb-first search path or fallback sequencing changes.
 - Keep the new primary-vs-fallback keyword-splitting regressions in the focused Jackett/route test set whenever rule-derived search payloads or local filtering behavior changes.

@@ -22,12 +22,11 @@ namespace QbRssRulesDesktop.Views
             "search_hidden_result_diagnostics",
             "jellyfin_auto_sync",
             "stremio_library_sync",
-            "stremio_native_addon",
         };
 
         private const string DefaultBackendUrl = "http://127.0.0.1:8000";
-        private const string RequiredDesktopBackendContract = "2026-03-22";
-        private const string RequiredDesktopBackendAppVersion = "0.9.2";
+        private const string RequiredDesktopBackendContract = "2026-04-18";
+        private const string RequiredDesktopBackendAppVersion = "1.0.0";
         private const string ManagedBackendStateFileName = "desktop-managed-backend.json";
         private const int ManagedBackendPortSearchLimit = 32;
         private const int ReconnectAttemptLimit = 30;
@@ -768,6 +767,26 @@ namespace QbRssRulesDesktop.Views
             ShowOfflineState(
                 "Backend shutdown could not be confirmed yet. If a stale loopback backend is still running, retry once more or restart the desktop app so it can reconnect to the current engine."
             );
+        }
+
+        private void OnRestartBackendClicked(object sender, RoutedEventArgs e)
+        {
+            reconnectTimer.Stop();
+            localChangeDebounceTimer.Stop();
+
+            if (HasControllableActiveBackend() && !StopActiveBackendProcess())
+            {
+                ShowOfflineState(
+                    "Backend restart could not stop the current controllable local backend yet. Retry once more or restart the desktop app so it can reconnect to the current engine."
+                );
+                return;
+            }
+
+            ConnectionStatusText.Text = "Restarting backend...";
+            OfflineMessageText.Text = $"Restarting the local backend at {backendUri}.";
+            OfflinePanel.Visibility = Visibility.Visible;
+            AppWebView.Visibility = Visibility.Collapsed;
+            _ = TryStartBackendProcess(autoTriggered: false);
         }
 
         private void OnExitClicked(object sender, RoutedEventArgs e)

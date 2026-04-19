@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
-from urllib.parse import SplitResult, parse_qs, quote, urlsplit, urlunsplit
+from urllib.parse import SplitResult, parse_qs, quote, urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -73,14 +73,6 @@ class QueueResult:
     skipped_file_count: int = 0
     deferred_file_selection: bool = False
     queued_via_torrent_file: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class StremioQueueSelection:
-    info_hash: str
-    tracker_urls: list[str]
-    display_name: str | None = None
-    file_idx: int | None = None
 
 
 def find_episode_file_entry(
@@ -203,55 +195,6 @@ def build_magnet_link(
     return "&".join(magnet_parts)
 
 
-def queue_stremio_stream_selection(
-    *,
-    qb_base_url: str,
-    qb_username: str,
-    qb_password: str,
-    selection: StremioQueueSelection,
-    category: str,
-    save_path: str,
-    paused: bool,
-    sequential_download: bool,
-    first_last_piece_prio: bool,
-) -> tuple[QueueResult, str]:
-    magnet_link = build_magnet_link(
-        info_hash=selection.info_hash,
-        tracker_urls=selection.tracker_urls,
-        display_name=selection.display_name,
-    )
-    with QbittorrentClient(qb_base_url, qb_username, qb_password) as client:
-        client.add_torrent_url(
-            link=magnet_link,
-            category=category,
-            save_path=save_path,
-            paused=paused,
-            sequential_download=sequential_download,
-            first_last_piece_prio=first_last_piece_prio,
-        )
-
-    if selection.file_idx is None:
-        return QueueResult(message="Queued exact stream magnet in qBittorrent."), magnet_link
-
-    _start_exact_file_selection_worker(
-        qb_base_url=qb_base_url,
-        qb_username=qb_username,
-        qb_password=qb_password,
-        info_hash=selection.info_hash,
-        file_idx=selection.file_idx,
-    )
-    return (
-        QueueResult(
-            message=(
-                "Queued exact stream magnet in qBittorrent. The selected Stremio file "
-                "variant will be prioritized when torrent metadata becomes available."
-            ),
-            deferred_file_selection=True,
-        ),
-        magnet_link,
-    )
-
-
 def parse_torrent_info(
     torrent_bytes: bytes, *, source_name: str = "queued-result.torrent"
 ) -> ParsedTorrentInfo:
@@ -341,18 +284,29 @@ def queue_result_with_optional_file_selection(
         app_base_url=jackett_api_url,
         qb_base_url=jackett_qb_url,
     )
+    if magnet_info_hash is None and _should_require_app_side_torrent_fetch(effective_link):
+        redirected_magnet_link = _resolve_local_jackett_redirect_magnet_link(effective_link)
+        if redirected_magnet_link is not None:
+            link = redirected_magnet_link
+            effective_link = redirected_magnet_link
+            magnet_info_hash = parse_magnet_info_hash(redirected_magnet_link)
     if selection_plan is None and magnet_info_hash is None:
         try:
             torrent_bytes, source_name = _download_torrent_bytes(effective_link)
             parse_torrent_info(torrent_bytes, source_name=source_name)
         except (SelectiveQueueError, httpx.HTTPError) as exc:
             if _should_require_app_side_torrent_fetch(effective_link):
-                raise SelectiveQueueError(
-                    "Could not fetch a valid torrent file from the local Jackett-style URL, "
-                    "so the app did not hand it off to qBittorrent for remote fetching."
-                ) from exc
-            torrent_bytes = None
-            source_name = None
+                if _can_qb_remote_fetch_local_url(effective_link, qb_base_url=qb_base_url):
+                    torrent_bytes = None
+                    source_name = None
+                else:
+                    raise SelectiveQueueError(
+                        "Could not fetch a valid torrent file from the local Jackett-style URL, "
+                        "so the app did not hand it off to qBittorrent for remote fetching."
+                    ) from exc
+            else:
+                torrent_bytes = None
+                source_name = None
         if torrent_bytes is not None and source_name is not None:
             with QbittorrentClient(qb_base_url, qb_username, qb_password) as client:
                 client.add_torrent_file(
@@ -409,10 +363,11 @@ def queue_result_with_optional_file_selection(
         selection_result = select_missing_episode_file_ids(parsed_torrent.files, selection_plan)
     except (SelectiveQueueError, httpx.HTTPError) as exc:
         if _should_require_app_side_torrent_fetch(effective_link):
-            raise SelectiveQueueError(
-                "Could not fetch a valid torrent file from the local Jackett-style URL, "
-                "so the app did not hand it off to qBittorrent for remote fetching."
-            ) from exc
+            if not _can_qb_remote_fetch_local_url(effective_link, qb_base_url=qb_base_url):
+                raise SelectiveQueueError(
+                    "Could not fetch a valid torrent file from the local Jackett-style URL, "
+                    "so the app did not hand it off to qBittorrent for remote fetching."
+                ) from exc
         with QbittorrentClient(qb_base_url, qb_username, qb_password) as client:
             client.add_torrent_url(
                 link=link,
@@ -753,6 +708,34 @@ def _download_torrent_bytes(link: str) -> tuple[bytes, str]:
         return response.content, final_name
 
 
+def _resolve_local_jackett_redirect_magnet_link(link: str) -> str | None:
+    current_link = str(link or "").strip()
+    parsed = urlsplit(current_link)
+    if parsed.scheme.casefold() not in {"http", "https"}:
+        return None
+
+    timeout = get_environment_settings().request_timeout
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+            for _ in range(5):
+                response = client.get(current_link)
+                if not response.is_redirect:
+                    return None
+                location = str(response.headers.get("location") or "").strip()
+                if not location:
+                    return None
+                if parse_magnet_info_hash(location):
+                    return location
+                next_link = urljoin(current_link, location)
+                next_parsed = urlsplit(next_link)
+                if next_parsed.scheme.casefold() not in {"http", "https"}:
+                    return None
+                current_link = next_link
+    except httpx.HTTPError:
+        return None
+    return None
+
+
 def _should_require_app_side_torrent_fetch(link: str) -> bool:
     parsed = urlsplit(str(link or "").strip())
     if parsed.scheme.casefold() not in {"http", "https"}:
@@ -771,6 +754,24 @@ def _should_require_app_side_torrent_fetch(link: str) -> bool:
         or address.is_private
         or address.is_link_local
     )
+
+
+def _can_qb_remote_fetch_local_url(link: str, *, qb_base_url: str) -> bool:
+    if not _should_require_app_side_torrent_fetch(link):
+        return False
+    parsed_qb = urlsplit(str(qb_base_url or "").strip())
+    if parsed_qb.scheme.casefold() not in {"http", "https"}:
+        return False
+    qb_host = (parsed_qb.hostname or "").strip()
+    if not qb_host:
+        return False
+    if qb_host.casefold() == "localhost":
+        return True
+    try:
+        qb_address = ipaddress.ip_address(qb_host)
+    except ValueError:
+        return False
+    return bool(qb_address.is_loopback)
 
 
 def _rewrite_jackett_download_link_for_app_fetch(

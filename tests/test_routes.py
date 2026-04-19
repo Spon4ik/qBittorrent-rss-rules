@@ -17,7 +17,6 @@ from app.models import (
     AppSettings,
     IndexerCategoryCatalog,
     MediaType,
-    MetadataProvider,
     QualityProfile,
     Rule,
     RuleSearchSnapshot,
@@ -88,7 +87,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "0.9.2"
+    assert payload["app_version"] == "1.0.0"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -822,15 +821,6 @@ def test_inline_local_filters_keep_precise_primary_rows_separate_from_fallback_r
     )
 
 
-def test_search_page_js_supports_stremio_variant_queue_bridge() -> None:
-    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
-    app_js_source = app_js_path.read_text(encoding="utf-8")
-
-    assert 'querySelectorAll("[data-stremio-queue-form]")' in app_js_source
-    assert 'await fetch("/api/stremio/queue"' in app_js_source
-    assert 'extractPastedStream' in app_js_source
-
-
 def test_run_rule_search_route_redirects_to_inline_rule_page(app_client, db_session) -> None:
     rule = Rule(
         rule_name="Rule Search Redirect",
@@ -918,7 +908,7 @@ def test_search_page_renders_jackett_as_separate_source(app_client) -> None:
     assert response.status_code == 200
     assert "Active Jackett search" in response.text
     assert "Not mixed with RSS feeds" in response.text
-    assert "Queue Stremio Variant" in response.text
+    assert "Queue Stremio Variant" not in response.text
 
 
 def test_search_page_prefills_new_rule_from_active_search(app_client, monkeypatch) -> None:
@@ -1812,7 +1802,7 @@ def test_search_page_auto_derives_series_episode_floor_from_query_for_imdb_searc
     assert 'name="release_year" value=""' in response.text
 
 
-def test_search_page_uses_addon_parity_as_desktop_baseline_and_standard_search_as_fallback(
+def test_search_page_uses_standard_search_for_imdb_episode_queries(
     app_client,
     db_session,
     monkeypatch,
@@ -1852,35 +1842,7 @@ def test_search_page_uses_addon_parity_as_desktop_baseline_and_standard_search_a
             fallback_results=[],
         )
 
-    def fake_collect_enriched_search_run(self, *, payload):
-        assert payload.imdb_id == "tt22074164"
-        assert payload.season_number == 1
-        assert payload.episode_number == 1
-        enriched_result = JackettSearchResult(
-            merge_key="wanted-season-pack",
-            title="Jury Duty Presents: Company Retreat S01E01 1080p RU",
-            link="magnet:?xt=urn:btih:14544b87fe01a84ffb8a3b75c5c9094180029fd9",
-            info_hash="14544b87fe01a84ffb8a3b75c5c9094180029fd9",
-            indexer="MegaPeer",
-            size_bytes=19_200_000_000,
-            size_label="19.2 GB",
-            seeders=13,
-            peers=33,
-            torznab_attrs={"querysource": "Addon parity"},
-        )
-        return JackettSearchRun(
-            raw_results=[enriched_result],
-            results=[enriched_result],
-            raw_fallback_results=[],
-            fallback_results=[],
-        )
-
     monkeypatch.setattr(JackettClient, "search", fake_search)
-    monkeypatch.setattr(
-        "app.routes.pages.StremioAddonService.collect_enriched_search_run",
-        fake_collect_enriched_search_run,
-    )
-
     response = app_client.get(
         "/search",
         params={
@@ -1892,12 +1854,12 @@ def test_search_page_uses_addon_parity_as_desktop_baseline_and_standard_search_a
 
     assert response.status_code == 200
     assert captured_payloads
-    assert captured_payloads[0].imdb_id is None
-    assert captured_payloads[0].imdb_id_only is False
+    assert captured_payloads[0].imdb_id == "tt22074164"
+    assert captured_payloads[0].imdb_id_only is True
+    assert captured_payloads[0].season_number == 1
+    assert captured_payloads[0].episode_number == 1
     assert captured_payloads[0].query == "Jury Duty Presents: Company Retreat S01E01"
-    assert "Jury Duty Presents: Company Retreat S01E01 1080p RU" in response.text
     assert "Jury Duty Company Retreat fallback pack" in response.text
-    assert "14544b87fe01a84ffb8a3b75c5c9094180029fd9" in response.text
 
 
 @pytest.mark.parametrize(
@@ -2990,7 +2952,7 @@ def test_queue_search_result_api_rejects_broken_local_jackett_url_instead_of_rem
 ) -> None:
     settings = AppSettings(
         id="default",
-        qb_base_url="http://localhost:8080",
+        qb_base_url="http://docker-host:8080",
         qb_username="admin",
         qb_password_encrypted=obfuscate_secret("secret"),
         jackett_api_url="http://localhost:9117",
@@ -3072,6 +3034,90 @@ def test_queue_search_result_api_rewrites_jackett_qb_url_for_app_fetch(
     assert seen_links == ["http://localhost:9117/dl/kinozal/?jackett_apikey=secret&path=abc"]
 
 
+def test_queue_search_result_api_queues_redirected_local_jackett_magnet(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jackett_api_url="http://localhost:9117",
+        default_add_paused=True,
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    queued_links: list[str] = []
+
+    monkeypatch.setattr(
+        "app.services.selective_queue._resolve_local_jackett_redirect_magnet_link",
+        lambda link: (
+            "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12"
+            "&tr=https://tracker.example/announce"
+        ),
+    )
+    monkeypatch.setattr(
+        "app.routes.api.QbittorrentClient.add_torrent_url",
+        lambda self, **kwargs: queued_links.append(str(kwargs["link"])),
+    )
+
+    response = app_client.post(
+        "/api/search/queue",
+        json={
+            "link": "http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
+    assert response.json()["queued_via_torrent_file"] is False
+    assert queued_links == [
+        "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12"
+        "&tr=https://tracker.example/announce"
+    ]
+
+
+def test_queue_search_result_api_allows_local_remote_fetch_when_qb_is_loopback(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jackett_api_url="http://localhost:9117",
+        default_add_paused=True,
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    queued_links: list[str] = []
+
+    monkeypatch.setattr(
+        "app.services.selective_queue._download_torrent_bytes",
+        lambda link: (_ for _ in ()).throw(httpx.ReadTimeout("slow jackett")),
+    )
+    monkeypatch.setattr(
+        "app.routes.api.QbittorrentClient.add_torrent_url",
+        lambda self, **kwargs: queued_links.append(str(kwargs["link"])),
+    )
+
+    response = app_client.post(
+        "/api/search/queue",
+        json={
+            "link": "http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
+    assert response.json()["queued_via_torrent_file"] is False
+    assert queued_links == [
+        "http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc"
+    ]
+
+
 def test_queue_search_result_api_reports_missing_only_selection_details(
     app_client, db_session, monkeypatch
 ) -> None:
@@ -3121,90 +3167,6 @@ def test_queue_search_result_api_reports_missing_only_selection_details(
     assert payload["skipped_file_count"] == 1
     assert payload["queued_via_torrent_file"] is True
     assert payload["deferred_file_selection"] is False
-
-
-def test_queue_stremio_stream_api_returns_magnet_and_rule_defaults(
-    app_client, db_session, monkeypatch
-) -> None:
-    settings = AppSettings(
-        id="default",
-        qb_base_url="http://localhost:8080",
-        qb_username="admin",
-        qb_password_encrypted=obfuscate_secret("secret"),
-        default_add_paused=True,
-    )
-    rule = Rule(
-        rule_name="Queue Stremio Rule",
-        content_name="Queue Stremio Rule",
-        normalized_title="Queue Stremio Rule",
-        media_type=MediaType.SERIES,
-        quality_profile=QualityProfile.PLAIN,
-        feed_urls=["http://feed.example/queue-stremio"],
-        assigned_category="Series/The Beauty [imdbid-tt33517752]",
-        save_path="/data/the-beauty",
-        add_paused=False,
-    )
-    db_session.add_all([settings, rule])
-    db_session.commit()
-
-    captured: dict[str, object] = {}
-
-    def fake_queue_stremio_stream_selection(**kwargs):
-        captured.update(kwargs)
-        return (
-            SimpleNamespace(
-                message="Queued exact stream magnet in qBittorrent.",
-                selected_file_count=0,
-                skipped_file_count=0,
-                deferred_file_selection=True,
-                queued_via_torrent_file=False,
-            ),
-            "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12",
-        )
-
-    monkeypatch.setattr(
-        "app.routes.api.queue_stremio_stream_selection",
-        fake_queue_stremio_stream_selection,
-    )
-
-    response = app_client.post(
-        "/api/stremio/queue",
-        json={
-            "info_hash": "abcdef1234567890abcdef1234567890abcdef12",
-            "tracker_urls": ["tracker:udp://tracker.example:1337/announce", "dht:ignored"],
-            "display_name": "The Beauty S01E01 2160p",
-            "file_idx": 5,
-            "rule_id": rule.id,
-            "sequential_download": True,
-            "first_last_piece_prio": True,
-        },
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["status"] == "queued"
-    assert payload["category"] == "Series/The Beauty [imdbid-tt33517752]"
-    assert payload["save_path"] == "/data/the-beauty"
-    assert payload["add_paused"] is False
-    assert payload["deferred_file_selection"] is True
-    assert payload["magnet_link"] == "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12"
-    assert captured["category"] == "Series/The Beauty [imdbid-tt33517752]"
-    assert captured["save_path"] == "/data/the-beauty"
-    assert captured["paused"] is False
-    selection = captured["selection"]
-    assert selection.info_hash == "abcdef1234567890abcdef1234567890abcdef12"
-    assert selection.file_idx == 5
-    assert selection.tracker_urls == ["udp://tracker.example:1337/announce"]
-
-
-def test_queue_stremio_stream_api_requires_configured_qb(app_client) -> None:
-    response = app_client.post(
-        "/api/stremio/queue",
-        json={"info_hash": "abcdef1234567890abcdef1234567890abcdef12"},
-    )
-
-    assert response.status_code == 400
-    assert response.json()["error"] == "qBittorrent connection is not configured."
 
 
 def test_queue_search_result_api_uses_grouped_queue_flow(app_client, db_session, monkeypatch) -> None:
@@ -3455,11 +3417,10 @@ def test_settings_page_renders_stremio_controls(app_client) -> None:
     assert 'name="stremio_auto_sync_interval_seconds"' in response.text
     assert 'formaction="/api/settings/test-stremio"' in response.text
     assert 'formaction="/api/settings/sync-stremio"' in response.text
-    assert 'value="http://testserver/stremio/manifest.json"' in response.text
     assert "Automatic Stremio sync runs when the app starts" in response.text
     assert "Save + Sync Stremio Now" in response.text
-    assert "Use this exact URL in Stremio" in response.text
-    assert "Add-on Repository URL box" in response.text
+    assert "Use this exact URL in Stremio" not in response.text
+    assert "Add-on Repository URL box" not in response.text
     assert "Auto-sync status:" in response.text
 
 
@@ -3833,96 +3794,6 @@ def test_test_stremio_settings_reports_success(app_client, monkeypatch, tmp_path
     assert "Stremio connection test succeeded." in response.text
     assert "Auth source: local storage." in response.text
     assert "Active movie/series library items: 1 of 1." in response.text
-
-
-def test_settings_page_renders_stremio_preferred_languages_field(app_client, db_session) -> None:
-    settings = AppSettings(
-        id="default",
-        stremio_preferred_languages="ru,en",
-        metadata_provider=MetadataProvider.DISABLED,
-    )
-    db_session.add(settings)
-    db_session.commit()
-
-    response = app_client.get("/settings")
-
-    assert response.status_code == 200
-    assert 'name="stremio_preferred_languages"' in response.text
-    assert 'value="ru,en"' in response.text
-
-
-def test_settings_page_renders_stremio_stream_provider_manifests_field(
-    app_client, db_session
-) -> None:
-    settings = AppSettings(
-        id="default",
-        stremio_stream_provider_manifests=(
-            "Torrentio|https://torrentio.strem.fun/manifest.json"
-        ),
-        metadata_provider=MetadataProvider.DISABLED,
-    )
-    db_session.add(settings)
-    db_session.commit()
-
-    response = app_client.get("/settings")
-
-    assert response.status_code == 200
-    assert 'name="stremio_stream_provider_manifests"' in response.text
-    assert "Torrentio|https://torrentio.strem.fun/manifest.json" in response.text
-
-
-def test_save_settings_persists_stremio_preferred_languages(app_client, db_session) -> None:
-    response = app_client.post(
-        "/api/settings",
-        data={
-            "stremio_preferred_languages": "ru, en",
-            "metadata_provider": "disabled",
-            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
-            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
-            "save_path_template": "",
-            "default_enabled": "on",
-            "default_add_paused": "on",
-            "default_sequential_download": "on",
-            "default_first_last_piece_prio": "on",
-            "default_quality_profile": "2160p_hdr",
-        },
-    )
-
-    assert response.status_code == 200
-    settings = db_session.get(AppSettings, "default")
-    assert settings is not None
-    assert settings.stremio_preferred_languages == "ru,en"
-
-
-def test_save_settings_persists_stremio_stream_provider_manifests(
-    app_client, db_session
-) -> None:
-    response = app_client.post(
-        "/api/settings",
-        data={
-            "stremio_stream_provider_manifests": (
-                "Torrentio|https://torrentio.strem.fun/manifest.json\n"
-                "MediaFusion|https://mediafusion.example/manifest.json"
-            ),
-            "metadata_provider": "disabled",
-            "series_category_template": "Series/{title} [imdbid-{imdb_id}]",
-            "movie_category_template": "Movies/{title} [imdbid-{imdb_id}]",
-            "save_path_template": "",
-            "default_enabled": "on",
-            "default_add_paused": "on",
-            "default_sequential_download": "on",
-            "default_first_last_piece_prio": "on",
-            "default_quality_profile": "2160p_hdr",
-        },
-    )
-
-    assert response.status_code == 200
-    settings = db_session.get(AppSettings, "default")
-    assert settings is not None
-    assert settings.stremio_stream_provider_manifests == (
-        "Torrentio|https://torrentio.strem.fun/manifest.json\n"
-        "MediaFusion|https://mediafusion.example/manifest.json"
-    )
 
 
 def test_test_stremio_settings_compat_path_reports_success(

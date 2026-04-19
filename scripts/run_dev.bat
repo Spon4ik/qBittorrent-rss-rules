@@ -40,10 +40,12 @@ if exist "%API_VENV_PYTHON%" (
 )
 
 if /I "%MODE%"=="api" goto :run_api
+if /I "%MODE%"=="api-restart" goto :api_restart
 if /I "%MODE%"=="desktop-build" goto :desktop_build
 if /I "%MODE%"=="desktop-shortcuts" goto :desktop_shortcuts
 if /I "%MODE%"=="desktop-package" goto :desktop_package
 if /I "%MODE%"=="desktop-run" goto :desktop_run
+if /I "%MODE%"=="desktop-restart" goto :desktop_restart
 if /I "%MODE%"=="desktop" goto :desktop
 if /I "%MODE%"=="full" (
   echo "full" now delegates to the desktop shell, which auto-starts the backend as needed.
@@ -60,6 +62,17 @@ goto :usage
 :run_api
 echo Starting API server at http://%API_HOST%:%API_PORT% ...
 "%API_PYTHON%" -m uvicorn app.main:create_app --factory --host %API_HOST% --port %API_PORT% --reload
+set "EXIT_CODE=!ERRORLEVEL!"
+goto :finish
+
+:api_restart
+echo Restarting API server processes on port %API_PORT% ...
+powershell.exe -NoProfile -Command "$port=%API_PORT%; $listeners = Get-NetTCPConnection -LocalAddress '%API_HOST%' -LocalPort $port -State Listen -ErrorAction SilentlyContinue; $pids = @($listeners | Select-Object -ExpandProperty OwningProcess -Unique); if (-not $pids) { exit 0 }; Get-Process -Id $pids -ErrorAction SilentlyContinue | Stop-Process -Force; exit 0"
+if errorlevel 1 (
+  set "EXIT_CODE=!ERRORLEVEL!"
+  goto :finish
+)
+call "%~f0" api
 set "EXIT_CODE=!ERRORLEVEL!"
 goto :finish
 
@@ -140,6 +153,15 @@ if errorlevel 1 (
 set "EXIT_CODE=0"
 goto :finish
 
+:desktop_restart
+call "%~f0" desktop-stop-running
+if errorlevel 1 (
+  echo WinUI desktop app was not running or could not be stopped automatically. Continuing with a fresh launch.
+)
+call "%~f0" desktop
+set "EXIT_CODE=!ERRORLEVEL!"
+goto :finish
+
 :desktop_stop_running
 powershell.exe -NoProfile -Command "$exe = [System.IO.Path]::GetFullPath('%PROJECT_DIR%\%WINUI_EXE%'); $running = Get-Process -Name 'QbRssRulesDesktop' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }; if (-not $running) { exit 1 }; $running | Stop-Process -Force; exit 0"
 set "EXIT_CODE=!ERRORLEVEL!"
@@ -191,11 +213,13 @@ echo Usage: scripts\run_dev.bat [mode]
 echo.
 echo Modes:
 echo   api           Run FastAPI dev server (default)
+echo   api-restart   Stop any local API listener on port 8000, then start the FastAPI dev server
 echo   desktop-build Restore and build WinUI desktop app
 echo   desktop-shortcuts Refresh Desktop/repo shortcuts for the WinUI app
 echo   desktop-package Build a portable Windows bundle with install script under dist\
 echo   desktop-run   Launch previously built WinUI desktop app
 echo   desktop       Build then launch WinUI desktop app; if already running, reuse the current instance
+echo   desktop-restart Stop the running WinUI desktop app, then launch it again
 echo   full          Compatibility alias for "desktop"; backend auto-start is handled by the desktop app
 echo   help          Show this help
 set "EXIT_CODE=0"

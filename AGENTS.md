@@ -8,6 +8,14 @@ At the start of each meaningful work session:
 2. Read the active phase plan under `docs/plans/` before making changes that affect planned implementation scope, architecture, or incomplete phase work.
 3. Read `ROADMAP.md` only when phase scope, sequencing, or long-term direction may be affected.
 
+## WinUI desktop and release versions
+
+The WinUI shell (`QbRssRulesDesktop`) embeds `RequiredDesktopBackendAppVersion` and compares it to `/health`’s `app_version`. If those diverge from `pyproject.toml` / `app/main.py`, the desktop shows an incompatible-backend error even when Python code is current.
+
+- When bumping the app version, keep **one** semver across `pyproject.toml`, `app/main.py`, `QbRssRulesDesktop/Views/MainPage.xaml.cs` (`RequiredDesktopBackendAppVersion`), `tests/test_routes.py` (health assert), and `tests/test_stremio_addon.py` (manifest `+stremio.1` assert). Prefer `python scripts/release_prep.py <patch|minor|major> --apply` from the repo root so those files move together.
+- After changing the desktop constants or pulling a branch that did, **rebuild** the desktop (`scripts\run_dev.bat desktop-build` or `desktop`) so the EXE you launch matches the repo; stale local builds keep old expectations.
+- When changing `DESKTOP_BACKEND_CONTRACT` or `DESKTOP_BACKEND_CAPABILITIES` in `app/main.py`, mirror the same contract date and capability list in `MainPage.xaml.cs`.
+
 ## Core Behavior
 
 - Prefer correct design over fast implementation.

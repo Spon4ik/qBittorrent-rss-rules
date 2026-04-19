@@ -1,0 +1,1 @@
+cmd /c scripts\run_dev.bat desktop-build

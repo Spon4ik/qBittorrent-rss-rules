@@ -23,7 +23,7 @@ Keep SemVer rationale explicit, update all version touchpoints consistently, and
 - Use prerelease labels only when explicitly requested.
 
 3. Map touchpoints before editing.
-- Use [references/version-touchpoints-checklist.md](references/version-touchpoints-checklist.md) to identify all files that must change.
+- Use [references/version-touchpoints-checklist.md](references/version-touchpoints-checklist.md) to identify all files that must change (including WinUI `RequiredDesktopBackendAppVersion` and paired `/health` + Stremio manifest pytest asserts).
 - Separate authoritative version sources from documentation mentions.
 - Update planning/status docs first when release scope assumptions change.
 

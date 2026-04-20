@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import unquote, urlencode, urlsplit
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -38,6 +38,7 @@ from app.services.jackett import (
     clamp_search_query_text,
     expand_grouped_quality_search_terms,
     expand_quality_search_terms,
+    feed_indexer_slug,
     quality_pattern_map,
     quality_search_term_map,
 )
@@ -103,10 +104,6 @@ templates = Jinja2Templates(
 SEARCH_FILTER_SPLIT_RE = re.compile(r"[\n,;]+")
 PLACEHOLDER_CATEGORY_LABEL_RE = re.compile(r"^(?:Unknown \(#[^)]+\)|Category #.+)$")
 UNKNOWN_CATEGORY_LABEL_RE = re.compile(r"^Unknown \(#([^)]+)\)$")
-JACKETT_FEED_INDEXER_PATH_RE = re.compile(
-    r"/api/v2\.0/indexers/(?P<indexer>[^/]+)/results/torznab(?:/api)?/?$",
-    re.IGNORECASE,
-)
 RULE_POSTER_BACKFILL_LIMIT = 2
 RULE_POSTER_BACKFILL_COOLDOWN = timedelta(hours=6)
 RULE_POSTER_BACKFILL_TIMEOUT_SECONDS = 2.0
@@ -159,6 +156,58 @@ def _safe_feed_options(
             feed_options.append({"label": f"Saved feed: {url}", "url": url})
             seen.add(url)
     return feed_options
+
+
+def _safe_rule_language_options(session: Session) -> list[dict[str, str]]:
+    settings = SettingsService.get_or_create(session)
+    jackett = SettingsService.resolve_jackett(settings)
+    if not jackett.app_ready:
+        return []
+    try:
+        client = JackettClient(jackett.api_url, jackett.api_key)
+        return client.configured_language_options()
+    except JackettClientError:
+        return []
+
+
+def _resolve_language_feed_urls(
+    session: Session,
+    *,
+    language: str | None,
+    selected_urls: list[str] | None = None,
+) -> tuple[list[str], str | None]:
+    normalized_language = str(language or "").strip().casefold()
+    if not normalized_language:
+        return _normalize_feed_url_list(selected_urls), None
+
+    settings = SettingsService.get_or_create(session)
+    jackett = SettingsService.resolve_jackett(settings)
+    if not jackett.app_ready:
+        return [], "Language-based feed selection needs a working Jackett connection."
+
+    feed_options = _safe_feed_options(session, selected_urls)
+    if not feed_options:
+        return [], "Language-based feed selection needs available qB RSS feeds."
+
+    try:
+        client = JackettClient(jackett.api_url, jackett.api_key)
+        language_map = client.configured_indexer_languages()
+    except JackettClientError:
+        return [], "Language-based feed selection could not read Jackett indexer metadata."
+
+    resolved_feed_urls: list[str] = []
+    for feed in feed_options:
+        feed_url = str(feed.get("url") or "").strip()
+        indexer = _feed_url_to_indexer_slug(feed_url)
+        if not indexer:
+            continue
+        if normalized_language not in set(language_map.get(indexer, [])):
+            continue
+        resolved_feed_urls.append(feed_url)
+
+    if not resolved_feed_urls:
+        return [], "No Jackett-backed qB feeds match the selected language."
+    return _normalize_feed_url_list(resolved_feed_urls), None
 
 
 def _backfill_missing_rule_posters(
@@ -355,6 +404,7 @@ def _rule_to_form_data(rule: Rule) -> dict[str, object]:
         "add_paused": rule.add_paused,
         "enabled": rule.enabled,
         "smart_filter": rule.smart_filter,
+        "language": str(getattr(rule, "language", "") or ""),
         "assigned_category": rule.assigned_category,
         "save_path": rule.save_path,
         "feed_urls": rule.feed_urls,
@@ -574,17 +624,7 @@ def _search_result_key(item: object) -> str:
 
 
 def _feed_url_to_indexer_slug(feed_url: str) -> str | None:
-    cleaned = str(feed_url or "").strip()
-    if not cleaned:
-        return None
-    parsed = urlsplit(cleaned)
-    match = JACKETT_FEED_INDEXER_PATH_RE.search(parsed.path or "")
-    if not match:
-        return None
-    raw_indexer = unquote(match.group("indexer") or "").strip().casefold()
-    if not raw_indexer or raw_indexer == "all":
-        return None
-    return raw_indexer
+    return feed_indexer_slug(feed_url)
 
 
 def _rule_feed_indexers(rule: Rule) -> list[str]:
@@ -1396,6 +1436,7 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
         "add_paused": settings.default_add_paused,
         "enabled": settings.default_enabled,
         "smart_filter": False,
+        "language": "",
         "assigned_category": "",
         "save_path": "",
         "feed_urls": list(settings.default_feed_urls or []),
@@ -1419,13 +1460,25 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
 
     context = _base_context(request, "New Rule")
     available_filter_profiles = available_filter_profile_choices(settings)
+    resolved_language_feed_urls, language_resolution_notice = _resolve_language_feed_urls(
+        session,
+        language=str(form_data.get("language", "") or ""),
+        selected_urls=list(cast(list[str], form_data.get("feed_urls", []) or [])),
+    )
+    if str(form_data.get("language", "") or "").strip():
+        form_data["feed_urls"] = resolved_language_feed_urls
     context.update(
         {
             "mode": "create",
             "rule_id": None,
             "form_data": form_data,
             "errors": [],
-            "feed_options": _safe_feed_options(session, list(settings.default_feed_urls or [])),
+            "feed_options": _safe_feed_options(
+                session,
+                cast(list[str], form_data.get("feed_urls", []) or []),
+            ),
+            "language_options": _safe_rule_language_options(session),
+            "language_resolution_notice": language_resolution_notice,
             "settings_form": SettingsService.to_form_dict(settings),
             "quality_choices": quality_profile_choices(),
             "quality_options": quality_option_choices(),
@@ -1521,6 +1574,13 @@ def edit_rule(
         settings,
         media_type=form_media_type,
     )
+    resolved_language_feed_urls, language_resolution_notice = _resolve_language_feed_urls(
+        session,
+        language=str(form_data.get("language", "") or ""),
+        selected_urls=list(cast(list[str], form_data.get("feed_urls", []) or [])),
+    )
+    if str(form_data.get("language", "") or "").strip():
+        form_data["feed_urls"] = resolved_language_feed_urls
     inline_search_view_defaults = {
         "view_mode": "table",
         "sort_criteria": normalize_search_sort_criteria(settings.search_sort_criteria),
@@ -1672,7 +1732,12 @@ def edit_rule(
             "rule_id": rule.id,
             "form_data": form_data,
             "errors": [],
-            "feed_options": _safe_feed_options(session, rule.feed_urls),
+            "feed_options": _safe_feed_options(
+                session,
+                cast(list[str], form_data.get("feed_urls", []) or []),
+            ),
+            "language_options": _safe_rule_language_options(session),
+            "language_resolution_notice": language_resolution_notice,
             "settings_form": SettingsService.to_form_dict(settings),
             "quality_choices": quality_profile_choices(),
             "quality_options": quality_option_choices(),

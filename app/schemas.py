@@ -505,6 +505,7 @@ class RuleFormPayload(BaseModel):
     add_paused: bool = True
     enabled: bool = True
     smart_filter: bool = False
+    language: str = ""
     assigned_category: str = ""
     save_path: str = ""
     feed_urls: list[str] = Field(default_factory=list)
@@ -541,6 +542,11 @@ class RuleFormPayload(BaseModel):
             return match.group(1)
         return cleaned
 
+    @field_validator("language")
+    @classmethod
+    def normalize_language(cls, value: str) -> str:
+        return str(value or "").strip().casefold()
+
     @field_validator("quality_include_tokens", "quality_exclude_tokens", mode="before")
     @classmethod
     def normalize_quality_token_lists(cls, value: list[str] | str | None) -> list[str]:
@@ -566,6 +572,12 @@ class RuleFormPayload(BaseModel):
             raise ValueError("Set both Start Season and Start Episode, or leave both empty.")
         return self
 
+    @model_validator(mode="after")
+    def validate_feed_or_language(self) -> RuleFormPayload:
+        if not self.language and not self.feed_urls:
+            raise ValueError("Select at least one feed or choose a language.")
+        return self
+
     @field_validator("feed_urls")
     @classmethod
     def dedupe_feeds(cls, value: list[str]) -> list[str]:
@@ -577,8 +589,6 @@ class RuleFormPayload(BaseModel):
                 continue
             seen.add(candidate)
             cleaned.append(candidate)
-        if not cleaned:
-            raise ValueError("Select at least one feed.")
         return cleaned
 
 

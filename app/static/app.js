@@ -3446,11 +3446,13 @@ function initRuleForm(form) {
   const metadataProviderSelect = form.querySelector("#metadata-lookup-provider");
   const metadataLookupValueInput = form.querySelector("#metadata-lookup-value");
   const metadataButton = form.querySelector("#metadata-lookup");
-  const feedRefreshButton = form.querySelector("#feed-refresh");
-  const feedSelectAllButton = form.querySelector("#feed-select-all");
-  const feedClearAllButton = form.querySelector("#feed-clear-all");
-  const feedOptionsContainer = form.querySelector("#feed-options");
-  const mediaField = form.querySelector('select[name="media_type"]');
+    const feedRefreshButton = form.querySelector("#feed-refresh");
+    const feedSelectAllButton = form.querySelector("#feed-select-all");
+    const feedClearAllButton = form.querySelector("#feed-clear-all");
+    const feedOptionsContainer = form.querySelector("#feed-options");
+    const languageSelect = form.querySelector("#rule-language-select");
+    const feedModeHelper = form.querySelector("[data-feed-mode-helper]");
+    const mediaField = form.querySelector('select[name="media_type"]');
   const qualityProfileInput = form.querySelector('input[name="quality_profile"]');
   const filterProfileSelect = form.querySelector("#filter-profile-select");
   const saveNewProfileButton = form.querySelector("#filter-profile-save-new");
@@ -3561,6 +3563,26 @@ function initRuleForm(form) {
     emptyState.className = "feed-empty-state";
     emptyState.textContent = feedEmptyMessage;
     feedOptionsContainer.appendChild(emptyState);
+  };
+
+  const syncFeedLanguageMode = () => {
+    const languageManaged = Boolean(languageSelect?.value.trim());
+    if (feedOptionsContainer) {
+      feedOptionsContainer.dataset.languageManaged = languageManaged ? "true" : "false";
+    }
+    if (feedModeHelper) {
+      feedModeHelper.textContent = languageManaged
+        ? "Feed selection is currently resolved automatically from the selected language. Clear Language to edit feeds manually."
+        : "Choose one or more RSS feeds for this rule. Active Jackett search stays separate and does not populate this list.";
+    }
+    for (const button of [feedRefreshButton, feedSelectAllButton, feedClearAllButton]) {
+      if (button) {
+        button.disabled = languageManaged;
+      }
+    }
+    for (const checkbox of getFeedCheckboxes()) {
+      checkbox.disabled = languageManaged;
+    }
   };
 
   const normalizeTokenSelection = (includeTokens, excludeTokens) => {
@@ -4046,6 +4068,12 @@ function initRuleForm(form) {
     }
 
     renderFeedOptions(mergedFeeds, selectedUrls);
+    syncFeedLanguageMode();
+  });
+
+  languageSelect?.addEventListener("change", () => {
+    syncFeedLanguageMode();
+    notifyFeedSelectionChanged();
   });
 
   runSearchHereLink?.addEventListener("click", (event) => {
@@ -4070,6 +4098,7 @@ function initRuleForm(form) {
   applyMediaTypeVisibility(currentMediaType);
   syncQualityProfileValue();
   refreshDerivedFields();
+  syncFeedLanguageMode();
 }
 
 function initSettingsForm(form) {

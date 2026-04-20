@@ -81,6 +81,7 @@ def _ensure_rule_columns() -> None:
         "stremio_managed": "BOOLEAN NOT NULL DEFAULT 0",
         "stremio_auto_disabled": "BOOLEAN NOT NULL DEFAULT 0",
         "poster_url": "VARCHAR(512)",
+        "language": "VARCHAR(32) NOT NULL DEFAULT ''",
     }
     expected_settings_columns = {
         "jackett_api_url": "VARCHAR(255)",

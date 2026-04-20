@@ -24,17 +24,21 @@ from app.models import (
 )
 from app.routes.pages import _auto_imdb_first_payload
 from app.schemas import (
+    FeedOption,
     JackettSearchRequest,
     JackettSearchResult,
     JackettSearchRun,
     MetadataLookupProvider,
     MetadataResult,
+    SyncResult,
 )
 from app.services import quality_filters
 from app.services.hover_debug import clear_hover_events
 from app.services.jackett import JackettClient, clamp_search_query_text
 from app.services.metadata import MetadataClient
-from app.services.selective_queue import ParsedTorrentInfo
+from app.services.qbittorrent import QbittorrentClient
+from app.services.selective_queue import ParsedTorrentInfo, SelectiveQueueError
+from app.services.sync import SyncService
 from tests.jellyfin_test_utils import (
     add_jellyfin_episode,
     add_jellyfin_series,
@@ -87,7 +91,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.0.0"
+    assert payload["app_version"] == "1.1.0"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -3034,6 +3038,50 @@ def test_queue_search_result_api_rewrites_jackett_qb_url_for_app_fetch(
     assert seen_links == ["http://localhost:9117/dl/kinozal/?jackett_apikey=secret&path=abc"]
 
 
+def test_queue_search_result_api_normalizes_unicode_local_jackett_url_before_fetch(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jackett_api_url="http://localhost:9117",
+        default_add_paused=True,
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    torrent_bytes = b"d4:infod4:name8:test.mkv6:lengthi1eee"
+    seen_links: list[str] = []
+
+    def fake_download(link):
+        seen_links.append(link)
+        return torrent_bytes, "movie-result.torrent"
+
+    monkeypatch.setattr("app.services.selective_queue._download_torrent_bytes", fake_download)
+    monkeypatch.setattr("app.routes.api.QbittorrentClient.add_torrent_file", lambda self, **kwargs: None)
+
+    response = app_client.post(
+        "/api/search/queue",
+        json={
+            "link": (
+                "http://localhost:9117/dl/kinozal/?jackett_apikey=secret&path=abc"
+                "&file=C%27\u00e9tait+mieux+demain+2025+MVO%2C+Sub+WEBDL+(AVC)+-+RUSSIAN"
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["queued_via_torrent_file"] is True
+    assert seen_links == [
+        (
+            "http://localhost:9117/dl/kinozal/?jackett_apikey=secret&path=abc"
+            "&file=C%27%C3%A9tait%20mieux%20demain%202025%20MVO%2C%20Sub%20WEBDL%20%28AVC%29%20-%20RUSSIAN"
+        )
+    ]
+
+
 def test_queue_search_result_api_queues_redirected_local_jackett_magnet(
     app_client, db_session, monkeypatch
 ) -> None:
@@ -3093,14 +3141,26 @@ def test_queue_search_result_api_allows_local_remote_fetch_when_qb_is_loopback(
     db_session.commit()
 
     queued_links: list[str] = []
+    torrent_snapshots = [
+        [{"hash": "existing"}],
+        [{"hash": "existing"}, {"hash": "new-hash"}],
+    ]
 
     monkeypatch.setattr(
         "app.services.selective_queue._download_torrent_bytes",
         lambda link: (_ for _ in ()).throw(httpx.ReadTimeout("slow jackett")),
     )
     monkeypatch.setattr(
+        "app.services.selective_queue.time.sleep",
+        lambda seconds: None,
+    )
+    monkeypatch.setattr(
         "app.routes.api.QbittorrentClient.add_torrent_url",
         lambda self, **kwargs: queued_links.append(str(kwargs["link"])),
+    )
+    monkeypatch.setattr(
+        "app.routes.api.QbittorrentClient.get_torrents",
+        lambda self: torrent_snapshots.pop(0),
     )
 
     response = app_client.post(
@@ -3116,6 +3176,110 @@ def test_queue_search_result_api_allows_local_remote_fetch_when_qb_is_loopback(
     assert queued_links == [
         "http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc"
     ]
+
+
+def test_queue_search_result_api_refreshes_stale_local_jackett_link_from_rule_snapshot(
+    app_client, db_session, monkeypatch
+) -> None:
+    stale_link = "http://localhost:9117/dl/kinozal/?jackett_apikey=secret&path=stale"
+    fresh_link = "http://localhost:9117/dl/kinozal/?jackett_apikey=secret&path=fresh"
+
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jackett_api_url="http://localhost:9117",
+        jackett_api_key_encrypted=obfuscate_secret("jackett-secret"),
+        default_add_paused=True,
+    )
+    rule = Rule(
+        rule_name="Queue Refresh Rule",
+        content_name="Queue Refresh Rule",
+        normalized_title="Queue Refresh Rule",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule.id,
+            payload={"query": "Queue Refresh Rule", "media_type": "movie"},
+            inline_search={
+                "raw_results": [
+                    {
+                        "title": "Queue Refresh Rule 2026 WEB-DL",
+                        "link": stale_link,
+                        "indexer": "Kinozal",
+                        "guid": "https://kinozal.tv/download.php?id=123",
+                        "details_url": "https://kinozal.tv/details.php?id=123",
+                        "merge_key": "guid:https://kinozal.tv/download.php?id=123",
+                    }
+                ]
+            },
+        )
+    )
+    db_session.commit()
+
+    seen_links: list[str] = []
+
+    def fake_queue_result(**kwargs):
+        seen_links.append(str(kwargs["link"]))
+        if kwargs["link"] == stale_link:
+            raise SelectiveQueueError(
+                "qBittorrent accepted the remote URL fetch request, but no torrent appeared in the list."
+            )
+        return SimpleNamespace(
+            message="Queued after refresh.",
+            selected_file_count=0,
+            skipped_file_count=0,
+            deferred_file_selection=False,
+            queued_via_torrent_file=False,
+        )
+
+    monkeypatch.setattr(
+        "app.routes.api.queue_result_with_optional_file_selection",
+        fake_queue_result,
+    )
+    monkeypatch.setattr(
+        "app.routes.api.build_search_request_from_rule",
+        lambda rule: (JackettSearchRequest(query="Queue Refresh Rule"), False),
+    )
+    monkeypatch.setattr(
+        JackettClient,
+        "search",
+        lambda self, payload: JackettSearchRun(
+            results=[
+                JackettSearchResult(
+                    title="Queue Refresh Rule 2026 WEB-DL",
+                    link=fresh_link,
+                    indexer="Kinozal",
+                    guid="https://kinozal.tv/download.php?id=123",
+                    details_url="https://kinozal.tv/details.php?id=123",
+                    merge_key="guid:https://kinozal.tv/download.php?id=123",
+                )
+            ],
+            raw_results=[],
+            fallback_results=[],
+            raw_fallback_results=[],
+            warnings=[],
+        ),
+    )
+
+    response = app_client.post(
+        "/api/search/queue",
+        json={
+            "rule_id": rule.id,
+            "link": stale_link,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
+    assert response.json()["message"] == "Queued after refresh."
+    assert seen_links == [stale_link, fresh_link]
 
 
 def test_queue_search_result_api_reports_missing_only_selection_details(
@@ -4193,6 +4357,43 @@ def test_new_rule_prefills_remembered_default_feeds(app_client, db_session) -> N
     assert 'name="remember_feed_defaults" value="on" checked' in response.text
 
 
+def test_new_rule_renders_language_options_when_jackett_languages_are_available(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://qb.test",
+        qb_username="user",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jackett_api_url="http://jackett.test",
+        jackett_qb_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        JackettClient,
+        "configured_language_options",
+        lambda self: [
+            {"value": "ru", "label": "Russian", "indexer_count": "3"},
+            {"value": "he", "label": "Hebrew", "indexer_count": "1"},
+        ],
+    )
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "get_feeds",
+        lambda self: [FeedOption(label="RuTracker", url="http://feed.example/rutracker")],
+    )
+
+    response = app_client.get("/rules/new")
+
+    assert response.status_code == 200
+    assert 'name="language"' in response.text
+    assert 'value="ru"' in response.text
+    assert "Russian (3 indexers)" in response.text
+
+
 def test_create_rule_can_remember_selected_feeds_as_defaults(app_client, db_session) -> None:
     response = app_client.post(
         "/api/rules",
@@ -4215,6 +4416,128 @@ def test_create_rule_can_remember_selected_feeds_as_defaults(app_client, db_sess
     settings = db_session.get(AppSettings, "default")
     assert settings is not None
     assert settings.default_feed_urls == ["http://feed.example/alpha", "http://feed.example/bravo"]
+
+
+def test_create_rule_resolves_feed_urls_from_language_before_save(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://qb.test",
+        qb_username="user",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jackett_api_url="http://jackett.test",
+        jackett_qb_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "get_feeds",
+        lambda self: [
+            FeedOption(
+                label="RuTracker",
+                url="http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc",
+            ),
+            FeedOption(
+                label="Fuzer",
+                url="http://jackett.test/api/v2.0/indexers/fuzer/results/torznab/api?apikey=abc",
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        JackettClient,
+        "configured_indexer_languages",
+        lambda self: {"rutracker": ["ru"], "fuzer": ["he"]},
+    )
+    monkeypatch.setattr(
+        SyncService,
+        "sync_rule",
+        lambda self, rule_id: SyncResult(
+            success=True,
+            action="create",
+            rule_id=rule_id,
+            rule_name="Rule With Language",
+            message="ok",
+        ),
+    )
+
+    response = app_client.post(
+        "/api/rules",
+        data={
+            "rule_name": "Rule With Language",
+            "content_name": "Rule With Language",
+            "normalized_title": "Rule With Language",
+            "imdb_id": "tt7654321",
+            "media_type": "series",
+            "quality_profile": "plain",
+            "enabled": "on",
+            "add_paused": "on",
+            "language": "ru",
+            "feed_urls": ["http://jackett.test/api/v2.0/indexers/fuzer/results/torznab/api?apikey=abc"],
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    saved_rule = db_session.scalar(select(Rule).where(Rule.rule_name == "Rule With Language"))
+    assert saved_rule is not None
+    assert saved_rule.language == "ru"
+    assert saved_rule.feed_urls == [
+        "http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc"
+    ]
+
+
+def test_create_rule_with_language_and_no_matching_feeds_returns_error(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://qb.test",
+        qb_username="user",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jackett_api_url="http://jackett.test",
+        jackett_qb_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "get_feeds",
+        lambda self: [
+            FeedOption(
+                label="Fuzer",
+                url="http://jackett.test/api/v2.0/indexers/fuzer/results/torznab/api?apikey=abc",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        JackettClient,
+        "configured_indexer_languages",
+        lambda self: {"fuzer": ["he"]},
+    )
+
+    response = app_client.post(
+        "/api/rules",
+        data={
+            "rule_name": "Rule With Missing Language Feed",
+            "content_name": "Rule With Missing Language Feed",
+            "normalized_title": "Rule With Missing Language Feed",
+            "imdb_id": "tt7654999",
+            "media_type": "series",
+            "quality_profile": "plain",
+            "enabled": "on",
+            "add_paused": "on",
+            "language": "ru",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "No Jackett-backed qB feeds match the selected language." in response.text
 
 
 def test_edit_rule_defaults_to_remembering_selected_feeds(app_client, db_session) -> None:
@@ -4307,3 +4630,59 @@ def test_edit_rule_renders_saved_feeds_as_checked_checkboxes(app_client, db_sess
         'type="checkbox" name="feed_urls" value="http://feed.example/saved" checked'
         in response.text
     )
+
+
+def test_edit_rule_disables_manual_feed_checkboxes_when_language_is_active(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://qb.test",
+        qb_username="user",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jackett_api_url="http://jackett.test",
+        jackett_qb_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Rule Language Edit",
+        content_name="Rule Language Edit",
+        normalized_title="Rule Language Edit",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        language="ru",
+        feed_urls=[
+            "http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc"
+        ],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "get_feeds",
+        lambda self: [
+            FeedOption(
+                label="RuTracker",
+                url="http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        JackettClient,
+        "configured_language_options",
+        lambda self: [{"value": "ru", "label": "Russian", "indexer_count": "1"}],
+    )
+    monkeypatch.setattr(
+        JackettClient,
+        "configured_indexer_languages",
+        lambda self: {"rutracker": ["ru"]},
+    )
+
+    response = app_client.get(f"/rules/{rule.id}")
+
+    assert response.status_code == 200
+    assert 'value="ru" selected' in response.text
+    assert 'name="feed_urls"' in response.text
+    assert 'disabled' in response.text

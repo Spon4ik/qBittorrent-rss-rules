@@ -23,6 +23,14 @@
 
 ## Implemented
 
+- Added qB RSS rule language-driven feed selection on 2026-04-20 so rule authors can choose a language in the rule UI and let the app resolve matching Jackett-backed qB RSS feeds under the hood:
+  - updated `app/models.py`, `app/db.py`, `app/schemas.py`, `app/routes/pages.py`, and `app/routes/api.py` so rules now persist a `language` value, render live language options discovered from configured Jackett indexers, and resolve/save matching `feed_urls` automatically when a language is selected instead of relying only on manual feed picking;
+  - updated `app/services/jackett.py` so configured-indexer discovery now extracts normalized language metadata (for example the live local `ru` and `he` groups) from Jackett `t=indexers&configured=true` descriptions, and reuses the same feed-indexer slug parser for rule feed resolution;
+  - updated `app/templates/rule_form.html` and `app/static/app.js` so the rule form exposes the new language selector, explains that qB RSS auto-downloader behavior is driven by under-the-hood feed resolution, and disables manual feed editing while language-managed mode is active without hiding the resolved feed list;
+  - kept the current manual feed list in place for this release as a visible compatibility fallback while the product evaluates a later follow-up that removes manual indexer/feed selection entirely;
+  - synchronized the release touchpoints to local version `1.1.0` (`pyproject.toml`, `app/main.py`, `QbRssRulesDesktop/Views/MainPage.xaml.cs`, `tests/test_routes.py`, `CHANGELOG.md`) and rebuilt the WinUI desktop successfully with `cmd /c scripts\\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`);
+  - validated with `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py tests\\test_rule_builder.py -q`, `.\\.venv\\Scripts\\python.exe -m ruff check app\\main.py app\\models.py app\\db.py app\\schemas.py app\\routes\\pages.py app\\routes\\api.py app\\services\\jackett.py tests\\test_routes.py tests\\test_rule_builder.py`, a live local Jackett/qB probe confirming language options `he` and `ru` with `Fuzer` plus `13` Russian feeds, and headless Playwright captures of `/rules/new` plus the same page after selecting `ru` (`logs\\qa\\language-rule-ui-live.png`, `logs\\qa\\language-rule-ui-ru-selected.png`).
+
 - Started the phase-25 Stremio boundary cleanup on 2026-04-19 so qBittorrent RSS Rules no longer owns the native Stremio addon surface:
   - removed the addon host code from the live app by deleting `app/routes/stremio_addon.py`, `app/services/stremio_addon.py`, and `app/services/local_playback.py`, removing the router/CORS/capability hooks from `app/main.py`, and dropping the desktop/addon-baseline search dependency from `app/routes/pages.py`;
   - removed addon-only product surfaces from the app UI/API by deleting `/api/stremio/queue`, the search-page `Queue Stremio Variant` controls, addon manifest/provider/preferred-language settings fields, addon-only queue helpers in `app/services/selective_queue.py`, and the matching release-version touchpoint in `app/services/release_versioning.py`;
@@ -1025,6 +1033,8 @@
 ## In progress
 
 - No new implementation phase is active yet after the `v0.9.0` closeout; the next roadmap decision is which post-release Stremio/catalog follow-up should become the next planned slice.
+- The new qB rule-language selector currently coexists with the older manual affected-feed checklist: language mode now resolves/saves the real qB RSS feed scope automatically, while the manual checklist remains visible as a compatibility/fallback UI until a later deprecation pass is approved.
+- The local release candidate is now `1.1.0`, combining the already-finished phase-25 Stremio-boundary split with the new qB rule-language feed-selection follow-up; publication to git remains pending.
 - The qB-side precursor track is now extended locally beyond `v0.8.5`: desktop unified results are exact-first with visible fallback/debug rows, same-infohash duplicates are grouped instead of discarded, grouped queue actions can merge missing trackers into the existing qB torrent, and Stremio qB rows expose clearer provenance/source detail.
 - The latest queue hardening follow-up closes the loudest qB-side UX failure mode for broken local Jackett download URLs: the app now refuses to ask qB to remote-fetch loopback/private `dl/...` links once local fetch/validation has already failed, so the failure stays in the web app instead of spamming qB desktop notifications.
 - The next queue hardening follow-up closes the adjacent Jackett dual-host gap: when a search result carries the qB-facing Jackett hostname, the queue path now rewrites that `dl/...` URL back to the app-facing Jackett base before app-side torrent download, so valid uploads no longer fail simply because `jackett_qb_url` differs from `jackett_api_url`.
@@ -1043,6 +1053,8 @@
 
 ## Next actions
 
+- Decide whether the next qB follow-up should fully remove manual affected-feed/indexer selection now that language-managed feed resolution is working against the real local Jackett/qB setup.
+- Broaden Jackett language detection beyond description-text heuristics if future configured indexers need more than the currently proven `ru` / `he` local metadata groups.
 - Keep `Death in Paradise` season 14/15 routes in the live Stremio addon regression set.
 - Keep the new persisted-provider merge path in the focused Stremio regression set whenever addon ranking, provider formatting, or `/settings` serialization changes again.
 - Harden the Torrentio-compatible provider adapter contract as needed after more live manifest runs, especially around provider-specific row fields, timeout behavior, and attribution formatting.

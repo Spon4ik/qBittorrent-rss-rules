@@ -285,6 +285,18 @@
     </summary>
   <section class="form-grid">
     <label>
+      Language
+      <select name="language" id="rule-language-select">
+        <option value="">Manual feed selection</option>
+        {% for option in language_options or [] %}
+        <option value="{{ option.value }}" {% if form_data.language == option.value %}selected{% endif %}>
+          {{ option.label }} ({{ option.indexer_count }} indexer{{ '' if option.indexer_count == '1' else 's' }})
+        </option>
+        {% endfor %}
+      </select>
+      <span class="helper-text">When set, the app resolves matching Jackett-backed qB feeds under the hood so qB RSS auto-downloader really uses the chosen language.</span>
+    </label>
+    <label>
       Category
       <input type="text" name="assigned_category" value="{{ form_data.assigned_category }}" />
     </label>
@@ -306,11 +318,21 @@
         <button type="button" id="feed-refresh">Refresh Feeds</button>
       </div>
     </div>
-    <p class="helper-text">Choose one or more RSS feeds for this rule. Active Jackett search stays separate and does not populate this list.</p>
+    <p class="helper-text" data-feed-mode-helper>
+      {% if form_data.language %}
+      Feed selection is currently resolved automatically from the selected language. Clear Language to edit feeds manually.
+      {% else %}
+      Choose one or more RSS feeds for this rule. Active Jackett search stays separate and does not populate this list.
+      {% endif %}
+    </p>
+    {% if language_resolution_notice %}
+    <p class="helper-text" data-language-resolution-notice>{{ language_resolution_notice }}</p>
+    {% endif %}
     <div
       class="feed-option-list"
       id="feed-options"
       data-empty-message="No feeds available yet. Configure qBittorrent and refresh feeds to load them."
+      data-language-managed="{{ 'true' if form_data.language else 'false' }}"
     >
       {% if feed_options %}
       {% for feed in feed_options %}
@@ -320,7 +342,7 @@
         data-feed-url="{{ feed.url }}"
         data-feed-label="{{ feed.label }}"
       >
-        <input type="checkbox" name="feed_urls" value="{{ feed.url }}" {% if feed.url in form_data.feed_urls %}checked{% endif %} />
+        <input type="checkbox" name="feed_urls" value="{{ feed.url }}" {% if feed.url in form_data.feed_urls %}checked{% endif %} {% if form_data.language %}disabled{% endif %} />
         <span class="feed-option-label">{{ feed.label }}</span>
       </label>
       {% endfor %}

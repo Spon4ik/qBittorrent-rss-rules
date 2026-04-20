@@ -8,7 +8,10 @@
   - removed addon-only settings, queue APIs, frontend controls, smoke scripts, and release-version touchpoints;
   - kept Stremio library/watch-progress synchronization, auto-sync scheduling, and settings test/sync flows intact;
   - kept the old DB columns for provider manifests/preferred languages as compatibility debt to avoid bundling a destructive schema migration into the boundary split.
-- Real-world validation is complete on 2026-04-19; release publication is the remaining closeout step.
+- Parallel qB-only follow-up work landed locally on 2026-04-20 without changing the Stremio split scope:
+  - rules now expose a language selector that resolves matching Jackett-backed qB RSS feeds under the hood, while the old manual affected-feed checklist remains visible for this release as a compatibility fallback;
+  - real local Jackett/qB validation on this machine proved the current configured language groups are `ru` and `he`, and the rule-form browser capture verified the language-managed feed UX on `/rules/new`.
+- Real-world validation is complete on 2026-04-19, and the local release train is now version-synced to `1.1.0`; git publication is the remaining closeout step.
 
 ## Goal
 
@@ -102,3 +105,4 @@ Make qBittorrent RSS Rules a qB + sync app again: no native Stremio addon hostin
 1. Run the live backend/desktop validation pass against the actual local app and Stremio data.
 2. Bump the release to the next major semver because native addon hosting/configuration was removed.
 3. Publish the release commit and tag after the real-world checks pass.
+4. Publish the now-combined `1.1.0` release train after the Stremio split plus qB rule-language follow-up local validations.

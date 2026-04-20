@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any, cast
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import httpx
 
@@ -66,6 +66,10 @@ SEASON_ONLY_TEXT_RE = re.compile(
 TITLE_SEGMENT_SPLIT_RE = re.compile(r"[|/\[\]\(\)]+")
 INDEXER_KEY_STRIP_RE = re.compile(r"[\s._-]+")
 X_SEASON_EPISODE_TOKEN_RE = re.compile(r"^\d{1,2}x\d{1,3}$")
+JACKETT_FEED_INDEXER_PATH_RE = re.compile(
+    r"/api/v2\.0/indexers/(?P<indexer>[^/]+)/results/torznab(?:/api)?/?$",
+    re.IGNORECASE,
+)
 SEPARATOR_FRAGMENT_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"[\s._-]*", " "),
     (r"[\s._-]+", " "),
@@ -149,6 +153,52 @@ TORZNAB_STANDARD_CATEGORY_LABELS: dict[str, tuple[str, ...]] = {
     "8000": ("Other",),
     "8010": ("Other/Misc",),
 }
+LANGUAGE_LABELS: dict[str, str] = {
+    "ar": "Arabic",
+    "de": "German",
+    "en": "English",
+    "es": "Spanish",
+    "fr": "French",
+    "he": "Hebrew",
+    "it": "Italian",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "multi": "Multi-language",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "sv": "Swedish",
+    "tr": "Turkish",
+    "uk": "Ukrainian",
+    "zh": "Chinese",
+}
+LANGUAGE_DETECTION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (
+        code,
+        re.compile(pattern, re.IGNORECASE),
+    )
+    for code, pattern in (
+        ("ru", r"\brussian\b|\brus\b|\bru\b"),
+        ("en", r"\benglish\b|\beng\b"),
+        ("he", r"\bhebrew\b|\bisraeli\b|\bivrit\b"),
+        ("uk", r"\bukrainian\b|\bukr\b"),
+        ("pl", r"\bpolish\b"),
+        ("de", r"\bgerman\b"),
+        ("fr", r"\bfrench\b"),
+        ("es", r"\bspanish\b"),
+        ("it", r"\bitalian\b"),
+        ("pt", r"\bportuguese\b"),
+        ("nl", r"\bdutch\b"),
+        ("sv", r"\bswedish\b"),
+        ("tr", r"\bturkish\b"),
+        ("ja", r"\bjapanese\b"),
+        ("ko", r"\bkorean\b"),
+        ("zh", r"\bchinese\b"),
+        ("ar", r"\barabic\b"),
+        ("multi", r"\bmulti(?:-|\s)?language\b|\bmultilingual\b|\binternational\b"),
+    )
+)
 LOGGER = logging.getLogger(__name__)
 SEARCH_DEBUG_LOG_PATH = ROOT_DIR / "logs" / "search-debug.log"
 PRECISE_TITLE_ALLOWED_POSTFIX_TOKENS = frozenset(
@@ -614,6 +664,28 @@ def _dedupe_strings(values: Sequence[str]) -> list[str]:
         seen.add(key)
         cleaned.append(candidate)
     return cleaned
+
+
+def _detected_language_codes(*values: object | None) -> list[str]:
+    text = " ".join(_coerce_text(value) for value in values if _coerce_text(value))
+    if not text:
+        return []
+    codes: list[str] = []
+    for code, pattern in LANGUAGE_DETECTION_PATTERNS:
+        if pattern.search(text):
+            codes.append(code)
+    return _dedupe_strings(codes)
+
+
+def feed_indexer_slug(feed_url: str | None) -> str | None:
+    parsed = urlsplit(_coerce_text(feed_url))
+    match = JACKETT_FEED_INDEXER_PATH_RE.search(parsed.path or "")
+    if match is None:
+        return None
+    candidate = _coerce_text(unquote(match.group("indexer"))).casefold()
+    if not candidate or candidate == "all":
+        return None
+    return candidate
 
 
 def _tracker_urls_from_link(link: str | None) -> list[str]:
@@ -1397,6 +1469,7 @@ class JackettClient:
         )
         self.transport = transport
         self._indexer_category_label_map: dict[str, dict[str, list[str]]] | None = None
+        self._indexer_language_map: dict[str, list[str]] | None = None
 
     def test_connection(self) -> None:
         self._ensure_ready()
@@ -1550,6 +1623,30 @@ class JackettClient:
             }
             for indexer_key, category_labels in discovered.items()
         }
+
+    def configured_indexer_languages(self) -> dict[str, list[str]]:
+        discovered = self._configured_indexer_languages()
+        return {indexer_key: list(languages) for indexer_key, languages in discovered.items()}
+
+    def configured_language_options(self) -> list[dict[str, str]]:
+        language_map = self._configured_indexer_languages()
+        counts: dict[str, int] = {}
+        for languages in language_map.values():
+            for code in languages:
+                counts[code] = counts.get(code, 0) + 1
+        options: list[dict[str, str]] = []
+        for code, count in sorted(
+            counts.items(),
+            key=lambda item: (LANGUAGE_LABELS.get(item[0], item[0]), item[0]),
+        ):
+            options.append(
+                {
+                    "value": code,
+                    "label": LANGUAGE_LABELS.get(code, code.upper()),
+                    "indexer_count": str(count),
+                }
+            )
+        return options
 
     @staticmethod
     def _remote_payload_for_standard_search(payload: JackettSearchRequest) -> JackettSearchRequest:
@@ -2685,6 +2782,49 @@ class JackettClient:
             for indexer_key, category_labels in discovered.items()
         }
         return self._indexer_category_label_map
+
+    def _configured_indexer_languages(self) -> dict[str, list[str]]:
+        if self._indexer_language_map is not None:
+            return self._indexer_language_map
+
+        try:
+            root = self._request_xml(
+                self._torznab_endpoint("all"),
+                params={
+                    "t": "indexers",
+                    "apikey": self.api_key or "",
+                    "configured": "true",
+                },
+            )
+        except JackettClientError:
+            LOGGER.debug(
+                "Jackett indexer language discovery failed; proceeding without language metadata.",
+                exc_info=True,
+            )
+            self._indexer_language_map = {}
+            return self._indexer_language_map
+
+        discovered: dict[str, list[str]] = {}
+        for indexer in root.iter():
+            if _local_name(indexer.tag) != "indexer":
+                continue
+            indexer_id = _coerce_text(indexer.attrib.get("id"))
+            if not indexer_id or indexer_id == "all":
+                continue
+            languages = _detected_language_codes(
+                indexer_id,
+                indexer.attrib.get("title"),
+                indexer.attrib.get("name"),
+                indexer.findtext("./title"),
+                indexer.findtext("./description"),
+                indexer.findtext("./link"),
+            )
+            if not languages:
+                continue
+            discovered[indexer_id.casefold()] = languages
+
+        self._indexer_language_map = discovered
+        return self._indexer_language_map
 
     def _category_labels_for_result(
         self,

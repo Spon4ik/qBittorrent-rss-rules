@@ -20,6 +20,7 @@ from app.models import (
     media_type_choices,
     media_type_label,
 )
+from app.routes.pages import _resolve_language_feed_urls, _safe_rule_language_options
 from app.schemas import (
     FilterProfileSaveRequest,
     ImportMode,
@@ -40,7 +41,7 @@ from app.services.hover_debug import (
     record_hover_event,
 )
 from app.services.importer import Importer
-from app.services.jackett import JackettClient, JackettClientError
+from app.services.jackett import JackettClient, JackettClientError, build_search_request_from_rule
 from app.services.jellyfin import JellyfinError, JellyfinService
 from app.services.jellyfin_sync_ops import JellyfinSyncBusyError, execute_jellyfin_sync
 from app.services.metadata import (
@@ -71,11 +72,13 @@ from app.services.quality_filters import (
 )
 from app.services.rule_builder import RuleBuilder
 from app.services.rule_fetch_ops import (
+    refresh_snapshot_release_cache,
     run_rules_fetch_batch,
     run_scheduled_fetch_now,
     schedule_payload,
     update_schedule_settings,
 )
+from app.services.rule_search_snapshots import get_rule_search_snapshot, save_rule_search_snapshot
 from app.services.selective_queue import (
     SelectiveQueueError,
     queue_grouped_search_results,
@@ -104,6 +107,115 @@ templates = Jinja2Templates(
 def _bool_from_form(form: Any, key: str) -> bool:
     value = form.get(key)
     return str(value).lower() in {"1", "true", "on", "yes"}
+
+
+def _normalize_result_identity_text(value: object | None) -> str:
+    return " ".join(str(value or "").strip().casefold().split())
+
+
+def _snapshot_queue_rows(snapshot: object | None) -> list[dict[str, Any]]:
+    inline_search = cast(dict[str, Any], getattr(snapshot, "inline_search", None) or {})
+    rows: list[dict[str, Any]] = []
+    for key in ("raw_results", "fallback_results", "raw_fallback_results", "unified_raw_results"):
+        for item in cast(list[object], inline_search.get(key) or []):
+            if isinstance(item, dict):
+                rows.append(item)
+    return rows
+
+
+def _matching_refreshed_queue_link(
+    refreshed_rows: list[object],
+    *,
+    snapshot_row: dict[str, Any],
+) -> str | None:
+    snapshot_merge_key = str(snapshot_row.get("merge_key") or "").strip()
+    snapshot_guid = str(snapshot_row.get("guid") or "").strip()
+    snapshot_details_url = str(snapshot_row.get("details_url") or "").strip()
+    snapshot_title = _normalize_result_identity_text(snapshot_row.get("title"))
+    snapshot_indexer = _normalize_result_identity_text(snapshot_row.get("indexer"))
+
+    def is_match(candidate: object) -> bool:
+        merge_key = str(getattr(candidate, "merge_key", "") or "").strip()
+        if snapshot_merge_key and merge_key == snapshot_merge_key:
+            return True
+        guid = str(getattr(candidate, "guid", "") or "").strip()
+        if snapshot_guid and guid == snapshot_guid:
+            return True
+        details_url = str(getattr(candidate, "details_url", "") or "").strip()
+        if snapshot_details_url and details_url == snapshot_details_url:
+            return True
+        candidate_title = _normalize_result_identity_text(getattr(candidate, "title", ""))
+        candidate_indexer = _normalize_result_identity_text(getattr(candidate, "indexer", ""))
+        return bool(
+            snapshot_title
+            and snapshot_indexer
+            and candidate_title == snapshot_title
+            and candidate_indexer == snapshot_indexer
+        )
+
+    for item in refreshed_rows:
+        if not is_match(item):
+            continue
+        candidate_link = str(getattr(item, "link", "") or "").strip()
+        if candidate_link:
+            return candidate_link
+    return None
+
+
+def _broken_jackett_download_error(indexer_label: str | None) -> str:
+    label = str(indexer_label or "this Jackett indexer").strip() or "this Jackett indexer"
+    return (
+        f"{label} returned a search result, but Jackett could not produce a downloadable torrent for it. "
+        "This usually means the indexer can search but is not authenticated for downloads in Jackett. "
+        "Re-test or reconfigure that indexer in Jackett, then refresh the rule snapshot and queue again."
+    )
+
+
+def _refresh_stale_rule_queue_link(
+    *,
+    session: Session,
+    settings: AppSettings,
+    rule: Rule | None,
+    stale_link: str,
+) -> tuple[str | None, str | None]:
+    if rule is None:
+        return None, None
+    snapshot = get_rule_search_snapshot(session, rule_id=rule.id)
+    if snapshot is None:
+        return None, None
+    snapshot_row = next(
+        (
+            item
+            for item in _snapshot_queue_rows(snapshot)
+            if str(item.get("link") or "").strip() == str(stale_link or "").strip()
+        ),
+        None,
+    )
+    if snapshot_row is None:
+        return None, None
+    indexer_label = str(snapshot_row.get("indexer") or "").strip() or None
+    jackett = SettingsService.resolve_jackett(settings)
+    if not jackett.api_url or not jackett.api_key:
+        return None, indexer_label
+    payload, ignored_full_regex = build_search_request_from_rule(rule)
+    client = JackettClient(jackett.api_url, jackett.api_key)
+    refreshed_run = client.search(payload)
+    refreshed_link = _matching_refreshed_queue_link(
+        refreshed_run.results,
+        snapshot_row=snapshot_row,
+    )
+    if not refreshed_link or refreshed_link == str(stale_link or "").strip():
+        return None, indexer_label
+    refreshed_snapshot = save_rule_search_snapshot(
+        session,
+        rule_id=rule.id,
+        payload=payload,
+        run=refreshed_run,
+        ignored_full_regex=ignored_full_regex,
+    )
+    refresh_snapshot_release_cache(refreshed_snapshot, rule=rule)
+    session.commit()
+    return refreshed_link, indexer_label
 
 
 def _rule_form_from_posted(form: Any) -> RuleFormPayload:
@@ -136,6 +248,7 @@ def _raw_rule_form_data(form: Any) -> dict[str, Any]:
         "add_paused": _bool_from_form(form, "add_paused"),
         "enabled": _bool_from_form(form, "enabled"),
         "smart_filter": _bool_from_form(form, "smart_filter"),
+        "language": form.get("language", ""),
         "assigned_category": form.get("assigned_category", ""),
         "save_path": form.get("save_path", ""),
         "feed_urls": form.getlist("feed_urls"),
@@ -225,6 +338,13 @@ def _render_rule_form(
     current_media_type = str(
         form_data.get("media_type", MediaType.SERIES.value) or MediaType.SERIES.value
     )
+    resolved_language_feed_urls, language_resolution_notice = _resolve_language_feed_urls(
+        session,
+        language=str(form_data.get("language", "") or ""),
+        selected_urls=cast(list[str], form_data.get("feed_urls", []) or []),
+    )
+    if str(form_data.get("language", "") or "").strip():
+        form_data["feed_urls"] = resolved_language_feed_urls
     form_data.setdefault(
         "metadata_lookup_provider", default_metadata_lookup_provider(current_media_type)
     )
@@ -244,6 +364,8 @@ def _render_rule_form(
         "form_data": form_data,
         "errors": errors,
         "feed_options": [],
+        "language_options": _safe_rule_language_options(session),
+        "language_resolution_notice": language_resolution_notice,
         "settings_form": SettingsService.to_form_dict(settings),
         "quality_choices": quality_profile_choices(),
         "quality_options": quality_option_choices(),
@@ -310,6 +432,22 @@ def _render_settings_page(
         },
         status_code=status_code,
     )
+
+
+def _resolve_rule_payload_feeds(
+    session: Session,
+    payload: RuleFormPayload,
+) -> tuple[RuleFormPayload, str | None]:
+    if not payload.language:
+        return payload, None
+    resolved_feed_urls, resolution_error = _resolve_language_feed_urls(
+        session,
+        language=payload.language,
+        selected_urls=list(payload.feed_urls or []),
+    )
+    if resolution_error:
+        return payload, resolution_error
+    return payload.model_copy(update={"feed_urls": resolved_feed_urls}), None
 
 
 def _render_taxonomy_page(
@@ -414,6 +552,7 @@ def _apply_rule_payload_to_model(
     rule.add_paused = payload.add_paused
     rule.enabled = payload.enabled
     rule.smart_filter = payload.smart_filter
+    rule.language = payload.language
     rule.feed_urls = payload.feed_urls
     rule.notes = payload.notes
     rule.assigned_category = payload.assigned_category
@@ -555,6 +694,7 @@ def queue_search_result(
     if add_paused is None:
         add_paused = settings.default_add_paused
 
+    retryable_stale_link = str(payload.link or "").strip()
     try:
         if len(payload.links or []) > 1:
             queue_result = queue_grouped_search_results(
@@ -589,7 +729,32 @@ def queue_search_result(
                 rule=rule,
             )
     except SelectiveQueueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
+        refreshed_link, _refreshed_indexer_label = _refresh_stale_rule_queue_link(
+            session=session,
+            settings=settings,
+            rule=rule,
+            stale_link=retryable_stale_link,
+        )
+        if refreshed_link:
+            try:
+                queue_result = queue_result_with_optional_file_selection(
+                    qb_base_url=connection.base_url or "",
+                    qb_username=connection.username or "",
+                    qb_password=connection.password or "",
+                    link=refreshed_link,
+                    jackett_api_url=jackett.api_url,
+                    jackett_qb_url=jackett.qb_url,
+                    category=category,
+                    save_path=save_path,
+                    paused=bool(add_paused),
+                    sequential_download=payload.sequential_download,
+                    first_last_piece_prio=payload.first_last_piece_prio,
+                    rule=rule,
+                )
+            except (SelectiveQueueError, QbittorrentClientError) as retry_exc:
+                return JSONResponse({"error": str(retry_exc)}, status_code=400)
+        else:
+            return JSONResponse({"error": str(exc)}, status_code=400)
     except QbittorrentClientError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -944,6 +1109,18 @@ async def create_rule(
         )
 
     settings = SettingsService.get_or_create(session)
+    payload, resolution_error = _resolve_rule_payload_feeds(session, payload)
+    if resolution_error:
+        return _render_rule_form(
+            request,
+            mode="create",
+            session=session,
+            form_data={
+                **raw_form,
+                "feed_urls": list(payload.feed_urls or []),
+            },
+            errors=[resolution_error],
+        )
     remember_feed_defaults = bool(raw_form.get("remember_feed_defaults"))
     rule = Rule()
     _apply_rule_payload_to_model(rule, payload, settings=settings)
@@ -1001,6 +1178,19 @@ async def update_rule(
         )
 
     settings = SettingsService.get_or_create(session)
+    payload, resolution_error = _resolve_rule_payload_feeds(session, payload)
+    if resolution_error:
+        return _render_rule_form(
+            request,
+            mode="edit",
+            session=session,
+            form_data={
+                **raw_form,
+                "feed_urls": list(payload.feed_urls or []),
+            },
+            errors=[resolution_error],
+            rule_id=rule_id,
+        )
     remember_feed_defaults = bool(raw_form.get("remember_feed_defaults"))
     _apply_rule_payload_to_model(rule, payload, settings=settings)
     if remember_feed_defaults:

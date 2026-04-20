@@ -136,6 +136,7 @@ class Rule(Base):
     add_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     smart_filter: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    language: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     assigned_category: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     save_path: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     feed_urls: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)

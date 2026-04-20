@@ -8,6 +8,12 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.1.0] - 2026-04-20
+
+- Added a rule-level language selector that resolves matching Jackett-backed qB RSS feeds under the hood, so qBittorrent RSS auto-downloader scope can now follow the chosen language without manually picking indexers first.
+- Updated the rule form UX to expose live language options discovered from configured Jackett indexers, explain the language-managed feed behavior clearly, and disable manual feed editing while language mode is active.
+- Revalidated the feature with focused route/builder pytest coverage, Ruff on the touched Python surfaces, live local Jackett/qB inspection proving the current `he`/`ru` feed groups, and Playwright captures of the real `/rules/new` form before and after selecting `ru`.
+- Fixed a stale-Jackett-link retry bug in `/api/search/queue` that surfaced during the broader route regression sweep for this release.
 ## [1.0.0] - 2026-04-19
 
 - Removed the native Stremio add-on host, provider-ingestion surface, local-playback route, and Stremio queue bridge from qBittorrent RSS Rules now that addon ownership moved to `jackett-stremio-fork`.

@@ -260,7 +260,12 @@
             {% endif %}
           </td>
           <td>
-            <span class="status-chip status-{{ rule.last_sync_status.value }}">{{ rule.last_sync_status.value }}</span>
+            <div class="rules-sync-cell">
+              <span class="status-chip status-{{ rule.last_sync_status.value }}">{{ rule.last_sync_status.value }}</span>
+              {% if rule.last_sync_status.value == 'error' and rule.last_sync_error %}
+              <p class="rules-sync-error"><strong>Sync failed:</strong> {{ rule.last_sync_error }}</p>
+              {% endif %}
+            </div>
           </td>
           <td>{{ 'Yes' if rule.enabled else 'No' }}</td>
           <td>
@@ -321,6 +326,9 @@
         </div>
         <span class="status-chip status-{{ rule.last_sync_status.value }}">{{ rule.last_sync_status.value }}</span>
       </div>
+      {% if rule.last_sync_status.value == 'error' and rule.last_sync_error %}
+      <p class="rules-sync-error rules-sync-error-card"><strong>Sync failed:</strong> {{ rule.last_sync_error }}</p>
+      {% endif %}
       <dl class="detail-list">
         <div>
           <dt>Release</dt>

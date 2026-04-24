@@ -11,6 +11,21 @@
 - Parallel qB-only follow-up work landed locally on 2026-04-20 without changing the Stremio split scope:
   - rules now expose a language selector that resolves matching Jackett-backed qB RSS feeds under the hood, while the old manual affected-feed checklist remains visible for this release as a compatibility fallback;
   - real local Jackett/qB validation on this machine proved the current configured language groups are `ru` and `he`, and the rule-form browser capture verified the language-managed feed UX on `/rules/new`.
+- A qB-only follow-up hardening patch landed locally on 2026-04-22 without changing the Stremio split scope:
+  - saved-rule active search now keeps the original Jackett-first product boundary when qB RSS feeds are unavailable by falling back from feed-derived scope to Jackett configured-indexer language scope, instead of treating missing live qB feeds as a blocker for language-managed rule search;
+  - focused route regressions now lock both feed-derived scope precedence and the language-to-Jackett-indexer fallback path for inline rule search and the `/search?rule_id=...` workspace flow.
+- A second qB-only hardening patch landed locally on 2026-04-22 without changing the Stremio split scope:
+  - qB RSS feed availability is now treated as the passive rule-subscription module only, so language-managed rule creates/updates no longer fail just because qB is offline or its RSS feed list cannot be read at save time;
+  - same-language edits preserve the previously resolved passive feed URLs when qB feeds are temporarily unavailable, while language changes save the new language intent without reusing stale feed URLs from the old language;
+  - the rule form now keeps saved feed URLs visible during qB feed outages and shows the existing helper-text warning instead of silently blanking the affected-feed list.
+- A focused rules-page sync-error UX patch landed locally on 2026-04-23 without changing phase scope:
+  - rules with qB sync failures now display the stored `last_sync_error` inline in both table and card views, making `sync=error` inspection actionable without opening each rule or retrying sync blindly;
+  - focused verification is green with `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py -k "rules_page" -q` and `.\\.venv\\Scripts\\python.exe -m ruff check tests\\test_routes.py`.
+- A qB-only saved-search filter hardening patch landed locally on 2026-04-24 without changing the Stremio split scope:
+  - same-season rows that are clearly marked as complete/full season packs now remain visible in saved-rule local filtering when the rule is in `jellyfin_search_existing_unseen` mode, even if the explicit episode range ends below the synced watched floor;
+  - the backend-side release-filter cache and the browser-side hidden-row diagnostic now share that exception so relevant upgrade candidates are no longer mislabeled as `Does not match the generated rule pattern.`;
+  - active Jackett searches for keep-searching series rules now derive the primary structured season/episode from watched progress instead of the stored known-episode floor, so the live `The Miniature Wife` rule builds primary requests around `S01E02` rather than `S01E11` and can admit full `S1E1-10` packs into the exact lane when Jackett returns them there;
+  - focused verification is green with `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_rule_fetch_ops.py -k "complete_pack_when_keep_searching_enabled or zero_based_ranges_below_episode_floor" -q`, `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py -k "inline_local_generated_pattern" -q`, `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_rule_builder.py -k "zero_based_ranges or keep_searching_existing_unseen" -q`, `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_jackett.py -k "watched_progress_for_keep_searching_existing or carries_series_episode_floor" -q`, `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py -k "rule_search or inline_search or jackett_search_api or transform" -q`, and `.\\.venv\\Scripts\\python.exe -m ruff check app\\services\\jackett.py tests\\test_jackett.py`.
 - Real-world validation is complete on 2026-04-19, and the local release train is now version-synced to `1.1.0`; git publication is the remaining closeout step.
 
 ## Goal
@@ -106,3 +121,5 @@ Make qBittorrent RSS Rules a qB + sync app again: no native Stremio addon hostin
 2. Bump the release to the next major semver because native addon hosting/configuration was removed.
 3. Publish the release commit and tag after the real-world checks pass.
 4. Publish the now-combined `1.1.0` release train after the Stremio split plus qB rule-language follow-up local validations.
+5. Decide whether the passive qB feed-resolution state now needs its own persisted warning/status field before the next rules UX cleanup slice.
+6. Decide whether the keep-searching watched-progress search floor should remain active-search-only or also influence generated qB RSS rules later.

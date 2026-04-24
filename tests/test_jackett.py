@@ -2695,6 +2695,39 @@ def test_build_search_request_from_rule_carries_series_episode_floor() -> None:
     assert ignored_full_regex is False
 
 
+def test_build_search_request_from_rule_uses_watched_progress_for_keep_searching_existing() -> None:
+    rule = Rule(
+        rule_name="The Miniature Wife",
+        content_name="The Miniature Wife",
+        normalized_title="The Miniature Wife",
+        imdb_id="tt31909098",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=1,
+        start_episode=11,
+        jellyfin_search_existing_unseen=True,
+        jellyfin_watched_episode_numbers=["S01E01", "S01E02"],
+        jellyfin_existing_episode_numbers=[
+            "S01E03",
+            "S01E04",
+            "S01E05",
+            "S01E06",
+            "S01E07",
+            "S01E08",
+            "S01E09",
+            "S01E10",
+        ],
+    )
+
+    payload, ignored_full_regex = build_search_request_from_rule(rule)
+
+    assert payload.query == "The Miniature Wife"
+    assert payload.imdb_id == "tt31909098"
+    assert payload.season_number == 1
+    assert payload.episode_number == 2
+    assert ignored_full_regex is False
+
+
 def test_build_search_request_from_rule_maps_pipe_alternatives_to_any_groups() -> None:
     rule = Rule(
         rule_name="Pipe Terms",

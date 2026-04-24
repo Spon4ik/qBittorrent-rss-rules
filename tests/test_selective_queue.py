@@ -377,6 +377,51 @@ def test_queue_result_with_optional_file_selection_rewrites_jackett_qb_url_for_a
     assert seen_links == ["http://localhost:9117/dl/kinozal/?jackett_apikey=secret&path=abc"]
 
 
+def test_queue_result_with_optional_file_selection_normalizes_unicode_http_url_before_fetch(
+    monkeypatch,
+) -> None:
+    torrent_bytes = _build_multi_file_torrent_bytes("Movie.2025.mkv")
+    seen_links: list[str] = []
+
+    def fake_download(link):
+        seen_links.append(link)
+        return torrent_bytes, "movie-2025.torrent"
+
+    monkeypatch.setattr(
+        "app.services.selective_queue._download_torrent_bytes",
+        fake_download,
+    )
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "add_torrent_file",
+        lambda self, **kwargs: None,
+    )
+
+    result = queue_result_with_optional_file_selection(
+        qb_base_url="http://127.0.0.1:8080",
+        qb_username="admin",
+        qb_password="secret",
+        link=(
+            "http://localhost:9117/dl/kinozal/?jackett_apikey=secret&path=abc"
+            "&file=C%27\u00e9tait+mieux+demain+2025+MVO%2C+Sub+WEBDL+(AVC)+-+RUSSIAN"
+        ),
+        category="",
+        save_path="",
+        paused=True,
+        sequential_download=False,
+        first_last_piece_prio=False,
+        rule=None,
+    )
+
+    assert result.queued_via_torrent_file is True
+    assert seen_links == [
+        (
+            "http://localhost:9117/dl/kinozal/?jackett_apikey=secret&path=abc"
+            "&file=C%27%C3%A9tait%20mieux%20demain%202025%20MVO%2C%20Sub%20WEBDL%20%28AVC%29%20-%20RUSSIAN"
+        )
+    ]
+
+
 def test_queue_result_with_optional_file_selection_uses_redirected_local_jackett_magnet(
     monkeypatch,
 ) -> None:
@@ -419,15 +464,28 @@ def test_queue_result_with_optional_file_selection_allows_local_remote_fetch_whe
     monkeypatch,
 ) -> None:
     queued_links: list[str] = []
+    torrent_snapshots = [
+        [{"hash": "existing"}],
+        [{"hash": "existing"}, {"hash": "new-hash"}],
+    ]
 
     monkeypatch.setattr(
         "app.services.selective_queue._download_torrent_bytes",
         lambda link: (_ for _ in ()).throw(httpx.ReadTimeout("slow jackett")),
     )
     monkeypatch.setattr(
+        "app.services.selective_queue.time.sleep",
+        lambda seconds: None,
+    )
+    monkeypatch.setattr(
         QbittorrentClient,
         "add_torrent_url",
         lambda self, **kwargs: queued_links.append(str(kwargs["link"])),
+    )
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "get_torrents",
+        lambda self: torrent_snapshots.pop(0),
     )
 
     result = queue_result_with_optional_file_selection(
@@ -444,6 +502,61 @@ def test_queue_result_with_optional_file_selection_allows_local_remote_fetch_whe
     )
 
     assert result.queued_via_torrent_file is False
+    assert queued_links == [
+        "http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc"
+    ]
+
+
+def test_queue_result_with_optional_file_selection_reports_when_remote_fetch_materializes_nothing(
+    monkeypatch,
+) -> None:
+    queued_links: list[str] = []
+    torrent_snapshots = [
+        [{"hash": "existing"}],
+        [{"hash": "existing"}],
+        [{"hash": "existing"}],
+        [{"hash": "existing"}],
+        [{"hash": "existing"}],
+        [{"hash": "existing"}],
+        [{"hash": "existing"}],
+    ]
+
+    monkeypatch.setattr(
+        "app.services.selective_queue._download_torrent_bytes",
+        lambda link: (_ for _ in ()).throw(httpx.ReadTimeout("slow jackett")),
+    )
+    monkeypatch.setattr(
+        "app.services.selective_queue.time.sleep",
+        lambda seconds: None,
+    )
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "add_torrent_url",
+        lambda self, **kwargs: queued_links.append(str(kwargs["link"])),
+    )
+    monkeypatch.setattr(
+        QbittorrentClient,
+        "get_torrents",
+        lambda self: torrent_snapshots.pop(0),
+    )
+
+    with pytest.raises(
+        SelectiveQueueError,
+        match="no torrent appeared in the list",
+    ):
+        queue_result_with_optional_file_selection(
+            qb_base_url="http://127.0.0.1:8080",
+            qb_username="admin",
+            qb_password="secret",
+            link="http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc",
+            category="",
+            save_path="",
+            paused=True,
+            sequential_download=False,
+            first_last_piece_prio=False,
+            rule=None,
+        )
+
     assert queued_links == [
         "http://127.0.0.1:9117/dl/kinozal/?jackett_apikey=secret&path=abc"
     ]

@@ -426,6 +426,27 @@ textarea {
   position: relative;
 }
 
+.rules-sync-cell {
+  display: grid;
+  gap: 0.35rem;
+  min-width: min(28rem, 42vw);
+  max-width: 34rem;
+}
+
+.rules-sync-error {
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border-left: 4px solid var(--danger);
+  border-radius: 10px;
+  background: rgba(141, 47, 47, 0.11);
+  color: #5f2020;
+  overflow-wrap: anywhere;
+}
+
+.rules-sync-error-card {
+  margin-top: -0.25rem;
+}
+
 .rules-table [data-rules-row] {
   transition: background 120ms ease;
 }

@@ -170,6 +170,17 @@ def _safe_rule_language_options(session: Session) -> list[dict[str, str]]:
         return []
 
 
+LANGUAGE_FEED_SELECTION_JACKETT_UNAVAILABLE = (
+    "Language-based feed selection needs a working Jackett connection."
+)
+LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE = (
+    "Language-based feed selection needs available qB RSS feeds."
+)
+LANGUAGE_FEED_SELECTION_NO_MATCHING_FEEDS = (
+    "No Jackett-backed qB feeds match the selected language."
+)
+
+
 def _resolve_language_feed_urls(
     session: Session,
     *,
@@ -183,11 +194,11 @@ def _resolve_language_feed_urls(
     settings = SettingsService.get_or_create(session)
     jackett = SettingsService.resolve_jackett(settings)
     if not jackett.app_ready:
-        return [], "Language-based feed selection needs a working Jackett connection."
+        return [], LANGUAGE_FEED_SELECTION_JACKETT_UNAVAILABLE
 
     feed_options = _safe_feed_options(session, selected_urls)
     if not feed_options:
-        return [], "Language-based feed selection needs available qB RSS feeds."
+        return [], LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE
 
     try:
         client = JackettClient(jackett.api_url, jackett.api_key)
@@ -206,8 +217,22 @@ def _resolve_language_feed_urls(
         resolved_feed_urls.append(feed_url)
 
     if not resolved_feed_urls:
-        return [], "No Jackett-backed qB feeds match the selected language."
+        return [], LANGUAGE_FEED_SELECTION_NO_MATCHING_FEEDS
     return _normalize_feed_url_list(resolved_feed_urls), None
+
+
+def _resolved_rule_form_feed_urls(
+    form_feed_urls: list[str] | None,
+    *,
+    language: str | None,
+    resolved_language_feed_urls: list[str],
+    language_resolution_notice: str | None,
+) -> list[str]:
+    if not str(language or "").strip():
+        return _normalize_feed_url_list(form_feed_urls)
+    if language_resolution_notice == LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE:
+        return _normalize_feed_url_list(form_feed_urls)
+    return _normalize_feed_url_list(resolved_language_feed_urls)
 
 
 def _backfill_missing_rule_posters(
@@ -704,6 +729,81 @@ def _apply_rule_feed_scope(
     )
 
 
+def _apply_rule_search_scope(
+    session: Session,
+    payload: JackettSearchRequest,
+    rule: Rule,
+    *,
+    feed_urls_override: list[str] | None = None,
+) -> tuple[JackettSearchRequest, str | None]:
+    scoped_payload, feed_scope_notice = _apply_rule_feed_scope(
+        payload,
+        rule,
+        feed_urls_override=feed_urls_override,
+    )
+
+    notices: list[str] = []
+    if feed_scope_notice:
+        notices.append(feed_scope_notice)
+
+    normalized_language = str(getattr(rule, "language", "") or "").strip().casefold()
+    if not normalized_language:
+        return scoped_payload, " ".join(notices) if notices else None
+
+    settings = SettingsService.get_or_create(session)
+    jackett = SettingsService.resolve_jackett(settings)
+    if not jackett.app_ready:
+        return scoped_payload, " ".join(notices) if notices else None
+
+    try:
+        client = JackettClient(jackett.api_url, jackett.api_key)
+        language_map = client.configured_indexer_languages()
+    except JackettClientError:
+        return scoped_payload, " ".join(notices) if notices else None
+
+    matching_indexers = sorted(
+        indexer
+        for indexer, languages in language_map.items()
+        if normalized_language in {str(code).strip().casefold() for code in languages}
+    )
+    if not matching_indexers:
+        return scoped_payload, " ".join(notices) if notices else None
+
+    if len(matching_indexers) == 1:
+        scoped_indexer = matching_indexers[0]
+        notices.append(
+            "Search scoped to Jackett indexer from the saved rule language "
+            f"({normalized_language}): {scoped_indexer}."
+        )
+        return (
+            scoped_payload.model_copy(
+                update={
+                    "indexer": scoped_indexer,
+                    "filter_indexers": [scoped_indexer],
+                }
+            ),
+            " ".join(notices),
+        )
+
+    merged_filter_indexers = _merge_search_terms(
+        list(scoped_payload.filter_indexers or []),
+        matching_indexers,
+    )
+    notices.append(
+        "Search scoped to Jackett indexers from the saved rule language "
+        f"({normalized_language}): {', '.join(matching_indexers)}."
+    )
+    return (
+        scoped_payload.model_copy(
+            update={
+                "indexer": "all",
+                "filter_indexers": merged_filter_indexers,
+            }
+        ),
+        " ".join(notices),
+    )
+
+
 def _is_placeholder_category_label(value: object | None) -> bool:
     return bool(PLACEHOLDER_CATEGORY_LABEL_RE.match(str(value or "").strip()))
 
@@ -1140,7 +1240,8 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                             _prefill_rule_search_form_data(form_data, source_rule)
                             errors = ["Saved rule could not be converted into a Jackett search."]
             if payload_from_rule is not None:
-                payload_from_rule, feed_scope_notice = _apply_rule_feed_scope(
+                payload_from_rule, feed_scope_notice = _apply_rule_search_scope(
+                    session,
                     payload_from_rule, source_rule
                 )
                 if feed_scope_notice:
@@ -1465,8 +1566,12 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
         language=str(form_data.get("language", "") or ""),
         selected_urls=list(cast(list[str], form_data.get("feed_urls", []) or [])),
     )
-    if str(form_data.get("language", "") or "").strip():
-        form_data["feed_urls"] = resolved_language_feed_urls
+    form_data["feed_urls"] = _resolved_rule_form_feed_urls(
+        cast(list[str], form_data.get("feed_urls", []) or []),
+        language=str(form_data.get("language", "") or ""),
+        resolved_language_feed_urls=resolved_language_feed_urls,
+        language_resolution_notice=language_resolution_notice,
+    )
     context.update(
         {
             "mode": "create",
@@ -1579,8 +1684,12 @@ def edit_rule(
         language=str(form_data.get("language", "") or ""),
         selected_urls=list(cast(list[str], form_data.get("feed_urls", []) or [])),
     )
-    if str(form_data.get("language", "") or "").strip():
-        form_data["feed_urls"] = resolved_language_feed_urls
+    form_data["feed_urls"] = _resolved_rule_form_feed_urls(
+        cast(list[str], form_data.get("feed_urls", []) or []),
+        language=str(form_data.get("language", "") or ""),
+        resolved_language_feed_urls=resolved_language_feed_urls,
+        language_resolution_notice=language_resolution_notice,
+    )
     inline_search_view_defaults = {
         "view_mode": "table",
         "sort_criteria": normalize_search_sort_criteria(settings.search_sort_criteria),
@@ -1668,7 +1777,8 @@ def edit_rule(
                     "Rule could not be converted into a Jackett search payload."
                 ]
             else:
-                payload_from_rule, feed_scope_notice = _apply_rule_feed_scope(
+                payload_from_rule, feed_scope_notice = _apply_rule_search_scope(
+                    session,
                     payload_from_rule,
                     rule,
                     feed_urls_override=(

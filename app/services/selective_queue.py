@@ -9,7 +9,16 @@ import time
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
-from urllib.parse import SplitResult, parse_qs, quote, urljoin, urlsplit, urlunsplit
+from urllib.parse import (
+    SplitResult,
+    parse_qs,
+    parse_qsl,
+    quote,
+    urlencode,
+    urljoin,
+    urlsplit,
+    urlunsplit,
+)
 
 import httpx
 
@@ -73,6 +82,10 @@ class QueueResult:
     skipped_file_count: int = 0
     deferred_file_selection: bool = False
     queued_via_torrent_file: bool = False
+
+
+REMOTE_URL_ADD_VERIFY_ATTEMPTS = 6
+REMOTE_URL_ADD_VERIFY_INTERVAL_SECONDS = 0.5
 
 
 def find_episode_file_entry(
@@ -279,10 +292,12 @@ def queue_result_with_optional_file_selection(
 ) -> QueueResult:
     selection_plan = build_episode_file_selection_plan(rule) if rule is not None else None
     magnet_info_hash = parse_magnet_info_hash(link)
-    effective_link = _rewrite_jackett_download_link_for_app_fetch(
-        link,
-        app_base_url=jackett_api_url,
-        qb_base_url=jackett_qb_url,
+    effective_link = _normalize_http_url(
+        _rewrite_jackett_download_link_for_app_fetch(
+            link,
+            app_base_url=jackett_api_url,
+            qb_base_url=jackett_qb_url,
+        )
     )
     if magnet_info_hash is None and _should_require_app_side_torrent_fetch(effective_link):
         redirected_magnet_link = _resolve_local_jackett_redirect_magnet_link(effective_link)
@@ -322,20 +337,25 @@ def queue_result_with_optional_file_selection(
 
     if selection_plan is None:
         with QbittorrentClient(qb_base_url, qb_username, qb_password) as client:
-            client.add_torrent_url(
-                link=link,
+            _add_torrent_url_with_optional_verification(
+                client,
+                link=_normalize_http_url(link),
                 category=category,
                 save_path=save_path,
                 paused=paused,
                 sequential_download=sequential_download,
                 first_last_piece_prio=first_last_piece_prio,
+                verify_materialization=(
+                    _should_require_app_side_torrent_fetch(effective_link)
+                    and _can_qb_remote_fetch_local_url(effective_link, qb_base_url=qb_base_url)
+                ),
             )
         return QueueResult()
 
     if magnet_info_hash:
         with QbittorrentClient(qb_base_url, qb_username, qb_password) as client:
             client.add_torrent_url(
-                link=link,
+                link=_normalize_http_url(link),
                 category=category,
                 save_path=save_path,
                 paused=paused,
@@ -369,13 +389,18 @@ def queue_result_with_optional_file_selection(
                     "so the app did not hand it off to qBittorrent for remote fetching."
                 ) from exc
         with QbittorrentClient(qb_base_url, qb_username, qb_password) as client:
-            client.add_torrent_url(
+            _add_torrent_url_with_optional_verification(
+                client,
                 link=link,
                 category=category,
                 save_path=save_path,
                 paused=paused,
                 sequential_download=sequential_download,
                 first_last_piece_prio=first_last_piece_prio,
+                verify_materialization=(
+                    _should_require_app_side_torrent_fetch(effective_link)
+                    and _can_qb_remote_fetch_local_url(effective_link, qb_base_url=qb_base_url)
+                ),
             )
         return QueueResult(
             message=(
@@ -450,10 +475,12 @@ def _inspect_same_hash_link(
         return magnet_info_hash, _tracker_urls_from_magnet(link)
     try:
         torrent_bytes, source_name = _download_torrent_bytes(
-            _rewrite_jackett_download_link_for_app_fetch(
-                link,
-                app_base_url=jackett_api_url,
-                qb_base_url=jackett_qb_url,
+            _normalize_http_url(
+                _rewrite_jackett_download_link_for_app_fetch(
+                    link,
+                    app_base_url=jackett_api_url,
+                    qb_base_url=jackett_qb_url,
+                )
             )
         )
         parsed_torrent = parse_torrent_info(torrent_bytes, source_name=source_name)
@@ -698,7 +725,7 @@ def _normalize_qb_torrent_files(payload: list[dict[str, object]]) -> list[Torren
 def _download_torrent_bytes(link: str) -> tuple[bytes, str]:
     timeout = get_environment_settings().request_timeout
     with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-        response = client.get(link)
+        response = client.get(_normalize_http_url(link))
         response.raise_for_status()
         final_name = (
             PurePosixPath(response.url.path).name
@@ -708,8 +735,50 @@ def _download_torrent_bytes(link: str) -> tuple[bytes, str]:
         return response.content, final_name
 
 
+def _add_torrent_url_with_optional_verification(
+    client: QbittorrentClient,
+    *,
+    link: str,
+    category: str,
+    save_path: str,
+    paused: bool,
+    sequential_download: bool,
+    first_last_piece_prio: bool,
+    verify_materialization: bool,
+) -> None:
+    existing_hashes = _current_qb_hashes(client) if verify_materialization else set()
+    client.add_torrent_url(
+        link=link,
+        category=category,
+        save_path=save_path,
+        paused=paused,
+        sequential_download=sequential_download,
+        first_last_piece_prio=first_last_piece_prio,
+    )
+    if not verify_materialization:
+        return
+    for attempt in range(REMOTE_URL_ADD_VERIFY_ATTEMPTS):
+        current_hashes = _current_qb_hashes(client)
+        if current_hashes - existing_hashes:
+            return
+        if attempt + 1 < REMOTE_URL_ADD_VERIFY_ATTEMPTS:
+            time.sleep(REMOTE_URL_ADD_VERIFY_INTERVAL_SECONDS)
+    raise SelectiveQueueError(
+        "qBittorrent accepted the remote URL fetch request, but no torrent appeared in the list."
+    )
+
+
+def _current_qb_hashes(client: QbittorrentClient) -> set[str]:
+    hashes: set[str] = set()
+    for item in client.get_torrents():
+        value = str(item.get("hash") or "").strip().casefold()
+        if value:
+            hashes.add(value)
+    return hashes
+
+
 def _resolve_local_jackett_redirect_magnet_link(link: str) -> str | None:
-    current_link = str(link or "").strip()
+    current_link = _normalize_http_url(link)
     parsed = urlsplit(current_link)
     if parsed.scheme.casefold() not in {"http", "https"}:
         return None
@@ -726,7 +795,7 @@ def _resolve_local_jackett_redirect_magnet_link(link: str) -> str | None:
                     return None
                 if parse_magnet_info_hash(location):
                     return location
-                next_link = urljoin(current_link, location)
+                next_link = _normalize_http_url(urljoin(current_link, location))
                 next_parsed = urlsplit(next_link)
                 if next_parsed.scheme.casefold() not in {"http", "https"}:
                     return None
@@ -794,6 +863,34 @@ def _rewrite_jackett_download_link_for_app_fetch(
         cleaned_link,
         source_base=cleaned_qb_base,
         target_base=cleaned_app_base,
+    )
+
+
+def _normalize_http_url(link: str) -> str:
+    cleaned_link = str(link or "").strip()
+    if not cleaned_link:
+        return cleaned_link
+    parsed = urlsplit(cleaned_link)
+    if parsed.scheme.casefold() not in {"http", "https"}:
+        return cleaned_link
+
+    normalized_path = quote(parsed.path, safe="/%:@!$&'()*+,;=-._~")
+    query_items = parse_qsl(parsed.query, keep_blank_values=True)
+    normalized_query = urlencode(
+        query_items,
+        doseq=True,
+        quote_via=quote,
+        safe=":%/@-._~",
+    )
+    normalized_fragment = quote(parsed.fragment, safe=":%/@-._~")
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            normalized_path,
+            normalized_query,
+            normalized_fragment,
+        )
     )
 
 

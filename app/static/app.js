@@ -1726,6 +1726,7 @@ function initSearchPage(container) {
       manualMustContain: String(mustContainOverrideInput?.value || "").trim(),
       startSeason: normalizeBoundedPositiveInt(startSeasonInput?.value || "", { min: 1, max: 99 }),
       startEpisode: normalizeBoundedPositiveInt(startEpisodeInput?.value || "", { min: 0, max: 99 }),
+      keepSearchingExisting: getJellyfinSearchExistingUnseen(),
       sizeMinMb: parseSearchMb(sizeMinInput?.value || ""),
       sizeMaxMb: parseSearchMb(sizeMaxInput?.value || ""),
       feedScopeBlocksAll,
@@ -2225,6 +2226,7 @@ function initSearchPage(container) {
     "x265",
     "xmas",
   ]);
+  const SEASON_PACK_COMPLETE_MARKER_RE = /\b(?:complete|full(?:\s+season)?|season\s+pack|полный)\b/iu;
   const YEAR_TOKEN_RE = /^\d{4}$/u;
   const SEASON_TOKEN_RE = /^s0*\d{1,2}$/u;
   const EPISODE_TOKEN_RE = /^e0*\d{1,3}$/u;
@@ -2286,6 +2288,24 @@ function initSearchPage(container) {
     return buildPreciseTitleSegments(title).some((segment) => (
       segmentMatchesPreciseTitleIdentity(segment, queryValue)
     ));
+  };
+  const isSameSeasonCompletePackAllowed = (entry, filters) => {
+    if (!filters.keepSearchingExisting) {
+      return false;
+    }
+    const startSeason = Number(filters.startSeason);
+    if (!Number.isFinite(startSeason) || startSeason < 0) {
+      return false;
+    }
+    const regexSurface = String(entry.regexSurface || entry.title || entry.textSurface || "").trim();
+    if (!regexSurface || !SEASON_PACK_COMPLETE_MARKER_RE.test(regexSurface)) {
+      return false;
+    }
+    const seasonPattern = new RegExp(
+      `(?:s(?:eason)?[\\s._:-]*0*${startSeason}(?!\\d)|0*${startSeason}x0*\\d{1,3})`,
+      "iu"
+    );
+    return seasonPattern.test(regexSurface);
   };
 
   const groupLabel = (group) => group.map((item) => String(item || "").trim()).filter(Boolean).join(" | ");
@@ -2351,7 +2371,9 @@ function initSearchPage(container) {
       return "Matched an excluded quality tag.";
     }
     if (!isPrecisePrimaryRow && filters.generatedPatternRegex && !filters.generatedPatternRegex.test(entry.regexSurface)) {
-      return "Does not match the generated rule pattern.";
+      if (!isSameSeasonCompletePackAllowed(entry, filters)) {
+        return "Does not match the generated rule pattern.";
+      }
     }
 
     if (filters.releaseYear) {

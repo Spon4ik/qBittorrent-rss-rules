@@ -29,6 +29,7 @@ from app.services.rule_builder import (
     parse_manual_must_contain_additions,
 )
 from app.services.selective_queue import text_matches_episode
+from app.services.watch_state import latest_watch_state_episode_tuple
 
 
 class JackettClientError(RuntimeError):
@@ -1298,6 +1299,16 @@ def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, Any], bool]:
     media_type = _coerce_media_type(rule.media_type)
     rule_start_season = getattr(rule, "start_season", None)
     rule_start_episode = getattr(rule, "start_episode", None)
+    search_season = rule_start_season
+    search_episode = rule_start_episode
+    if media_type == MediaType.SERIES and bool(
+        getattr(rule, "jellyfin_search_existing_unseen", False)
+    ):
+        watched_floor = latest_watch_state_episode_tuple(
+            list(getattr(rule, "jellyfin_watched_episode_numbers", []) or [])
+        )
+        if watched_floor is not None:
+            search_season, search_episode = watched_floor
     keywords_all: list[str] = []
     keywords_any_groups: list[list[str]] = []
     primary_keywords_all: list[str] = []
@@ -1352,13 +1363,13 @@ def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, Any], bool]:
             "media_type": media_type,
             "imdb_id": _coerce_text(rule.imdb_id) or None,
             "season_number": (
-                int(cast(int, rule_start_season))
-                if media_type == MediaType.SERIES and rule_start_season is not None
+                int(cast(int, search_season))
+                if media_type == MediaType.SERIES and search_season is not None
                 else None
             ),
             "episode_number": (
-                int(cast(int, rule_start_episode))
-                if media_type == MediaType.SERIES and rule_start_episode is not None
+                int(cast(int, search_episode))
+                if media_type == MediaType.SERIES and search_episode is not None
                 else None
             ),
             "release_year": (

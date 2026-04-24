@@ -141,3 +141,42 @@ def test_rule_local_filter_excludes_zero_based_ranges_below_episode_floor() -> N
         )
         == 1
     )
+
+
+def test_rule_local_filter_keeps_same_season_complete_pack_when_keep_searching_enabled() -> None:
+    rule = Rule(
+        rule_name="The Miniature Wife",
+        content_name="The Miniature Wife",
+        normalized_title="The Miniature Wife",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=1,
+        start_episode=11,
+        jellyfin_search_existing_unseen=True,
+        jellyfin_existing_episode_numbers=[
+            "S01E03",
+            "S01E04",
+            "S01E05",
+            "S01E06",
+            "S01E07",
+            "S01E08",
+            "S01E09",
+            "S01E10",
+        ],
+    )
+
+    complete_pack_title = (
+        "Миниатюрная жена (The Miniature Wife)S1E01-10 (HD 1080p WEBRip) Полный S1"
+    )
+    assert (
+        _rule_local_filtered_count_from_rows(
+            rule,
+            [
+                {
+                    "title": complete_pack_title,
+                    "text_surface": complete_pack_title.lower(),
+                }
+            ],
+        )
+        == 1
+    )

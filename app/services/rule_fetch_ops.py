@@ -59,6 +59,13 @@ MIN_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 5
 MAX_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 10080
 _RULE_FETCH_RUN_LOCK = threading.Lock()
 INDEXER_KEY_STRIP_RE = re.compile(r"[^a-z0-9]+")
+SEASON_PACK_COMPLETE_MARKER_RE = re.compile(
+    r"\b(?:complete|full(?:\s+season)?|season\s+pack|полный)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+SEASON_PACK_CURRENT_SEASON_RE_TEMPLATE = (
+    r"(?:s(?:eason)?[\s._:-]*0*{season}(?!\d)|0*{season}x0*\d{{1,3}})"
+)
 
 
 def normalize_schedule_scope(value: object | None) -> str:
@@ -253,6 +260,28 @@ def _dedupe_terms(terms: list[str]) -> list[str]:
     return deduped
 
 
+def _same_season_complete_pack_allowed(row: dict[str, Any], state: dict[str, Any]) -> bool:
+    if not bool(state.get("keep_searching_existing")):
+        return False
+    start_season = state.get("start_season")
+    if start_season is None:
+        return False
+    regex_surface = str(row.get("title") or row.get("text_surface") or "").strip()
+    if not regex_surface or not SEASON_PACK_COMPLETE_MARKER_RE.search(regex_surface):
+        return False
+    try:
+        season_number = int(str(start_season).strip())
+    except (TypeError, ValueError):
+        return False
+    if season_number < 0:
+        return False
+    season_pattern = re.compile(
+        SEASON_PACK_CURRENT_SEASON_RE_TEMPLATE.format(season=season_number),
+        re.IGNORECASE | re.UNICODE,
+    )
+    return season_pattern.search(regex_surface) is not None
+
+
 def _rule_local_generated_pattern(rule: Rule) -> str:
     manual_must_contain = str(rule.must_contain_override or "").strip()
     has_episode_floor = rule.start_season is not None and rule.start_episode is not None
@@ -348,6 +377,8 @@ def _rule_local_filter_state(rule: Rule) -> dict[str, Any]:
         "release_year": release_year,
         "feed_scope_blocks_all": feed_scope_blocks_all,
         "allowed_feed_indexer_keys": allowed_feed_indexer_keys,
+        "keep_searching_existing": bool(getattr(rule, "jellyfin_search_existing_unseen", False)),
+        "start_season": rule.start_season,
     }
 
 
@@ -409,7 +440,10 @@ def _snapshot_row_matches_rule_filters(row: dict[str, Any], state: dict[str, Any
 
     generated_pattern = state.get("generated_pattern")
     if generated_pattern is not None and not generated_pattern.search(regex_surface):
-        return False
+        if _same_season_complete_pack_allowed(row, state):
+            pass
+        else:
+            return False
 
     release_year = str(state.get("release_year") or "").strip()
     if release_year:

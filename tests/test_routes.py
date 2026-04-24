@@ -240,6 +240,27 @@ def test_rules_page_renders_release_status_from_snapshots(app_client, db_session
     assert "0 / 1" in response.text
 
 
+def test_rules_page_renders_sync_error_details(app_client, db_session) -> None:
+    rule = Rule(
+        rule_name="Rule With Sync Error",
+        content_name="Rule With Sync Error",
+        normalized_title="Rule With Sync Error",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/sync-error/results/torznab/api"],
+        last_sync_status=SyncStatus.ERROR,
+        last_sync_error="qBittorrent rejected the RSS rule: invalid episode filter",
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    response = app_client.get("/")
+
+    assert response.status_code == 200
+    assert "Sync failed" in response.text
+    assert "qBittorrent rejected the RSS rule: invalid episode filter" in response.text
+
+
 def test_rules_page_renders_exact_status_from_snapshots(app_client, db_session) -> None:
     exact_rule = Rule(
         rule_name="Exact Rule",
@@ -728,6 +749,16 @@ console.log(JSON.stringify({{
     assert payload["local"].startswith("(?i)^")
     assert payload["leakedMatches"] is False
     assert payload["allowedMatches"] is True
+
+
+def test_inline_local_generated_pattern_keeps_same_season_complete_pack_when_keep_searching_enabled() -> None:
+    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+    app_js_source = app_js_path.read_text(encoding="utf-8")
+
+    assert "const isSameSeasonCompletePackAllowed = (entry, filters) => {" in app_js_source
+    assert "SEASON_PACK_COMPLETE_MARKER_RE" in app_js_source
+    assert "keepSearchingExisting: getJellyfinSearchExistingUnseen()," in app_js_source
+    assert "if (!isSameSeasonCompletePackAllowed(entry, filters)) {" in app_js_source
 
 
 def test_inline_clear_local_filters_resets_regex_and_episode_floor_inputs() -> None:
@@ -2712,6 +2743,108 @@ def test_edit_rule_inline_search_warns_when_feed_scope_not_derivable(
     )
 
 
+def test_edit_rule_inline_search_falls_back_to_language_indexer_scope_when_feed_scope_missing(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett:9117",
+        jackett_api_key_encrypted=obfuscate_secret("api-key"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Language Scope Fallback",
+        content_name="Language Scope Fallback",
+        normalized_title="Language Scope Fallback",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        language="ru",
+        feed_urls=["http://feed.example/not-jackett"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        assert payload.indexer == "rutracker"
+        assert payload.filter_indexers == ["rutracker"]
+        return JackettSearchRun(
+            request_variants=['t=tvsearch indexer="rutracker" q="Language Scope Fallback"'],
+            results=[],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "enrich_result_category_labels", lambda self, results: None)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", lambda self: {})
+    monkeypatch.setattr(
+        JackettClient,
+        "configured_indexer_languages",
+        lambda self: {"rutracker": ["ru"], "fuzer": ["he"]},
+    )
+
+    response = app_client.get(f"/rules/{rule.id}", params={"run_search": "1"})
+
+    assert response.status_code == 200
+    assert (
+        "Affected feeds could not be mapped to Jackett indexers; using default indexer scope."
+        in response.text
+    )
+    assert (
+        "Search scoped to Jackett indexer from the saved rule language (ru): rutracker."
+        in response.text
+    )
+
+
+def test_rule_search_workspace_falls_back_to_language_indexer_scope_when_qb_feeds_are_unavailable(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett:9117",
+        jackett_api_key_encrypted=obfuscate_secret("api-key"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Workspace Language Scope",
+        content_name="Workspace Language Scope",
+        normalized_title="Workspace Language Scope",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        language="ru",
+        feed_urls=[],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        assert payload.indexer == "rutracker"
+        assert payload.filter_indexers == ["rutracker"]
+        return JackettSearchRun(
+            request_variants=['t=tvsearch indexer="rutracker" q="Workspace Language Scope"'],
+            results=[],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "enrich_result_category_labels", lambda self, results: None)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", lambda self: {})
+    monkeypatch.setattr(
+        JackettClient,
+        "configured_indexer_languages",
+        lambda self: {"rutracker": ["ru"], "fuzer": ["he"]},
+    )
+
+    response = app_client.get("/search", params={"rule_id": rule.id})
+
+    assert response.status_code == 200
+    assert (
+        "Search scoped to Jackett indexer from the saved rule language (ru): rutracker."
+        in response.text
+    )
+
+
 def test_jackett_search_api_returns_results(app_client, monkeypatch) -> None:
     def fake_search(self, payload):
         assert payload.indexer == "all"
@@ -4540,6 +4673,179 @@ def test_create_rule_with_language_and_no_matching_feeds_returns_error(
     assert "No Jackett-backed qB feeds match the selected language." in response.text
 
 
+def test_create_rule_with_language_saves_when_qb_feeds_are_unavailable(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_qb_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    monkeypatch.setattr(QbittorrentClient, "get_feeds", lambda self: [])
+    monkeypatch.setattr(
+        SyncService,
+        "sync_rule",
+        lambda self, rule_id: SyncResult(
+            success=True,
+            action="create",
+            rule_id=rule_id,
+            rule_name="Rule Without qB Feeds",
+            message="ok",
+        ),
+    )
+
+    response = app_client.post(
+        "/api/rules",
+        data={
+            "rule_name": "Rule Without qB Feeds",
+            "content_name": "Rule Without qB Feeds",
+            "normalized_title": "Rule Without qB Feeds",
+            "imdb_id": "tt7654001",
+            "media_type": "series",
+            "quality_profile": "plain",
+            "enabled": "on",
+            "add_paused": "on",
+            "language": "ru",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    saved_rule = db_session.scalar(select(Rule).where(Rule.rule_name == "Rule Without qB Feeds"))
+    assert saved_rule is not None
+    assert saved_rule.language == "ru"
+    assert saved_rule.feed_urls == []
+
+
+def test_update_rule_with_language_preserves_saved_feeds_when_qb_feeds_are_unavailable(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_qb_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Existing Language Rule",
+        content_name="Existing Language Rule",
+        normalized_title="Existing Language Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        language="ru",
+        feed_urls=[
+            "http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc"
+        ],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    monkeypatch.setattr(QbittorrentClient, "get_feeds", lambda self: [])
+    monkeypatch.setattr(
+        SyncService,
+        "sync_rule",
+        lambda self, rule_id: SyncResult(
+            success=True,
+            action="update",
+            rule_id=rule_id,
+            rule_name="Existing Language Rule",
+            message="ok",
+        ),
+    )
+
+    response = app_client.post(
+        f"/api/rules/{rule.id}",
+        data={
+            "rule_name": "Existing Language Rule",
+            "content_name": "Existing Language Rule",
+            "normalized_title": "Existing Language Rule Updated",
+            "imdb_id": "tt7654321",
+            "media_type": "series",
+            "quality_profile": "plain",
+            "enabled": "on",
+            "add_paused": "on",
+            "language": "ru",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.expire_all()
+    refreshed_rule = db_session.get(Rule, rule.id)
+    assert refreshed_rule is not None
+    assert refreshed_rule.normalized_title == "Existing Language Rule Updated"
+    assert refreshed_rule.feed_urls == [
+        "http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc"
+    ]
+
+
+def test_update_rule_with_new_language_saves_when_qb_feeds_are_unavailable(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_qb_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Language Change Rule",
+        content_name="Language Change Rule",
+        normalized_title="Language Change Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        language="he",
+        feed_urls=[
+            "http://jackett.test/api/v2.0/indexers/fuzer/results/torznab/api?apikey=abc"
+        ],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    monkeypatch.setattr(QbittorrentClient, "get_feeds", lambda self: [])
+    monkeypatch.setattr(
+        SyncService,
+        "sync_rule",
+        lambda self, rule_id: SyncResult(
+            success=True,
+            action="update",
+            rule_id=rule_id,
+            rule_name="Language Change Rule",
+            message="ok",
+        ),
+    )
+
+    response = app_client.post(
+        f"/api/rules/{rule.id}",
+        data={
+            "rule_name": "Language Change Rule",
+            "content_name": "Language Change Rule",
+            "normalized_title": "Language Change Rule Updated",
+            "imdb_id": "tt7654002",
+            "media_type": "series",
+            "quality_profile": "plain",
+            "enabled": "on",
+            "add_paused": "on",
+            "language": "ru",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.expire_all()
+    refreshed_rule = db_session.get(Rule, rule.id)
+    assert refreshed_rule is not None
+    assert refreshed_rule.language == "ru"
+    assert refreshed_rule.normalized_title == "Language Change Rule Updated"
+    assert refreshed_rule.feed_urls == []
+
+
 def test_edit_rule_defaults_to_remembering_selected_feeds(app_client, db_session) -> None:
     rule = Rule(
         rule_name="Rule Remember Toggle",
@@ -4686,3 +4992,45 @@ def test_edit_rule_disables_manual_feed_checkboxes_when_language_is_active(
     assert 'value="ru" selected' in response.text
     assert 'name="feed_urls"' in response.text
     assert 'disabled' in response.text
+
+
+def test_edit_rule_keeps_saved_feed_list_visible_when_qb_feeds_are_unavailable(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_qb_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Visible Saved Feed Rule",
+        content_name="Visible Saved Feed Rule",
+        normalized_title="Visible Saved Feed Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        language="ru",
+        feed_urls=[
+            "http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc"
+        ],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    monkeypatch.setattr(QbittorrentClient, "get_feeds", lambda self: [])
+    monkeypatch.setattr(
+        JackettClient,
+        "configured_language_options",
+        lambda self: [{"value": "ru", "label": "Russian"}],
+    )
+
+    response = app_client.get(f"/rules/{rule.id}")
+
+    assert response.status_code == 200
+    assert "Language-based feed selection needs available qB RSS feeds." in response.text
+    assert (
+        'type="checkbox" name="feed_urls" '
+        'value="http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc" checked'
+        in response.text
+    )

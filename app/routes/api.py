@@ -20,7 +20,11 @@ from app.models import (
     media_type_choices,
     media_type_label,
 )
-from app.routes.pages import _resolve_language_feed_urls, _safe_rule_language_options
+from app.routes.pages import (
+    LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE,
+    _resolve_language_feed_urls,
+    _safe_rule_language_options,
+)
 from app.schemas import (
     FilterProfileSaveRequest,
     ImportMode,
@@ -437,6 +441,8 @@ def _render_settings_page(
 def _resolve_rule_payload_feeds(
     session: Session,
     payload: RuleFormPayload,
+    *,
+    existing_rule: Rule | None = None,
 ) -> tuple[RuleFormPayload, str | None]:
     if not payload.language:
         return payload, None
@@ -446,6 +452,21 @@ def _resolve_rule_payload_feeds(
         selected_urls=list(payload.feed_urls or []),
     )
     if resolution_error:
+        if (
+            resolution_error == LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE
+            and existing_rule is not None
+            and str(getattr(existing_rule, "language", "") or "").strip().casefold()
+            == str(payload.language or "").strip().casefold()
+            and list(getattr(existing_rule, "feed_urls", []) or [])
+        ):
+            return (
+                payload.model_copy(
+                    update={"feed_urls": list(getattr(existing_rule, "feed_urls", []) or [])}
+                ),
+                None,
+            )
+        if resolution_error == LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE:
+            return payload.model_copy(update={"feed_urls": []}), None
         return payload, resolution_error
     return payload.model_copy(update={"feed_urls": resolved_feed_urls}), None
 
@@ -1178,7 +1199,11 @@ async def update_rule(
         )
 
     settings = SettingsService.get_or_create(session)
-    payload, resolution_error = _resolve_rule_payload_feeds(session, payload)
+    payload, resolution_error = _resolve_rule_payload_feeds(
+        session,
+        payload,
+        existing_rule=rule,
+    )
     if resolution_error:
         return _render_rule_form(
             request,

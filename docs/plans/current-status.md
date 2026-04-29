@@ -23,6 +23,13 @@
 
 ## Implemented
 
+- Fixed the `v1.1.1` Stremio sync and quality-filter patch on 2026-04-29:
+  - updated `app/services/stremio.py` so local Stremio auth discovery extracts the real `auth.key`, keeps all discovered LevelDB auth keys in newest-first order, and retries older local sessions when the newest key fails with `Session does not exist`;
+  - updated `app/services/quality_filters.py`, `app/data/quality_taxonomy.json`, and `app/static/app.js` so quality/source tags match release-token boundaries instead of ordinary title substrings, while keeping real tags such as `HDCAM`, `CAMRip`, and `HDTS` detectable;
+  - fixed the language-managed edit-form feed warning path in `app/routes/pages.py` so saved feeds remain visible while the qB-feeds-unavailable warning is still shown;
+  - synchronized the patch release touchpoints to `1.1.1` (`pyproject.toml`, `app/main.py`, `QbRssRulesDesktop/Views/MainPage.xaml.cs`, `tests/test_routes.py`, `CHANGELOG.md`);
+  - validated with focused pytest/mypy/ruff checks, `cmd /c scripts\\check.bat` (`329 passed`), `cmd /c scripts\\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)` after stopping a stale desktop process), live `/health` on `http://127.0.0.1:8000` reporting `app_version=1.1.1`, and a real Stremio sync against local desktop storage completing for `159 active title(s)` with `0 errors`.
+
 - Relaxed local hidden-row filtering for same-season complete packs on 2026-04-24 so saved-rule search can keep useful upgrade candidates visible when a series rule is set to continue searching after synced progress:
   - updated `app/services/rule_fetch_ops.py` so the backend-side local release filter no longer rejects a same-season row solely because the generated episode-floor regex stops at the current floor, as long as the rule is in `jellyfin_search_existing_unseen` mode and the title is clearly marked as a complete/full season pack;
   - updated `app/static/app.js` so the browser-side hidden-row diagnostic uses the same exception instead of still labeling those rows as `Does not match the generated rule pattern.`;
@@ -1053,7 +1060,7 @@
 - The new qB rule-language selector currently coexists with the older manual affected-feed checklist: language mode now resolves/saves the real qB RSS feed scope automatically, while the manual checklist remains visible as a compatibility/fallback UI until a later deprecation pass is approved.
 - Saved-rule active search no longer shares the same runtime dependency on qB feed availability: when a language-managed rule cannot derive search scope from saved qB feed URLs, the rule-search path now falls back to Jackett configured indexers for that language instead of collapsing back to unscoped/default behavior.
 - Rule persistence is now decoupled from live qB RSS availability for language-managed rules: passive feed URLs are still resolved and used when qB feeds are reachable, but a temporary qB outage now degrades to warning-only behavior instead of blocking creates/updates or erasing the saved language/search intent.
-- The local release candidate is now `1.1.0`, combining the already-finished phase-25 Stremio-boundary split with the new qB rule-language feed-selection follow-up; publication to git remains pending.
+- The local release candidate is now `1.1.1`, adding the Stremio auth-session fallback and quality-token boundary patch on top of the already-finished phase-25 Stremio-boundary split and qB rule-language feed-selection follow-up; publication to git remains pending.
 - The qB-side precursor track is now extended locally beyond `v0.8.5`: desktop unified results are exact-first with visible fallback/debug rows, same-infohash duplicates are grouped instead of discarded, grouped queue actions can merge missing trackers into the existing qB torrent, and Stremio qB rows expose clearer provenance/source detail.
 - The latest queue hardening follow-up closes the loudest qB-side UX failure mode for broken local Jackett download URLs: the app now refuses to ask qB to remote-fetch loopback/private `dl/...` links once local fetch/validation has already failed, so the failure stays in the web app instead of spamming qB desktop notifications.
 - The next queue hardening follow-up closes the adjacent Jackett dual-host gap: when a search result carries the qB-facing Jackett hostname, the queue path now rewrites that `dl/...` URL back to the app-facing Jackett base before app-side torrent download, so valid uploads no longer fail simply because `jackett_qb_url` differs from `jackett_api_url`.

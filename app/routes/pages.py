@@ -196,9 +196,10 @@ def _resolve_language_feed_urls(
     if not jackett.app_ready:
         return [], LANGUAGE_FEED_SELECTION_JACKETT_UNAVAILABLE
 
-    feed_options = _safe_feed_options(session, selected_urls)
-    if not feed_options:
+    live_feed_options = _safe_feed_options(session, [])
+    if not live_feed_options:
         return [], LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE
+    feed_options = _safe_feed_options(session, selected_urls)
 
     try:
         client = JackettClient(jackett.api_url, jackett.api_key)

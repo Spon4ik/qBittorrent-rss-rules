@@ -26,7 +26,12 @@
   - the backend-side release-filter cache and the browser-side hidden-row diagnostic now share that exception so relevant upgrade candidates are no longer mislabeled as `Does not match the generated rule pattern.`;
   - active Jackett searches for keep-searching series rules now derive the primary structured season/episode from watched progress instead of the stored known-episode floor, so the live `The Miniature Wife` rule builds primary requests around `S01E02` rather than `S01E11` and can admit full `S1E1-10` packs into the exact lane when Jackett returns them there;
   - focused verification is green with `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_rule_fetch_ops.py -k "complete_pack_when_keep_searching_enabled or zero_based_ranges_below_episode_floor" -q`, `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py -k "inline_local_generated_pattern" -q`, `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_rule_builder.py -k "zero_based_ranges or keep_searching_existing_unseen" -q`, `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_jackett.py -k "watched_progress_for_keep_searching_existing or carries_series_episode_floor" -q`, `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py -k "rule_search or inline_search or jackett_search_api or transform" -q`, and `.\\.venv\\Scripts\\python.exe -m ruff check app\\services\\jackett.py tests\\test_jackett.py`.
-- Real-world validation is complete on 2026-04-19, and the local release train is now version-synced to `1.1.0`; git publication is the remaining closeout step.
+- A release-blocking patch landed locally on 2026-04-29 without changing the Stremio split scope:
+  - Stremio sync now retries older discovered local auth keys when the newest LevelDB key fails with `Session does not exist`, and the auth-key extractor no longer captures punctuation instead of the real key;
+  - quality/source filters now use release-token boundaries across backend and browser-side filtering so titles such as `Camelot` and `The Secrets` do not accidentally satisfy or trip `cam`/`ts` tags;
+  - the language-managed feed edit page again shows the qB-feeds-unavailable warning while preserving saved feed URLs for visibility;
+  - focused regressions were added in `tests/test_stremio.py`, `tests/test_quality_filters.py`, and `tests/test_routes.py`, and the release train is now version-synced to `1.1.1`.
+- Real-world validation is complete on 2026-04-29 for the `1.1.1` candidate: live `/health` reports `app_version=1.1.1`, the local Stremio desktop storage test found `159 active` movie/series items out of `262` total, the real sync pass completed with `0 errors`, `cmd /c scripts\\check.bat` passed with `329 passed`, and `cmd /c scripts\\run_dev.bat desktop-build` succeeded with `0 Warning(s)` / `0 Error(s)` after stopping a stale desktop process.
 
 ## Goal
 
@@ -95,7 +100,7 @@ Make qBittorrent RSS Rules a qB + sync app again: no native Stremio addon hostin
 | P25-01 | Update roadmap and phase docs for the repo split. | Codex | 2026-04-19 | completed | Roadmap/current-status/phase docs state that addon hosting moved out of this repo and sync remains. | This phase plan plus 2026-04-19 roadmap/current-status updates. |
 | P25-02 | Remove native addon codepaths while keeping Stremio sync intact. | Codex | 2026-04-19 | completed | Native addon routes/services/UI/settings/scripts/tests are gone, and the backend/desktop capability contract reflects sync-only Stremio support. | 2026-04-19 changes in `app/main.py`, `app/routes/pages.py`, `app/routes/api.py`, `app/services/selective_queue.py`, `app/services/settings_service.py`, `app/static/app.js`, templates, desktop contract constants, deleted addon modules/scripts/tests, and focused green pytest/ruff runs. |
 | P25-03 | Validate the split in the real local environment. | Codex | 2026-04-19 | completed | Running backend/desktop proves addon endpoints are gone while Stremio sync flows still work. | 2026-04-19 live checks on backend `1.0.0`: `/stremio/manifest.json` returned `404`; `/settings` and `/search` no longer exposed addon/provider/variant-queue UI; `/api/settings/test-stremio` succeeded against the local Stremio WebView storage; `/api/settings/sync-stremio` completed for `147 active title(s)`; `scripts\\check.bat` passed (`308 passed`); and `scripts\\run_dev.bat desktop-build` succeeded with `0 Warning(s)` / `0 Error(s)`. |
-| P25-04 | Cut and publish the breaking-change release. | Codex | 2026-04-19 | in progress | Version is bumped consistently, changelog/docs are updated, and the release commit/tag are published to git. | Pending release closeout. |
+| P25-04 | Cut and publish the breaking-change release. | Codex | 2026-04-19 | in progress | Version is bumped consistently, changelog/docs are updated, and the release commit/tag are published to git. | `1.1.1` candidate is version-synced and release-validated locally on 2026-04-29; commit/tag/push remain pending. |
 
 ## Risks And Follow-Up
 
@@ -117,9 +122,6 @@ Make qBittorrent RSS Rules a qB + sync app again: no native Stremio addon hostin
 
 ## Next Concrete Steps
 
-1. Run the live backend/desktop validation pass against the actual local app and Stremio data.
-2. Bump the release to the next major semver because native addon hosting/configuration was removed.
-3. Publish the release commit and tag after the real-world checks pass.
-4. Publish the now-combined `1.1.0` release train after the Stremio split plus qB rule-language follow-up local validations.
-5. Decide whether the passive qB feed-resolution state now needs its own persisted warning/status field before the next rules UX cleanup slice.
-6. Decide whether the keep-searching watched-progress search floor should remain active-search-only or also influence generated qB RSS rules later.
+1. Publish the validated `1.1.1` release commit and tag to git.
+2. Decide whether the passive qB feed-resolution state now needs its own persisted warning/status field before the next rules UX cleanup slice.
+3. Decide whether the keep-searching watched-progress search floor should remain active-search-only or also influence generated qB RSS rules later.

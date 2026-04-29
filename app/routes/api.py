@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
@@ -128,7 +129,7 @@ def _snapshot_queue_rows(snapshot: object | None) -> list[dict[str, Any]]:
 
 
 def _matching_refreshed_queue_link(
-    refreshed_rows: list[object],
+    refreshed_rows: Sequence[object],
     *,
     snapshot_row: dict[str, Any],
 ) -> str | None:

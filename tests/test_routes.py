@@ -91,7 +91,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.1.0"
+    assert payload["app_version"] == "1.1.1"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -749,6 +749,76 @@ console.log(JSON.stringify({{
     assert payload["local"].startswith("(?i)^")
     assert payload["leakedMatches"] is False
     assert payload["allowedMatches"] is True
+
+
+def test_inline_quality_filter_regex_uses_release_token_boundaries() -> None:
+    node_executable = shutil.which("node")
+    if not node_executable:
+        pytest.skip("node is required for inline JS quality regex validation")
+
+    repo_root = Path(__file__).resolve().parents[1]
+    app_js_path = repo_root / "app" / "static" / "app.js"
+    node_script = f"""
+const fs = require("fs");
+const vm = require("vm");
+
+global.document = {{
+  addEventListener() {{}},
+  querySelector() {{ return null; }},
+  querySelectorAll() {{ return []; }},
+}};
+global.window = {{
+  addEventListener() {{}},
+  removeEventListener() {{}},
+  setTimeout() {{}},
+  clearTimeout() {{}},
+  requestAnimationFrame() {{ return 0; }},
+  cancelAnimationFrame() {{}},
+  location: {{ href: "http://127.0.0.1:8000/" }},
+}};
+global.Event = class Event {{}};
+global.CustomEvent = class CustomEvent {{}};
+global.FormData = class FormData {{}};
+global.URLSearchParams = URLSearchParams;
+global.fetch = async () => {{ throw new Error("not used"); }};
+
+const source = fs.readFileSync({json.dumps(str(app_js_path))}, "utf8");
+vm.runInThisContext(source, {{ filename: "app/static/app.js" }});
+
+const patternMap = {{
+  cam: "(?:hd)?cam(?:rip)?",
+  ts: "(?:hd)?ts",
+  hd: "hd",
+}};
+const camRegex = new RegExp(buildQualityRegex(["cam"], patternMap), "iu");
+const tsRegex = new RegExp(buildQualityRegex(["ts"], patternMap), "iu");
+const hdRegex = new RegExp(buildQualityRegex(["hd"], patternMap), "iu");
+console.log(JSON.stringify({{
+  camMatchesHdcam: camRegex.test("Film HDCAM 1080p"),
+  camMatchesCamelot: camRegex.test("Camelot 1080p WEB-DL"),
+  tsMatchesHdts: tsRegex.test("Film HDTS 1080p"),
+  tsMatchesSecrets: tsRegex.test("The Secrets 1080p WEB-DL"),
+  hdMatchesHd: hdRegex.test("Film HD WEB-DL"),
+  hdMatchesHdcam: hdRegex.test("Film HDCAM 1080p"),
+}}));
+"""
+    completed = subprocess.run(
+        [node_executable, "-e", node_script],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+    payload = json.loads(completed.stdout.strip())
+
+    assert payload == {
+        "camMatchesHdcam": True,
+        "camMatchesCamelot": False,
+        "tsMatchesHdts": True,
+        "tsMatchesSecrets": False,
+        "hdMatchesHd": True,
+        "hdMatchesHdcam": False,
+    }
 
 
 def test_inline_local_generated_pattern_keeps_same_season_complete_pack_when_keep_searching_enabled() -> None:

@@ -55,6 +55,8 @@ SCOPED_MEDIA_TYPE_ORDER: tuple[str, ...] = (
 )
 VIDEO_MEDIA_TYPES = {MediaType.SERIES.value, MediaType.MOVIE.value}
 AUDIO_MEDIA_TYPES = {MediaType.AUDIOBOOK.value, MediaType.MUSIC.value}
+QUALITY_TOKEN_PREFIX_BOUNDARY = r"(?:^|[^A-Za-z0-9])"
+QUALITY_TOKEN_SUFFIX_BOUNDARY = r"(?![A-Za-z0-9])"
 
 
 def _normalize_media_type_scope(
@@ -1035,7 +1037,10 @@ def tokens_to_regex(tokens: object | None) -> str:
     ordered_patterns: list[str] = []
     seen_patterns: set[str] = set()
     for token in normalize_quality_tokens(tokens):
-        pattern = option_patterns[token]
+        pattern = (
+            f"{QUALITY_TOKEN_PREFIX_BOUNDARY}(?:{option_patterns[token]})"
+            f"{QUALITY_TOKEN_SUFFIX_BOUNDARY}"
+        )
         if pattern in seen_patterns:
             continue
         seen_patterns.add(pattern)

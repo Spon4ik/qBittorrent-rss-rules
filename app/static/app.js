@@ -327,7 +327,10 @@ function buildQualityRegex(tokens, patternMap) {
   const patterns = [];
   const seenPatterns = new Set();
   for (const token of tokens || []) {
-    const pattern = patternMap[token];
+    const rawPattern = patternMap[token];
+    const pattern = rawPattern
+      ? `(?:^|[^A-Za-z0-9])(?:${rawPattern})(?![A-Za-z0-9])`
+      : "";
     if (!pattern || seenPatterns.has(pattern)) {
       continue;
     }

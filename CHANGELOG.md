@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.1.1] - 2026-04-29
+
+- Fixed Stremio local-storage auth discovery so the app extracts the real auth key, retries older discovered local sessions when the newest key is stale, and no longer stops at `Stremio API datastoreGet failed: Session does not exist` when a valid signed-in session is still present.
+- Hardened quality tag filtering so quality/source tokens match release-token boundaries instead of ordinary title substrings, while keeping `HDCAM`, `CAMRip`, `HDTS`, and similar release tags detectable.
+- Added focused Stremio auth fallback, Python quality-filter, and browser-side quality-filter regressions for the escaped failures.
 ## [1.1.0] - 2026-04-20
 
 - Added a rule-level language selector that resolves matching Jackett-backed qB RSS feeds under the hood, so qBittorrent RSS auto-downloader scope can now follow the chosen language without manually picking indexers first.

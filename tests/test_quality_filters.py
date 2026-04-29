@@ -142,9 +142,13 @@ def test_expand_quality_tokens_resolves_bundles_and_aliases_to_leaf_tokens() -> 
 
 
 def test_tokens_to_regex_preserves_current_patterns() -> None:
-    assert tokens_to_regex(["2160p", "hdr"]) == r"(?:2160p|hdr10\+?|hdr)"
+    assert tokens_to_regex(["2160p", "hdr"]) == (
+        r"(?:(?:^|[^A-Za-z0-9])(?:2160p)(?![A-Za-z0-9])|"
+        r"(?:^|[^A-Za-z0-9])(?:hdr10\+?|hdr)(?![A-Za-z0-9]))"
+    )
     assert tokens_to_regex(["tv_sync", "ts"]) == (
-        r"(?:tv[\s._-]*sync|tele[\s._-]*sync|telesync|(?:hd)?ts)"
+        r"(?:(?:^|[^A-Za-z0-9])(?:tv[\s._-]*sync|tele[\s._-]*sync|telesync)"
+        r"(?![A-Za-z0-9])|(?:^|[^A-Za-z0-9])(?:(?:hd)?ts)(?![A-Za-z0-9]))"
     )
 
 
@@ -154,8 +158,9 @@ def test_grouped_quality_tokens_preserve_quality_group_boundaries() -> None:
 
 def test_grouped_tokens_to_regex_builds_one_fragment_per_quality_group() -> None:
     assert grouped_tokens_to_regex(["2160p", "4k", "hdr"]) == [
-        r"(?:2160p|4k)",
-        r"(?:hdr10\+?|hdr)",
+        r"(?:(?:^|[^A-Za-z0-9])(?:2160p)(?![A-Za-z0-9])|"
+        r"(?:^|[^A-Za-z0-9])(?:4k)(?![A-Za-z0-9]))",
+        r"(?:(?:^|[^A-Za-z0-9])(?:hdr10\+?|hdr)(?![A-Za-z0-9]))",
     ]
 
 
@@ -167,6 +172,23 @@ def test_bluray_token_does_not_match_bdrip_variants() -> None:
     assert not bluray_regex.search("Film 2160p BDRip HDR")
     assert bdrip_regex.search("Film 2160p BDRip HDR")
     assert bdrip_regex.search("Film 2160p BRRip HDR")
+
+
+def test_quality_tokens_match_release_tokens_not_title_substrings() -> None:
+    cam_regex = re.compile(tokens_to_regex(["cam"]), re.IGNORECASE)
+    ts_regex = re.compile(tokens_to_regex(["ts"]), re.IGNORECASE)
+    hd_regex = re.compile(tokens_to_regex(["hd"]), re.IGNORECASE)
+
+    assert cam_regex.search("Film HDCAM 1080p")
+    assert cam_regex.search("Film CAMRip 1080p")
+    assert not cam_regex.search("Camelot 1080p WEB-DL")
+
+    assert ts_regex.search("Film HDTS 1080p")
+    assert ts_regex.search("Film TS 1080p")
+    assert not ts_regex.search("The Secrets 1080p WEB-DL")
+
+    assert hd_regex.search("Film HD WEB-DL")
+    assert not hd_regex.search("Film HDCAM 1080p")
 
 
 def test_quality_taxonomy_rejects_unsupported_version(tmp_path, monkeypatch) -> None:

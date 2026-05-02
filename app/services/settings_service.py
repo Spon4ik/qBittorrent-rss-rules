@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 from collections.abc import Mapping
 from copy import deepcopy
@@ -9,7 +10,12 @@ from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy.orm import Session
 
-from app.config import get_environment_settings, obfuscate_secret, reveal_secret
+from app.config import (
+    _parse_jackett_language_overrides,
+    get_environment_settings,
+    obfuscate_secret,
+    reveal_secret,
+)
 from app.models import AppSettings, MetadataProvider, QualityProfile
 from app.schemas import SettingsFormPayload
 from app.services.metadata import normalize_omdb_api_key
@@ -18,6 +24,7 @@ from app.services.quality_filters import (
     LEGACY_DEFAULT_QUALITY_PROFILE_RULES,
     builtin_filter_profile_keys,
     canonicalize_quality_tokens,
+    dynamic_default_quality_profile_rules,
     normalize_saved_quality_profiles,
     resolve_quality_profile_rules,
 )
@@ -83,7 +90,10 @@ def _normalize_optional_text(value: object | None) -> str | None:
         return None
     return cleaned
 
+
 def _is_wsl_runtime() -> bool:
+    if os.name == "nt" and getattr(platform.release, "__module__", "platform") == "platform":
+        return False
     release = platform.release().casefold()
     version = platform.version().casefold()
     return "microsoft" in release or "wsl" in release or "microsoft" in version or "wsl" in version
@@ -253,6 +263,7 @@ class ResolvedJackettConfig:
     api_url: str | None
     qb_url: str | None
     api_key: str | None
+    language_overrides: dict[str, list[str]]
 
     @property
     def app_ready(self) -> bool:
@@ -261,6 +272,25 @@ class ResolvedJackettConfig:
     @property
     def rule_ready(self) -> bool:
         return bool((self.qb_url or self.api_url) and self.api_key)
+
+
+def _format_jackett_language_overrides(overrides: object | None) -> str:
+    if not isinstance(overrides, dict):
+        return ""
+    lines: list[str] = []
+    for raw_indexer in sorted(overrides):
+        indexer = str(raw_indexer or "").strip()
+        raw_languages = overrides.get(raw_indexer)
+        if not indexer or not isinstance(raw_languages, list):
+            continue
+        languages = [
+            str(item or "").strip()
+            for item in raw_languages
+            if str(item or "").strip()
+        ]
+        if languages:
+            lines.append(f"{indexer}={','.join(languages)}")
+    return "\n".join(lines)
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,6 +328,7 @@ class SettingsService:
         if settings is None:
             settings = AppSettings(
                 id="default",
+                jackett_language_overrides={},
                 quality_profile_rules=deepcopy(DEFAULT_QUALITY_PROFILE_RULES),
                 saved_quality_profiles={},
                 default_quality_profile=QualityProfile.UHD_2160P_HDR,
@@ -329,30 +360,33 @@ class SettingsService:
 
         legacy_profile_defaults = not settings.quality_profile_rules
         changed = False
+        if not isinstance(getattr(settings, "jackett_language_overrides", None), dict):
+            settings.jackett_language_overrides = {}
+            changed = True
         if legacy_profile_defaults:
-            settings.quality_profile_rules = deepcopy(DEFAULT_QUALITY_PROFILE_RULES)
+            settings.quality_profile_rules = dynamic_default_quality_profile_rules()
             changed = True
             if settings.default_quality_profile == QualityProfile.PLAIN:
                 settings.default_quality_profile = QualityProfile.UHD_2160P_HDR
                 changed = True
         else:
             normalized_profile_rules = resolve_quality_profile_rules(settings)
+            dynamic_defaults = dynamic_default_quality_profile_rules()
             for profile_key in (QualityProfile.HD_1080P.value, QualityProfile.UHD_2160P_HDR.value):
-                if canonicalize_quality_tokens(
-                    normalized_profile_rules[profile_key]["include_tokens"]
-                ) != canonicalize_quality_tokens(
-                    LEGACY_DEFAULT_QUALITY_PROFILE_RULES[profile_key]["include_tokens"]
-                ):
-                    continue
-                if canonicalize_quality_tokens(
-                    normalized_profile_rules[profile_key]["exclude_tokens"]
-                ) != canonicalize_quality_tokens(
-                    LEGACY_DEFAULT_QUALITY_PROFILE_RULES[profile_key]["exclude_tokens"]
-                ):
-                    continue
-                normalized_profile_rules[profile_key] = deepcopy(
-                    DEFAULT_QUALITY_PROFILE_RULES[profile_key]
+                profile_tokens = normalized_profile_rules[profile_key]
+                matches_known_default = any(
+                    canonicalize_quality_tokens(profile_tokens["include_tokens"])
+                    == canonicalize_quality_tokens(defaults[profile_key]["include_tokens"])
+                    and canonicalize_quality_tokens(profile_tokens["exclude_tokens"])
+                    == canonicalize_quality_tokens(defaults[profile_key]["exclude_tokens"])
+                    for defaults in (
+                        LEGACY_DEFAULT_QUALITY_PROFILE_RULES,
+                        DEFAULT_QUALITY_PROFILE_RULES,
+                    )
                 )
+                if not matches_known_default:
+                    continue
+                normalized_profile_rules[profile_key] = deepcopy(dynamic_defaults[profile_key])
                 changed = True
             if changed:
                 settings.quality_profile_rules = normalized_profile_rules
@@ -589,6 +623,9 @@ class SettingsService:
         settings.qb_username = payload.qb_username or None
         settings.jackett_api_url = payload.jackett_api_url or None
         settings.jackett_qb_url = payload.jackett_qb_url or None
+        settings.jackett_language_overrides = _parse_jackett_language_overrides(
+            payload.jackett_language_overrides_text
+        )
         settings.jellyfin_db_path = payload.jellyfin_db_path or None
         settings.jellyfin_user_name = payload.jellyfin_user_name or None
         settings.jellyfin_auto_sync_enabled = payload.jellyfin_auto_sync_enabled
@@ -659,6 +696,10 @@ class SettingsService:
             qb_url=qb_url,
             api_key=env.jackett_api_key
             or reveal_secret(settings.jackett_api_key_encrypted if settings else None),
+            language_overrides={
+                **(settings.jackett_language_overrides if settings else {}),
+                **env.jackett_language_overrides,
+            },
         )
 
     @staticmethod
@@ -725,6 +766,9 @@ class SettingsService:
             "qb_username": settings.qb_username or "",
             "jackett_api_url": settings.jackett_api_url or "",
             "jackett_qb_url": settings.jackett_qb_url or "",
+            "jackett_language_overrides_text": _format_jackett_language_overrides(
+                settings.jackett_language_overrides
+            ),
             "jellyfin_db_path": getattr(settings, "jellyfin_db_path", None) or "",
             "jellyfin_user_name": getattr(settings, "jellyfin_user_name", None) or "",
             "jellyfin_auto_sync_enabled": bool(

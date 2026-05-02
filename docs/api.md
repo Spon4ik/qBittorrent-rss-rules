@@ -73,6 +73,8 @@ The app may accept bundle keys or alias keys as authoring conveniences, but pers
 
 Saved filter profiles may now also carry optional `media_types` metadata so the rule form can limit profile visibility to relevant media types without changing the flat-token persistence contract.
 
+Built-in video filter profiles are not static token snapshots: their resolution thresholds are resolved from the live taxonomy `resolution` rank. Uncustomized stored defaults and profile-owned rule snapshots are refreshed during settings/filter resolution so rules that selected `At Least Full HD`, `At Least Ultra HD`, or `Ultra HD HDR` inherit newly added lower/higher resolution values without becoming manual selections.
+
 ### `Importer`
 
 - `preview_import_from_bytes(raw_bytes: bytes, mode: ImportMode) -> list[ImportPreviewEntry]`

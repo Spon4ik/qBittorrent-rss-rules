@@ -542,10 +542,19 @@ class RuleFormPayload(BaseModel):
             return match.group(1)
         return cleaned
 
-    @field_validator("language")
+    @field_validator("language", mode="before")
     @classmethod
-    def normalize_language(cls, value: str) -> str:
-        return str(value or "").strip().casefold()
+    def normalize_language(cls, value: str | list[str]) -> str:
+        raw_values = value if isinstance(value, list) else str(value or "").split(",")
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in raw_values:
+            candidate = str(item or "").strip().casefold()
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            cleaned.append(candidate)
+        return ",".join(cleaned)
 
     @field_validator("quality_include_tokens", "quality_exclude_tokens", mode="before")
     @classmethod
@@ -601,6 +610,7 @@ class SettingsFormPayload(BaseModel):
     jackett_api_url: str | None = None
     jackett_qb_url: str | None = None
     jackett_api_key: str | None = None
+    jackett_language_overrides_text: str | None = ""
     jellyfin_db_path: str | None = None
     jellyfin_user_name: str | None = None
     jellyfin_auto_sync_enabled: bool = True
@@ -630,6 +640,7 @@ class SettingsFormPayload(BaseModel):
         "jackett_api_url",
         "jackett_qb_url",
         "jackett_api_key",
+        "jackett_language_overrides_text",
         "jellyfin_db_path",
         "jellyfin_user_name",
         "stremio_local_storage_path",

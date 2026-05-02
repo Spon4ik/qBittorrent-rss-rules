@@ -41,6 +41,16 @@
       <input type="password" name="jackett_api_key" value="" placeholder="{% if form_data.has_env_jackett_key %}Using environment value{% elif form_data.has_saved_jackett_key %}Saved locally{% else %}Not set{% endif %}" />
       <span class="helper-text">Used only for the separate Jackett active-search workspace in this slice. It is not mixed into RSS feed selection.</span>
     </label>
+    <div class="full-span stack">
+      <fieldset class="stack">
+        <legend>Indexer language overrides</legend>
+        <p class="helper-text">Use this only for configured Jackett indexers whose language is unknown or wrong. One mapping per line, for example <code>noname-clubl=ru</code> or <code>thepiratebay=en,multi</code>.</p>
+        <label>
+          Manual indexer languages
+          <textarea name="jackett_language_overrides_text" rows="5" spellcheck="false" placeholder="noname-clubl=ru">{{ form_data.jackett_language_overrides_text }}</textarea>
+        </label>
+      </fieldset>
+    </div>
     <label>
       Jellyfin DB path
       <input type="text" name="jellyfin_db_path" value="{{ form_data.jellyfin_db_path }}" placeholder="C:\ProgramData\Jellyfin\Server\data\jellyfin.db" />

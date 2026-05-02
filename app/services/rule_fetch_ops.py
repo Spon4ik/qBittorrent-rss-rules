@@ -28,8 +28,8 @@ from app.services.jackett import (
     clamp_search_query_text,
 )
 from app.services.quality_filters import (
+    effective_rule_quality_tokens,
     grouped_tokens_to_regex,
-    normalize_quality_tokens,
     tokens_to_regex,
 )
 from app.services.rule_builder import (
@@ -333,11 +333,11 @@ def _rule_local_filter_state(rule: Rule) -> dict[str, Any]:
         [item for group in parse_additional_include_groups(rule.must_not_contain) for item in group]
     )
 
-    include_tokens = normalize_quality_tokens(rule.quality_include_tokens)
+    include_tokens, raw_exclude_tokens = effective_rule_quality_tokens(rule)
     include_token_set = set(include_tokens)
     exclude_tokens = [
         token
-        for token in normalize_quality_tokens(rule.quality_exclude_tokens)
+        for token in raw_exclude_tokens
         if token not in include_token_set
     ]
     include_quality_patterns = [
@@ -387,8 +387,8 @@ def _rule_local_filter_cache_key(rule: Rule) -> str:
         {
             "additional_includes": str(rule.additional_includes or "").strip(),
             "must_not_contain": str(rule.must_not_contain or "").strip(),
-            "quality_include_tokens": normalize_quality_tokens(rule.quality_include_tokens),
-            "quality_exclude_tokens": normalize_quality_tokens(rule.quality_exclude_tokens),
+            "quality_include_tokens": list(effective_rule_quality_tokens(rule)[0]),
+            "quality_exclude_tokens": list(effective_rule_quality_tokens(rule)[1]),
             "must_contain_override": str(rule.must_contain_override or "").strip(),
             "start_season": rule.start_season,
             "start_episode": rule.start_episode,
@@ -800,7 +800,11 @@ def execute_rule_fetch(
 
     try:
         payload_from_rule = _auto_imdb_first_payload(payload_from_rule)
-        client = JackettClient(jackett.api_url, jackett.api_key)
+        client = JackettClient(
+            jackett.api_url,
+            jackett.api_key,
+            language_overrides=jackett.language_overrides,
+        )
         run = client.search(payload_from_rule)
         all_results = [
             *list(run.raw_results or []),

@@ -242,7 +242,7 @@ def test_build_generated_pattern_preserves_legacy_full_override() -> None:
     assert pattern == r"(?i)(?=.*dune)(?!.*cam)"
 
 
-def test_build_generated_pattern_allows_empty_quality_selection() -> None:
+def test_build_generated_pattern_uses_selected_quality_profile_when_tokens_are_empty() -> None:
     builder = RuleBuilder(settings=AppSettings())
     pattern = builder.build_generated_pattern(
         build_rule(
@@ -254,7 +254,11 @@ def test_build_generated_pattern_allows_empty_quality_selection() -> None:
             use_regex=False,
         )
     )
-    assert pattern == "Anaconda"
+    assert pattern.startswith("(?i)")
+    assert "(?=.*anaconda)" in pattern
+    assert "2160p" in pattern
+    assert "hdr" in pattern.lower()
+    assert "1080p" in pattern
 
 
 def test_build_generated_pattern_supports_start_season_episode_floor() -> None:

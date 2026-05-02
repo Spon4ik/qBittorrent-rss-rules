@@ -61,6 +61,43 @@ Before ending a meaningful work session:
 2. Update the active phase plan with completion state, follow-up work, or changed assumptions.
 3. Update `ROADMAP.md` only when phase scope, ordering, or long-term direction changes.
 
+## Docker backend runtime
+
+After any code edit, make sure the Docker qBittorrent RSS Rules backend is rebuilt, up to date, and running from the shared Docker Compose file:
+
+```powershell
+& 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' compose -f C:\Users\nucc\docker-config\docker-compose.yml up --build -d qb-rss-rules
+```
+
+Then verify the running container serves the current backend:
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:8000/health
+```
+
+- The shared Compose file path is `C:\Users\nucc\docker-config\docker-compose.yml`; do not create or rely on a repo-local `docker-compose.yml` for this project.
+- Use the full Docker executable path above on this machine because `C:\Windows\System32\docker` may appear earlier in `PATH` and is not the working Docker CLI.
+- If Docker is unavailable or the refresh/health check fails, document the blocker in the session closeout and in `docs/plans/current-status.md`.
+
+## Database location
+
+The app's SQLite database must stay with the project runtime data, not with the shell's current working directory.
+
+- Relative SQLite URLs such as `sqlite:///./data/qb_rules.db` must resolve from the app/repo root (`app.config.ROOT_DIR`), not from `Path.cwd()`.
+- The shared Docker service must bind-mount the repo `data` directory to `/app/data`; do not use an anonymous or named Docker volume for `qb_rules.db`, because that creates an empty database after moving the project folder.
+- After moving the repo again, update `C:\Users\nucc\docker-config\docker-compose.yml` so the `qb-rss-rules` service bind mount points at the new repo `data` path, then rebuild/start Docker and verify `/health` plus the rule count.
+
+## Host path handling in Docker
+
+Saved Windows file paths must keep working when the backend runs in Docker.
+
+- Windows absolute paths such as `C:\Users\...\Stremio\...\leveldb` and `C:\ProgramData\Jellyfin\Server\data\jellyfin.db` are translated through `QB_RULES_WINDOWS_HOST_MOUNT_ROOT` (default `/host`) by `app.config.resolve_runtime_path`.
+- Keep the shared Docker service mounts aligned with that translation:
+  - `C:\Users` -> `/host/C/Users`
+  - `C:\ProgramData` -> `/host/C/ProgramData`
+- When adding any backend code that reads a local file path from settings or env, use `resolve_runtime_path(...)` instead of `Path(...)` / `Path.cwd()` so repo moves and Docker migration do not create `/app/C:\...` style paths.
+- After path-related changes, verify Stremio and Jellyfin from inside Docker, not only with unit tests.
+
 ## Resumability
 
 - Record what is already implemented.

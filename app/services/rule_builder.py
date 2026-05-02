@@ -7,8 +7,8 @@ from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 from app.models import AppSettings, MediaType, Rule
 from app.services.quality_filters import (
+    effective_rule_quality_tokens,
     grouped_tokens_to_regex,
-    normalize_quality_tokens,
     tokens_to_regex,
 )
 from app.services.watch_state import (
@@ -465,11 +465,13 @@ class RuleBuilder:
         )
 
     def _resolve_quality_filters(self, rule: Rule) -> tuple[list[str], str]:
-        include_tokens = normalize_quality_tokens(rule.quality_include_tokens)
-        exclude_tokens = normalize_quality_tokens(rule.quality_exclude_tokens)
+        include_tokens, exclude_tokens = self._effective_quality_tokens(rule)
         include_set = set(include_tokens)
         exclude_tokens = [token for token in exclude_tokens if token not in include_set]
         return grouped_tokens_to_regex(include_tokens), tokens_to_regex(exclude_tokens)
+
+    def _effective_quality_tokens(self, rule: Rule) -> tuple[list[str], list[str]]:
+        return effective_rule_quality_tokens(rule, self.settings)
 
     def _render_qb_feed_urls(self, feed_urls: list[str] | None) -> list[str]:
         cleaned_feed_urls = [str(item or "").strip() for item in list(feed_urls or []) if str(item or "").strip()]

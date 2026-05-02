@@ -199,6 +199,11 @@ class AppSettings(Base):
     jackett_api_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     jackett_qb_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     jackett_api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    jackett_language_overrides: Mapped[dict[str, list[str]]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
     jellyfin_db_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     jellyfin_user_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     jellyfin_auto_sync_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

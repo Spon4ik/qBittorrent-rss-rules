@@ -12,7 +12,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import get_environment_settings
+from app.config import get_environment_settings, resolve_runtime_path
 from app.models import AppSettings, MediaType, Rule
 from app.services.metadata import MetadataClient, MetadataLookupError, MetadataLookupProvider
 from app.services.quality_filters import resolve_quality_profile_rules
@@ -501,11 +501,9 @@ class StremioService:
         if not cleaned:
             raise StremioError("Stremio local storage path is not configured.")
 
-        storage_path = Path(cleaned).expanduser()
-        if not storage_path.is_absolute():
-            storage_path = (Path.cwd() / storage_path).resolve()
-        else:
-            storage_path = storage_path.resolve()
+        storage_path = resolve_runtime_path(cleaned)
+        if storage_path is None:
+            raise StremioError("Stremio local storage path is not configured.")
 
         if storage_path.is_file():
             if storage_path.suffix.lower() in {".ldb", ".log"}:

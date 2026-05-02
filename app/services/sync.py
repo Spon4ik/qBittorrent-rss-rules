@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import get_environment_settings
 from app.models import AppSettings, Rule, RuleSearchSnapshot, SyncEvent, SyncStatus, utcnow
 from app.schemas import BatchSyncResult, SyncResult
+from app.services.jackett import JackettClient, JackettClientError, feed_indexer_slug
 from app.services.qbittorrent import QbittorrentClient, QbittorrentClientError
 from app.services.rule_builder import RuleBuilder
 from app.services.settings_service import SettingsService
@@ -24,7 +25,7 @@ class SyncService:
     session: Session
     app_settings: AppSettings | None
 
-    def sync_rule(self, rule_id: str) -> SyncResult:
+    def sync_rule(self, rule_id: str, *, reconcile_feeds: bool = True) -> SyncResult:
         rule = self.session.get(Rule, rule_id)
         if rule is None:
             raise SyncServiceError("Rule not found.")
@@ -37,6 +38,9 @@ class SyncService:
             action = "rename"
 
         builder = RuleBuilder(self.app_settings)
+        self._refresh_rule_language_feeds(rule)
+        if reconcile_feeds:
+            self._reconcile_qb_jackett_feeds()
         qb_rule = builder.build_qb_rule(rule)
         qb_rule, feed_warnings = self._filter_unhealthy_jackett_feeds(qb_rule)
 
@@ -83,7 +87,9 @@ class SyncService:
 
     def sync_all(self) -> BatchSyncResult:
         result = BatchSyncResult()
-        rules = self.session.scalars(select(Rule).order_by(Rule.rule_name.asc())).all()
+        rules = list(self.session.scalars(select(Rule).order_by(Rule.rule_name.asc())).all())
+        self._refresh_language_feeds_for_rules(rules)
+        self._reconcile_qb_jackett_feeds()
         remote_rules = self._safe_remote_rules()
 
         for rule in rules:
@@ -91,7 +97,7 @@ class SyncService:
                 expected = RuleBuilder(self.app_settings).build_qb_rule(rule)
                 if remote_rules[rule.rule_name] != expected:
                     result.drift_detected += 1
-            sync_result = self.sync_rule(rule.id)
+            sync_result = self.sync_rule(rule.id, reconcile_feeds=False)
             if sync_result.success:
                 result.success_count += 1
             else:
@@ -168,6 +174,95 @@ class SyncService:
             connection.username,
             connection.password,
         )
+
+    def _jackett_client(self) -> JackettClient | None:
+        jackett = SettingsService.resolve_jackett(self.app_settings)
+        if not jackett.app_ready:
+            return None
+        return JackettClient(
+            jackett.api_url,
+            jackett.api_key,
+            language_overrides=jackett.language_overrides,
+        )
+
+    @staticmethod
+    def _effective_languages(rule: Rule) -> list[str]:
+        languages: list[str] = []
+        seen: set[str] = set()
+        for raw_item in str(getattr(rule, "language", "") or "ru").split(","):
+            candidate = raw_item.strip().casefold()
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            languages.append(candidate)
+        return languages or ["ru"]
+
+    def _refresh_rule_language_feeds(self, rule: Rule) -> None:
+        self._refresh_language_feeds_for_rules([rule])
+
+    def _refresh_language_feeds_for_rules(self, rules: list[Rule]) -> None:
+        client = self._jackett_client()
+        if client is None:
+            return
+        feeds_by_language: dict[str, list[str]] = {}
+        changed = False
+        for rule in rules:
+            rule_changed = False
+            languages = self._effective_languages(rule)
+            feed_urls: list[str] = []
+            seen_feeds: set[str] = set()
+            for language in languages:
+                if language not in feeds_by_language:
+                    feeds_by_language[language] = list(
+                        client.configured_indexer_feed_urls(language=language).values()
+                    )
+                for feed_url in feeds_by_language[language]:
+                    if feed_url in seen_feeds:
+                        continue
+                    seen_feeds.add(feed_url)
+                    feed_urls.append(feed_url)
+            if not feed_urls:
+                continue
+            normalized_language = ",".join(languages)
+            if str(getattr(rule, "language", "") or "").strip().casefold() != normalized_language:
+                rule.language = normalized_language
+                rule_changed = True
+            if list(getattr(rule, "feed_urls", []) or []) != feed_urls:
+                rule.feed_urls = feed_urls
+                rule_changed = True
+            if rule_changed:
+                self.session.add(rule)
+                changed = True
+        if changed:
+            self.session.flush()
+
+    def _reconcile_qb_jackett_feeds(self) -> None:
+        jackett_client = self._jackett_client()
+        if jackett_client is None:
+            return
+        expected_by_indexer = jackett_client.configured_indexer_feed_urls()
+        if not expected_by_indexer:
+            return
+        expected_urls = set(expected_by_indexer.values())
+        expected_indexers = set(expected_by_indexer)
+        try:
+            with self._qb_client() as qb_client:
+                existing_feeds = qb_client.get_feeds()
+                existing_urls = {feed.url for feed in existing_feeds}
+                for indexer, feed_url in expected_by_indexer.items():
+                    if feed_url in existing_urls:
+                        continue
+                    qb_client.add_feed(url=feed_url, path=f"Jackett/{indexer}")
+                for feed in existing_feeds:
+                    feed_indexer = feed_indexer_slug(feed.url)
+                    if not feed_indexer:
+                        continue
+                    if feed_indexer in expected_indexers or feed.url in expected_urls:
+                        continue
+                    if feed.label:
+                        qb_client.remove_feed(feed.label)
+        except (QbittorrentClientError, JackettClientError, SyncServiceError):
+            return
 
     def _safe_remote_rules(self) -> dict[str, dict[str, object]] | None:
         try:

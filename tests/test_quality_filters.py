@@ -7,7 +7,7 @@ from copy import deepcopy
 
 import pytest
 
-from app.models import AppSettings, QualityProfile, Rule
+from app.models import AppSettings, MediaType, QualityProfile, Rule
 from app.services import quality_filters
 from app.services.quality_filters import (
     AT_LEAST_UHD_PROFILE,
@@ -18,6 +18,8 @@ from app.services.quality_filters import (
     available_filter_profile_choices,
     available_filter_profile_choices_for_media_type,
     detect_matching_filter_profile_key,
+    dynamic_default_quality_profile_rules,
+    effective_rule_quality_tokens,
     expand_quality_tokens,
     grouped_quality_tokens,
     grouped_tokens_to_regex,
@@ -69,24 +71,184 @@ def test_default_resolution_profiles_do_not_exclude_sources() -> None:
         "360p",
         "sd",
     ]
-    assert AT_LEAST_UHD_PROFILE["exclude_tokens"] == ["1080p", "720p", "480p", "360p", "sd"]
+    assert AT_LEAST_UHD_PROFILE["exclude_tokens"] == [
+        "sd",
+        "240p",
+        "360p",
+        "400p",
+        "480p",
+        "hd",
+        "720p",
+        "full_hd",
+        "1080p",
+    ]
 
 
 def test_detect_matching_filter_profile_key_ignores_checkbox_order() -> None:
+    default_hd_profile = dynamic_default_quality_profile_rules()[QualityProfile.HD_1080P.value]
     assert (
         detect_matching_filter_profile_key(
-            ["hd", "720p", "full_hd", "1080p", "ultra_hd", "uhd", "2160p", "4k"],
-            ["sd", "360p", "480p"],
+            list(reversed(default_hd_profile["include_tokens"])),
+            list(reversed(default_hd_profile["exclude_tokens"])),
             settings=None,
         )
         == "builtin-at-least-hd"
     )
 
 
+def test_builtin_video_profiles_follow_runtime_resolution_rank(tmp_path, monkeypatch) -> None:
+    payload = _read_default_quality_taxonomy()
+    options = payload["options"]
+    ranks = payload["ranks"]
+    assert isinstance(options, list)
+    assert isinstance(ranks, list)
+    options.insert(
+        0,
+        {
+            "value": "144p",
+            "label": "144p",
+            "pattern": "144p",
+            "group": "resolution",
+            "media_types": ["series", "movie"],
+        },
+    )
+    options.append(
+        {
+            "value": "4320p",
+            "label": "4320p",
+            "pattern": "4320p|8k",
+            "group": "resolution",
+            "media_types": ["series", "movie"],
+        },
+    )
+    for rank in ranks:
+        if rank["key"] == "resolution":
+            rank["tokens"].insert(0, "144p")
+            rank["tokens"].append("4320p")
+    monkeypatch.setattr(
+        quality_filters,
+        "QUALITY_TAXONOMY_PATH",
+        _write_quality_taxonomy(tmp_path, payload),
+    )
+    _clear_quality_taxonomy_cache()
+
+    defaults = dynamic_default_quality_profile_rules()
+    hd_profile = defaults[QualityProfile.HD_1080P.value]
+    uhd_hdr_profile = defaults[QualityProfile.UHD_2160P_HDR.value]
+    profiles = {item["key"]: item for item in available_filter_profile_choices(None)}
+
+    assert "144p" in hd_profile["exclude_tokens"]
+    assert "144p" in uhd_hdr_profile["exclude_tokens"]
+    assert "4320p" in hd_profile["include_tokens"]
+    assert "4320p" in uhd_hdr_profile["include_tokens"]
+    assert profiles["builtin-at-least-hd"]["exclude_tokens"] == hd_profile["exclude_tokens"]
+    assert profiles["builtin-ultra-hd-hdr"]["include_tokens"] == uhd_hdr_profile["include_tokens"]
+    assert profiles["builtin-at-least-uhd"]["exclude_tokens"] == uhd_hdr_profile["exclude_tokens"]
+    assert (
+        detect_matching_filter_profile_key(
+            hd_profile["include_tokens"],
+            hd_profile["exclude_tokens"],
+            settings=None,
+        )
+        == "builtin-at-least-hd"
+    )
+
+
+def test_effective_rule_quality_tokens_refreshes_profile_owned_resolution_snapshot(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    payload = _read_default_quality_taxonomy()
+    options = payload["options"]
+    ranks = payload["ranks"]
+    assert isinstance(options, list)
+    assert isinstance(ranks, list)
+    options.insert(
+        0,
+        {
+            "value": "144p",
+            "label": "144p",
+            "pattern": "144p",
+            "group": "resolution",
+            "media_types": ["series", "movie"],
+        },
+    )
+    for rank in ranks:
+        if rank["key"] == "resolution":
+            rank["tokens"].insert(0, "144p")
+    monkeypatch.setattr(
+        quality_filters,
+        "QUALITY_TAXONOMY_PATH",
+        _write_quality_taxonomy(tmp_path, payload),
+    )
+    _clear_quality_taxonomy_cache()
+
+    settings = AppSettings(
+        id="default",
+        quality_profile_rules={
+            QualityProfile.HD_1080P.value: {
+                "include_tokens": [],
+                "exclude_tokens": ["sd", "144p", "240p", "360p", "400p", "480p", "web_dl"],
+            },
+            QualityProfile.UHD_2160P_HDR.value: {
+                "include_tokens": [],
+                "exclude_tokens": [
+                    "sd",
+                    "144p",
+                    "240p",
+                    "360p",
+                    "400p",
+                    "480p",
+                    "720p",
+                    "full_hd",
+                    "1080p",
+                    "web_dl",
+                ],
+            },
+        },
+    )
+    rule = Rule(
+        rule_name="Profile Snapshot",
+        content_name="Profile Snapshot",
+        normalized_title="Profile Snapshot",
+        quality_profile=QualityProfile.UHD_2160P_HDR,
+    )
+    rule.quality_include_tokens = []
+    rule.quality_exclude_tokens = [
+        "sd",
+        "240p",
+        "360p",
+        "400p",
+        "480p",
+        "720p",
+        "full_hd",
+        "1080p",
+        "web_dl",
+    ]
+
+    include_tokens, exclude_tokens = effective_rule_quality_tokens(rule, settings)
+
+    assert include_tokens == []
+    assert "144p" in exclude_tokens
+    assert detect_matching_filter_profile_key(
+        include_tokens,
+        exclude_tokens,
+        settings,
+        media_type=MediaType.SERIES,
+    ) == "builtin-ultra-hd-hdr"
+
+
 def test_quality_option_choices_preserve_current_order_and_groups() -> None:
     choices = quality_option_choices()
 
-    assert [item["value"] for item in choices[:5]] == ["sd", "360p", "480p", "hd", "720p"]
+    assert [item["value"] for item in choices[:6]] == [
+        "sd",
+        "240p",
+        "360p",
+        "400p",
+        "480p",
+        "hd",
+    ]
     assert [item["value"] for item in choices[-4:]] == ["vbr", "lossless", "mono", "stereo"]
     assert [item["key"] for item in quality_option_groups()] == [
         "resolution",
@@ -517,16 +679,71 @@ def test_get_or_create_migrates_legacy_default_quality_profile_rules(db_session)
     resolved = SettingsService.get_or_create(db_session)
 
     assert resolved.quality_profile_rules[QualityProfile.HD_1080P.value]["exclude_tokens"] == [
-        "480p",
-        "360p",
         "sd",
+        "240p",
+        "360p",
+        "400p",
+        "480p",
     ]
     assert resolved.quality_profile_rules[QualityProfile.UHD_2160P_HDR.value]["exclude_tokens"] == [
-        "1080p",
-        "720p",
-        "480p",
-        "360p",
         "sd",
+        "240p",
+        "360p",
+        "400p",
+        "480p",
+        "hd",
+        "720p",
+        "full_hd",
+        "1080p",
+    ]
+
+
+def test_get_or_create_refreshes_uncustomized_profile_rules_after_taxonomy_change(
+    db_session,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    payload = _read_default_quality_taxonomy()
+    options = payload["options"]
+    ranks = payload["ranks"]
+    assert isinstance(options, list)
+    assert isinstance(ranks, list)
+    options.insert(
+        0,
+        {
+            "value": "144p",
+            "label": "144p",
+            "pattern": "144p",
+            "group": "resolution",
+            "media_types": ["series", "movie"],
+        },
+    )
+    for rank in ranks:
+        if rank["key"] == "resolution":
+            rank["tokens"].insert(0, "144p")
+    monkeypatch.setattr(
+        quality_filters,
+        "QUALITY_TAXONOMY_PATH",
+        _write_quality_taxonomy(tmp_path, payload),
+    )
+    _clear_quality_taxonomy_cache()
+
+    settings = AppSettings(
+        id="default",
+        quality_profile_rules=deepcopy(DEFAULT_QUALITY_PROFILE_RULES),
+        saved_quality_profiles={},
+        default_quality_profile=QualityProfile.UHD_2160P_HDR,
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    resolved = SettingsService.get_or_create(db_session)
+
+    assert "144p" in resolved.quality_profile_rules[QualityProfile.HD_1080P.value][
+        "exclude_tokens"
+    ]
+    assert "144p" in resolved.quality_profile_rules[QualityProfile.UHD_2160P_HDR.value][
+        "exclude_tokens"
     ]
 
 

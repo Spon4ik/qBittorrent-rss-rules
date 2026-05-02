@@ -12,6 +12,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import resolve_runtime_path
 from app.models import AppSettings, MediaType, Rule
 from app.services.metadata import MetadataClient, MetadataLookupError, MetadataLookupProvider
 from app.services.rule_builder import normalize_release_year
@@ -644,11 +645,9 @@ class JellyfinService:
         if not raw_path:
             raise JellyfinError("Jellyfin DB path is not configured.")
 
-        db_path = Path(raw_path).expanduser()
-        if not db_path.is_absolute():
-            db_path = (Path.cwd() / db_path).resolve()
-        else:
-            db_path = db_path.resolve()
+        db_path = resolve_runtime_path(raw_path)
+        if db_path is None:
+            raise JellyfinError("Jellyfin DB path is not configured.")
         if not db_path.exists():
             raise JellyfinError(f"Jellyfin DB path does not exist: {db_path}")
         if not db_path.is_file():

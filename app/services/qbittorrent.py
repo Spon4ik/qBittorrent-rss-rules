@@ -92,6 +92,30 @@ class QbittorrentClient:
         )
         return self.flatten_feed_tree(payload)
 
+    def add_feed(self, *, url: str, path: str) -> None:
+        cleaned_url = str(url or "").strip()
+        if not cleaned_url:
+            return
+        self._request(
+            "POST",
+            "/api/v2/rss/addFeed",
+            data={"url": cleaned_url, "path": str(path or "").strip()},
+            expect_json=False,
+            allowed_status_codes={409},
+        )
+
+    def remove_feed(self, path: str) -> None:
+        cleaned_path = str(path or "").strip()
+        if not cleaned_path:
+            return
+        self._request(
+            "POST",
+            "/api/v2/rss/removeItem",
+            data={"path": cleaned_path},
+            expect_json=False,
+            allowed_status_codes={404},
+        )
+
     def create_category(self, name: str) -> None:
         if not name.strip():
             return

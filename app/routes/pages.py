@@ -50,11 +50,11 @@ from app.services.metadata import (
     metadata_lookup_provider_catalog,
     metadata_lookup_provider_choices,
 )
-from app.services.qbittorrent import QbittorrentClient, QbittorrentClientError
 from app.services.quality_filters import (
     available_filter_profile_choices,
     available_filter_profile_choices_for_media_type,
     detect_matching_filter_profile_key,
+    effective_rule_quality_tokens,
     preview_quality_taxonomy_update,
     quality_option_choices,
     quality_option_groups,
@@ -139,21 +139,24 @@ def _safe_feed_options(
     session: Session, selected_urls: list[str] | None = None
 ) -> list[dict[str, str]]:
     settings = SettingsService.get_or_create(session)
-    connection = SettingsService.resolve_qb_connection(settings)
     selected_urls = selected_urls or []
     feed_options: list[dict[str, str]] = []
-    if connection.is_configured:
+    jackett = SettingsService.resolve_jackett(settings)
+    if jackett.app_ready:
         try:
-            with QbittorrentClient(
-                connection.base_url, connection.username, connection.password
-            ) as client:
-                feed_options = [item.model_dump() for item in client.get_feeds()]
-        except QbittorrentClientError:
+            feed_options = JackettClient(
+                jackett.api_url,
+                jackett.api_key,
+                language_overrides=jackett.language_overrides,
+            ).configured_indexer_options()
+        except JackettClientError:
             feed_options = []
     seen = {item["url"] for item in feed_options}
     for url in selected_urls:
         if url not in seen:
-            feed_options.append({"label": f"Saved feed: {url}", "url": url})
+            indexer = feed_indexer_slug(url)
+            if indexer:
+                feed_options.append({"label": f"Jackett/{indexer}", "url": url})
             seen.add(url)
     return feed_options
 
@@ -164,10 +167,18 @@ def _safe_rule_language_options(session: Session) -> list[dict[str, str]]:
     if not jackett.app_ready:
         return []
     try:
-        client = JackettClient(jackett.api_url, jackett.api_key)
+        client = JackettClient(
+            jackett.api_url,
+            jackett.api_key,
+            language_overrides=jackett.language_overrides,
+        )
         return client.configured_language_options()
     except JackettClientError:
         return []
+
+
+def _default_rule_language(session: Session) -> str:
+    return DEFAULT_RULE_LANGUAGE if _safe_rule_language_options(session) else ""
 
 
 LANGUAGE_FEED_SELECTION_JACKETT_UNAVAILABLE = (
@@ -179,6 +190,19 @@ LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE = (
 LANGUAGE_FEED_SELECTION_NO_MATCHING_FEEDS = (
     "No Jackett-backed qB feeds match the selected language."
 )
+DEFAULT_RULE_LANGUAGE = "ru"
+
+
+def _normalize_language_list(language: str | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_item in str(language or "").split(","):
+        candidate = raw_item.strip().casefold()
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        normalized.append(candidate)
+    return normalized
 
 
 def _resolve_language_feed_urls(
@@ -187,8 +211,8 @@ def _resolve_language_feed_urls(
     language: str | None,
     selected_urls: list[str] | None = None,
 ) -> tuple[list[str], str | None]:
-    normalized_language = str(language or "").strip().casefold()
-    if not normalized_language:
+    normalized_languages = _normalize_language_list(language)
+    if not normalized_languages:
         return _normalize_feed_url_list(selected_urls), None
 
     settings = SettingsService.get_or_create(session)
@@ -196,26 +220,21 @@ def _resolve_language_feed_urls(
     if not jackett.app_ready:
         return [], LANGUAGE_FEED_SELECTION_JACKETT_UNAVAILABLE
 
-    live_feed_options = _safe_feed_options(session, [])
-    if not live_feed_options:
-        return [], LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE
-    feed_options = _safe_feed_options(session, selected_urls)
-
     try:
-        client = JackettClient(jackett.api_url, jackett.api_key)
-        language_map = client.configured_indexer_languages()
+        client = JackettClient(
+            jackett.api_url,
+            jackett.api_key,
+            language_overrides=jackett.language_overrides,
+        )
+        feed_map: dict[str, str] = {}
+        for normalized_language in normalized_languages:
+            feed_map.update(client.configured_indexer_feed_urls(language=normalized_language))
     except JackettClientError:
-        return [], "Language-based feed selection could not read Jackett indexer metadata."
+        return _normalize_feed_url_list(selected_urls), (
+            "Language-based feed selection could not read Jackett indexer metadata."
+        )
 
-    resolved_feed_urls: list[str] = []
-    for feed in feed_options:
-        feed_url = str(feed.get("url") or "").strip()
-        indexer = _feed_url_to_indexer_slug(feed_url)
-        if not indexer:
-            continue
-        if normalized_language not in set(language_map.get(indexer, [])):
-            continue
-        resolved_feed_urls.append(feed_url)
+    resolved_feed_urls = list(feed_map.values())
 
     if not resolved_feed_urls:
         return [], LANGUAGE_FEED_SELECTION_NO_MATCHING_FEEDS
@@ -229,9 +248,9 @@ def _resolved_rule_form_feed_urls(
     resolved_language_feed_urls: list[str],
     language_resolution_notice: str | None,
 ) -> list[str]:
-    if not str(language or "").strip():
+    if not _normalize_language_list(language):
         return _normalize_feed_url_list(form_feed_urls)
-    if language_resolution_notice == LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE:
+    if language_resolution_notice is not None:
         return _normalize_feed_url_list(form_feed_urls)
     return _normalize_feed_url_list(resolved_language_feed_urls)
 
@@ -747,8 +766,8 @@ def _apply_rule_search_scope(
     if feed_scope_notice:
         notices.append(feed_scope_notice)
 
-    normalized_language = str(getattr(rule, "language", "") or "").strip().casefold()
-    if not normalized_language:
+    normalized_languages = _normalize_language_list(getattr(rule, "language", ""))
+    if not normalized_languages:
         return scoped_payload, " ".join(notices) if notices else None
 
     settings = SettingsService.get_or_create(session)
@@ -757,7 +776,11 @@ def _apply_rule_search_scope(
         return scoped_payload, " ".join(notices) if notices else None
 
     try:
-        client = JackettClient(jackett.api_url, jackett.api_key)
+        client = JackettClient(
+            jackett.api_url,
+            jackett.api_key,
+            language_overrides=jackett.language_overrides,
+        )
         language_map = client.configured_indexer_languages()
     except JackettClientError:
         return scoped_payload, " ".join(notices) if notices else None
@@ -765,7 +788,9 @@ def _apply_rule_search_scope(
     matching_indexers = sorted(
         indexer
         for indexer, languages in language_map.items()
-        if normalized_language in {str(code).strip().casefold() for code in languages}
+        if not set(normalized_languages).isdisjoint(
+            {str(code).strip().casefold() for code in languages}
+        )
     )
     if not matching_indexers:
         return scoped_payload, " ".join(notices) if notices else None
@@ -774,7 +799,7 @@ def _apply_rule_search_scope(
         scoped_indexer = matching_indexers[0]
         notices.append(
             "Search scoped to Jackett indexer from the saved rule language "
-            f"({normalized_language}): {scoped_indexer}."
+            f"({', '.join(normalized_languages)}): {scoped_indexer}."
         )
         return (
             scoped_payload.model_copy(
@@ -792,7 +817,7 @@ def _apply_rule_search_scope(
     )
     notices.append(
         "Search scoped to Jackett indexers from the saved rule language "
-        f"({normalized_language}): {', '.join(matching_indexers)}."
+        f"({', '.join(normalized_languages)}): {', '.join(matching_indexers)}."
     )
     return (
         scoped_payload.model_copy(
@@ -1142,6 +1167,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
     jackett_api_url = ""
     jackett_qb_url = ""
     jackett_api_key: str | None = None
+    jackett_language_overrides: dict[str, list[str]] = {}
     search_view_defaults = {
         "view_mode": DEFAULT_SEARCH_RESULT_VIEW_MODE,
         "sort_criteria": [dict(item) for item in DEFAULT_SEARCH_SORT_CRITERIA],
@@ -1161,6 +1187,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
         jackett_api_url = jackett.api_url or ""
         jackett_qb_url = jackett.qb_url or ""
         jackett_api_key = jackett.api_key
+        jackett_language_overrides = jackett.language_overrides
         search_view_defaults = {
             "view_mode": normalize_search_result_view_mode(settings.search_result_view_mode),
             "sort_criteria": normalize_search_sort_criteria(settings.search_sort_criteria),
@@ -1330,7 +1357,11 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
             try:
                 active_payload = _auto_imdb_first_payload(active_payload)
                 _sync_search_form_data_with_payload(form_data, active_payload)
-                client = JackettClient(jackett_api_url, jackett_api_key)
+                client = JackettClient(
+                    jackett_api_url,
+                    jackett_api_key,
+                    language_overrides=jackett_language_overrides,
+                )
                 result = client.search(active_payload)
                 all_results = [
                     *list(result.raw_results or []),
@@ -1538,7 +1569,7 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
         "add_paused": settings.default_add_paused,
         "enabled": settings.default_enabled,
         "smart_filter": False,
-        "language": "",
+        "language": _default_rule_language(session),
         "assigned_category": "",
         "save_path": "",
         "feed_urls": list(settings.default_feed_urls or []),
@@ -1671,6 +1702,9 @@ def edit_rule(
     settings = SettingsService.get_or_create(session)
     profile_rules = resolve_quality_profile_rules(settings)
     form_data = _rule_to_form_data(rule)
+    effective_include_tokens, effective_exclude_tokens = effective_rule_quality_tokens(rule, settings)
+    form_data["quality_include_tokens"] = effective_include_tokens
+    form_data["quality_exclude_tokens"] = effective_exclude_tokens
     form_media_type = str(
         form_data.get("media_type", MediaType.SERIES.value) or MediaType.SERIES.value
     )
@@ -1798,7 +1832,11 @@ def edit_rule(
                 else:
                     try:
                         payload_from_rule = _auto_imdb_first_payload(payload_from_rule)
-                        client = JackettClient(jackett.api_url, jackett.api_key)
+                        client = JackettClient(
+                            jackett.api_url,
+                            jackett.api_key,
+                            language_overrides=jackett.language_overrides,
+                        )
                         result = client.search(payload_from_rule)
                         all_results = [
                             *list(result.raw_results or []),
@@ -1917,6 +1955,7 @@ def taxonomy_page(request: Request, session: Session = Depends(get_db_session)) 
             "taxonomy_snapshot": None,
             "current_taxonomy_preview": None,
             "taxonomy_audit_entries": recent_quality_taxonomy_audit_entries(),
+            "taxonomy_media_types": [choice["value"] for choice in media_type_choices()],
             "errors": [],
         }
     )

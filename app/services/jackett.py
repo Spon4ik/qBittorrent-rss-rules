@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any, cast
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 
 import httpx
 
@@ -21,7 +21,11 @@ from app.schemas import (
     JackettSearchResult,
     JackettSearchRun,
 )
-from app.services.quality_filters import quality_option_choices, quality_token_group_map
+from app.services.quality_filters import (
+    effective_rule_quality_tokens,
+    quality_option_choices,
+    quality_token_group_map,
+)
 from app.services.rule_builder import (
     looks_like_full_must_contain_override,
     normalize_release_year,
@@ -678,6 +682,27 @@ def _detected_language_codes(*values: object | None) -> list[str]:
     return _dedupe_strings(codes)
 
 
+def _normalize_indexer_language_overrides(
+    raw_overrides: Mapping[str, Sequence[str] | str] | None,
+) -> dict[str, list[str]]:
+    overrides: dict[str, list[str]] = {}
+    for raw_indexer, raw_languages in dict(raw_overrides or {}).items():
+        indexer = _coerce_text(raw_indexer).casefold()
+        if not indexer:
+            continue
+        language_values: Sequence[str]
+        if isinstance(raw_languages, str):
+            language_values = re.split(r"[\s,|]+", raw_languages)
+        else:
+            language_values = list(raw_languages)
+        languages = _dedupe_strings(
+            [_coerce_text(language).casefold() for language in language_values]
+        )
+        if languages:
+            overrides[indexer] = languages
+    return overrides
+
+
 def feed_indexer_slug(feed_url: str | None) -> str | None:
     parsed = urlsplit(_coerce_text(feed_url))
     match = JACKETT_FEED_INDEXER_PATH_RE.search(parsed.path or "")
@@ -1318,7 +1343,11 @@ def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, Any], bool]:
             keywords_all.append(group[0])
             continue
         keywords_any_groups.append(group)
-    keywords_not = _quality_terms(_coerce_string_list(rule.quality_exclude_tokens))
+    effective_include_tokens, effective_exclude_tokens = effective_rule_quality_tokens(
+        rule,
+        normalize_explicit=False,
+    )
+    keywords_not = _quality_terms(effective_exclude_tokens)
     primary_keywords_not = list(keywords_not)
     must_contain_override = _normalize_legacy_optional_text(rule.must_contain_override)
     ignored_full_regex = looks_like_full_must_contain_override(must_contain_override)
@@ -1333,7 +1362,7 @@ def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, Any], bool]:
         keywords_any_groups.extend(regex_any_groups)
         keywords_not.extend(regex_not)
 
-    quality_any_groups = _group_quality_terms(_coerce_string_list(rule.quality_include_tokens))
+    quality_any_groups = _group_quality_terms(effective_include_tokens)
     if quality_any_groups:
         keywords_any_groups.extend(quality_any_groups)
         primary_keywords_any_groups.extend(quality_any_groups)
@@ -1472,13 +1501,16 @@ class JackettClient:
         *,
         timeout: float | None = None,
         transport: httpx.BaseTransport | None = None,
+        language_overrides: Mapping[str, Sequence[str] | str] | None = None,
     ) -> None:
+        env_settings = get_environment_settings()
         self.base_url = (base_url or "").rstrip("/")
         self.api_key = (api_key or "").strip() or None
-        self.timeout = (
-            timeout if timeout is not None else get_environment_settings().request_timeout
-        )
+        self.timeout = timeout if timeout is not None else env_settings.request_timeout
         self.transport = transport
+        self.language_overrides = _normalize_indexer_language_overrides(
+            language_overrides if language_overrides is not None else env_settings.jackett_language_overrides
+        )
         self._indexer_category_label_map: dict[str, dict[str, list[str]]] | None = None
         self._indexer_language_map: dict[str, list[str]] | None = None
 
@@ -1639,6 +1671,36 @@ class JackettClient:
         discovered = self._configured_indexer_languages()
         return {indexer_key: list(languages) for indexer_key, languages in discovered.items()}
 
+    def configured_indexer_feed_urls(self, *, language: str | None = None) -> dict[str, str]:
+        normalized_language = str(language or "").strip().casefold()
+        language_map = self.configured_indexer_languages()
+        feeds: dict[str, str] = {}
+        for indexer in sorted(language_map):
+            if normalized_language and normalized_language not in set(language_map.get(indexer, [])):
+                continue
+            feeds[indexer] = self._torznab_feed_url(indexer)
+        return feeds
+
+    def configured_indexer_options(self) -> list[dict[str, str]]:
+        language_map = self.configured_indexer_languages()
+        options: list[dict[str, str]] = []
+        for indexer in sorted(language_map):
+            languages = list(language_map.get(indexer, []))
+            language_labels = [
+                LANGUAGE_LABELS.get(code, code.upper())
+                for code in languages
+            ]
+            label_suffix = f" ({', '.join(language_labels)})" if language_labels else ""
+            options.append(
+                {
+                    "url": self._torznab_feed_url(indexer),
+                    "label": f"Jackett/{indexer}{label_suffix}",
+                    "indexer": indexer,
+                    "languages": ",".join(languages),
+                }
+            )
+        return options
+
     def configured_language_options(self) -> list[dict[str, str]]:
         language_map = self._configured_indexer_languages()
         counts: dict[str, int] = {}
@@ -1658,6 +1720,12 @@ class JackettClient:
                 }
             )
         return options
+
+    def _torznab_feed_url(self, indexer: str) -> str:
+        endpoint = self._torznab_endpoint(indexer)
+        parsed = urlsplit(endpoint)
+        query = urlencode({"apikey": self.api_key or "", "t": "search"})
+        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, parsed.fragment))
 
     @staticmethod
     def _remote_payload_for_standard_search(payload: JackettSearchRequest) -> JackettSearchRequest:
@@ -2830,6 +2898,9 @@ class JackettClient:
                 indexer.findtext("./description"),
                 indexer.findtext("./link"),
             )
+            override_languages = self.language_overrides.get(indexer_id.casefold())
+            if override_languages:
+                languages = override_languages
             if not languages:
                 continue
             discovered[indexer_id.casefold()] = languages

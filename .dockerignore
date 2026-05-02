@@ -1,0 +1,14 @@
+.git
+.venv
+.venv-linux
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+data
+dist
+logs
+QbRssRulesDesktop/bin
+QbRssRulesDesktop/obj
+*.lnk

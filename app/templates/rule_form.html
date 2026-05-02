@@ -284,16 +284,26 @@
       <span class="rule-criteria-title">Destination And Feeds</span>
     </summary>
   <section class="form-grid">
+    {% set selected_languages = form_data.language if form_data.language is sequence and form_data.language is not string else (form_data.language.split(',') if form_data.language else []) %}
     <label>
       Language
-      <select name="language" id="rule-language-select">
-        <option value="">Manual feed selection</option>
-        {% for option in language_options or [] %}
-        <option value="{{ option.value }}" {% if form_data.language == option.value %}selected{% endif %}>
-          {{ option.label }} ({{ option.indexer_count }} indexer{{ '' if option.indexer_count == '1' else 's' }})
-        </option>
-        {% endfor %}
-      </select>
+      <details class="checkbox-dropdown" id="rule-language-select">
+        <summary data-language-summary>
+          {% if selected_languages %}
+          {{ selected_languages | join(', ') }}
+          {% else %}
+          Manual feed selection
+          {% endif %}
+        </summary>
+        <div class="checkbox-dropdown-menu">
+          {% for option in language_options or [] %}
+          <label class="checkbox-dropdown-option">
+            <input type="checkbox" name="language" value="{{ option.value }}" {% if option.value in selected_languages %}selected checked{% endif %} />
+            <span>{{ option.label }} ({{ option.indexer_count }} indexer{{ '' if option.indexer_count == '1' else 's' }})</span>
+          </label>
+          {% endfor %}
+        </div>
+      </details>
       <span class="helper-text">When set, the app resolves matching Jackett-backed qB feeds under the hood so qB RSS auto-downloader really uses the chosen language.</span>
     </label>
     <label>

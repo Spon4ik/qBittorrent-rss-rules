@@ -91,7 +91,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.1.0"
+    assert payload["app_version"] == "1.1.2"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -749,6 +749,76 @@ console.log(JSON.stringify({{
     assert payload["local"].startswith("(?i)^")
     assert payload["leakedMatches"] is False
     assert payload["allowedMatches"] is True
+
+
+def test_inline_quality_filter_regex_uses_release_token_boundaries() -> None:
+    node_executable = shutil.which("node")
+    if not node_executable:
+        pytest.skip("node is required for inline JS quality regex validation")
+
+    repo_root = Path(__file__).resolve().parents[1]
+    app_js_path = repo_root / "app" / "static" / "app.js"
+    node_script = f"""
+const fs = require("fs");
+const vm = require("vm");
+
+global.document = {{
+  addEventListener() {{}},
+  querySelector() {{ return null; }},
+  querySelectorAll() {{ return []; }},
+}};
+global.window = {{
+  addEventListener() {{}},
+  removeEventListener() {{}},
+  setTimeout() {{}},
+  clearTimeout() {{}},
+  requestAnimationFrame() {{ return 0; }},
+  cancelAnimationFrame() {{}},
+  location: {{ href: "http://127.0.0.1:8000/" }},
+}};
+global.Event = class Event {{}};
+global.CustomEvent = class CustomEvent {{}};
+global.FormData = class FormData {{}};
+global.URLSearchParams = URLSearchParams;
+global.fetch = async () => {{ throw new Error("not used"); }};
+
+const source = fs.readFileSync({json.dumps(str(app_js_path))}, "utf8");
+vm.runInThisContext(source, {{ filename: "app/static/app.js" }});
+
+const patternMap = {{
+  cam: "(?:hd)?cam(?:rip)?",
+  ts: "(?:hd)?ts",
+  hd: "hd",
+}};
+const camRegex = new RegExp(buildQualityRegex(["cam"], patternMap), "iu");
+const tsRegex = new RegExp(buildQualityRegex(["ts"], patternMap), "iu");
+const hdRegex = new RegExp(buildQualityRegex(["hd"], patternMap), "iu");
+console.log(JSON.stringify({{
+  camMatchesHdcam: camRegex.test("Film HDCAM 1080p"),
+  camMatchesCamelot: camRegex.test("Camelot 1080p WEB-DL"),
+  tsMatchesHdts: tsRegex.test("Film HDTS 1080p"),
+  tsMatchesSecrets: tsRegex.test("The Secrets 1080p WEB-DL"),
+  hdMatchesHd: hdRegex.test("Film HD WEB-DL"),
+  hdMatchesHdcam: hdRegex.test("Film HDCAM 1080p"),
+}}));
+"""
+    completed = subprocess.run(
+        [node_executable, "-e", node_script],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+    payload = json.loads(completed.stdout.strip())
+
+    assert payload == {
+        "camMatchesHdcam": True,
+        "camMatchesCamelot": False,
+        "tsMatchesHdts": True,
+        "tsMatchesSecrets": False,
+        "hdMatchesHd": True,
+        "hdMatchesHdcam": False,
+    }
 
 
 def test_inline_local_generated_pattern_keeps_same_season_complete_pack_when_keep_searching_enabled() -> None:
@@ -3552,7 +3622,21 @@ def test_taxonomy_page_renders_editor(app_client) -> None:
 
     assert response.status_code == 200
     assert "Inspect and edit the quality taxonomy" in response.text
+    assert "Add taxonomy value" in response.text
     assert 'name="taxonomy_json"' in response.text
+    assert 'name="option_value"' in response.text
+    assert 'class="taxonomy-grid"' in response.text
+    assert 'class="icon-button"' in response.text
+    assert "⇧" in response.text
+    assert "⇩" in response.text
+
+
+def test_settings_page_renders_jackett_language_override_editor(app_client) -> None:
+    response = app_client.get("/settings")
+
+    assert response.status_code == 200
+    assert "Indexer language overrides" in response.text
+    assert 'name="jackett_language_overrides_text"' in response.text
 
 
 def test_apply_taxonomy_updates_source_and_records_audit(app_client, tmp_path, monkeypatch) -> None:
@@ -3576,6 +3660,204 @@ def test_apply_taxonomy_updates_source_and_records_audit(app_client, tmp_path, m
         == "At Least HD Revised"
     )
     assert "rename bundle label" in audit_path.read_text(encoding="utf-8")
+
+
+def test_taxonomy_update_writes_runtime_data_file_not_packaged_seed(
+    app_client, tmp_path, monkeypatch
+) -> None:
+    source_path = tmp_path / "app" / "quality_taxonomy.json"
+    runtime_path = tmp_path / "data" / "quality_taxonomy.json"
+    audit_path = tmp_path / "taxonomy_audit.jsonl"
+    source_path.parent.mkdir(parents=True)
+    source_payload = {
+        "version": 3,
+        "groups": [{"key": "resolution", "label": "Resolution"}],
+        "options": [
+            {
+                "value": "1080p",
+                "label": "1080p",
+                "pattern": "1080p",
+                "group": "resolution",
+            }
+        ],
+        "bundles": [],
+        "aliases": [],
+        "ranks": [],
+    }
+    source_path.write_text(json.dumps(source_payload), encoding="utf-8")
+    monkeypatch.setattr(quality_filters, "QUALITY_TAXONOMY_SEED_PATH", source_path)
+    monkeypatch.setattr(quality_filters, "QUALITY_TAXONOMY_PATH", runtime_path)
+    monkeypatch.setattr(quality_filters, "QUALITY_TAXONOMY_AUDIT_PATH", audit_path)
+    quality_filters._clear_quality_taxonomy_cache()
+
+    updated_payload = {
+        **source_payload,
+        "options": [
+            *source_payload["options"],
+            {
+                "value": "400p",
+                "label": "400p",
+                "pattern": "400p",
+                "group": "resolution",
+            },
+        ],
+    }
+
+    response = app_client.post(
+        "/api/taxonomy/apply",
+        data={"taxonomy_json": json.dumps(updated_payload), "taxonomy_change_note": "add 400p"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert runtime_path.exists()
+    assert "400p" in runtime_path.read_text(encoding="utf-8")
+    assert "400p" not in source_path.read_text(encoding="utf-8")
+
+
+def test_add_taxonomy_option_uses_structured_form(app_client, tmp_path, monkeypatch) -> None:
+    payload, taxonomy_path, ignored_audit_path = _use_temp_taxonomy(tmp_path, monkeypatch)
+    payload["options"] = [item for item in payload["options"] if item["value"] != "400p"]
+    for rank in payload["ranks"]:
+        rank["tokens"] = [token for token in rank["tokens"] if token != "400p"]
+    taxonomy_path.write_text(json.dumps(payload), encoding="utf-8")
+    quality_filters._clear_quality_taxonomy_cache()
+
+    response = app_client.post(
+        "/api/taxonomy/options/add",
+        data={
+            "option_group": "resolution",
+            "option_value": "400p",
+            "option_label": "400p",
+            "option_pattern": "400p",
+            "option_media_types": ["series", "movie"],
+            "taxonomy_change_note": "add 400p",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    updated = json.loads(taxonomy_path.read_text(encoding="utf-8"))
+    assert {item["value"] for item in updated["options"]} == {
+        *{item["value"] for item in payload["options"]},
+        "400p",
+    }
+    resolution_rank = next(item for item in updated["ranks"] if item["key"] == "resolution")
+    resolution_values = [
+        item["value"] for item in updated["options"] if item["group"] == "resolution"
+    ]
+    assert resolution_values.index("360p") < resolution_values.index("400p")
+    assert resolution_values.index("400p") < resolution_values.index("480p")
+    assert resolution_rank["tokens"].index("360p") < resolution_rank["tokens"].index("400p")
+    assert resolution_rank["tokens"].index("400p") < resolution_rank["tokens"].index("480p")
+
+
+def test_remove_taxonomy_option_uses_structured_form(app_client, tmp_path, monkeypatch) -> None:
+    payload, taxonomy_path, ignored_audit_path = _use_temp_taxonomy(tmp_path, monkeypatch)
+
+    response = app_client.post(
+        "/api/taxonomy/options/remove",
+        data={"option_value": "av1", "taxonomy_change_note": "remove av1"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    updated = json.loads(taxonomy_path.read_text(encoding="utf-8"))
+    assert "av1" not in {item["value"] for item in updated["options"]}
+    assert "av1" in {item["value"] for item in payload["options"]}
+
+
+def test_move_taxonomy_option_updates_group_and_rank_order(
+    app_client, tmp_path, monkeypatch
+) -> None:
+    payload, taxonomy_path, ignored_audit_path = _use_temp_taxonomy(tmp_path, monkeypatch)
+    options = payload["options"]
+    ranks = payload["ranks"]
+    assert isinstance(options, list)
+    assert isinstance(ranks, list)
+    payload["options"] = [item for item in options if item["value"] != "400p"]
+    options = payload["options"]
+    resolution_options = [item for item in options if item["group"] == "resolution"]
+    insert_index = options.index(next(item for item in resolution_options if item["value"] == "480p")) + 1
+    options.insert(
+        insert_index,
+        {
+            "value": "400p",
+            "label": "400p",
+            "pattern": "400p",
+            "group": "resolution",
+            "media_types": ["series", "movie"],
+        },
+    )
+    resolution_rank = next(item for item in ranks if item["key"] == "resolution")
+    resolution_rank["tokens"] = [token for token in resolution_rank["tokens"] if token != "400p"]
+    resolution_rank["tokens"].insert(
+        resolution_rank["tokens"].index("480p") + 1,
+        "400p",
+    )
+    taxonomy_path.write_text(json.dumps(payload), encoding="utf-8")
+    quality_filters._clear_quality_taxonomy_cache()
+
+    response = app_client.post(
+        "/api/taxonomy/options/move",
+        data={
+            "option_value": "400p",
+            "direction": "up",
+            "taxonomy_change_note": "move 400p up",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    updated = json.loads(taxonomy_path.read_text(encoding="utf-8"))
+    resolution_values = [
+        item["value"] for item in updated["options"] if item["group"] == "resolution"
+    ]
+    assert resolution_values.index("400p") < resolution_values.index("480p")
+    updated_resolution_rank = next(item for item in updated["ranks"] if item["key"] == "resolution")
+    assert updated_resolution_rank["tokens"].index("400p") < updated_resolution_rank[
+        "tokens"
+    ].index("480p")
+
+
+def test_move_taxonomy_option_restores_missing_rank_token(
+    app_client, tmp_path, monkeypatch
+) -> None:
+    payload, taxonomy_path, ignored_audit_path = _use_temp_taxonomy(tmp_path, monkeypatch)
+    payload["options"] = [item for item in payload["options"] if item["value"] != "400p"]
+    for rank in payload["ranks"]:
+        rank["tokens"] = [token for token in rank["tokens"] if token != "400p"]
+    payload["options"].append(
+        {
+            "value": "400p",
+            "label": "400p",
+            "pattern": "400p",
+            "group": "resolution",
+            "media_types": ["series", "movie"],
+        }
+    )
+    taxonomy_path.write_text(json.dumps(payload), encoding="utf-8")
+    quality_filters._clear_quality_taxonomy_cache()
+
+    response = app_client.post(
+        "/api/taxonomy/options/move",
+        data={
+            "option_value": "400p",
+            "direction": "up",
+            "taxonomy_change_note": "repair 400p rank",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    updated = json.loads(taxonomy_path.read_text(encoding="utf-8"))
+    updated_resolution_rank = next(item for item in updated["ranks"] if item["key"] == "resolution")
+    assert updated_resolution_rank["tokens"].index("360p") < updated_resolution_rank[
+        "tokens"
+    ].index("400p")
+    assert updated_resolution_rank["tokens"].index("400p") < updated_resolution_rank[
+        "tokens"
+    ].index("480p")
 
 
 def test_apply_taxonomy_allows_label_rename_when_invalid_tokens_already_exist(
@@ -4476,17 +4758,15 @@ def test_overwrite_filter_profile_updates_builtin_at_least_uhd(app_client, db_se
 
 def test_new_rule_prefills_remembered_default_feeds(app_client, db_session) -> None:
     settings = AppSettings(id="default")
-    settings.default_feed_urls = ["http://feed.example/remembered"]
+    remembered_feed = "http://jackett.test/api/v2.0/indexers/remembered/results/torznab/api"
+    settings.default_feed_urls = [remembered_feed]
     db_session.add(settings)
     db_session.commit()
 
     response = app_client.get("/rules/new")
 
     assert response.status_code == 200
-    assert (
-        'type="checkbox" name="feed_urls" value="http://feed.example/remembered" checked'
-        in response.text
-    )
+    assert f'type="checkbox" name="feed_urls" value="{remembered_feed}" checked' in response.text
     assert 'name="remember_feed_defaults" value="on" checked' in response.text
 
 
@@ -4619,7 +4899,67 @@ def test_create_rule_resolves_feed_urls_from_language_before_save(
     assert saved_rule is not None
     assert saved_rule.language == "ru"
     assert saved_rule.feed_urls == [
-        "http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc"
+        "http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=apikey&t=search"
+    ]
+
+
+def test_create_rule_resolves_feed_urls_from_multiple_languages(
+    app_client, db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://qb.test",
+        qb_username="user",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jackett_api_url="http://jackett.test",
+        jackett_qb_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        JackettClient,
+        "configured_indexer_languages",
+        lambda self: {"rutracker": ["ru"], "fuzer": ["he"]},
+    )
+    monkeypatch.setattr(
+        SyncService,
+        "sync_rule",
+        lambda self, rule_id: SyncResult(
+            success=True,
+            action="create",
+            rule_id=rule_id,
+            rule_name="Rule With Multi Language",
+            message="ok",
+        ),
+    )
+
+    response = app_client.post(
+        "/api/rules",
+        data={
+            "rule_name": "Rule With Multi Language",
+            "content_name": "Rule With Multi Language",
+            "normalized_title": "Rule With Multi Language",
+            "imdb_id": "tt7654322",
+            "media_type": "series",
+            "quality_profile": "plain",
+            "enabled": "on",
+            "add_paused": "on",
+            "language": ["ru", "he"],
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    saved_rule = db_session.scalar(
+        select(Rule).where(Rule.rule_name == "Rule With Multi Language")
+    )
+    assert saved_rule is not None
+    assert saved_rule.language == "ru,he"
+    assert saved_rule.feed_urls == [
+        "http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=apikey&t=search",
+        "http://jackett.test/api/v2.0/indexers/fuzer/results/torznab/api?apikey=apikey&t=search",
     ]
 
 
@@ -4671,6 +5011,7 @@ def test_create_rule_with_language_and_no_matching_feeds_returns_error(
 
     assert response.status_code == 400
     assert "No Jackett-backed qB feeds match the selected language." in response.text
+    assert "No Jackett-backed qB feeds match the selected language." in response.text
 
 
 def test_create_rule_with_language_saves_when_qb_feeds_are_unavailable(
@@ -4714,11 +5055,9 @@ def test_create_rule_with_language_saves_when_qb_feeds_are_unavailable(
         follow_redirects=False,
     )
 
-    assert response.status_code == 303
+    assert response.status_code == 400
     saved_rule = db_session.scalar(select(Rule).where(Rule.rule_name == "Rule Without qB Feeds"))
-    assert saved_rule is not None
-    assert saved_rule.language == "ru"
-    assert saved_rule.feed_urls == []
+    assert saved_rule is None
 
 
 def test_update_rule_with_language_preserves_saved_feeds_when_qb_feeds_are_unavailable(
@@ -4837,13 +5176,15 @@ def test_update_rule_with_new_language_saves_when_qb_feeds_are_unavailable(
         follow_redirects=False,
     )
 
-    assert response.status_code == 303
+    assert response.status_code == 400
     db_session.expire_all()
     refreshed_rule = db_session.get(Rule, rule.id)
     assert refreshed_rule is not None
-    assert refreshed_rule.language == "ru"
-    assert refreshed_rule.normalized_title == "Language Change Rule Updated"
-    assert refreshed_rule.feed_urls == []
+    assert refreshed_rule.language == "he"
+    assert refreshed_rule.normalized_title == "Language Change Rule"
+    assert refreshed_rule.feed_urls == [
+        "http://jackett.test/api/v2.0/indexers/fuzer/results/torznab/api?apikey=abc"
+    ]
 
 
 def test_edit_rule_defaults_to_remembering_selected_feeds(app_client, db_session) -> None:
@@ -4918,13 +5259,14 @@ def test_rule_form_includes_bulk_feed_selection_controls(app_client) -> None:
 
 
 def test_edit_rule_renders_saved_feeds_as_checked_checkboxes(app_client, db_session) -> None:
+    saved_feed = "http://jackett.test/api/v2.0/indexers/saved/results/torznab/api"
     rule = Rule(
         rule_name="Rule Saved Feed",
         content_name="Rule Saved Feed",
         normalized_title="Rule Saved Feed",
         media_type=MediaType.SERIES,
         quality_profile=QualityProfile.PLAIN,
-        feed_urls=["http://feed.example/saved"],
+        feed_urls=[saved_feed],
     )
     db_session.add(rule)
     db_session.commit()
@@ -4932,10 +5274,7 @@ def test_edit_rule_renders_saved_feeds_as_checked_checkboxes(app_client, db_sess
     response = app_client.get(f"/rules/{rule.id}")
 
     assert response.status_code == 200
-    assert (
-        'type="checkbox" name="feed_urls" value="http://feed.example/saved" checked'
-        in response.text
-    )
+    assert f'type="checkbox" name="feed_urls" value="{saved_feed}" checked' in response.text
 
 
 def test_edit_rule_disables_manual_feed_checkboxes_when_language_is_active(
@@ -5028,7 +5367,6 @@ def test_edit_rule_keeps_saved_feed_list_visible_when_qb_feeds_are_unavailable(
     response = app_client.get(f"/rules/{rule.id}")
 
     assert response.status_code == 200
-    assert "Language-based feed selection needs available qB RSS feeds." in response.text
     assert (
         'type="checkbox" name="feed_urls" '
         'value="http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc" checked'

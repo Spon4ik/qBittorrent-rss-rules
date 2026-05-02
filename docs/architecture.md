@@ -54,11 +54,13 @@ The app is designed around one rule authority:
 
 ### Quality token normalization
 
-1. The server loads `app/data/quality_taxonomy.json` and validates schema version `1`, `2`, or `3` at startup-time use.
+1. The server loads runtime `data/quality_taxonomy.json`, seeding it from `app/data/quality_taxonomy.json` when missing, and validates schema version `1`, `2`, or `3` at startup-time use.
 2. Leaf option IDs remain the canonical storage format for rules and saved filter profiles.
 3. `app/services/quality_filters.py` keeps optional `media_types` metadata for UI scoping, but still expands bundles and aliases into leaf option IDs before persistence or regex generation.
 4. Saved filter profiles may carry optional `media_types` for rule-form visibility; stored rule tokens remain flat leaf IDs.
-5. Rank metadata is loaded for future authoring UX, but it does not change current rule storage or rendering behavior in this phase.
+5. Built-in video filter profiles derive their resolution include/exclude thresholds from the live `resolution` rank, so adding a lower value such as `240p` automatically extends preset exclusions and adding a higher value automatically extends preset inclusions.
+6. `SettingsService.get_or_create()` refreshes stored default profile rules only when they still match known default snapshots; customized profile rules remain as authored.
+7. Rules that carry a built-in `quality_profile` plus an older explicit token snapshot are treated as profile-owned when the only missing tokens are taxonomy-added resolution values, preserving profile identity without overriding genuinely manual token edits.
 
 
 
@@ -75,7 +77,7 @@ The app is designed around one rule authority:
 1. The `/taxonomy` page reads the live JSON source of truth and renders a local editor.
 2. `POST /api/taxonomy/validate` parses a draft, runs the same schema validation as the live loader, and previews added or removed leaf tokens.
 3. The draft preview checks saved filter profiles plus all stored rules to detect any removed live tokens that would newly orphan persisted selections.
-4. `POST /api/taxonomy/apply` writes the formatted JSON back to `app/data/quality_taxonomy.json`, clears the loader cache, and appends a local audit entry in `data/taxonomy_audit.jsonl`.
+4. `POST /api/taxonomy/apply` writes the formatted JSON back to runtime `data/quality_taxonomy.json`, clears the loader cache, and appends a local audit entry in `data/taxonomy_audit.jsonl`.
 5. Unsafe drafts are rejected before the live taxonomy file is changed, while already-invalid legacy tokens are still surfaced for cleanup without blocking non-destructive label edits.
 
 ## Sync flow

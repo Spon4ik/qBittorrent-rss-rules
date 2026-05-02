@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
@@ -21,8 +22,11 @@ from app.models import (
     media_type_label,
 )
 from app.routes.pages import (
+    DEFAULT_RULE_LANGUAGE,
     LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE,
+    _normalize_language_list,
     _resolve_language_feed_urls,
+    _safe_feed_options,
     _safe_rule_language_options,
 )
 from app.schemas import (
@@ -57,11 +61,13 @@ from app.services.metadata import (
 )
 from app.services.qbittorrent import QbittorrentClient, QbittorrentClientError
 from app.services.quality_filters import (
+    add_quality_taxonomy_option,
     apply_quality_taxonomy_update,
     available_filter_profile_choices,
     available_filter_profile_choices_for_media_type,
     build_available_filter_profiles,
     builtin_filter_profile_keys,
+    move_quality_taxonomy_option,
     normalize_saved_quality_profiles,
     preview_quality_taxonomy_update,
     quality_option_choices,
@@ -71,6 +77,7 @@ from app.services.quality_filters import (
     quality_taxonomy_snapshot,
     read_quality_taxonomy_text,
     recent_quality_taxonomy_audit_entries,
+    remove_quality_taxonomy_option,
     resolve_quality_profile_rules,
     slugify_profile_key,
 )
@@ -128,7 +135,7 @@ def _snapshot_queue_rows(snapshot: object | None) -> list[dict[str, Any]]:
 
 
 def _matching_refreshed_queue_link(
-    refreshed_rows: list[object],
+    refreshed_rows: Sequence[object],
     *,
     snapshot_row: dict[str, Any],
 ) -> str | None:
@@ -202,7 +209,11 @@ def _refresh_stale_rule_queue_link(
     if not jackett.api_url or not jackett.api_key:
         return None, indexer_label
     payload, ignored_full_regex = build_search_request_from_rule(rule)
-    client = JackettClient(jackett.api_url, jackett.api_key)
+    client = JackettClient(
+        jackett.api_url,
+        jackett.api_key,
+        language_overrides=jackett.language_overrides,
+    )
     refreshed_run = client.search(payload)
     refreshed_link = _matching_refreshed_queue_link(
         refreshed_run.results,
@@ -252,7 +263,7 @@ def _raw_rule_form_data(form: Any) -> dict[str, Any]:
         "add_paused": _bool_from_form(form, "add_paused"),
         "enabled": _bool_from_form(form, "enabled"),
         "smart_filter": _bool_from_form(form, "smart_filter"),
-        "language": form.get("language", ""),
+        "language": form.getlist("language"),
         "assigned_category": form.get("assigned_category", ""),
         "save_path": form.get("save_path", ""),
         "feed_urls": form.getlist("feed_urls"),
@@ -273,6 +284,7 @@ def _raw_settings_form_data(form: Any) -> dict[str, Any]:
         "jackett_api_url": form.get("jackett_api_url") or None,
         "jackett_qb_url": form.get("jackett_qb_url") or None,
         "jackett_api_key": form.get("jackett_api_key") or None,
+        "jackett_language_overrides_text": form.get("jackett_language_overrides_text", ""),
         "jellyfin_db_path": form.get("jellyfin_db_path") or None,
         "jellyfin_user_name": form.get("jellyfin_user_name") or None,
         "jellyfin_auto_sync_enabled": _bool_from_form(form, "jellyfin_auto_sync_enabled"),
@@ -390,20 +402,7 @@ def _render_rule_form(
         "content_layout": "wide",
     }
 
-    connection = SettingsService.resolve_qb_connection(settings)
-    if connection.is_configured:
-        try:
-            with QbittorrentClient(
-                connection.base_url, connection.username, connection.password
-            ) as client:
-                context["feed_options"] = [item.model_dump() for item in client.get_feeds()]
-        except QbittorrentClientError:
-            pass
-    seen = {item["url"] for item in context["feed_options"]}
-    for url in selected_feed_urls:
-        if url not in seen:
-            context["feed_options"].append({"label": f"Saved feed: {url}", "url": url})
-            seen.add(url)
+    context["feed_options"] = _safe_feed_options(session, selected_feed_urls)
 
     return templates.TemplateResponse(request, "rule_form.html", context, status_code=status_code)
 
@@ -444,8 +443,11 @@ def _resolve_rule_payload_feeds(
     *,
     existing_rule: Rule | None = None,
 ) -> tuple[RuleFormPayload, str | None]:
-    if not payload.language:
+    had_language = bool(_normalize_language_list(payload.language))
+    if not payload.language and list(payload.feed_urls or []):
         return payload, None
+    if not payload.language:
+        payload = payload.model_copy(update={"language": DEFAULT_RULE_LANGUAGE})
     resolved_feed_urls, resolution_error = _resolve_language_feed_urls(
         session,
         language=payload.language,
@@ -453,10 +455,9 @@ def _resolve_rule_payload_feeds(
     )
     if resolution_error:
         if (
-            resolution_error == LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE
-            and existing_rule is not None
-            and str(getattr(existing_rule, "language", "") or "").strip().casefold()
-            == str(payload.language or "").strip().casefold()
+            existing_rule is not None
+            and _normalize_language_list(getattr(existing_rule, "language", ""))
+            == _normalize_language_list(payload.language)
             and list(getattr(existing_rule, "feed_urls", []) or [])
         ):
             return (
@@ -465,9 +466,11 @@ def _resolve_rule_payload_feeds(
                 ),
                 None,
             )
+        if had_language:
+            return payload, resolution_error
         if resolution_error == LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE:
             return payload.model_copy(update={"feed_urls": []}), None
-        return payload, resolution_error
+        return payload, None
     return payload.model_copy(update={"feed_urls": resolved_feed_urls}), None
 
 
@@ -511,6 +514,7 @@ def _render_taxonomy_page(
             "taxonomy_snapshot": current_snapshot,
             "current_taxonomy_preview": current_preview,
             "taxonomy_audit_entries": recent_quality_taxonomy_audit_entries(),
+            "taxonomy_media_types": [choice["value"] for choice in media_type_choices()],
             "errors": current_errors,
             "message": message,
             "message_level": message_level,
@@ -680,7 +684,11 @@ def jackett_search(
 ) -> JSONResponse:
     settings = SettingsService.get_or_create(session)
     jackett = SettingsService.resolve_jackett(settings)
-    client = JackettClient(jackett.api_url, jackett.api_key)
+    client = JackettClient(
+        jackett.api_url,
+        jackett.api_key,
+        language_overrides=jackett.language_overrides,
+    )
     try:
         result = client.search(payload)
     except JackettClientError as exc:
@@ -931,16 +939,16 @@ def run_rules_fetch_schedule_now(session: Session = Depends(get_db_session)) -> 
 @router.post("/feeds/refresh")
 def feeds_refresh(session: Session = Depends(get_db_session)) -> JSONResponse:
     settings = SettingsService.get_or_create(session)
-    connection = SettingsService.resolve_qb_connection(settings)
-    if not connection.is_configured:
-        return JSONResponse({"error": "qBittorrent connection is not configured."}, status_code=400)
-
+    jackett = SettingsService.resolve_jackett(settings)
+    if not jackett.app_ready:
+        return JSONResponse({"error": "Jackett app URL and API key are both required."}, status_code=400)
     try:
-        with QbittorrentClient(
-            connection.base_url, connection.username, connection.password
-        ) as client:
-            feeds = [item.model_dump() for item in client.get_feeds()]
-    except QbittorrentClientError as exc:
+        feeds = JackettClient(
+            jackett.api_url,
+            jackett.api_key,
+            language_overrides=jackett.language_overrides,
+        ).configured_indexer_options()
+    except JackettClientError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     return JSONResponse({"feeds": feeds})
 
@@ -1414,6 +1422,83 @@ async def apply_taxonomy(
     )
 
 
+@router.post("/taxonomy/options/add", response_class=HTMLResponse)
+async def add_taxonomy_option(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> Response:
+    form = await request.form()
+    try:
+        add_quality_taxonomy_option(
+            group=str(form.get("option_group", "")).strip(),
+            value=str(form.get("option_value", "")).strip(),
+            label=str(form.get("option_label", "")).strip(),
+            pattern=str(form.get("option_pattern", "")).strip(),
+            media_types=[str(item) for item in form.getlist("option_media_types")],
+            change_note=str(form.get("taxonomy_change_note", "")).strip(),
+        )
+    except RuntimeError as exc:
+        return _render_taxonomy_page(
+            request,
+            session=session,
+            form_data={"taxonomy_json": read_quality_taxonomy_text(), "change_note": ""},
+            errors=[str(exc)],
+        )
+    return RedirectResponse(
+        url="/taxonomy?message=Taxonomy%20value%20added.&level=success",
+        status_code=303,
+    )
+
+
+@router.post("/taxonomy/options/remove", response_class=HTMLResponse)
+async def remove_taxonomy_option_route(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> Response:
+    form = await request.form()
+    try:
+        remove_quality_taxonomy_option(
+            value=str(form.get("option_value", "")).strip(),
+            change_note=str(form.get("taxonomy_change_note", "")).strip(),
+        )
+    except RuntimeError as exc:
+        return _render_taxonomy_page(
+            request,
+            session=session,
+            form_data={"taxonomy_json": read_quality_taxonomy_text(), "change_note": ""},
+            errors=[str(exc)],
+        )
+    return RedirectResponse(
+        url="/taxonomy?message=Taxonomy%20value%20removed.&level=success",
+        status_code=303,
+    )
+
+
+@router.post("/taxonomy/options/move", response_class=HTMLResponse)
+async def move_taxonomy_option_route(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> Response:
+    form = await request.form()
+    try:
+        move_quality_taxonomy_option(
+            value=str(form.get("option_value", "")).strip(),
+            direction=str(form.get("direction", "")).strip(),
+            change_note=str(form.get("taxonomy_change_note", "")).strip(),
+        )
+    except RuntimeError as exc:
+        return _render_taxonomy_page(
+            request,
+            session=session,
+            form_data={"taxonomy_json": read_quality_taxonomy_text(), "change_note": ""},
+            errors=[str(exc)],
+        )
+    return RedirectResponse(
+        url="/taxonomy?message=Taxonomy%20value%20moved.&level=success",
+        status_code=303,
+    )
+
+
 @router.post("/settings", response_class=HTMLResponse)
 async def save_settings(
     request: Request,
@@ -1515,7 +1600,11 @@ async def test_jackett_settings(
         )
 
     try:
-        client = JackettClient(jackett.api_url, jackett.api_key)
+        client = JackettClient(
+            jackett.api_url,
+            jackett.api_key,
+            language_overrides=jackett.language_overrides,
+        )
         client.test_connection()
     except JackettClientError as exc:
         return _render_settings_page(

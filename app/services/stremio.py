@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypeVar
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import get_environment_settings
+from app.config import get_environment_settings, resolve_runtime_path
 from app.models import AppSettings, MediaType, Rule
 from app.services.metadata import MetadataClient, MetadataLookupError, MetadataLookupProvider
 from app.services.quality_filters import resolve_quality_profile_rules
@@ -41,7 +41,10 @@ STREMIO_LIBRARY_COLLECTION = "libraryItem"
 SUPPORTED_STREMIO_ITEM_TYPES = frozenset({"movie", "series"})
 TITLE_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 IMDB_ID_RE = re.compile(r"(tt\d{5,12})", re.IGNORECASE)
-STREMIO_AUTH_KEY_RE = re.compile(r'"auth".*?key.*?"([^"]+)"', re.IGNORECASE | re.DOTALL)
+STREMIO_AUTH_KEY_RE = re.compile(
+    r'"auth"\s*:\s*\{.*?"key"\s*:\s*"([^"]+)"',
+    re.IGNORECASE | re.DOTALL,
+)
 STREMIO_USER_ID_RE = re.compile(
     r'"auth".*?"user".*?_id.*?([0-9a-f]{16,})',
     re.IGNORECASE | re.DOTALL,
@@ -57,9 +60,14 @@ StremioOutcomeStatus = Literal[
     "skipped",
     "error",
 ]
+T = TypeVar("T")
 
 
 class StremioError(RuntimeError):
+    pass
+
+
+class StremioSessionDoesNotExistError(StremioError):
     pass
 
 
@@ -253,8 +261,7 @@ class StremioService:
         return self._autodiscovered_local_storage_path() is not None
 
     def test_connection(self) -> StremioConnectionSummary:
-        auth_context = self._resolve_auth_context()
-        items = self._fetch_library_items(auth_context.auth_key)
+        auth_context, items = self._run_with_auth_fallback(self._fetch_library_items)
         active_items = self._active_sync_items(items)
         return StremioConnectionSummary(
             auth_source=auth_context.source,
@@ -265,16 +272,14 @@ class StremioService:
         )
 
     def fetch_library_signature(self) -> str:
-        auth_context = self._resolve_auth_context()
-        meta_items = self._fetch_library_meta(auth_context.auth_key)
+        auth_context, meta_items = self._run_with_auth_fallback(self._fetch_library_meta)
         library_signature = self._library_signature(meta_items)
         owner_signature = auth_context.user_id or auth_context.source
         return f"{owner_signature}:{library_signature}"
 
     def sync_rules(self, session: Session) -> StremioRuleSyncSummary:
         settings = self.settings or SettingsService.get_or_create(session)
-        auth_context = self._resolve_auth_context()
-        items = self._fetch_library_items(auth_context.auth_key)
+        auth_context, items = self._run_with_auth_fallback(self._fetch_library_items)
         active_items = self._active_sync_items(items)
         rules = list(
             session.scalars(
@@ -381,9 +386,36 @@ class StremioService:
                 auth_key=str(self.config.auth_key or "").strip(),
                 source="environment auth key",
             )
-        return self._discover_auth_from_local_storage()
+        return self._discover_auth_contexts_from_local_storage()[0]
+
+    def _auth_context_candidates(self) -> list[StremioAuthContext]:
+        if self.config.has_explicit_auth_key:
+            return [self._resolve_auth_context()]
+        return self._discover_auth_contexts_from_local_storage()
+
+    def _run_with_auth_fallback(
+        self, operation: Callable[[str], T]
+    ) -> tuple[StremioAuthContext, T]:
+        candidates = self._auth_context_candidates()
+        stale_session_errors: list[StremioSessionDoesNotExistError] = []
+        for auth_context in candidates:
+            try:
+                return auth_context, operation(auth_context.auth_key)
+            except StremioSessionDoesNotExistError as exc:
+                stale_session_errors.append(exc)
+                continue
+
+        if stale_session_errors:
+            raise StremioError(
+                "Stremio rejected every discovered local auth session. "
+                "Sign in to Stremio again or paste a fresh Stremio auth key in Settings."
+            ) from stale_session_errors[-1]
+        raise StremioError("Could not resolve a Stremio auth session.")
 
     def _discover_auth_from_local_storage(self) -> StremioAuthContext:
+        return self._discover_auth_contexts_from_local_storage()[0]
+
+    def _discover_auth_contexts_from_local_storage(self) -> list[StremioAuthContext]:
         storage_path = self._resolve_local_storage_path()
         candidate_files = sorted(
             [
@@ -394,25 +426,30 @@ class StremioService:
             key=lambda path: path.stat().st_mtime_ns,
             reverse=True,
         )
+        contexts: list[StremioAuthContext] = []
+        seen_auth_keys: set[str] = set()
         for candidate in candidate_files:
             try:
                 normalized_text = _normalize_storage_text(candidate.read_bytes())
             except OSError:
                 continue
-            auth_match = STREMIO_AUTH_KEY_RE.search(normalized_text)
-            if not auth_match:
-                continue
-            auth_key = str(auth_match.group(1) or "").strip()
-            if not auth_key:
-                continue
             user_match = STREMIO_USER_ID_RE.search(normalized_text)
             user_id = str(user_match.group(1) or "").strip() if user_match else None
-            return StremioAuthContext(
-                auth_key=auth_key,
-                source="local storage",
-                local_storage_path=str(storage_path),
-                user_id=user_id or None,
-            )
+            for auth_match in STREMIO_AUTH_KEY_RE.finditer(normalized_text):
+                auth_key = str(auth_match.group(1) or "").strip()
+                if not auth_key or auth_key in seen_auth_keys:
+                    continue
+                seen_auth_keys.add(auth_key)
+                contexts.append(
+                    StremioAuthContext(
+                        auth_key=auth_key,
+                        source="local storage",
+                        local_storage_path=str(storage_path),
+                        user_id=user_id or None,
+                    )
+                )
+        if contexts:
+            return contexts
         raise StremioError(
             "Could not find a signed-in Stremio auth key in the local desktop storage."
         )
@@ -464,11 +501,9 @@ class StremioService:
         if not cleaned:
             raise StremioError("Stremio local storage path is not configured.")
 
-        storage_path = Path(cleaned).expanduser()
-        if not storage_path.is_absolute():
-            storage_path = (Path.cwd() / storage_path).resolve()
-        else:
-            storage_path = storage_path.resolve()
+        storage_path = resolve_runtime_path(cleaned)
+        if storage_path is None:
+            raise StremioError("Stremio local storage path is not configured.")
 
         if storage_path.is_file():
             if storage_path.suffix.lower() in {".ldb", ".log"}:
@@ -558,6 +593,10 @@ class StremioService:
                 message = str(error_payload.get("message") or "unknown error")
             else:
                 message = str(error_payload or "unknown error")
+            if message.strip().casefold() == "session does not exist":
+                raise StremioSessionDoesNotExistError(
+                    f"Stremio API {endpoint} failed: {message}"
+                )
             raise StremioError(f"Stremio API {endpoint} failed: {message}")
         if "result" not in raw_payload:
             raise StremioError("Stremio API response did not include a result payload.")

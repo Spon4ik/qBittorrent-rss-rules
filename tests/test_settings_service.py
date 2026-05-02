@@ -7,6 +7,7 @@ import pytest
 import app.config as app_config
 from app.config import get_environment_settings, obfuscate_secret
 from app.models import AppSettings
+from app.schemas import SettingsFormPayload
 from app.services.settings_service import (
     SettingsService,
     _rewrite_localhost_url_for_wsl,
@@ -74,6 +75,7 @@ def test_ensure_runtime_dirs_touches_relative_sqlite_database(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("QB_RULES_DATABASE_URL", "sqlite:///./data/qb_rules.db")
+    monkeypatch.setattr(app_config, "ROOT_DIR", tmp_path)
     monkeypatch.setattr(app_config, "DATA_DIR", tmp_path / "data")
     _clear_env_cache()
 
@@ -200,3 +202,23 @@ def test_get_or_create_normalizes_rules_page_and_schedule_defaults(db_session) -
     assert normalized.rules_fetch_schedule_interval_minutes == 5
     assert normalized.rules_fetch_schedule_scope == "enabled"
     assert normalized.rules_fetch_schedule_last_status == "idle"
+
+
+def test_settings_persist_jackett_language_overrides(db_session) -> None:
+    settings = SettingsService.get_or_create(db_session)
+    payload = SettingsFormPayload(
+        jackett_language_overrides_text="noname-clubl=ru;thepiratebay=en,multi",
+    )
+
+    SettingsService.apply_payload(settings, payload)
+    db_session.add(settings)
+    db_session.commit()
+    db_session.refresh(settings)
+
+    assert settings.jackett_language_overrides == {
+        "noname-clubl": ["ru"],
+        "thepiratebay": ["en", "multi"],
+    }
+    assert SettingsService.to_form_dict(settings)["jackett_language_overrides_text"] == (
+        "noname-clubl=ru\nthepiratebay=en,multi"
+    )

@@ -54,6 +54,45 @@ scripts\run_dev.bat
 
 The app binds to `127.0.0.1` by default and creates its SQLite DB under `./data`.
 
+## Docker backend quick start
+
+The FastAPI backend can run in Docker while the WinUI desktop shell, qBittorrent, Jackett, Jellyfin, and Stremio remain outside the container.
+
+```bash
+docker compose -f C:\Users\nucc\docker-config\docker-compose.yml up --build qb-rss-rules
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8000
+```
+
+The shared Compose setup in `C:\Users\nucc\docker-config\docker-compose.yml` bind-mounts this repo's `data` directory into `/app/data` and publishes the backend on `${QB_RULES_PORT:-8000}`. This keeps Docker and local/dev launches pointed at the same `data/qb_rules.db`.
+
+If you move the project folder again, update that bind mount in `C:\Users\nucc\docker-config\docker-compose.yml` to the new repo `data` path, then rebuild the `qb-rss-rules` service. The app itself resolves relative SQLite URLs from its own app root, so local runs do not depend on the shell's current working directory.
+
+When qBittorrent or Jackett run on the host machine, container-side `localhost` points at the container, not the host. Use `host.docker.internal` URLs in `.env` or shell environment before starting compose:
+
+```bash
+QB_RULES_QB_BASE_URL=http://host.docker.internal:8080
+QB_RULES_JACKETT_API_URL=http://host.docker.internal:9117
+docker compose -f C:\Users\nucc\docker-config\docker-compose.yml up --build qb-rss-rules
+```
+
+In the current shared Compose stack, Jackett publishes port `9117` on the host while using Docker bridge networking, so the backend defaults both app-side and qB-facing Jackett URLs through `host.docker.internal`.
+
+Windows host file paths saved in settings are also container-aware. The shared Compose service mounts `C:\Users` at `/host/C/Users` and `C:\ProgramData` at `/host/C/ProgramData`, and the backend translates paths such as `C:\Users\nucc\...` or `C:\ProgramData\Jellyfin\...` through `QB_RULES_WINDOWS_HOST_MOUNT_ROOT=/host`. This keeps Stremio local storage sync and Jellyfin DB sync working after moving the project into Docker.
+
+To build and run without compose:
+
+```bash
+docker build -t qbittorrent-rss-rule-manager:local .
+docker run --rm -p 8000:8000 -v qb-rss-rules-data:/app/data qbittorrent-rss-rule-manager:local
+```
+
+If you want the WinUI desktop shell to use the Docker backend, start the container first and launch the shell with `QB_RSS_DESKTOP_URL=http://127.0.0.1:8000`.
+
 ## WinUI desktop quick start (Windows)
 
 1. From the repository root, run `scripts\run_dev.bat desktop` to restore/build the WinUI shell (use `desktop-build` + `desktop-run` if you want separate steps).
@@ -98,7 +137,9 @@ The WinUI app ships with a **fixed expected** backend semver (`RequiredDesktopBa
 - `QB_RULES_JACKETT_API_URL`: Jackett URL the app uses for active search (for Docker this is often a container hostname)
 - `QB_RULES_JACKETT_QB_URL`: optional Jackett URL qBittorrent uses if it reaches Jackett differently than the app
 - `QB_RULES_JACKETT_API_KEY`: Jackett API key used for active search
+- `QB_RULES_JACKETT_LANGUAGE_OVERRIDES`: optional manual language assignments for Jackett indexers when Jackett metadata is missing or wrong. Use JSON such as `{"noname-clubl":["ru"],"thepiratebay":["en"]}` or assignment syntax such as `noname-clubl=ru;thepiratebay=en,multi`. The same mappings can also be edited from `/settings` under `Indexer language overrides`.
 - `QB_RULES_OMDB_API_KEY`: OMDb API key used for video lookups
+- `QB_RULES_WINDOWS_HOST_MOUNT_ROOT`: container mount root for translating Windows absolute paths, default `/host`
 
 Environment values override saved app settings for secrets and connection details.
 
@@ -261,8 +302,10 @@ Use the Import page to upload an exported qBittorrent RSS rules JSON file. The i
 
 - If the feed list is empty, verify qBittorrent WebUI is enabled and the configured credentials are valid.
 - If metadata lookup fails, confirm the OMDb API key for video lookups, then try manual entry.
+- If a configured Jackett indexer appears as unclassified or the wrong language, add it in `/settings` under `Indexer language overrides`, or set `QB_RULES_JACKETT_LANGUAGE_OVERRIDES` with the Jackett indexer id and one or more language codes, then restart/rebuild the backend.
+- Taxonomy edits made from `/taxonomy` are stored in `data/quality_taxonomy.json`. The packaged `app/data/quality_taxonomy.json` is only the seed/default, so local taxonomy values and quality presets survive ordinary code edits and rebuilds unless the change intentionally targets taxonomy behavior.
 - If Jackett search fails in Docker, verify the app-side Jackett URL is reachable from the app container and use a separate qB URL when qBittorrent is on a different network path.
-- If the app starts but data is not saved, confirm `QB_RULES_DATABASE_URL` points to a writable path.
+- If the app starts but data is not saved, confirm `QB_RULES_DATABASE_URL` points to a writable path. Relative SQLite URLs such as `sqlite:///./data/qb_rules.db` are resolved from the app root, not the shell's current directory.
 - On WSL/Linux, do not source Windows venv paths like `C:\\...\\.venv\\Scripts\\activate`; use a Linux venv path (`source .venv-linux/bin/activate`) and run `./scripts/run_dev.sh`.
 - On WSL with qBittorrent running on Windows host, `localhost` may not resolve to the host service. The app now rewrites qB base URLs that use `localhost`/`127.0.0.1` to `host.docker.internal` automatically for WSL runtime resolution.
 - If `./scripts/capture_ui.sh` reports missing Chromium libs on WSL/Linux, run `./.venv-linux/bin/python -m playwright install-deps chromium` (this command elevates with sudo when needed).

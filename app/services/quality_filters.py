@@ -3,15 +3,18 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Sequence
-from copy import deepcopy
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
 
+from app.config import DATA_DIR
 from app.models import AppSettings, MediaType, QualityProfile, Rule
 
-QUALITY_TAXONOMY_PATH = Path(__file__).resolve().parent.parent / "data" / "quality_taxonomy.json"
+QUALITY_TAXONOMY_SEED_PATH = (
+    Path(__file__).resolve().parent.parent / "data" / "quality_taxonomy.json"
+)
+QUALITY_TAXONOMY_PATH = DATA_DIR / "quality_taxonomy.json"
 QUALITY_TAXONOMY_AUDIT_PATH = (
     Path(__file__).resolve().parent.parent.parent / "data" / "taxonomy_audit.jsonl"
 )
@@ -27,6 +30,24 @@ def _quality_taxonomy_error(problem: str, *, source: Path | str | None = None) -
     return RuntimeError(
         f"Invalid quality taxonomy at {_quality_taxonomy_source(source)}: {problem}"
     )
+
+
+def _ensure_runtime_quality_taxonomy() -> None:
+    if QUALITY_TAXONOMY_PATH.exists():
+        return
+    try:
+        seed_text = QUALITY_TAXONOMY_SEED_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(
+            f"Unable to load quality taxonomy seed from {QUALITY_TAXONOMY_SEED_PATH}: {exc}"
+        ) from exc
+    try:
+        QUALITY_TAXONOMY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        QUALITY_TAXONOMY_PATH.write_text(seed_text, encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(
+            f"Unable to initialize runtime quality taxonomy at {QUALITY_TAXONOMY_PATH}: {exc}"
+        ) from exc
 
 
 def _parse_quality_taxonomy_json(
@@ -55,6 +76,8 @@ SCOPED_MEDIA_TYPE_ORDER: tuple[str, ...] = (
 )
 VIDEO_MEDIA_TYPES = {MediaType.SERIES.value, MediaType.MOVIE.value}
 AUDIO_MEDIA_TYPES = {MediaType.AUDIOBOOK.value, MediaType.MUSIC.value}
+QUALITY_TOKEN_PREFIX_BOUNDARY = r"(?:^|[^A-Za-z0-9])"
+QUALITY_TOKEN_SUFFIX_BOUNDARY = r"(?![A-Za-z0-9])"
 
 
 def _normalize_media_type_scope(
@@ -374,6 +397,7 @@ def _validate_quality_taxonomy_payload(
 
 @lru_cache(maxsize=1)
 def _load_quality_taxonomy() -> dict[str, Any]:
+    _ensure_runtime_quality_taxonomy()
     try:
         raw_payload = QUALITY_TAXONOMY_PATH.read_text(encoding="utf-8")
     except OSError as exc:
@@ -469,6 +493,7 @@ def _clear_quality_taxonomy_cache() -> None:
 
 
 def read_quality_taxonomy_text() -> str:
+    _ensure_runtime_quality_taxonomy()
     try:
         return QUALITY_TAXONOMY_PATH.read_text(encoding="utf-8")
     except OSError as exc:
@@ -700,6 +725,191 @@ def apply_quality_taxonomy_update(
     return audit_error
 
 
+def add_quality_taxonomy_option(
+    *,
+    group: str,
+    value: str,
+    label: str,
+    pattern: str,
+    media_types: Sequence[str] | None = None,
+    change_note: str = "",
+) -> str | None:
+    payload = _parse_quality_taxonomy_json(read_quality_taxonomy_text(), source=QUALITY_TAXONOMY_PATH)
+    options = payload.setdefault("options", [])
+    if not isinstance(options, list):
+        raise _quality_taxonomy_error("options must be a list", source=QUALITY_TAXONOMY_PATH)
+    option: dict[str, object] = {
+        "value": value.strip(),
+        "label": label.strip() or value.strip(),
+        "pattern": pattern.strip() or re.escape(value.strip()),
+        "group": group.strip(),
+    }
+    cleaned_media_types = [
+        str(item).strip()
+        for item in media_types or []
+        if str(item).strip()
+    ]
+    if cleaned_media_types:
+        option["media_types"] = cleaned_media_types
+    _insert_option_in_group_order(options, option)
+    for rank in cast(list[dict[str, object]], payload.get("ranks", [])):
+        if str(rank.get("key", "")).strip() != option["group"]:
+            continue
+        rank_tokens = cast(list[object], rank.get("tokens", []))
+        if option["value"] not in {str(token).strip() for token in rank_tokens}:
+            _insert_rank_token_in_order(rank_tokens, str(option["value"]))
+        rank["tokens"] = rank_tokens
+    return apply_quality_taxonomy_update(json.dumps(payload), change_note=change_note)
+
+
+def remove_quality_taxonomy_option(
+    *,
+    value: str,
+    change_note: str = "",
+) -> str | None:
+    option_value = value.strip()
+    payload = _parse_quality_taxonomy_json(read_quality_taxonomy_text(), source=QUALITY_TAXONOMY_PATH)
+    payload["options"] = [
+        item
+        for item in cast(list[dict[str, object]], payload.get("options", []))
+        if str(item.get("value", "")).strip() != option_value
+    ]
+    payload["aliases"] = [
+        item
+        for item in cast(list[dict[str, object]], payload.get("aliases", []))
+        if str(item.get("canonical", "")).strip() != option_value
+        and str(item.get("alias", "")).strip() != option_value
+    ]
+    for collection_name in ("bundles", "ranks"):
+        for item in cast(list[dict[str, object]], payload.get(collection_name, [])):
+            item["tokens"] = [
+                token
+                for token in cast(list[object], item.get("tokens", []))
+                if str(token).strip() != option_value
+            ]
+    return apply_quality_taxonomy_update(json.dumps(payload), change_note=change_note)
+
+
+def _move_value_within_list(values: list[object], value: str, direction: str) -> bool:
+    index = next(
+        (position for position, item in enumerate(values) if str(item).strip() == value),
+        None,
+    )
+    if index is None:
+        return False
+    if direction == "up":
+        target_index = index - 1
+    elif direction == "down":
+        target_index = index + 1
+    else:
+        raise _quality_taxonomy_error("direction must be 'up' or 'down'", source="submitted taxonomy")
+    if target_index < 0 or target_index >= len(values):
+        return False
+    values[index], values[target_index] = values[target_index], values[index]
+    return True
+
+
+def _resolution_number(value: object) -> int | None:
+    match = re.fullmatch(r"(\d+)p", str(value).strip().casefold())
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _insert_option_in_group_order(
+    options: list[dict[str, object]],
+    option: dict[str, object],
+) -> None:
+    group_key = str(option["group"])
+    option_resolution = _resolution_number(option["value"])
+    if group_key != "resolution" or option_resolution is None:
+        options.append(option)
+        return
+
+    group_indexes = [
+        index
+        for index, item in enumerate(options)
+        if str(item.get("group", "")).strip() == group_key
+    ]
+    for index in group_indexes:
+        candidate_resolution = _resolution_number(options[index].get("value"))
+        if candidate_resolution is not None and option_resolution < candidate_resolution:
+            options.insert(index, option)
+            return
+    if group_indexes:
+        options.insert(group_indexes[-1] + 1, option)
+    else:
+        options.append(option)
+
+
+def _insert_rank_token_in_order(rank_tokens: list[object], value: str) -> None:
+    value_resolution = _resolution_number(value)
+    if value_resolution is None:
+        rank_tokens.append(value)
+        return
+    for index, token in enumerate(rank_tokens):
+        token_resolution = _resolution_number(token)
+        if token_resolution is not None and value_resolution < token_resolution:
+            rank_tokens.insert(index, value)
+            return
+    rank_tokens.append(value)
+
+
+def move_quality_taxonomy_option(
+    *,
+    value: str,
+    direction: str,
+    change_note: str = "",
+) -> str | None:
+    option_value = value.strip()
+    if not option_value:
+        raise _quality_taxonomy_error("option value is required", source=QUALITY_TAXONOMY_PATH)
+    normalized_direction = direction.strip().casefold()
+    payload = _parse_quality_taxonomy_json(read_quality_taxonomy_text(), source=QUALITY_TAXONOMY_PATH)
+    options = cast(list[dict[str, object]], payload.get("options", []))
+    option = next(
+        (item for item in options if str(item.get("value", "")).strip() == option_value),
+        None,
+    )
+    if option is None:
+        raise _quality_taxonomy_error(
+            f"option '{option_value}' does not exist",
+            source=QUALITY_TAXONOMY_PATH,
+        )
+    group_key = str(option.get("group", "")).strip()
+    group_option_indexes = [
+        index
+        for index, item in enumerate(options)
+        if str(item.get("group", "")).strip() == group_key
+    ]
+    group_values: list[object] = [
+        str(options[index].get("value", "")).strip() for index in group_option_indexes
+    ]
+    if _move_value_within_list(group_values, option_value, normalized_direction):
+        reordered_group_options = [
+            next(item for item in options if str(item.get("value", "")).strip() == group_value)
+            for group_value in group_values
+        ]
+        for option_index, reordered_option in zip(
+            group_option_indexes,
+            reordered_group_options,
+            strict=True,
+        ):
+            options[option_index] = reordered_option
+
+    for rank in cast(list[dict[str, object]], payload.get("ranks", [])):
+        if str(rank.get("key", "")).strip() != group_key:
+            continue
+        rank_tokens = cast(list[object], rank.get("tokens", []))
+        if option_value not in {str(token).strip() for token in rank_tokens}:
+            _insert_rank_token_in_order(rank_tokens, option_value)
+        else:
+            _move_value_within_list(rank_tokens, option_value, normalized_direction)
+        rank["tokens"] = rank_tokens
+
+    return apply_quality_taxonomy_update(json.dumps(payload), change_note=change_note)
+
+
 QUALITY_PROFILE_FALLBACK_LABELS: dict[str, str] = {
     QualityProfile.PLAIN.value: "No preset",
     QualityProfile.HD_1080P.value: "At Least Full HD",
@@ -769,10 +979,65 @@ DEFAULT_QUALITY_PROFILE_RULES: dict[str, dict[str, list[str]]] = {
     QualityProfile.CUSTOM.value: {"include_tokens": [], "exclude_tokens": []},
 }
 
+def _rank_tokens(rank_key: str) -> list[str]:
+    for rank in cast(tuple[dict[str, object], ...], _load_quality_taxonomy()["ranks"]):
+        if str(rank.get("key", "")) == rank_key:
+            return _coerce_token_values(rank.get("tokens"))
+    return []
+
+
+def _tokens_below_rank_value(rank_key: str, threshold_token: str) -> list[str]:
+    tokens = _rank_tokens(rank_key)
+    try:
+        threshold_index = tokens.index(threshold_token)
+    except ValueError:
+        return []
+    return tokens[:threshold_index]
+
+
+def _tokens_at_or_above_rank_value(rank_key: str, threshold_token: str) -> list[str]:
+    tokens = _rank_tokens(rank_key)
+    try:
+        threshold_index = tokens.index(threshold_token)
+    except ValueError:
+        return []
+    return tokens[threshold_index:]
+
+
+def dynamic_default_quality_profile_rules() -> dict[str, dict[str, list[str]]]:
+    hd_resolution_tokens = _tokens_at_or_above_rank_value("resolution", "hd")
+    uhd_resolution_tokens = _tokens_at_or_above_rank_value("resolution", "ultra_hd")
+    below_hd_resolution_tokens = _tokens_below_rank_value("resolution", "hd")
+    below_uhd_resolution_tokens = _tokens_below_rank_value("resolution", "ultra_hd")
+
+    return {
+        QualityProfile.PLAIN.value: {"include_tokens": [], "exclude_tokens": []},
+        QualityProfile.HD_1080P.value: {
+            "include_tokens": hd_resolution_tokens,
+            "exclude_tokens": below_hd_resolution_tokens,
+        },
+        QualityProfile.UHD_2160P_HDR.value: {
+            "include_tokens": [
+                *uhd_resolution_tokens,
+                "hdr",
+                "dolby_vision",
+            ],
+            "exclude_tokens": below_uhd_resolution_tokens,
+        },
+        QualityProfile.CUSTOM.value: {"include_tokens": [], "exclude_tokens": []},
+    }
+
+
+def at_least_uhd_profile_tokens() -> dict[str, list[str]]:
+    return {
+        "include_tokens": _tokens_at_or_above_rank_value("resolution", "ultra_hd"),
+        "exclude_tokens": _tokens_below_rank_value("resolution", "ultra_hd"),
+    }
+
+
 AT_LEAST_UHD_PROFILE: dict[str, object] = {
     "label": BUILTIN_AT_LEAST_UHD_PROFILE_LABEL,
-    "include_tokens": ["ultra_hd", "uhd", "2160p", "4k"],
-    "exclude_tokens": ["1080p", "720p", "480p", "360p", "sd"],
+    **at_least_uhd_profile_tokens(),
     "quality_profile_value": QualityProfile.CUSTOM.value,
     "built_in": True,
     "media_types": [MediaType.SERIES.value, MediaType.MOVIE.value],
@@ -812,9 +1077,7 @@ BUILTIN_FILTER_PROFILE_SPECS: tuple[dict[str, object], ...] = (
         "fallback_label": BUILTIN_AT_LEAST_UHD_PROFILE_LABEL,
         "quality_profile_value": QualityProfile.CUSTOM.value,
         "media_types": tuple(SCOPED_MEDIA_TYPE_ORDER[:2]),
-        "override_mode": "saved_profile",
-        "include_tokens": tuple(cast(list[str], AT_LEAST_UHD_PROFILE["include_tokens"])),
-        "exclude_tokens": tuple(cast(list[str], AT_LEAST_UHD_PROFILE["exclude_tokens"])),
+        "override_mode": "dynamic_at_least_uhd",
     },
     {
         "key": BUILTIN_AUDIOBOOK_PORTABLE_PROFILE_KEY,
@@ -1035,7 +1298,10 @@ def tokens_to_regex(tokens: object | None) -> str:
     ordered_patterns: list[str] = []
     seen_patterns: set[str] = set()
     for token in normalize_quality_tokens(tokens):
-        pattern = option_patterns[token]
+        pattern = (
+            f"{QUALITY_TOKEN_PREFIX_BOUNDARY}(?:{option_patterns[token]})"
+            f"{QUALITY_TOKEN_SUFFIX_BOUNDARY}"
+        )
         if pattern in seen_patterns:
             continue
         seen_patterns.add(pattern)
@@ -1055,7 +1321,7 @@ def grouped_tokens_to_regex(tokens: object | None) -> list[str]:
 
 
 def normalize_profile_rules(raw_value: Any) -> dict[str, dict[str, list[str]]]:
-    normalized = deepcopy(DEFAULT_QUALITY_PROFILE_RULES)
+    normalized = dynamic_default_quality_profile_rules()
     if not isinstance(raw_value, dict):
         return normalized
 
@@ -1079,8 +1345,111 @@ def normalize_profile_rules(raw_value: Any) -> dict[str, dict[str, list[str]]]:
 
 def resolve_quality_profile_rules(settings: AppSettings | None) -> dict[str, dict[str, list[str]]]:
     if settings is None:
-        return deepcopy(DEFAULT_QUALITY_PROFILE_RULES)
+        return dynamic_default_quality_profile_rules()
     return normalize_profile_rules(settings.quality_profile_rules)
+
+
+def _legacy_profile_rule_snapshots(profile_value: str) -> list[dict[str, list[str]]]:
+    snapshots: list[dict[str, list[str]]] = []
+    for defaults in (LEGACY_DEFAULT_QUALITY_PROFILE_RULES, DEFAULT_QUALITY_PROFILE_RULES):
+        if profile_value in defaults:
+            snapshots.append(defaults[profile_value])
+    return snapshots
+
+
+def _tokens_match_profile_inheritance(
+    *,
+    profile_value: str,
+    include_tokens: list[str],
+    exclude_tokens: list[str],
+    profile_rule: dict[str, list[str]],
+) -> bool:
+    canonical_include = canonicalize_quality_tokens(include_tokens)
+    canonical_exclude = canonicalize_quality_tokens(exclude_tokens)
+    canonical_profile_include = canonicalize_quality_tokens(profile_rule.get("include_tokens"))
+    canonical_profile_exclude = canonicalize_quality_tokens(profile_rule.get("exclude_tokens"))
+    if canonical_include == canonical_profile_include and canonical_exclude == canonical_profile_exclude:
+        return True
+
+    for snapshot in _legacy_profile_rule_snapshots(profile_value):
+        if canonical_include == canonicalize_quality_tokens(
+            snapshot.get("include_tokens")
+        ) and canonical_exclude == canonicalize_quality_tokens(snapshot.get("exclude_tokens")):
+            return True
+
+    include_set = set(canonical_include)
+    exclude_set = set(canonical_exclude)
+    profile_include_set = set(canonical_profile_include)
+    profile_exclude_set = set(canonical_profile_exclude)
+    if not include_set.issubset(profile_include_set) or not exclude_set.issubset(
+        profile_exclude_set
+    ):
+        return False
+
+    added_include_tokens = profile_include_set - include_set
+    added_exclude_tokens = profile_exclude_set - exclude_set
+    if not added_include_tokens and not added_exclude_tokens:
+        return True
+
+    legacy_tokens = set(
+        canonicalize_quality_tokens(
+            LEGACY_DEFAULT_QUALITY_PROFILE_RULES.get(profile_value, {}).get("include_tokens")
+        )
+        + canonicalize_quality_tokens(
+            LEGACY_DEFAULT_QUALITY_PROFILE_RULES.get(profile_value, {}).get("exclude_tokens")
+        )
+        + canonicalize_quality_tokens(
+            DEFAULT_QUALITY_PROFILE_RULES.get(profile_value, {}).get("include_tokens")
+        )
+        + canonicalize_quality_tokens(
+            DEFAULT_QUALITY_PROFILE_RULES.get(profile_value, {}).get("exclude_tokens")
+        )
+    )
+    added_tokens = added_include_tokens | added_exclude_tokens
+    if added_tokens & legacy_tokens:
+        return False
+    token_groups = quality_token_group_map()
+    return all(token_groups.get(token) == "resolution" for token in added_tokens)
+
+
+def effective_rule_quality_tokens(
+    rule: Rule,
+    settings: AppSettings | None = None,
+    *,
+    normalize_explicit: bool = True,
+) -> tuple[list[str], list[str]]:
+    raw_include_tokens = _coerce_token_values(getattr(rule, "quality_include_tokens", []))
+    raw_exclude_tokens = _coerce_token_values(getattr(rule, "quality_exclude_tokens", []))
+    include_tokens = (
+        normalize_quality_tokens(raw_include_tokens) if normalize_explicit else raw_include_tokens
+    )
+    exclude_tokens = (
+        normalize_quality_tokens(raw_exclude_tokens) if normalize_explicit else raw_exclude_tokens
+    )
+    quality_profile = getattr(rule, "quality_profile", QualityProfile.PLAIN)
+    profile_value = (
+        quality_profile.value if isinstance(quality_profile, QualityProfile) else str(quality_profile)
+    )
+    profile_rules = resolve_quality_profile_rules(settings)
+    quality_rule = profile_rules.get(profile_value, {})
+    if profile_value in {QualityProfile.PLAIN.value, QualityProfile.CUSTOM.value}:
+        return include_tokens, exclude_tokens
+    if include_tokens or exclude_tokens:
+        if _tokens_match_profile_inheritance(
+            profile_value=profile_value,
+            include_tokens=include_tokens,
+            exclude_tokens=exclude_tokens,
+            profile_rule=quality_rule,
+        ):
+            return (
+                normalize_quality_tokens(quality_rule.get("include_tokens")),
+                normalize_quality_tokens(quality_rule.get("exclude_tokens")),
+            )
+        return include_tokens, exclude_tokens
+    return (
+        normalize_quality_tokens(quality_rule.get("include_tokens")),
+        normalize_quality_tokens(quality_rule.get("exclude_tokens")),
+    )
 
 
 def quality_token_media_types(token: str) -> list[str]:
@@ -1227,6 +1596,13 @@ def _build_builtin_filter_profile(
         profile_key = str(spec["quality_profile_key"])
         include_tokens = list(profile_rules[profile_key]["include_tokens"])
         exclude_tokens = list(profile_rules[profile_key]["exclude_tokens"])
+    elif override_mode == "dynamic_at_least_uhd":
+        profile_tokens = at_least_uhd_profile_tokens()
+        include_tokens = profile_tokens["include_tokens"]
+        exclude_tokens = profile_tokens["exclude_tokens"]
+        if override:
+            include_tokens = _coerce_token_values(override.get("include_tokens")) or include_tokens
+            exclude_tokens = _coerce_token_values(override.get("exclude_tokens")) or exclude_tokens
     else:
         include_tokens = _coerce_token_values(spec.get("include_tokens"))
         exclude_tokens = _coerce_token_values(spec.get("exclude_tokens"))

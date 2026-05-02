@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 from sqlalchemy import select
 
 from app.models import AppSettings, MediaType, QualityProfile, Rule
-from app.services.stremio import StremioService
+from app.services.stremio import StremioService, StremioSessionDoesNotExistError
 from app.services.stremio_sync_ops import execute_stremio_sync
 from tests.stremio_test_utils import create_stremio_local_storage, stremio_library_item
 
@@ -54,6 +55,53 @@ def test_stremio_service_discovers_auth_from_local_storage(monkeypatch, tmp_path
     assert summary.local_storage_path == str(storage_path.resolve())
     assert summary.user_id == "fedcba9876543210"
     assert summary.total_item_count == 1
+    assert summary.active_item_count == 1
+
+
+def test_stremio_service_retries_older_local_auth_when_newest_session_is_stale(
+    monkeypatch, tmp_path
+) -> None:
+    storage_path = create_stremio_local_storage(
+        tmp_path,
+        auth_key="fresh-but-stale",
+        user_id="fedcba9876543210",
+    )
+    older_payload = (
+        '\x00noise{"auth":{"key":"older-valid","user":{"_id":"0123456789abcdef"}}}\x00tail'
+    )
+    older_file = storage_path / "000000.ldb"
+    older_file.write_bytes(older_payload.encode("utf-8"))
+    stale_file = storage_path / "000001.ldb"
+    os.utime(older_file, (1_700_000_000, 1_700_000_000))
+    os.utime(stale_file, (1_700_000_100, 1_700_000_100))
+
+    seen_auth_keys: list[str] = []
+
+    def fake_post_api(self, endpoint, payload):
+        assert endpoint == "datastoreGet"
+        seen_auth_keys.append(str(payload["authKey"]))
+        if payload["authKey"] == "fresh-but-stale":
+            raise StremioSessionDoesNotExistError(
+                "Stremio API datastoreGet failed: Session does not exist"
+            )
+        return [stremio_library_item("tt13016388", "3 Body Problem")]
+
+    monkeypatch.setattr(StremioService, "_post_api", fake_post_api)
+
+    service = StremioService(
+        AppSettings(
+            id="default",
+            stremio_local_storage_path=str(storage_path),
+            stremio_auto_sync_enabled=True,
+            stremio_auto_sync_interval_seconds=30,
+        )
+    )
+
+    summary = service.test_connection()
+
+    assert seen_auth_keys == ["fresh-but-stale", "older-valid"]
+    assert summary.auth_source == "local storage"
+    assert summary.user_id == "0123456789abcdef"
     assert summary.active_item_count == 1
 
 

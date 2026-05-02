@@ -124,9 +124,12 @@ def test_build_generated_pattern_uses_custom_quality_year_and_keywords() -> None
     assert "(?=.*2024)" in pattern
     assert r"(?=.*director[\s._-]*s[\s._-]*cut)" in pattern
     assert "(?=.*remux)" in pattern
-    assert "(?=.*(?:ultra[\\s._-]*hd|uhd|4k|2160p))" in pattern
-    assert "(?=.*(?:hdr10\\+?|hdr))" in pattern
-    assert pattern.endswith(r"(?!.*(?:1080p|720p|480p|sd))")
+    assert "(?=.*(?:(?:^|[^A-Za-z0-9])(?:ultra[\\s._-]*hd)" in pattern
+    assert "(?:^|[^A-Za-z0-9])(?:4k)(?![A-Za-z0-9])" in pattern
+    assert "(?:^|[^A-Za-z0-9])(?:2160p)(?![A-Za-z0-9])" in pattern
+    assert "(?=.*(?:(?:^|[^A-Za-z0-9])(?:hdr10\\+?|hdr)(?![A-Za-z0-9])))" in pattern
+    assert "(?!.*(?:" in pattern
+    assert "(?:^|[^A-Za-z0-9])(?:1080p)(?![A-Za-z0-9])" in pattern
 
 
 def test_parse_additional_include_groups_supports_pipe_alternatives() -> None:
@@ -239,7 +242,7 @@ def test_build_generated_pattern_preserves_legacy_full_override() -> None:
     assert pattern == r"(?i)(?=.*dune)(?!.*cam)"
 
 
-def test_build_generated_pattern_allows_empty_quality_selection() -> None:
+def test_build_generated_pattern_uses_selected_quality_profile_when_tokens_are_empty() -> None:
     builder = RuleBuilder(settings=AppSettings())
     pattern = builder.build_generated_pattern(
         build_rule(
@@ -251,7 +254,11 @@ def test_build_generated_pattern_allows_empty_quality_selection() -> None:
             use_regex=False,
         )
     )
-    assert pattern == "Anaconda"
+    assert pattern.startswith("(?i)")
+    assert "(?=.*anaconda)" in pattern
+    assert "2160p" in pattern
+    assert "hdr" in pattern.lower()
+    assert "1080p" in pattern
 
 
 def test_build_generated_pattern_supports_start_season_episode_floor() -> None:

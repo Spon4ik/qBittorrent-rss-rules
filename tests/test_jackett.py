@@ -1509,6 +1509,48 @@ def test_jackett_client_uses_title_fallback_when_strict_imdb_match_is_empty() ->
     assert result.fallback_results == []
 
 
+def test_configured_indexer_languages_apply_manual_overrides() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = {key: value for key, value in request.url.params.multi_items()}
+        if params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="noname-clubl">
+    <title>NoNaMe ClubL</title>
+    <description>This is the NoNaMe Club indexer with Login enabled in the config.</description>
+  </indexer>
+  <indexer id="thepiratebay">
+    <title>The Pirate Bay</title>
+    <description>The galaxy's most resilient Public BitTorrent site</description>
+  </indexer>
+</indexers>
+""",
+            )
+        raise AssertionError(f"Unexpected request params: {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+        language_overrides={"noname-clubl": ["ru"], "thepiratebay": "en"},
+    )
+
+    assert client.configured_indexer_languages() == {
+        "noname-clubl": ["ru"],
+        "thepiratebay": ["en"],
+    }
+    assert client.configured_language_options() == [
+        {"value": "en", "label": "English", "indexer_count": "1"},
+        {"value": "ru", "label": "Russian", "indexer_count": "1"},
+    ]
+
+
 def test_jackett_client_drops_fallback_rows_with_conflicting_imdb_id() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         params = {key: value for key, value in request.url.params.multi_items()}

@@ -23,6 +23,78 @@
 
 ## Implemented
 
+- Fixed runtime-taxonomy inheritance for built-in video filter profiles on 2026-05-02:
+  - `At Least Full HD`, `At Least Ultra HD`, and `Ultra HD HDR` now derive their resolution include/exclude tokens from the live runtime `resolution` rank instead of static preset lists, so new lower resolutions such as `240p`/`400p` are inherited as exclusions and future higher resolutions are inherited as inclusions;
+  - settings normalization now refreshes uncustomized stored default profile rules from the live taxonomy defaults while preserving genuinely customized profile token sets;
+  - rules that carry a built-in `quality_profile` plus an older explicit token snapshot are treated as profile-owned when the only missing values are taxonomy-added resolution tokens, preserving real manual edits while fixing stale built-in selections;
+  - rule-form profile matching now keeps built-in profile identity after taxonomy changes instead of falling back to `Current manual selection`, and rule/search local filters consume the refreshed effective profile tokens;
+  - synchronized release touchpoints to `1.1.2` and updated `CHANGELOG.md`;
+  - validation is green for `tests/test_quality_filters.py`, quality-profile route/rule/search consumers, Ruff on the touched quality/settings/test files, `cmd /c scripts\\check.bat` (`348 passed`), `cmd /c scripts\\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`), shared Compose rebuild, Docker `/health` (`app_version=1.1.2`), and the live rule `a6a60200-7533-4733-bd1a-0f8ea1e8fbdf` rendering `Ultra HD HDR` selected with `240p` in the effective filters.
+
+- Refined Jackett language/feed UX and scope persistence on 2026-05-01:
+  - rule language selection is now a multi-select checkbox dropdown and persists multiple selected language codes as a comma-separated rule language scope;
+  - language options still come from distinct language metadata discovered from configured Jackett indexers, and selecting multiple languages resolves the union of matching Jackett feed URLs for passive qB RSS sync and active search scoping;
+  - the affected-feeds list and `/api/feeds/refresh` now use Jackett configured indexers as the UI source of truth instead of qB's mixed RSS tree, so the form no longer blends `Jackett/...`, legacy qB feed names, and unresolved saved-feed URLs;
+  - saved Jackett URLs are labeled as `Jackett/{indexer}` when shown as compatibility selections, while non-Jackett saved URLs are no longer reintroduced as selectable pseudo-feeds;
+  - focused validation is green for the language/feed/quality route slice, sync/Jackett feed slice, Python lint, and JavaScript syntax checking.
+
+- Completed the Docker rebuild and live qB/Jackett sync proof on 2026-05-01 after the PC restart:
+  - rebuilt `qb-rss-rules` through the shared Compose file, recreated the container, and verified `/health` serves the current static asset version `1777659900000000000-1777659946000000000`;
+  - fixed the startup sync regression discovered during Docker validation by moving the guarded `SyncService.sync_all()` startup work to a daemon background thread, so provider slowness no longer blocks FastAPI startup or `/health`;
+  - added `tests/test_main.py::test_startup_rule_sync_does_not_block_app_startup` for that regression and validated it with focused pytest plus ruff;
+  - live Docker proof now shows the repo DB has `197` rules, Jackett is reachable from the container at `http://host.docker.internal:9117`, discovered language groups are `he:1` and `ru:11`, and Jackett configured feed count is `12`;
+  - qBittorrent was not running after reboot, so it was started from `C:\\Program Files\\qBittorrent\\qbittorrent.exe`; the container then connected to qB `v5.1.4`, synced the remaining stale error rule, and finished with `197/197` local rules OK, `197` remote qB RSS rules, and exactly `12` qB RSS feeds under `Jackett/...`.
+
+- Added manual Jackett indexer language overrides on 2026-05-02:
+  - `/settings` now includes an `Indexer language overrides` editor so operators can assign languages to Jackett indexers whose configured-indexer metadata is missing or wrong, for example `noname-clubl=ru` or `thepiratebay=en,multi`;
+  - `QB_RULES_JACKETT_LANGUAGE_OVERRIDES` remains available as an environment-level override and wins over saved settings when both define the same indexer;
+  - `JackettClient(..., language_overrides=...)` supports the same override contract for tests and direct service use, and configured-indexer language discovery applies saved/env overrides before building language options, passive RSS feed scopes, or active-search indexer scopes;
+  - the shared Compose service now passes the optional override environment variable through to the container, with README and `.env.example` documenting the syntax;
+  - `/taxonomy` now has a structured hierarchy view plus add/remove value forms for common edits, while the raw JSON editor remains available for bundle/rank/alias edits;
+  - taxonomy value rows now include Up/Down controls, moving a value updates both the visible group order and the matching rank token list, and numeric resolution values such as `240p` or `400p` are inserted in numeric order instead of being appended at the bottom;
+  - the structured taxonomy editor UI was compacted after screenshot review: value rows now use fixed compact label/key/action columns, small `⇧`/`⇩`/`×` icon controls with accessible labels, and taxonomy-specific cards so long labels no longer overlap their keys or force unnecessary vertical scrolling;
+  - taxonomy writes now go to the runtime `data/quality_taxonomy.json` file, with `app/data/quality_taxonomy.json` used only as the packaged seed/default, so local taxonomy values and preset quality filters survive ordinary code edits and Docker rebuilds unless a change intentionally targets that runtime data;
+  - the local runtime taxonomy was repaired so the user's existing `400p` value now sits between `360p` and `480p` in both Resolution order and the `resolution` rank;
+  - focused validation is green for the override/config slice, Jackett language route coverage, taxonomy structured add/remove/move/runtime persistence, JavaScript syntax, and ruff; the shared Compose rebuild succeeded and Docker `/health` reports `app_version=1.1.1` with static asset version `1777754308000000000-1777659946000000000`.
+
+- Fixed qB RSS quality enforcement and Jackett-owned feed management on 2026-05-01:
+  - qB rule generation, Jackett/search payload construction, and local result filtering now resolve effective quality tokens from the selected rule quality profile when per-rule token lists are empty, so selecting `Ultra HD HDR` emits the expected include/exclude constraints instead of allowing low-quality releases through;
+  - explicit custom quality keywords are still preserved for Jackett search narrowing while qB/local regex filtering continues to normalize to known taxonomy tokens;
+  - new rules default to Russian language-managed mode when Jackett language metadata is available, and explicit language saves now fail fast if Jackett has no matching configured feeds instead of creating empty passive RSS scopes;
+  - Jackett configured indexers are now the source of truth for passive RSS feeds: feed URLs are built from Jackett settings, full sync refreshes rule feed URLs from the selected language, qB RSS subscriptions are reconciled under `Jackett/{indexer}`, and removed Jackett indexers are removed from qB RSS subscriptions;
+  - backend startup now attempts a guarded `SyncService.sync_all()` when qB is configured so Docker/app restarts push refreshed rules and feeds without requiring manual UI action;
+  - fixed Windows qB connection resolution so normal Windows runs do not call `platform.release()`/WMI during WSL detection, avoiding hangs seen during verification;
+  - validation is green for focused lint and tests: ruff reported `All checks passed`, and the focused pytest slice passed `54` tests covering rule-builder quality profiles, Jackett search payloads, sync/settings behavior, and route feed/language flows.
+
+- Fixed host-path handling for Docker Stremio/Jellyfin sync on 2026-04-30:
+  - added `app.config.resolve_runtime_path(...)` so Windows drive paths are translated in Linux containers through `QB_RULES_WINDOWS_HOST_MOUNT_ROOT` (default `/host`) while ordinary relative paths still resolve from the app root;
+  - updated Stremio local-storage resolution, Jellyfin DB resolution, and the Jellyfin auto-sync poller to use the shared runtime-path resolver instead of raw `Path(...)` / `Path.cwd()` logic;
+  - updated `C:\\Users\\nucc\\docker-config\\docker-compose.yml` so `qb-rss-rules` mounts `C:\\Users` to `/host/C/Users` and `C:\\ProgramData` to `/host/C/ProgramData`, covering the saved Stremio LevelDB path and Jellyfin DB path;
+  - updated README, `.env.example`, and `AGENTS.md` so future local-file settings use `resolve_runtime_path(...)` and the shared Docker host mounts stay aligned;
+  - validated with focused pytest/ruff checks, Docker path probes proving Stremio LevelDB and Jellyfin DB both exist inside the container, `StremioService(settings).test_connection()` returning `159 active` / `262 total`, `JellyfinService(settings).test_connection()` selecting user `Spon4ik`, and a live Docker `execute_stremio_sync(...)` completing for `159 active title(s)` with `0 errors`.
+
+- Restored Docker-visible rules after the repo move to `D:\\GitHub\\qBittorrent rss rules` on 2026-04-30:
+  - confirmed the current repo database at `data\\qb_rules.db` contains `190` rules while the older `C:\\Users\\nucc\\Documents\\qBittorrent rss rules\\data\\qb_rules.db` contains `75`;
+  - updated `app/config.py` so relative SQLite URLs such as `sqlite:///./data/qb_rules.db` resolve from `app.config.ROOT_DIR`, not `Path.cwd()`, preventing launches from another directory from creating or reading an empty DB;
+  - updated `C:\\Users\\nucc\\docker-config\\docker-compose.yml` so `qb-rss-rules` bind-mounts `D:\\GitHub\\qBittorrent rss rules\\data` to `/app/data` instead of using an isolated named volume;
+  - added `tests/test_config.py` coverage for app-root SQLite URL resolution and updated `AGENTS.md`/README with the permanent database-location rule;
+  - rebuilt the Docker backend with the real Docker CLI path, verified the container is `healthy`, `/health` returns `app_version=1.1.1`, and `docker exec qb-rss-rules ... select count(*) from rules` returns `190`.
+
+- Added Docker backend support on 2026-04-30:
+  - added a production-oriented `Dockerfile` for the FastAPI backend with `0.0.0.0` container binding, a persistent `/app/data` runtime directory, and a `/health` healthcheck;
+  - added the `qb-rss-rules` backend service to the existing shared Compose file at `C:\\Users\\nucc\\docker-config\\docker-compose.yml`, with a named SQLite data volume, host/container qBittorrent/Jackett defaults, and the app's existing environment-variable contract exposed for container runs;
+  - added `.dockerignore` and README/.env guidance for running the backend in Docker and pointing the WinUI shell at the containerized backend;
+  - updated `AGENTS.md` so every future code-editing session must rebuild/start the shared Docker `qb-rss-rules` service with the real Docker CLI path and verify `/health` before closeout, or document the blocker;
+  - validated the live backend health route with `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_routes.py -k health_endpoint -q`;
+  - rebuilt and started the real Docker backend with `& 'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe' compose -f C:\\Users\\nucc\\docker-config\\docker-compose.yml up --build -d qb-rss-rules`; `http://127.0.0.1:8000/health` reports `app_version=1.1.1` and the expected sync-era capabilities.
+
+- Fixed the `v1.1.1` Stremio sync and quality-filter patch on 2026-04-29:
+  - updated `app/services/stremio.py` so local Stremio auth discovery extracts the real `auth.key`, keeps all discovered LevelDB auth keys in newest-first order, and retries older local sessions when the newest key fails with `Session does not exist`;
+  - updated `app/services/quality_filters.py`, `app/data/quality_taxonomy.json`, and `app/static/app.js` so quality/source tags match release-token boundaries instead of ordinary title substrings, while keeping real tags such as `HDCAM`, `CAMRip`, and `HDTS` detectable;
+  - fixed the language-managed edit-form feed warning path in `app/routes/pages.py` so saved feeds remain visible while the qB-feeds-unavailable warning is still shown;
+  - synchronized the patch release touchpoints to `1.1.1` (`pyproject.toml`, `app/main.py`, `QbRssRulesDesktop/Views/MainPage.xaml.cs`, `tests/test_routes.py`, `CHANGELOG.md`);
+  - validated with focused pytest/mypy/ruff checks, `cmd /c scripts\\check.bat` (`329 passed`), `cmd /c scripts\\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)` after stopping a stale desktop process), live `/health` on `http://127.0.0.1:8000` reporting `app_version=1.1.1`, and a real Stremio sync against local desktop storage completing for `159 active title(s)` with `0 errors`.
+
 - Relaxed local hidden-row filtering for same-season complete packs on 2026-04-24 so saved-rule search can keep useful upgrade candidates visible when a series rule is set to continue searching after synced progress:
   - updated `app/services/rule_fetch_ops.py` so the backend-side local release filter no longer rejects a same-season row solely because the generated episode-floor regex stops at the current floor, as long as the rule is in `jellyfin_search_existing_unseen` mode and the title is clearly marked as a complete/full season pack;
   - updated `app/static/app.js` so the browser-side hidden-row diagnostic uses the same exception instead of still labeling those rows as `Does not match the generated rule pattern.`;
@@ -1048,12 +1120,17 @@
 
 ## In progress
 
+- Docker refresh is no longer blocked after the PC restart; the shared Compose rebuild and live qB/Jackett sync proof are complete on the current image.
+- Manual Jackett language overrides are now editable from `/settings` for unknown/unclassified indexers while live configured-indexer discovery remains dynamic for Jackett additions/removals.
+- Taxonomy is now runtime-persistent in `data/quality_taxonomy.json`; built-in video filter profiles intentionally read the live resolution rank so taxonomy additions propagate to presets, while unrelated code edits should still avoid touching the user's live taxonomy values or saved custom filters.
 - No new implementation phase is active yet after the `v0.9.0` closeout; the next roadmap decision is which post-release Stremio/catalog follow-up should become the next planned slice.
 - The active Jackett search path for keep-searching series rules now uses watched progress for primary discovery while preserving the stored known-episode floor for rule progression and queue selection; the local rule-search filter also keeps same-season complete/full season packs visible when they are plausible upgrade candidates.
 - The new qB rule-language selector currently coexists with the older manual affected-feed checklist: language mode now resolves/saves the real qB RSS feed scope automatically, while the manual checklist remains visible as a compatibility/fallback UI until a later deprecation pass is approved.
 - Saved-rule active search no longer shares the same runtime dependency on qB feed availability: when a language-managed rule cannot derive search scope from saved qB feed URLs, the rule-search path now falls back to Jackett configured indexers for that language instead of collapsing back to unscoped/default behavior.
 - Rule persistence is now decoupled from live qB RSS availability for language-managed rules: passive feed URLs are still resolved and used when qB feeds are reachable, but a temporary qB outage now degrades to warning-only behavior instead of blocking creates/updates or erasing the saved language/search intent.
-- The local release candidate is now `1.1.0`, combining the already-finished phase-25 Stremio-boundary split with the new qB rule-language feed-selection follow-up; publication to git remains pending.
+- The local release candidate is now `1.1.2`, adding the runtime taxonomy/filter-profile inheritance patch on top of the already-finished `1.1.1` Stremio auth-session fallback, quality-token boundary patch, phase-25 Stremio-boundary split, and qB rule-language feed-selection follow-up; publication to git remains pending.
+- Docker backend support is now present locally through the repo `Dockerfile` and the shared Compose service in `C:\\Users\\nucc\\docker-config\\docker-compose.yml`; session instructions now require `& 'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe' compose -f C:\\Users\\nucc\\docker-config\\docker-compose.yml up --build -d qb-rss-rules` and a `/health` check after code edits. The container is currently running, serving `/health` on `127.0.0.1:8000`, and reading the repo DB with `190` rules through the `/app/data` bind mount.
+- Stremio and Jellyfin host file paths now work from Docker through `/host/C/...` bind mounts; avoid adding new direct `Path.cwd()`-based handling for saved local paths.
 - The qB-side precursor track is now extended locally beyond `v0.8.5`: desktop unified results are exact-first with visible fallback/debug rows, same-infohash duplicates are grouped instead of discarded, grouped queue actions can merge missing trackers into the existing qB torrent, and Stremio qB rows expose clearer provenance/source detail.
 - The latest queue hardening follow-up closes the loudest qB-side UX failure mode for broken local Jackett download URLs: the app now refuses to ask qB to remote-fetch loopback/private `dl/...` links once local fetch/validation has already failed, so the failure stays in the web app instead of spamming qB desktop notifications.
 - The next queue hardening follow-up closes the adjacent Jackett dual-host gap: when a search result carries the qB-facing Jackett hostname, the queue path now rewrites that `dl/...` URL back to the app-facing Jackett base before app-side torrent download, so valid uploads no longer fail simply because `jackett_qb_url` differs from `jackett_api_url`.
@@ -1072,11 +1149,15 @@
 
 ## Next actions
 
+- Keep qBittorrent running before Docker closeout probes; after reboot it was not listening on `127.0.0.1:8080`, and the Docker backend could not complete qB sync until `C:\\Program Files\\qBittorrent\\qbittorrent.exe` was started.
 - Decide whether the keep-searching watched-progress search floor should also influence qB RSS rule generation later, or remain active-search-only while qB keeps using the stored progression floor.
 - Decide whether the next qB follow-up should fully remove manual affected-feed/indexer selection now that language-managed feed resolution is working against the real local Jackett/qB setup.
 - Decide whether language-managed rules should eventually persist explicit passive-feed resolution state or a dedicated warning/status field so the UI can show qB-unavailable saves more explicitly than today's helper-text warning.
 - Decide whether rules should eventually persist explicit Jackett search-scope indexers alongside RSS feed URLs so active search and passive qB sync no longer need any inferred scope bridge at all.
-- Broaden Jackett language detection beyond description-text heuristics if future configured indexers need more than the currently proven `ru` / `he` local metadata groups.
+- Verify qBittorrent and Jackett connectivity from the running Docker backend using `host.docker.internal` URLs.
+- If the repo moves again, update the `qb-rss-rules` bind mount in `C:\\Users\\nucc\\docker-config\\docker-compose.yml` to the new repo `data` path before rebuilding Docker.
+- Keep `C:\\Users` and `C:\\ProgramData` mounted in the shared Docker service whenever Stremio local storage or Jellyfin DB sync are expected to run from Docker.
+- Use `/settings` `Indexer language overrides` for any configured Jackett indexer that remains `Unknown` / unclassified or has incorrect metadata; keep broader automatic detection improvements as a later follow-up if override maintenance becomes noisy.
 - Keep `Death in Paradise` season 14/15 routes in the live Stremio addon regression set.
 - Keep the new persisted-provider merge path in the focused Stremio regression set whenever addon ranking, provider formatting, or `/settings` serialization changes again.
 - Harden the Torrentio-compatible provider adapter contract as needed after more live manifest runs, especially around provider-specific row fields, timeout behavior, and attribution formatting.

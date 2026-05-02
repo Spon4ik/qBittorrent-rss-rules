@@ -327,7 +327,10 @@ function buildQualityRegex(tokens, patternMap) {
   const patterns = [];
   const seenPatterns = new Set();
   for (const token of tokens || []) {
-    const pattern = patternMap[token];
+    const rawPattern = patternMap[token];
+    const pattern = rawPattern
+      ? `(?:^|[^A-Za-z0-9])(?:${rawPattern})(?![A-Za-z0-9])`
+      : "";
     if (!pattern || seenPatterns.has(pattern)) {
       continue;
     }
@@ -3473,6 +3476,7 @@ function initRuleForm(form) {
     const feedClearAllButton = form.querySelector("#feed-clear-all");
     const feedOptionsContainer = form.querySelector("#feed-options");
     const languageSelect = form.querySelector("#rule-language-select");
+    const languageSummary = form.querySelector("[data-language-summary]");
     const feedModeHelper = form.querySelector("[data-feed-mode-helper]");
     const mediaField = form.querySelector('select[name="media_type"]');
   const qualityProfileInput = form.querySelector('input[name="quality_profile"]');
@@ -3587,8 +3591,23 @@ function initRuleForm(form) {
     feedOptionsContainer.appendChild(emptyState);
   };
 
+  const selectedLanguageValues = () => (
+    Array.from(form.querySelectorAll('input[name="language"]:checked'))
+      .map((input) => String(input.value || "").trim())
+      .filter(Boolean)
+  );
+
+  const syncLanguageSummary = () => {
+    if (!languageSummary) {
+      return;
+    }
+    const selected = selectedLanguageValues();
+    languageSummary.textContent = selected.length > 0 ? selected.join(", ") : "Manual feed selection";
+  };
+
   const syncFeedLanguageMode = () => {
-    const languageManaged = Boolean(languageSelect?.value.trim());
+    const languageManaged = selectedLanguageValues().length > 0;
+    syncLanguageSummary();
     if (feedOptionsContainer) {
       feedOptionsContainer.dataset.languageManaged = languageManaged ? "true" : "false";
     }
@@ -4086,16 +4105,22 @@ function initRuleForm(form) {
         continue;
       }
       seenUrls.add(url);
-      mergedFeeds.push({ url, label: existingLabels.get(url) || `Saved feed: ${url}` });
+      mergedFeeds.push({ url, label: existingLabels.get(url) || url });
     }
 
     renderFeedOptions(mergedFeeds, selectedUrls);
     syncFeedLanguageMode();
   });
 
-  languageSelect?.addEventListener("change", () => {
+  for (const languageInput of form.querySelectorAll('input[name="language"]')) {
+    languageInput.addEventListener("change", () => {
+      syncFeedLanguageMode();
+      notifyFeedSelectionChanged();
+    });
+  }
+
+  languageSelect?.addEventListener("toggle", () => {
     syncFeedLanguageMode();
-    notifyFeedSelectionChanged();
   });
 
   runSearchHereLink?.addEventListener("click", (event) => {

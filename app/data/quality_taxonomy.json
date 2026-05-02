@@ -284,7 +284,7 @@
     {
       "value": "cam",
       "label": "CAM",
-      "pattern": "cam",
+      "pattern": "(?:hd)?cam(?:rip)?",
       "group": "source",
       "media_types": [
         "series",

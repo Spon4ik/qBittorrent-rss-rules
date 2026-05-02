@@ -57,6 +57,111 @@
     </section>
   </section>
 
+  {% if taxonomy_snapshot %}
+  <section class="stack">
+    <div class="panel-head panel-head-tight">
+      <div>
+        <p class="eyebrow">Structured Editor</p>
+        <h3>Quality hierarchy</h3>
+      </div>
+    </div>
+    <section class="taxonomy-grid">
+      {% for group in taxonomy_snapshot.groups %}
+      <section class="taxonomy-card">
+        <header class="taxonomy-card-head">
+          <div>
+            <p class="eyebrow">{{ group.key }}</p>
+            <h3>{{ group.label }}</h3>
+          </div>
+          <span>{{ taxonomy_snapshot.options | selectattr("group", "equalto", group.key) | list | length }}</span>
+        </header>
+        <div class="taxonomy-token-list">
+          {% for option in taxonomy_snapshot.options if option.group == group.key %}
+          <form method="post" action="/api/taxonomy/options/remove" class="taxonomy-token-row">
+            <input type="hidden" name="option_value" value="{{ option.value }}" />
+            <input type="hidden" name="taxonomy_change_note" value="Remove {{ option.value }}" />
+            <span class="taxonomy-token-label">{{ option.label }}</span>
+            <code>{{ option.value }}</code>
+            <span class="taxonomy-token-actions">
+              <button
+                class="icon-button"
+                type="submit"
+                formaction="/api/taxonomy/options/move"
+                name="direction"
+                value="up"
+                aria-label="Move {{ option.label }} up"
+                title="Move up"
+              >⇧</button>
+              <button
+                class="icon-button"
+                type="submit"
+                formaction="/api/taxonomy/options/move"
+                name="direction"
+                value="down"
+                aria-label="Move {{ option.label }} down"
+                title="Move down"
+              >⇩</button>
+              <button
+                class="icon-button icon-button-danger"
+                type="submit"
+                aria-label="Remove {{ option.label }}"
+                title="Remove"
+              >×</button>
+            </span>
+          </form>
+          {% endfor %}
+        </div>
+      </section>
+      {% endfor %}
+    </section>
+
+    <form class="rule-card stack" method="post" action="/api/taxonomy/options/add">
+      <p class="eyebrow">Add taxonomy value</p>
+      <h3>Add value</h3>
+      <section class="form-grid">
+        <label>
+          Group
+          <select name="option_group">
+            {% for group in taxonomy_snapshot.groups %}
+            <option value="{{ group.key }}">{{ group.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Value key
+          <input type="text" name="option_value" placeholder="400p" required />
+        </label>
+        <label>
+          Label
+          <input type="text" name="option_label" placeholder="400p" required />
+        </label>
+        <label>
+          Pattern
+          <input type="text" name="option_pattern" placeholder="400p|xvid" required />
+        </label>
+      </section>
+      <fieldset class="stack">
+        <legend>Media scope</legend>
+        <div class="checkbox-grid">
+          {% for media_type in taxonomy_media_types %}
+          <label class="toggle">
+            <input type="checkbox" name="option_media_types" value="{{ media_type }}" />
+            <span>{{ media_type }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <label>
+        Change note
+        <input type="text" name="taxonomy_change_note" placeholder="Optional local audit note" />
+      </label>
+      <div class="card-actions">
+        <button type="submit">Add Value</button>
+      </div>
+    </form>
+  </section>
+  {% endif %}
+
   <form class="stack" method="post" action="/api/taxonomy/validate">
     <label>
       Change note

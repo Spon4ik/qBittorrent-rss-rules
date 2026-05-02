@@ -87,6 +87,7 @@ def _ensure_rule_columns() -> None:
         "jackett_api_url": "VARCHAR(255)",
         "jackett_qb_url": "VARCHAR(255)",
         "jackett_api_key_encrypted": "TEXT",
+        "jackett_language_overrides": "JSON NOT NULL DEFAULT '{}'",
         "jellyfin_db_path": "VARCHAR(512)",
         "jellyfin_user_name": "VARCHAR(255)",
         "jellyfin_auto_sync_enabled": "BOOLEAN NOT NULL DEFAULT 1",

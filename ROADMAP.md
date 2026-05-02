@@ -5,6 +5,7 @@
 ### In progress
 
 - Phase 25 is now active for the repo split: qBittorrent RSS Rules is removing the native Stremio addon surface and keeping only Stremio library/watch-progress synchronization, because addon hosting moved to `jackett-stremio-fork`.
+- The current patch candidate is `v1.1.2`, preserving built-in filter-profile intent across runtime taxonomy edits by deriving video profile resolution thresholds from the live taxonomy rank instead of stale stored token snapshots.
 - Phase 23 is now closed and release-validated in `v0.9.0` as the Stremio cross-addon aggregation slice, including persisted provider manifests, live Torrentio-compatible provider ingestion inside the local addon, exact-first desktop/result-contract precursors, and real desktop smoke proof for merged provider ordering.
 - Phase 24 remains closed and release-validated in `v0.8.3` as the hotfix for long-running Stremio series lookups that were over-constrained by the original series year, along with early phase 23 qB-side precursors for visibility and search precision.
 - Phase 22 is now closed and release-validated in `v0.8.2` as the Stremio patch slice covering full qB RSS variant retention, global quality-first ordering, and exact-variant local playback marking after the `v0.8.1` release still suppressed rows too aggressively.
@@ -100,7 +101,7 @@ Phase 6 detail pointer:
 
 - Decide whether the next catalog/search step should expand beyond OMDb-backed title search into richer provider support or more explicit release-calendar reasoning.
 - Decide whether the next Stremio follow-up should stay sync-focused or retire the remaining legacy addon-era schema fields.
-- Replace the fixed quality-tag bank with a compact Settings UI that lets users add, remove, and reorganize quality tokens and aliases without editing raw taxonomy JSON.
+- Continue broadening the structured taxonomy editor beyond common value add/remove/reorder flows into bundle, rank, and alias editing; built-in video filter profiles now already inherit resolution-rank changes from runtime taxonomy.
 - Decide whether deleted-history persistence should stay rule-local or graduate to a broader watch-history/scrobble-compatible cache.
 - Reduce context and maintenance cost by splitting the largest rule/search/Jellyfin files along real domain boundaries.
 - Keep deterministic browser QA and route/service regressions as release gates for every workflow change.

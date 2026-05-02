@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -18,11 +20,13 @@ from app.services.rule_fetch_scheduler import (
     start_rule_fetch_scheduler,
     stop_rule_fetch_scheduler,
 )
+from app.services.settings_service import SettingsService
 from app.services.static_assets import compute_static_asset_version
 from app.services.stremio_auto_sync import (
     start_stremio_auto_sync_service,
     stop_stremio_auto_sync_service,
 )
+from app.services.sync import SyncService
 
 DESKTOP_BACKEND_CONTRACT = "2026-04-18"
 DESKTOP_BACKEND_CAPABILITIES = (
@@ -31,6 +35,7 @@ DESKTOP_BACKEND_CAPABILITIES = (
     "jellyfin_auto_sync",
     "stremio_library_sync",
 )
+LOGGER = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
@@ -41,7 +46,7 @@ def create_app() -> FastAPI:
     static_dir = Path(__file__).resolve().parent / "static"
     app = FastAPI(
         title="qBittorrent RSS Rule Manager",
-        version="1.1.0",
+        version="1.1.2",
     )
     app.state.static_asset_version = compute_static_asset_version(static_dir) or app.version
     app.state.desktop_backend_contract = DESKTOP_BACKEND_CONTRACT
@@ -55,6 +60,29 @@ def create_app() -> FastAPI:
     app.include_router(pages_router)
     app.include_router(api_compat_router)
     app.include_router(api_router)
+
+    if env_settings.sync_rules_on_startup:
+
+        def _run_startup_rule_sync() -> None:
+            session = get_session_factory()()
+            try:
+                settings = SettingsService.get_or_create(session)
+                qb_connection = SettingsService.resolve_qb_connection(settings)
+                if not qb_connection.is_configured:
+                    return
+                SyncService(session, settings).sync_all()
+            except Exception:
+                LOGGER.exception("Failed to sync qBittorrent RSS rules during startup.")
+            finally:
+                session.close()
+
+        @app.on_event("startup")
+        def _sync_rules_on_startup() -> None:  # pragma: no cover - startup hook
+            threading.Thread(
+                target=_run_startup_rule_sync,
+                daemon=True,
+                name="startup-rule-sync",
+            ).start()
 
     if env_settings.enable_rule_fetch_scheduler:
 

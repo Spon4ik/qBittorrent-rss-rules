@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import threading
-from pathlib import Path
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.config import resolve_runtime_path
 from app.models import AppSettings, utcnow
 from app.services.jellyfin_sync_ops import JellyfinSyncBusyError, execute_jellyfin_sync
 from app.services.settings_service import (
@@ -76,11 +76,11 @@ class JellyfinAutoSyncService:
                 self._last_seen_db_mtime_ns = None
                 return wait_seconds
 
-            db_path = Path(str(jellyfin_config.db_path or "")).expanduser()
-            if not db_path.is_absolute():
-                db_path = (Path.cwd() / db_path).resolve()
-            else:
-                db_path = db_path.resolve()
+            db_path = resolve_runtime_path(jellyfin_config.db_path)
+            if db_path is None:
+                self._last_seen_db_path = None
+                self._last_seen_db_mtime_ns = None
+                return wait_seconds
             current_db_path = str(db_path)
             current_mtime_ns = db_path.stat().st_mtime_ns
 

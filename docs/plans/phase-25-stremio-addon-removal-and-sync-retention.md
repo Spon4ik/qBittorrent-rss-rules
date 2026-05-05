@@ -81,6 +81,11 @@
   - SQLite connections now set `PRAGMA busy_timeout = 30000` and `PRAGMA journal_mode = WAL`, reducing reader/write contention during scheduled fetch or startup sync work;
   - regression coverage now verifies the SQLite engine busy-timeout/WAL contract, with focused config tests and Ruff passing.
 
+
+- Product/design follow-up planning session completed on 2026-05-05 without changing phase-25 implementation scope:
+  - created cross-cutting contract docs for application behavior, data/state model, UI/UX layout rules, current implementation gaps, phased refactoring roadmap, and test strategy to guide upcoming qB-rule quality/taxonomy UX hardening work;
+  - identified the top risk as managed preset linkage semantics potentially drifting through inference-heavy save/normalization paths when taxonomy/preset state evolves, so the next implementation slice should start with explicit managed/manual mode contract guardrails before UI redesign work.
+
 ## Goal
 
 Make qBittorrent RSS Rules a qB + sync app again: no native Stremio addon hosting, no addon queue bridge, and no addon-provider configuration, while retaining Stremio library/watch-progress sync as the only Stremio-facing feature set.

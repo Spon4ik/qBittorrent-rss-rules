@@ -23,6 +23,8 @@
 
 ## Implemented
 
+
+- Completed a whole-application product/data/UI behavior audit on 2026-05-05 and added durable contract + gap/roadmap/test planning docs under `docs/plans/` (`application-product-contract.md`, `data-model-and-state-contract.md`, `ui-ux-design-contract.md`, `current-implementation-gap-analysis.md`, `refactoring-roadmap.md`, `test-strategy.md`) to lock expected managed-vs-manual rule semantics, taxonomy/preset inheritance, responsive layout expectations, and phased refactoring priorities before additional implementation edits.
 - Fixed transient SQLite lock 500s on 2026-05-05:
   - root cause was the Docker backend serving normal page reads while background scheduled/startup work could hold the SQLite database long enough for default SQLite busy handling to raise `sqlite3.OperationalError: database is locked`;
   - SQLite engine connections now use a 30 second busy timeout and enable WAL mode on connect, allowing concurrent readers to wait through short write locks instead of surfacing `Internal Server Error`;

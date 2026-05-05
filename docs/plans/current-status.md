@@ -23,6 +23,12 @@
 
 ## Implemented
 
+- Fixed transient SQLite lock 500s on 2026-05-05:
+  - root cause was the Docker backend serving normal page reads while background scheduled/startup work could hold the SQLite database long enough for default SQLite busy handling to raise `sqlite3.OperationalError: database is locked`;
+  - SQLite engine connections now use a 30 second busy timeout and enable WAL mode on connect, allowing concurrent readers to wait through short write locks instead of surfacing `Internal Server Error`;
+  - added regression coverage for the engine-level busy timeout/WAL contract;
+  - focused validation is green for `tests/test_config.py` and Ruff on `app/db.py` / `tests/test_config.py`; Docker refresh and live `/health` proof were run after the change.
+
 - Fixed runtime-taxonomy inheritance for built-in video filter profiles on 2026-05-02:
   - `At Least Full HD`, `At Least Ultra HD`, and `Ultra HD HDR` now derive their resolution include/exclude tokens from the live runtime `resolution` rank instead of static preset lists, so new lower resolutions such as `240p`/`400p` are inherited as exclusions and future higher resolutions are inherited as inclusions;
   - settings normalization now refreshes uncustomized stored default profile rules from the live taxonomy defaults while preserving genuinely customized profile token sets;

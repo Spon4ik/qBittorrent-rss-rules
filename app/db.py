@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from functools import lru_cache
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -16,18 +16,34 @@ class Base(DeclarativeBase):
 
 def _connect_args(database_url: str) -> dict[str, object]:
     if database_url.startswith("sqlite"):
-        return {"check_same_thread": False}
+        return {"check_same_thread": False, "timeout": 30}
     return {}
+
+
+def _configure_sqlite_engine(engine: Engine) -> None:
+    if engine.dialect.name != "sqlite":
+        return
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:  # type: ignore[no-untyped-def]
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA busy_timeout = 30000")
+            cursor.execute("PRAGMA journal_mode = WAL")
+        finally:
+            cursor.close()
 
 
 @lru_cache
 def get_engine() -> Engine:
     settings = get_environment_settings()
-    return create_engine(
+    engine = create_engine(
         settings.database_url,
         connect_args=_connect_args(settings.database_url),
         future=True,
     )
+    _configure_sqlite_engine(engine)
+    return engine
 
 
 @lru_cache

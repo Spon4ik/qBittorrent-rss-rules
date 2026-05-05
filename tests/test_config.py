@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.config import ROOT_DIR, get_environment_settings, resolve_runtime_path
+from app.db import get_engine, reset_db_caches
 
 
 def test_relative_sqlite_database_url_resolves_from_app_root(monkeypatch) -> None:
@@ -80,3 +81,17 @@ def test_relative_runtime_path_resolves_from_app_root() -> None:
     resolved_path = resolve_runtime_path("data/qb_rules.db")
 
     assert resolved_path == (ROOT_DIR / "data" / "qb_rules.db").resolve()
+
+
+def test_sqlite_engine_uses_busy_timeout_and_wal(configured_app_env: Path) -> None:
+    reset_db_caches()
+
+    try:
+        with get_engine().connect() as connection:
+            busy_timeout = connection.exec_driver_sql("PRAGMA busy_timeout").scalar_one()
+            journal_mode = connection.exec_driver_sql("PRAGMA journal_mode").scalar_one()
+    finally:
+        reset_db_caches()
+
+    assert busy_timeout == 30000
+    assert journal_mode == "wal"

@@ -5,11 +5,18 @@ Last updated: 2026-05-05
 Ordering principle: dependency + risk first, then UX optimization.
 
 ## Phase R1 — Safety & data integrity guardrails
+- Status: implemented on 2026-05-05.
 - Goal: eliminate silent rule semantic drift risks.
 - Scope:
   - explicit managed/manual mode authority,
   - centralized normalization contract,
   - compatibility behavior for legacy rows.
+- Delivered:
+  - added explicit `Rule.quality_mode` persistence with managed/manual authority and nullable legacy compatibility;
+  - carried `quality_mode` through rule-form posts without changing visible UI layout;
+  - made effective quality-token resolution honor explicit manual snapshots and explicit managed preset inheritance;
+  - preserved existing managed token snapshots during no-op saves so unchanged form roundtrips do not rewrite stored semantics;
+  - added mode-preservation, no-op-save idempotency, and legacy-post bridge tests.
 - Likely files: `app/models.py`, `app/schemas.py`, `app/services/quality_filters.py`, `app/routes/api.py`, `app/routes/pages.py`, tests.
 - Acceptance:
   - taxonomy/preset changes cannot auto-convert managed rules,

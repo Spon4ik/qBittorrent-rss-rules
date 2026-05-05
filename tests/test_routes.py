@@ -17,6 +17,7 @@ from app.models import (
     AppSettings,
     IndexerCategoryCatalog,
     MediaType,
+    QualityMode,
     QualityProfile,
     Rule,
     RuleSearchSnapshot,
@@ -38,6 +39,7 @@ from app.services.jackett import JackettClient, clamp_search_query_text
 from app.services.metadata import MetadataClient
 from app.services.qbittorrent import QbittorrentClient
 from app.services.selective_queue import ParsedTorrentInfo, SelectiveQueueError
+from app.services.settings_service import SettingsService
 from app.services.sync import SyncService
 from tests.jellyfin_test_utils import (
     add_jellyfin_episode,
@@ -4044,6 +4046,109 @@ def test_new_rule_uses_ultra_hd_hdr_defaults(app_client) -> None:
     assert ">OMDb (Video)</option>" in response.text
     assert 'data-quality-token="ultra_hd"' in response.text
     assert 'data-quality-token="hdr"' in response.text
+
+
+def _phase_r1_rule_form_data(
+    *,
+    rule_name: str = "Phase R1 Rule",
+    quality_profile: str = "1080p",
+    quality_mode: str | None = "managed",
+    include_tokens: list[str] | None = None,
+    exclude_tokens: list[str] | None = None,
+) -> dict[str, object]:
+    form_data: dict[str, object] = {
+        "rule_name": rule_name,
+        "content_name": rule_name,
+        "media_type": "series",
+        "quality_profile": quality_profile,
+        "release_year": "",
+        "additional_includes": "",
+        "use_regex": "on",
+        "must_contain_override": "",
+        "must_not_contain": "",
+        "ignore_days": "0",
+        "add_paused": "on",
+        "enabled": "on",
+        "language": "",
+        "assigned_category": "",
+        "save_path": "",
+        "feed_urls": ["http://feed.example/rss"],
+        "notes": "",
+        "quality_include_tokens": include_tokens or [],
+        "quality_exclude_tokens": exclude_tokens or [],
+    }
+    if quality_mode is not None:
+        form_data["quality_mode"] = quality_mode
+    return form_data
+
+
+def test_managed_rule_noop_save_preserves_quality_authority_and_snapshot(
+    app_client,
+    db_session,
+) -> None:
+    settings = SettingsService.get_or_create(db_session)
+    settings.quality_profile_rules = {
+        **settings.quality_profile_rules,
+        QualityProfile.HD_1080P.value: {
+            "include_tokens": ["full_hd", "1080p", "web_dl"],
+            "exclude_tokens": ["sd", "cam"],
+        },
+    }
+    rule = Rule(
+        rule_name="Managed Noop Rule",
+        content_name="Managed Noop Rule",
+        normalized_title="Managed Noop Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.HD_1080P,
+        quality_mode=QualityMode.MANAGED,
+        quality_include_tokens=["full_hd", "1080p"],
+        quality_exclude_tokens=["sd"],
+        feed_urls=["http://feed.example/rss"],
+        use_regex=True,
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    response = app_client.post(
+        f"/api/rules/{rule.id}",
+        data=_phase_r1_rule_form_data(
+            rule_name=rule.rule_name,
+            quality_mode="managed",
+            include_tokens=["full_hd", "1080p", "web_dl"],
+            exclude_tokens=["sd", "cam"],
+        ),
+        follow_redirects=False,
+    )
+    db_session.refresh(rule)
+
+    assert response.status_code == 303
+    assert rule.quality_mode == QualityMode.MANAGED
+    assert rule.quality_profile == QualityProfile.HD_1080P
+    assert rule.quality_include_tokens == ["full_hd", "1080p"]
+    assert rule.quality_exclude_tokens == ["sd"]
+
+
+def test_legacy_managed_rule_post_without_quality_mode_keeps_managed_authority(
+    app_client,
+    db_session,
+) -> None:
+    response = app_client.post(
+        "/api/rules",
+        data=_phase_r1_rule_form_data(
+            rule_name="Legacy Managed Bridge",
+            quality_mode=None,
+            include_tokens=["full_hd", "1080p"],
+            exclude_tokens=["480p", "360p", "sd"],
+        ),
+        follow_redirects=False,
+    )
+    rule = db_session.scalars(
+        select(Rule).where(Rule.rule_name == "Legacy Managed Bridge")
+    ).one()
+
+    assert response.status_code == 303
+    assert rule.quality_mode == QualityMode.MANAGED
+    assert rule.quality_profile == QualityProfile.HD_1080P
 
 
 def test_metadata_lookup_accepts_legacy_imdb_payload(app_client, monkeypatch) -> None:

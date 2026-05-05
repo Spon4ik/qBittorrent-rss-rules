@@ -24,6 +24,14 @@
 ## Implemented
 
 
+- Implemented contract-roadmap Phase R1 on 2026-05-05:
+  - added explicit managed/manual quality-mode authority with a nullable legacy-compatible `Rule.quality_mode` column;
+  - rule-form saves now carry `quality_mode`, explicit manual mode keeps stored token snapshots authoritative, and explicit managed mode derives effective tokens from the selected preset/profile while preserving existing stored snapshots during no-op edits;
+  - legacy rule posts that do not yet include `quality_mode` bridge deterministically from `quality_profile` (`plain`/`custom` as manual, built-in presets as managed);
+  - focused Phase R1 tests cover manual authority, managed no-op save idempotency, and legacy-post bridging;
+  - validation evidence: focused Phase R1 pytest passed, profile/quality focused pytest passed, Python Ruff on touched Python files passed, `node --check app\\static\\app.js` passed, shared Docker Compose rebuild succeeded, Docker `/health` reports `app_version=1.1.2`;
+  - full `tests\\test_quality_filters.py tests\\test_routes.py` was also attempted and is blocked by the pre-existing runtime taxonomy order assertion in `test_quality_option_choices_preserve_current_order_and_groups` because local runtime tokens such as `BDISK`/`xvid` now appear at the tail.
+
 - Completed a whole-application product/data/UI behavior audit on 2026-05-05 and added durable contract + gap/roadmap/test planning docs under `docs/plans/` (`application-product-contract.md`, `data-model-and-state-contract.md`, `ui-ux-design-contract.md`, `current-implementation-gap-analysis.md`, `refactoring-roadmap.md`, `test-strategy.md`) to lock expected managed-vs-manual rule semantics, taxonomy/preset inheritance, responsive layout expectations, and phased refactoring priorities before additional implementation edits.
 - Fixed transient SQLite lock 500s on 2026-05-05:
   - root cause was the Docker backend serving normal page reads while background scheduled/startup work could hold the SQLite database long enough for default SQLite busy handling to raise `sqlite3.OperationalError: database is locked`;
@@ -1128,6 +1136,11 @@
 
 ## In progress
 
+- Investigated qB credential rejection on 2026-05-06:
+  - Docker was overriding the saved app username with the shared Compose default `QB_RULES_QB_USERNAME=admin`, while the DB settings use `spon4ik`; the shared Compose default was changed to empty so Docker falls back to saved settings unless an explicit env override is provided;
+  - after rebuild, Docker resolved `http://host.docker.internal:8080` with saved username `spon4ik` and the saved DB password, but qBittorrent `v5.2.0` returned a successful `204 No Content` login response with a session cookie instead of the older `Ok.` text body;
+  - `QbittorrentClient.login()` now accepts both the legacy `Ok.` response and the qB `v5.2.0` `204` + cookie success shape, with regression coverage in `tests/test_qbittorrent_client.py`;
+  - validation evidence: qB client tests passed (`12 passed`), Ruff passed for `app/services/qbittorrent.py` and `tests/test_qbittorrent_client.py`, shared Compose rebuild succeeded, Docker `/health` reports `app_version=1.1.2`, and an inside-container qB connection test now reports `qb_test=ok`.
 - Docker refresh is no longer blocked after the PC restart; the shared Compose rebuild and live qB/Jackett sync proof are complete on the current image.
 - Manual Jackett language overrides are now editable from `/settings` for unknown/unclassified indexers while live configured-indexer discovery remains dynamic for Jackett additions/removals.
 - Taxonomy is now runtime-persistent in `data/quality_taxonomy.json`; built-in video filter profiles intentionally read the live resolution rank so taxonomy additions propagate to presets, while unrelated code edits should still avoid touching the user's live taxonomy values or saved custom filters.

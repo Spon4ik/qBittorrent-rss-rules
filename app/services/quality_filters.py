@@ -1432,6 +1432,18 @@ def effective_rule_quality_tokens(
     )
     profile_rules = resolve_quality_profile_rules(settings)
     quality_rule = profile_rules.get(profile_value, {})
+    quality_mode = getattr(rule, "quality_mode", None)
+    quality_mode_value = getattr(quality_mode, "value", quality_mode)
+    if quality_mode_value == "manual":
+        return include_tokens, exclude_tokens
+    if quality_mode_value == "managed" and profile_value not in {
+        QualityProfile.PLAIN.value,
+        QualityProfile.CUSTOM.value,
+    }:
+        return (
+            normalize_quality_tokens(quality_rule.get("include_tokens")),
+            normalize_quality_tokens(quality_rule.get("exclude_tokens")),
+        )
     if profile_value in {QualityProfile.PLAIN.value, QualityProfile.CUSTOM.value}:
         return include_tokens, exclude_tokens
     if include_tokens or exclude_tokens:

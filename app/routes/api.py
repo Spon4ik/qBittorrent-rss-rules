@@ -16,6 +16,7 @@ from app.db import get_db_session
 from app.models import (
     AppSettings,
     MediaType,
+    QualityMode,
     QualityProfile,
     Rule,
     media_type_choices,
@@ -246,6 +247,7 @@ def _raw_rule_form_data(form: Any) -> dict[str, Any]:
         "poster_url": form.get("poster_url") or None,
         "media_type": form.get("media_type", MediaType.SERIES.value),
         "quality_profile": form.get("quality_profile", QualityProfile.PLAIN.value),
+        "quality_mode": form.get("quality_mode") or None,
         "filter_profile_key": form.get("filter_profile_key", ""),
         "release_year": form.get("release_year", ""),
         "include_release_year": _bool_from_form(form, "include_release_year"),
@@ -561,11 +563,18 @@ def _apply_rule_payload_to_model(
     rule.poster_url = payload.poster_url
     rule.media_type = payload.media_type
     rule.quality_profile = payload.quality_profile
+    rule.quality_mode = payload.quality_mode
     rule.release_year = payload.release_year
     rule.include_release_year = payload.include_release_year
     rule.additional_includes = payload.additional_includes
-    rule.quality_include_tokens = payload.quality_include_tokens
-    rule.quality_exclude_tokens = payload.quality_exclude_tokens
+    if payload.quality_mode == QualityMode.MANAGED:
+        existing_include_tokens = list(getattr(rule, "quality_include_tokens", []) or [])
+        existing_exclude_tokens = list(getattr(rule, "quality_exclude_tokens", []) or [])
+        rule.quality_include_tokens = existing_include_tokens or payload.quality_include_tokens
+        rule.quality_exclude_tokens = existing_exclude_tokens or payload.quality_exclude_tokens
+    else:
+        rule.quality_include_tokens = payload.quality_include_tokens
+        rule.quality_exclude_tokens = payload.quality_exclude_tokens
     rule.use_regex = payload.use_regex
     rule.must_contain_override = payload.must_contain_override
     rule.must_not_contain = payload.must_not_contain

@@ -47,6 +47,11 @@ class QualityProfile(str, enum.Enum):
     CUSTOM = "custom"
 
 
+class QualityMode(str, enum.Enum):
+    MANAGED = "managed"
+    MANUAL = "manual"
+
+
 class SyncStatus(str, enum.Enum):
     NEVER = "never"
     OK = "ok"
@@ -77,6 +82,11 @@ class Rule(Base):
         Enum(QualityProfile, name="quality_profile"),
         nullable=False,
         default=QualityProfile.PLAIN,
+    )
+    quality_mode: Mapped[QualityMode | None] = mapped_column(
+        Enum(QualityMode, name="quality_mode"),
+        nullable=True,
+        default=None,
     )
     release_year: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     include_release_year: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

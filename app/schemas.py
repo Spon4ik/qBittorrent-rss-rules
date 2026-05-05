@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models import MediaType, MetadataProvider, QualityProfile
+from app.models import MediaType, MetadataProvider, QualityMode, QualityProfile
 from app.services.quality_filters import normalize_quality_tokens
 
 IMDB_ID_RE = re.compile(r"^tt\d+$")
@@ -489,6 +489,7 @@ class RuleFormPayload(BaseModel):
     poster_url: str | None = Field(default=None, max_length=512)
     media_type: MediaType = MediaType.SERIES
     quality_profile: QualityProfile = QualityProfile.PLAIN
+    quality_mode: QualityMode | None = None
     release_year: str = Field(default="", max_length=16)
     include_release_year: bool = False
     additional_includes: str = ""
@@ -566,6 +567,16 @@ class RuleFormPayload(BaseModel):
         else:
             raw_value = list(value)
         return normalize_quality_tokens(raw_value)
+
+    @model_validator(mode="after")
+    def infer_legacy_quality_mode(self) -> RuleFormPayload:
+        if self.quality_mode is not None:
+            return self
+        if self.quality_profile in {QualityProfile.PLAIN, QualityProfile.CUSTOM}:
+            self.quality_mode = QualityMode.MANUAL
+        else:
+            self.quality_mode = QualityMode.MANAGED
+        return self
 
     @model_validator(mode="after")
     def remove_quality_overlap(self) -> RuleFormPayload:

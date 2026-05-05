@@ -3480,6 +3480,7 @@ function initRuleForm(form) {
     const feedModeHelper = form.querySelector("[data-feed-mode-helper]");
     const mediaField = form.querySelector('select[name="media_type"]');
   const qualityProfileInput = form.querySelector('input[name="quality_profile"]');
+  const qualityModeInput = form.querySelector('input[name="quality_mode"]');
   const filterProfileSelect = form.querySelector("#filter-profile-select");
   const saveNewProfileButton = form.querySelector("#filter-profile-save-new");
   const overwriteProfileButton = form.querySelector("#filter-profile-overwrite");
@@ -3690,14 +3691,23 @@ function initRuleForm(form) {
     const matchingProfile = availableFilterProfileMap[detectMatchingFilterProfileKey(getCurrentMediaType())];
     if (matchingProfile?.quality_profile_value) {
       qualityProfileInput.value = matchingProfile.quality_profile_value;
+      if (qualityModeInput) {
+        qualityModeInput.value = matchingProfile.quality_profile_value === "custom" ? "manual" : "managed";
+      }
       return;
     }
     const currentProfile = buildCurrentProfilePayload();
     if (!currentProfile.include_tokens.length && !currentProfile.exclude_tokens.length) {
       qualityProfileInput.value = "plain";
+      if (qualityModeInput) {
+        qualityModeInput.value = "manual";
+      }
       return;
     }
     qualityProfileInput.value = "custom";
+    if (qualityModeInput) {
+      qualityModeInput.value = "manual";
+    }
   };
 
   const applyFilterProfile = (profileKey) => {

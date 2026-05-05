@@ -7,7 +7,7 @@ from copy import deepcopy
 
 import pytest
 
-from app.models import AppSettings, MediaType, QualityProfile, Rule
+from app.models import AppSettings, MediaType, QualityMode, QualityProfile, Rule
 from app.services import quality_filters
 from app.services.quality_filters import (
     AT_LEAST_UHD_PROFILE,
@@ -773,3 +773,26 @@ def test_get_or_create_keeps_customized_quality_profile_rules(db_session) -> Non
         "sd",
         "bluray",
     ]
+
+
+def test_explicit_manual_quality_mode_keeps_token_snapshot() -> None:
+    settings = AppSettings(
+        quality_profile_rules=dynamic_default_quality_profile_rules(),
+        saved_quality_profiles={},
+        default_quality_profile=QualityProfile.UHD_2160P_HDR,
+    )
+    rule = Rule(
+        rule_name="Manual HDR Rule",
+        content_name="Manual HDR Rule",
+        normalized_title="Manual HDR Rule",
+        quality_profile=QualityProfile.UHD_2160P_HDR,
+        quality_mode=QualityMode.MANUAL,
+        quality_include_tokens=["1080p"],
+        quality_exclude_tokens=["cam"],
+        feed_urls=["http://feed.example/rss"],
+    )
+
+    include_tokens, exclude_tokens = effective_rule_quality_tokens(rule, settings)
+
+    assert include_tokens == ["1080p"]
+    assert exclude_tokens == ["cam"]

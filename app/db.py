@@ -83,6 +83,7 @@ def _ensure_rule_columns() -> None:
         "additional_includes": "TEXT NOT NULL DEFAULT ''",
         "quality_include_tokens": "JSON NOT NULL DEFAULT '[]'",
         "quality_exclude_tokens": "JSON NOT NULL DEFAULT '[]'",
+        "quality_mode": "VARCHAR(16)",
         "start_season": "INTEGER",
         "start_episode": "INTEGER",
         "jellyfin_search_existing_unseen": "BOOLEAN NOT NULL DEFAULT 0",

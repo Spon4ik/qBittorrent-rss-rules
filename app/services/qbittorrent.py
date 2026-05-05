@@ -71,7 +71,10 @@ class QbittorrentClient:
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise QbittorrentClientError(f"Unable to connect to qBittorrent: {exc}") from exc
-        if response.text.strip() != "Ok.":
+        login_succeeded = response.text.strip() == "Ok." or (
+            response.status_code == 204 and bool(response.cookies)
+        )
+        if not login_succeeded:
             raise QbittorrentAuthError("qBittorrent rejected the provided credentials.")
         self._authenticated = True
 

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session, load_only
 from app.db import get_db_session, get_session_factory
 from app.models import (
     MediaType,
+    QualityMode,
     QualityProfile,
     Rule,
     RuleSearchSnapshot,
@@ -409,6 +410,13 @@ def _rule_to_form_data(rule: Rule) -> dict[str, object]:
     movie_completion_sources = list(getattr(rule, "movie_completion_sources", []) or [])
     movie_completion_auto_disabled = bool(getattr(rule, "movie_completion_auto_disabled", False))
     legacy_jellyfin_auto_disabled = bool(getattr(rule, "jellyfin_auto_disabled", False))
+    quality_mode = rule.quality_mode
+    if quality_mode is None:
+        quality_mode = (
+            QualityMode.MANUAL
+            if rule.quality_profile in {QualityProfile.PLAIN, QualityProfile.CUSTOM}
+            else QualityMode.MANAGED
+        )
     return {
         "rule_name": rule.rule_name,
         "content_name": rule.content_name,
@@ -417,6 +425,7 @@ def _rule_to_form_data(rule: Rule) -> dict[str, object]:
         "poster_url": rule.poster_url or "",
         "media_type": rule.media_type.value,
         "quality_profile": rule.quality_profile.value,
+        "quality_mode": quality_mode.value,
         "filter_profile_key": "",
         "release_year": rule.release_year,
         "include_release_year": rule.include_release_year,
@@ -1544,6 +1553,11 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
             default_quality.value
             if requested_media_type in {MediaType.SERIES.value, MediaType.MOVIE.value}
             else QualityProfile.CUSTOM.value
+        ),
+        "quality_mode": (
+            QualityMode.MANAGED.value
+            if requested_media_type in {MediaType.SERIES.value, MediaType.MOVIE.value}
+            else QualityMode.MANUAL.value
         ),
         "filter_profile_key": default_filter_profile_key,
         "release_year": "",

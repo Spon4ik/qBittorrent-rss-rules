@@ -1,11 +1,11 @@
 # Roadmap
 
-## Current release target: v1.1.3 contract-roadmap and sync-only boundary release
+## Current release target: post-v1.1.3 backlog selection
 
 ### In progress
 
-- Phase 25 is now closed for the repo split: qBittorrent RSS Rules no longer hosts the native Stremio addon surface and keeps only Stremio library/watch-progress synchronization, because addon hosting moved to `jackett-stremio-fork`.
-- The current patch candidate is `v1.1.3`, publishing the post-`v1.1.2` contract-roadmap guardrails and qB enforcement-parity diagnostics after the existing `v1.1.2` taxonomy/profile tag.
+- Phase 25 is now closed and published in `v1.1.3`: qBittorrent RSS Rules no longer hosts the native Stremio addon surface and keeps only Stremio library/watch-progress synchronization, because addon hosting moved to `jackett-stremio-fork`.
+- The `v1.1.3` release published the post-`v1.1.2` contract-roadmap guardrails and qB enforcement-parity diagnostics after the existing `v1.1.2` taxonomy/profile tag.
 - Phase 23 is now closed and release-validated in `v0.9.0` as the Stremio cross-addon aggregation slice, including persisted provider manifests, live Torrentio-compatible provider ingestion inside the local addon, exact-first desktop/result-contract precursors, and real desktop smoke proof for merged provider ordering.
 - Phase 24 remains closed and release-validated in `v0.8.3` as the hotfix for long-running Stremio series lookups that were over-constrained by the original series year, along with early phase 23 qB-side precursors for visibility and search precision.
 - Phase 22 is now closed and release-validated in `v0.8.2` as the Stremio patch slice covering full qB RSS variant retention, global quality-first ordering, and exact-variant local playback marking after the `v0.8.1` release still suppressed rows too aggressively.
@@ -20,7 +20,7 @@
 
 ### Current phase track
 
-- Phase 25: native Stremio addon removal and sync retention (implemented; final `v1.1.3` release closeout in progress; `docs/plans/phase-25-stremio-addon-removal-and-sync-retention.md`)
+- Phase 25: native Stremio addon removal and sync retention (published in `v1.1.3`; `docs/plans/phase-25-stremio-addon-removal-and-sync-retention.md`)
 - Phase 24: Stremio long-running series year hotfix (implemented and release-validated in `v0.8.3`; `docs/plans/phase-24-stremio-long-running-series-year-hotfix.md`)
 - Phase 23: global cross-addon stream ordering (implemented and release-validated in `v0.9.0`; `docs/plans/phase-23-global-cross-addon-stream-ordering.md`)
 - Phase 22: Stremio variant parity and local playback marking (implemented and release-validated in `v0.8.2`; `docs/plans/phase-22-stremio-variant-parity-and-local-marking.md`)

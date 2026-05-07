@@ -2364,6 +2364,187 @@ def test_jackett_client_prefers_structured_music_search_before_generic_query() -
     assert result.fallback_results == []
 
 
+def test_jackett_client_structured_music_search_respects_explicit_indexer_scope() -> None:
+    seen_requests: list[tuple[str, dict[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = {key: value for key, value in request.url.params.multi_items()}
+        seen_requests.append((path, params))
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="musictracker">
+    <caps>
+      <searching>
+        <music-search available="yes" supportedParams="q,artist,album,year" />
+      </searching>
+    </caps>
+  </indexer>
+  <indexer id="othermusic">
+    <caps>
+      <searching>
+        <music-search available="yes" supportedParams="q,artist,album,year" />
+      </searching>
+    </caps>
+  </indexer>
+</indexers>
+""",
+            )
+
+        if path == "/api/v2.0/indexers/musictracker/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "music",
+            "q": "Andrew Michael Blues Band",
+            "cat": "3000",
+            "artist": "Andrew Michael",
+            "album": "Blues Band",
+            "year": "2026",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>Andrew Michael Blues Band 2026 FLAC</title>
+      <guid>music-guid</guid>
+      <link>magnet:?xt=urn:btih:MUSIC111</link>
+      <torznab:attr name="jackettindexer" value="musictracker" />
+    </item>
+  </channel>
+</rss>
+""",
+            )
+
+        if path == "/api/v2.0/indexers/othermusic/results/torznab/api":
+            raise AssertionError("Structured search leaked outside the explicit indexer scope.")
+
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="Andrew Michael Blues Band",
+            media_type=MediaType.MUSIC,
+            indexer="musictracker",
+            artist="Andrew Michael",
+            album="Blues Band",
+            release_year="2026",
+        )
+    )
+
+    assert [item.indexer for item in result.results] == ["musictracker"]
+    assert [
+        path for path, _params in seen_requests if "/results/torznab/api" in path
+    ] == [
+        "/api/v2.0/indexers/all/results/torznab/api",
+        "/api/v2.0/indexers/musictracker/results/torznab/api",
+    ]
+
+
+def test_jackett_client_structured_book_search_respects_filter_indexer_scope() -> None:
+    seen_requests: list[tuple[str, dict[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = {key: value for key, value in request.url.params.multi_items()}
+        seen_requests.append((path, params))
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="booktracker">
+    <caps>
+      <searching>
+        <book-search available="yes" supportedParams="q,title,author,year" />
+      </searching>
+    </caps>
+  </indexer>
+  <indexer id="otherbooks">
+    <caps>
+      <searching>
+        <book-search available="yes" supportedParams="q,title,author,year" />
+      </searching>
+    </caps>
+  </indexer>
+</indexers>
+""",
+            )
+
+        if path == "/api/v2.0/indexers/booktracker/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "book",
+            "cat": "3030",
+            "title": "The Way of Kings",
+            "author": "Brandon Sanderson",
+            "year": "2010",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>The Way of Kings Audiobook 2010</title>
+      <guid>book-guid</guid>
+      <link>magnet:?xt=urn:btih:BOOK111</link>
+      <torznab:attr name="jackettindexer" value="booktracker" />
+    </item>
+  </channel>
+</rss>
+""",
+            )
+
+        if path == "/api/v2.0/indexers/otherbooks/results/torznab/api":
+            raise AssertionError("Structured search leaked outside filter_indexers scope.")
+
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="The Way of Kings",
+            media_type=MediaType.AUDIOBOOK,
+            title="The Way of Kings",
+            author="Brandon Sanderson",
+            release_year="2010",
+            filter_indexers=["booktracker"],
+        )
+    )
+
+    assert [item.indexer for item in result.results] == ["booktracker"]
+    assert [
+        path for path, _params in seen_requests if "/results/torznab/api" in path
+    ] == [
+        "/api/v2.0/indexers/all/results/torznab/api",
+        "/api/v2.0/indexers/booktracker/results/torznab/api",
+    ]
+
+
 def test_jackett_client_precise_title_primary_keeps_non_exact_title_rows_available_for_fallback() -> (
     None
 ):

@@ -1619,7 +1619,7 @@ class JackettClient:
         search_mode = TORZNAB_MODE_BY_MEDIA_TYPE.get(payload.media_type)
         if search_mode not in {"music", "book"}:
             return [], [], []
-        indexers = self._configured_indexers_for_mode(search_mode)
+        indexers = self._scoped_configured_indexers_for_mode(payload, search_mode)
         structured_results: list[tuple[datetime | None, JackettSearchResult]] = []
         successful_requests: list[dict[str, object]] = []
         warning_messages: list[str] = []
@@ -2635,6 +2635,22 @@ class JackettClient:
                 continue
 
         return precise_results, request_variants, warning_messages
+
+    def _scoped_configured_indexers_for_mode(
+        self,
+        payload: JackettSearchRequest,
+        search_mode: str,
+    ) -> list[JackettIndexerCapability]:
+        indexers = self._configured_indexers_for_mode(search_mode)
+        requested_indexers = self._remote_indexers_for_standard_search(payload)
+        if requested_indexers == ["all"]:
+            return indexers
+        requested_keys = {item.casefold() for item in requested_indexers}
+        return [
+            indexer
+            for indexer in indexers
+            if indexer.indexer_id.casefold() in requested_keys
+        ]
 
     def _configured_indexers_for_mode(self, search_mode: str) -> list[JackettIndexerCapability]:
         capability_tag = TORZNAB_CAPABILITY_TAG_BY_MODE.get(search_mode)

@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.1.4] - 2026-05-07
+
+- Fixed structured Jackett music and audiobook searches so native `t=music` / `t=book` direct-indexer probes honor explicit indexer and feed-derived `filter_indexers` scope instead of fanning out to every capable configured indexer.
+- Added focused regressions proving scoped structured audio searches keep direct Jackett requests aligned with the operator-visible search/feed scope while preserving the existing broad fallback path.
 ## [1.1.3] - 2026-05-07
 
 - Completed the contract-roadmap guardrail package across R1.5-R8, adding qB settings precedence coverage, qB WebUI auth compatibility coverage, runtime-taxonomy test isolation, responsive/layout foundations, preset/profile UX contracts, search diagnostics, queue refresh resiliency, and qB rule-enforcement parity diagnostics.

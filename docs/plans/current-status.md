@@ -2,7 +2,7 @@
 
 ## Current focus
 
-- Phase R8 is completed and merged as the pre-feature qB rule enforcement-parity stabilization gate; Phase 25 release closeout is published as `v1.1.3`, and the legacy `P4-01` browser expectation has been retired.
+- Phase R8 is completed and merged as the pre-feature qB rule enforcement-parity stabilization gate; Phase 25 release closeout is published as `v1.1.3`, the legacy `P4-01` browser expectation has been retired, and Phase 26 is implemented locally as the `v1.1.4` structured Jackett audio-search scope patch.
 - Current GitHub release is `v1.1.3` because `v1.1.2` already tags the earlier taxonomy/profile inheritance patch, while the merged R1.5-R8 guardrails landed after that tag.
 - Current packaging rule: after each phase, inspect newly discovered facts, adjust later roadmap scope/tests when needed, and continue through validation, commit, push, and GitHub handoff without stopping for routine reruns or environment recovery.
 - Phase 23 is now closed and release-validated in `v0.9.0` as the Stremio cross-addon aggregation slice, merging qB RSS and Torrentio-compatible provider rows into one locally owned addon response with global ordering, persisted provider configuration, and real desktop proof.
@@ -25,6 +25,11 @@
 
 ## Implemented
 
+- Implemented Phase 26 structured Jackett audio-search scope on 2026-05-07:
+  - structured music/audiobook searches now filter the capable direct-indexer list through the same explicit `indexer` / `filter_indexers` scope used by standard search before issuing native `t=music` or `t=book` requests;
+  - added regressions proving scoped structured music and audiobook searches do not leak direct requests to unrelated capable configured indexers;
+  - prepared patch release `v1.1.4` across backend, WinUI desktop version guard, health test, and changelog;
+  - validation evidence: scoped structured regressions passed, `tests/test_jackett.py tests/test_routes.py` passed, Ruff passed for touched Python files, `git diff --check` passed, `cmd.exe /c scripts\check.bat` passed with `372 passed`, shared Docker Compose rebuild passed, Docker `/health` reports `app_version=1.1.4`, inside-container qB login reports `qb_test=ok`, inside-container Jackett discovery reports `jackett_indexers=12`, desktop build passed with `0 Warning(s)` and `0 Error(s)`, and browser closeout report `logs/qa/phase-closeout-20260507T151814Z/closeout-report.md` passed all checks.
 
 - Resumed Phase 25 release closeout on 2026-05-07 after R1.5-R8 merged:
   - confirmed the live codebase still has no native Stremio addon router/modules/smoke scripts, no `stremio_native_addon` capability, and no `Queue Stremio Variant` UI, while Stremio sync/test settings remain in the app;
@@ -1251,7 +1256,7 @@
 
 ## Next actions
 
-- Select the next post-`v1.1.3` backlog phase before starting new implementation; keep the R8 qB enforcement-parity diagnostics and the now-green browser closeout as required gates for future qB rule-payload/feed-filtering changes.
+- Publish Phase 26 `v1.1.4`: commit the validated release patch, push `main`, tag `v1.1.4`, create the GitHub release, then perform the next discovery review before selecting any later backlog phase.
 - Preserve qB enforcement diagnostics and keep live qB remote readback in scope for future rule-payload/feed-filtering changes.
 - Contract roadmap Phases R1.5 through R8, Phase 25 release closeout, and the `P4-01` QA cleanup are complete; next roadmap work should come from the normal backlog after this cleanup is published.
 - Keep qBittorrent running before Docker closeout probes; after reboot it was not listening on `127.0.0.1:8080`, and the Docker backend could not complete qB sync until `C:\\Program Files\\qBittorrent\\qbittorrent.exe` was started.

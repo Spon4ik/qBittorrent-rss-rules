@@ -28,5 +28,7 @@ Expose the structured Jackett audio fields already supported by the backend requ
 ## Closeout
 
 - Implementation: `/search` now renders a compact structured audio field group and routes submitted music/audiobook metadata into the existing `JackettSearchRequest` schema.
-- Versioning: prepared as patch release `v1.1.5`.
+- Versioning: published as patch release `v1.1.5`.
 - Validation evidence: targeted structured field regressions passed; `tests/test_routes.py tests/test_jackett.py tests/test_static_assets.py` passed; Ruff passed for touched Python files; `git diff --check` passed; `cmd.exe /c scripts\check.bat` passed with `374 passed`; shared Docker Compose rebuild passed and `/health` reports `app_version=1.1.5`; inside-container qB login reports `qb_test=ok`; inside-container Jackett discovery reports `jackett_indexers=12`; `cmd.exe /c scripts\run_dev.bat desktop-build` passed with `0 Warning(s)` and `0 Error(s)`; browser closeout report `logs/qa/phase-closeout-20260507T152743Z/closeout-report.md` passed all checks.
+- GitHub release: `https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.1.5`.
+- Discovery review: structured audio now has both direct-indexer scope parity and explicit manual fields. Further audio work should focus on intentional metadata population or provider lookup, not hidden inference in Jackett request construction.

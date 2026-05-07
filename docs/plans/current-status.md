@@ -2,8 +2,8 @@
 
 ## Current focus
 
-- Phase R8 is completed and merged as the pre-feature qB rule enforcement-parity stabilization gate; Phase 25 release closeout is published as `v1.1.3`, the legacy `P4-01` browser expectation has been retired, Phase 26 is published as the `v1.1.4` structured Jackett audio-search scope patch, and Phase 27 is validated locally as the `v1.1.5` structured audio search fields patch.
-- Current GitHub release is `v1.1.4`, adding scoped structured Jackett music/audiobook direct-indexer parity on top of the `v1.1.3` contract-roadmap release.
+- Phase R8 is completed and merged as the pre-feature qB rule enforcement-parity stabilization gate; Phase 25 release closeout is published as `v1.1.3`, the legacy `P4-01` browser expectation has been retired, Phase 26 is published as the `v1.1.4` structured Jackett audio-search scope patch, and Phase 27 is published as the `v1.1.5` structured audio search fields patch.
+- Current GitHub release is `v1.1.5`, adding structured audio search form fields on top of the `v1.1.4` scoped direct-indexer parity release.
 - Current packaging rule: after each phase, inspect newly discovered facts, adjust later roadmap scope/tests when needed, and continue through validation, commit, push, and GitHub handoff without stopping for routine reruns or environment recovery.
 - Phase 23 is now closed and release-validated in `v0.9.0` as the Stremio cross-addon aggregation slice, merging qB RSS and Torrentio-compatible provider rows into one locally owned addon response with global ordering, persisted provider configuration, and real desktop proof.
 - Phase 24 remains closed and release-validated in `v0.8.3` as the hotfix slice for Stremio long-running series episode lookups that disappear because the addon applies the original series year as a hard search filter.
@@ -31,6 +31,7 @@
   - added route regressions proving structured music and audiobook values reach `JackettClient.search` and remain visible in the rendered form;
   - prepared patch release `v1.1.5` across backend, WinUI desktop version guard, health test, and changelog;
   - validation evidence: targeted structured field regressions passed, `tests/test_routes.py tests/test_jackett.py tests/test_static_assets.py` passed, Ruff passed for touched Python files, `git diff --check` passed, `cmd.exe /c scripts\check.bat` passed with `374 passed`, shared Docker Compose rebuild passed, Docker `/health` reports `app_version=1.1.5`, inside-container qB login reports `qb_test=ok`, inside-container Jackett discovery reports `jackett_indexers=12`, desktop build passed with `0 Warning(s)` and `0 Error(s)`, and browser closeout report `logs/qa/phase-closeout-20260507T152743Z/closeout-report.md` passed all checks.
+  - GitHub release state: commit `1011b723` is pushed to `main`, tag `v1.1.5` is pushed, and GitHub Release `https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.1.5` is published.
 
 - Implemented Phase 26 structured Jackett audio-search scope on 2026-05-07:
   - structured music/audiobook searches now filter the capable direct-indexer list through the same explicit `indexer` / `filter_indexers` scope used by standard search before issuing native `t=music` or `t=book` requests;
@@ -1264,7 +1265,7 @@
 
 ## Next actions
 
-- Publish Phase 27 `v1.1.5`: commit the validated release patch, push `main`, tag `v1.1.5`, create the GitHub release, then perform the next discovery review before selecting any later backlog phase.
+- Select the next post-`v1.1.5` backlog phase. Phase 27 closed the immediate structured-audio UX gap; the remaining candidates are qB/manual feed-scope cleanup, explicit persisted Jackett search-scope indexers, richer structured audio metadata population, or the planned large-file split queue.
 - Preserve qB enforcement diagnostics and keep live qB remote readback in scope for future rule-payload/feed-filtering changes.
 - Contract roadmap Phases R1.5 through R8, Phase 25 release closeout, and the `P4-01` QA cleanup are complete; next roadmap work should come from the normal backlog after this cleanup is published.
 - Keep qBittorrent running before Docker closeout probes; after reboot it was not listening on `127.0.0.1:8080`, and the Docker backend could not complete qB sync until `C:\\Program Files\\qBittorrent\\qbittorrent.exe` was started.

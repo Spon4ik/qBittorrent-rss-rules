@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.1.6] - 2026-05-07
+
+- Added persisted rule-level Jackett `search_indexers` so saved active search and rule snapshot fetches use explicit search scope instead of reparsing passive qB RSS `feed_urls`.
+- Kept qB RSS sync payloads anchored to `feed_urls`, with regressions proving qB `affectedFeeds` semantics remain unchanged when active-search scope differs.
+- Added rule-page scope diagnostics that show passive qB feed scope, active Jackett search scope, and whether active search scope is explicit or legacy-inferred.
 ## [1.1.5] - 2026-05-07
 
 - Added structured music and audiobook fields to the active Jackett search form, wiring artist, album, track, label, book title, author, publisher, and genre into the existing native Torznab audio-search request schema.

@@ -93,7 +93,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.1.5"
+    assert payload["app_version"] == "1.1.6"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -2807,6 +2807,50 @@ def test_edit_rule_inline_search_scopes_single_jackett_feed_indexer(
     assert "Search scoped to affected feed indexer: rutracker." in response.text
 
 
+def test_edit_rule_inline_search_prefers_explicit_search_indexers(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett:9117",
+        jackett_api_key_encrypted=obfuscate_secret("api-key"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Explicit Search Scope",
+        content_name="Explicit Search Scope",
+        normalized_title="Explicit Search Scope",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=[
+            "http://jackett:9117/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc&t=tvsearch&cat=5000"
+        ],
+        search_indexers=["kinozal"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        assert payload.indexer == "kinozal"
+        assert payload.filter_indexers == ["kinozal"]
+        return JackettSearchRun(
+            request_variants=['t=tvsearch indexer="kinozal" q="Explicit Search Scope"'],
+            results=[],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "enrich_result_category_labels", lambda self, results: None)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", lambda self: {})
+
+    response = app_client.get(f"/rules/{rule.id}", params={"run_search": "1"})
+
+    assert response.status_code == 200
+    assert "Search scoped to saved Jackett search indexer: kinozal." in response.text
+    assert "Search scoped to affected feed indexer: rutracker." not in response.text
+
+
 def test_edit_rule_inline_search_uses_feed_url_override_scope(
     app_client,
     db_session,
@@ -3053,6 +3097,49 @@ def test_rule_search_workspace_falls_back_to_language_indexer_scope_when_qb_feed
         "Search scoped to Jackett indexer from the saved rule language (ru): rutracker."
         in response.text
     )
+
+
+def test_rule_search_workspace_prefers_explicit_search_indexers_over_feed_urls(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett:9117",
+        jackett_api_key_encrypted=obfuscate_secret("api-key"),
+    )
+    db_session.add(settings)
+    rule = Rule(
+        rule_name="Workspace Explicit Scope",
+        content_name="Workspace Explicit Scope",
+        normalized_title="Workspace Explicit Scope",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=[
+            "http://jackett:9117/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc&t=tvsearch&cat=5000"
+        ],
+        search_indexers=["kinozal"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        assert payload.indexer == "kinozal"
+        assert payload.filter_indexers == ["kinozal"]
+        return JackettSearchRun(
+            request_variants=['t=tvsearch indexer="kinozal" q="Workspace Explicit Scope"'],
+            results=[],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "enrich_result_category_labels", lambda self, results: None)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", lambda self: {})
+
+    response = app_client.get("/search", params={"rule_id": rule.id})
+
+    assert response.status_code == 200
+    assert "Search scoped to saved Jackett search indexer: kinozal." in response.text
 
 
 def test_jackett_search_api_returns_results(app_client, monkeypatch) -> None:
@@ -5323,6 +5410,7 @@ def test_create_rule_resolves_feed_urls_from_language_before_save(
     assert saved_rule.feed_urls == [
         "http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=apikey&t=search"
     ]
+    assert saved_rule.search_indexers == ["rutracker"]
 
 
 def test_create_rule_resolves_feed_urls_from_multiple_languages(
@@ -5383,6 +5471,7 @@ def test_create_rule_resolves_feed_urls_from_multiple_languages(
         "http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=apikey&t=search",
         "http://jackett.test/api/v2.0/indexers/fuzer/results/torznab/api?apikey=apikey&t=search",
     ]
+    assert saved_rule.search_indexers == ["rutracker", "fuzer"]
 
 
 def test_create_rule_with_language_and_no_matching_feeds_returns_error(
@@ -5450,6 +5539,12 @@ def test_create_rule_with_language_saves_when_qb_feeds_are_unavailable(
 
     monkeypatch.setattr(QbittorrentClient, "get_feeds", lambda self: [])
     monkeypatch.setattr(
+        JackettClient,
+        "configured_indexer_languages",
+        lambda self: {"rutracker": ["ru"], "fuzer": ["he"]},
+    )
+    monkeypatch.setattr(JackettClient, "configured_indexer_feed_urls", lambda self, **kwargs: {})
+    monkeypatch.setattr(
         SyncService,
         "sync_rule",
         lambda self, rule_id: SyncResult(
@@ -5482,10 +5577,11 @@ def test_create_rule_with_language_saves_when_qb_feeds_are_unavailable(
     assert saved_rule is not None
     assert saved_rule.language == "ru"
     assert saved_rule.feed_urls == []
+    assert saved_rule.search_indexers == ["rutracker"]
     assert saved_rule.feed_resolution_status == "unavailable"
     assert (
         saved_rule.feed_resolution_message
-        == "Language-based feed selection could not read Jackett indexer metadata."
+        == "Language-based feed selection needs available qB RSS feeds."
     )
 
 
@@ -5509,11 +5605,18 @@ def test_update_rule_with_language_preserves_saved_feeds_when_qb_feeds_are_unava
         feed_urls=[
             "http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc"
         ],
+        search_indexers=["rutracker"],
     )
     db_session.add(rule)
     db_session.commit()
 
     monkeypatch.setattr(QbittorrentClient, "get_feeds", lambda self: [])
+    monkeypatch.setattr(
+        JackettClient,
+        "configured_indexer_languages",
+        lambda self: {"rutracker": ["ru"], "fuzer": ["he"]},
+    )
+    monkeypatch.setattr(JackettClient, "configured_indexer_feed_urls", lambda self, **kwargs: {})
     monkeypatch.setattr(
         SyncService,
         "sync_rule",
@@ -5550,10 +5653,11 @@ def test_update_rule_with_language_preserves_saved_feeds_when_qb_feeds_are_unava
     assert refreshed_rule.feed_urls == [
         "http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc"
     ]
+    assert refreshed_rule.search_indexers == ["rutracker"]
     assert refreshed_rule.feed_resolution_status == "unavailable"
     assert (
         refreshed_rule.feed_resolution_message
-        == "Language-based feed selection could not read Jackett indexer metadata."
+        == "No Jackett-backed qB feeds match the selected language."
     )
 
 

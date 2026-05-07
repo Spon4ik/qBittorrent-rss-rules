@@ -478,6 +478,7 @@ def _rule_to_form_data(rule: Rule) -> dict[str, object]:
         "assigned_category": rule.assigned_category,
         "save_path": rule.save_path,
         "feed_urls": rule.feed_urls,
+        "search_indexers": list(getattr(rule, "search_indexers", []) or []),
         "notes": rule.notes,
         "remember_feed_defaults": True,
         "metadata_lookup_provider": default_metadata_lookup_provider(rule.media_type),
@@ -497,6 +498,46 @@ def _rule_sync_diagnostics(rule: Rule) -> dict[str, object]:
         "has_last_remote_payload": bool(last_remote_payload),
         "last_synced_must_contain": str(last_synced_payload.get("mustContain", "") or ""),
         "last_remote_must_contain": str(last_remote_payload.get("mustContain", "") or ""),
+    }
+
+
+def _normalize_search_indexers(indexers: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_indexer in list(indexers or []):
+        candidate = str(raw_indexer or "").strip().casefold()
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        normalized.append(candidate)
+    return normalized
+
+
+def _rule_scope_diagnostics(rule: Rule) -> dict[str, object]:
+    passive_feed_urls = _normalize_feed_url_list(list(getattr(rule, "feed_urls", []) or []))
+    explicit_indexers = _normalize_search_indexers(
+        list(getattr(rule, "search_indexers", []) or [])
+    )
+    legacy_indexers = _rule_feed_indexers(rule)
+    if explicit_indexers:
+        active_indexers = explicit_indexers
+        source = "explicit"
+        source_label = "Explicit saved Jackett search scope"
+    elif legacy_indexers:
+        active_indexers = legacy_indexers
+        source = "legacy-inferred"
+        source_label = "Legacy inferred from passive qB feed scope"
+    else:
+        active_indexers = []
+        source = "default"
+        source_label = "Default Jackett search scope"
+    return {
+        "passive_feed_urls": passive_feed_urls,
+        "passive_feed_count": len(passive_feed_urls),
+        "active_search_indexers": active_indexers,
+        "active_search_indexer_count": len(active_indexers),
+        "search_scope_source": source,
+        "search_scope_source_label": source_label,
     }
 
 
@@ -713,16 +754,20 @@ def _feed_url_to_indexer_slug(feed_url: str) -> str | None:
     return feed_indexer_slug(feed_url)
 
 
-def _rule_feed_indexers(rule: Rule) -> list[str]:
+def _indexers_from_feed_urls(feed_urls: list[str] | None) -> list[str]:
     indexers: list[str] = []
     seen: set[str] = set()
-    for feed_url in list(rule.feed_urls or []):
+    for feed_url in list(feed_urls or []):
         indexer = _feed_url_to_indexer_slug(feed_url)
         if not indexer or indexer in seen:
             continue
         seen.add(indexer)
         indexers.append(indexer)
     return indexers
+
+
+def _rule_feed_indexers(rule: Rule) -> list[str]:
+    return _indexers_from_feed_urls(list(rule.feed_urls or []))
 
 
 def _normalize_feed_url_list(feed_urls: list[str] | None) -> list[str]:
@@ -747,14 +792,7 @@ def _apply_rule_feed_scope(
         effective_feed_urls = list(rule.feed_urls or [])
     else:
         effective_feed_urls = _normalize_feed_url_list(feed_urls_override)
-    feed_indexers: list[str] = []
-    seen_indexers: set[str] = set()
-    for feed_url in effective_feed_urls:
-        indexer = _feed_url_to_indexer_slug(feed_url)
-        if not indexer or indexer in seen_indexers:
-            continue
-        seen_indexers.add(indexer)
-        feed_indexers.append(indexer)
+    feed_indexers = _indexers_from_feed_urls(effective_feed_urls)
     if not feed_indexers:
         if effective_feed_urls:
             return (
@@ -790,6 +828,40 @@ def _apply_rule_feed_scope(
     )
 
 
+def _apply_indexer_scope(
+    payload: JackettSearchRequest,
+    indexers: list[str],
+    *,
+    singular_notice: str,
+    plural_notice: str,
+) -> tuple[JackettSearchRequest, str]:
+    if len(indexers) == 1:
+        scoped_indexer = indexers[0]
+        return (
+            payload.model_copy(
+                update={
+                    "indexer": scoped_indexer,
+                    "filter_indexers": [scoped_indexer],
+                }
+            ),
+            singular_notice.format(indexer=scoped_indexer),
+        )
+
+    merged_filter_indexers = _merge_search_terms(
+        list(payload.filter_indexers or []),
+        indexers,
+    )
+    return (
+        payload.model_copy(
+            update={
+                "indexer": "all",
+                "filter_indexers": merged_filter_indexers,
+            }
+        ),
+        plural_notice.format(indexers=", ".join(indexers)),
+    )
+
+
 def _apply_rule_search_scope(
     session: Session,
     payload: JackettSearchRequest,
@@ -797,15 +869,30 @@ def _apply_rule_search_scope(
     *,
     feed_urls_override: list[str] | None = None,
 ) -> tuple[JackettSearchRequest, str | None]:
-    scoped_payload, feed_scope_notice = _apply_rule_feed_scope(
-        payload,
-        rule,
-        feed_urls_override=feed_urls_override,
-    )
-
     notices: list[str] = []
-    if feed_scope_notice:
-        notices.append(feed_scope_notice)
+    explicit_indexers = _normalize_search_indexers(
+        list(getattr(rule, "search_indexers", []) or [])
+    )
+    if feed_urls_override is not None:
+        scoped_payload, feed_scope_notice = _apply_rule_feed_scope(
+            payload,
+            rule,
+            feed_urls_override=feed_urls_override,
+        )
+        if feed_scope_notice:
+            notices.append(feed_scope_notice)
+    elif explicit_indexers:
+        scoped_payload, explicit_notice = _apply_indexer_scope(
+            payload,
+            explicit_indexers,
+            singular_notice="Search scoped to saved Jackett search indexer: {indexer}.",
+            plural_notice="Search scoped to saved Jackett search indexers: {indexers}.",
+        )
+        notices.append(explicit_notice)
+    else:
+        scoped_payload, feed_scope_notice = _apply_rule_feed_scope(payload, rule)
+        if feed_scope_notice:
+            notices.append(feed_scope_notice)
 
     normalized_languages = _normalize_language_list(getattr(rule, "language", ""))
     if not normalized_languages:
@@ -1988,6 +2075,7 @@ def edit_rule(
                 ),
             },
             "rule_sync_diagnostics": _rule_sync_diagnostics(rule),
+            "rule_scope_diagnostics": _rule_scope_diagnostics(rule),
             "shell_layout": "wide",
             "content_layout": "wide",
         }

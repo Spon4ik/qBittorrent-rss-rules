@@ -233,22 +233,34 @@ class SyncService:
         if client is None:
             return
         feeds_by_language: dict[str, list[str]] = {}
+        search_indexers_by_language: dict[str, list[str]] = {}
         changed = False
         for rule in rules:
             rule_changed = False
             languages = self._effective_languages(rule)
             feed_urls: list[str] = []
             seen_feeds: set[str] = set()
+            search_indexers: list[str] = []
+            seen_indexers: set[str] = set()
             for language in languages:
                 if language not in feeds_by_language:
                     feeds_by_language[language] = list(
                         client.configured_indexer_feed_urls(language=language).values()
+                    )
+                if language not in search_indexers_by_language:
+                    search_indexers_by_language[language] = sorted(
+                        client.configured_indexer_feed_urls(language=language)
                     )
                 for feed_url in feeds_by_language[language]:
                     if feed_url in seen_feeds:
                         continue
                     seen_feeds.add(feed_url)
                     feed_urls.append(feed_url)
+                for indexer in search_indexers_by_language[language]:
+                    if indexer in seen_indexers:
+                        continue
+                    seen_indexers.add(indexer)
+                    search_indexers.append(indexer)
             if not feed_urls:
                 continue
             normalized_language = ",".join(languages)
@@ -257,6 +269,9 @@ class SyncService:
                 rule_changed = True
             if list(getattr(rule, "feed_urls", []) or []) != feed_urls:
                 rule.feed_urls = feed_urls
+                rule_changed = True
+            if list(getattr(rule, "search_indexers", []) or []) != search_indexers:
+                rule.search_indexers = search_indexers
                 rule_changed = True
             if rule_changed:
                 self.session.add(rule)

@@ -190,6 +190,55 @@ def _feed_url_to_indexer_slug(feed_url: str) -> str | None:
     return raw_indexer
 
 
+def _normalize_search_indexers(indexers: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_indexer in list(indexers or []):
+        candidate = str(raw_indexer or "").strip().casefold()
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        normalized.append(candidate)
+    return normalized
+
+
+def _apply_indexer_scope(
+    payload: JackettSearchRequest,
+    indexers: list[str],
+    *,
+    singular_notice: str,
+    plural_notice: str,
+) -> tuple[JackettSearchRequest, str]:
+    if len(indexers) == 1:
+        scoped_indexer = indexers[0]
+        return (
+            payload.model_copy(
+                update={
+                    "indexer": scoped_indexer,
+                    "filter_indexers": [scoped_indexer],
+                }
+            ),
+            singular_notice.format(indexer=scoped_indexer),
+        )
+    merged_filter_indexers = list(payload.filter_indexers or [])
+    seen = {item.casefold() for item in merged_filter_indexers}
+    for item in indexers:
+        key = item.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged_filter_indexers.append(item)
+    return (
+        payload.model_copy(
+            update={
+                "indexer": "all",
+                "filter_indexers": merged_filter_indexers,
+            }
+        ),
+        plural_notice.format(indexers=", ".join(indexers)),
+    )
+
+
 def _build_indexer_key_variants(value: object | None) -> list[str]:
     raw = str(value or "").strip().casefold()
     if not raw:
@@ -619,6 +668,28 @@ def _apply_rule_feed_scope(
     )
 
 
+def _apply_rule_search_scope(
+    payload: JackettSearchRequest,
+    rule: Rule,
+    *,
+    feed_urls_override: list[str] | None = None,
+) -> tuple[JackettSearchRequest, str | None]:
+    if feed_urls_override is not None:
+        return _apply_rule_feed_scope(payload, rule, feed_urls_override=feed_urls_override)
+
+    explicit_indexers = _normalize_search_indexers(
+        list(getattr(rule, "search_indexers", []) or [])
+    )
+    if explicit_indexers:
+        return _apply_indexer_scope(
+            payload,
+            explicit_indexers,
+            singular_notice="Scoped to saved Jackett search indexer: {indexer}.",
+            plural_notice="Scoped to saved Jackett search indexers: {indexers}.",
+        )
+    return _apply_rule_feed_scope(payload, rule)
+
+
 def _unexpected_error_message(prefix: str, exc: Exception) -> str:
     detail = str(exc).strip()
     label = exc.__class__.__name__
@@ -816,7 +887,7 @@ def execute_rule_fetch(
             "error": "Rule could not be converted into a Jackett search payload.",
         }
 
-    payload_from_rule, feed_scope_notice = _apply_rule_feed_scope(
+    payload_from_rule, feed_scope_notice = _apply_rule_search_scope(
         payload_from_rule,
         rule,
         feed_urls_override=feed_urls_override,

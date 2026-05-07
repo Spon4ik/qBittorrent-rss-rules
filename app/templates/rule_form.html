@@ -365,10 +365,38 @@
     </label>
   </section>
 
+  {% if mode == 'edit' and rule_scope_diagnostics %}
+  <section class="status-panel">
+    <p class="eyebrow">Scope diagnostics</p>
+    <div class="rule-diagnostics-grid">
+      <div>
+        <strong>Passive qB RSS feed scope</strong>
+        <p class="helper-text">
+          {{ rule_scope_diagnostics.passive_feed_count }} feed{{ '' if rule_scope_diagnostics.passive_feed_count == 1 else 's' }}
+        </p>
+      </div>
+      <div>
+        <strong>Active Jackett search scope</strong>
+        <p class="helper-text">
+          {% if rule_scope_diagnostics.active_search_indexers %}
+          {{ rule_scope_diagnostics.active_search_indexers | join(', ') }}
+          {% else %}
+          Default Jackett scope
+          {% endif %}
+        </p>
+      </div>
+      <div>
+        <strong>Search scope authority</strong>
+        <p class="helper-text">{{ rule_scope_diagnostics.search_scope_source_label }}</p>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
   <section class="stack">
     <div class="panel-head panel-head-tight">
       <div>
-        <p class="eyebrow">Feeds</p>
+        <p class="eyebrow">Passive qB RSS scope</p>
         <h3>Affected feeds</h3>
       </div>
       <div class="button-row">

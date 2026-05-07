@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import re
 
-from app.models import MediaType, QualityProfile, Rule, RuleSearchSnapshot, utcnow
+from app.config import obfuscate_secret
+from app.models import AppSettings, MediaType, QualityProfile, Rule, RuleSearchSnapshot, utcnow
+from app.schemas import JackettSearchRun
 from app.services import rule_fetch_ops
+from app.services.jackett import JackettClient
 from app.services.rule_fetch_ops import (
     _rule_local_filtered_count_from_rows,
     _rule_local_generated_pattern,
@@ -67,6 +70,42 @@ def test_release_state_from_snapshot_reuses_cached_local_count_after_non_filter_
     cached_release = release_state_from_snapshot(snapshot, rule=rule)
     assert cached_release["combined_filtered_count"] == 0
     assert cached_release["combined_fetched_count"] == 1
+
+
+def test_rule_fetch_prefers_explicit_search_indexers_over_feed_urls(
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+    )
+    rule = Rule(
+        rule_name="Fetch Explicit Scope",
+        content_name="Fetch Explicit Scope",
+        normalized_title="Fetch Explicit Scope",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api"],
+        search_indexers=["kinozal"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    def fake_search(self, payload):
+        assert payload.indexer == "kinozal"
+        assert payload.filter_indexers == ["kinozal"]
+        return JackettSearchRun(results=[])
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+    monkeypatch.setattr(JackettClient, "enrich_result_category_labels", lambda self, results: None)
+    monkeypatch.setattr(JackettClient, "configured_indexer_category_labels", lambda self: {})
+
+    result = rule_fetch_ops.execute_rule_fetch(db_session, rule=rule)
+
+    assert result["success"] is True
+    assert "Scoped to saved Jackett search indexer: kinozal." in result["notices"]
 
 
 def test_rules_page_skips_poster_backfill_on_filtered_requests(

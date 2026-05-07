@@ -51,7 +51,12 @@ from app.services.hover_debug import (
     record_hover_event,
 )
 from app.services.importer import Importer
-from app.services.jackett import JackettClient, JackettClientError, build_search_request_from_rule
+from app.services.jackett import (
+    JackettClient,
+    JackettClientError,
+    build_search_request_from_rule,
+    feed_indexer_slug,
+)
 from app.services.jellyfin import JellyfinError, JellyfinService
 from app.services.jellyfin_sync_ops import JellyfinSyncBusyError, execute_jellyfin_sync
 from app.services.metadata import (
@@ -276,6 +281,7 @@ def _raw_rule_form_data(form: Any) -> dict[str, Any]:
         "assigned_category": form.get("assigned_category", ""),
         "save_path": form.get("save_path", ""),
         "feed_urls": form.getlist("feed_urls"),
+        "search_indexers": form.getlist("search_indexers"),
         "notes": form.get("notes", ""),
         "remember_feed_defaults": _bool_from_form(form, "remember_feed_defaults"),
     }
@@ -477,11 +483,93 @@ def _resolve_rule_payload_feeds(
                 resolution_error,
             )
         if had_language and resolution_error == LANGUAGE_FEED_SELECTION_NO_MATCHING_FEEDS:
+            if _search_indexers_from_language(session, payload.language):
+                return (
+                    payload.model_copy(update={"feed_urls": []}),
+                    None,
+                    LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE,
+                )
             return payload, resolution_error, None
         if resolution_error == LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE:
             return payload.model_copy(update={"feed_urls": []}), None, resolution_error
         return payload.model_copy(update={"feed_urls": []}), None, resolution_error
     return payload.model_copy(update={"feed_urls": resolved_feed_urls}), None, None
+
+
+def _normalize_search_indexers(indexers: Sequence[object] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_indexer in list(indexers or []):
+        candidate = str(raw_indexer or "").strip().casefold()
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        normalized.append(candidate)
+    return normalized
+
+
+def _search_indexers_from_feed_urls(feed_urls: Sequence[object] | None) -> list[str]:
+    indexers: list[str] = []
+    seen: set[str] = set()
+    for raw_feed_url in list(feed_urls or []):
+        indexer = feed_indexer_slug(str(raw_feed_url or ""))
+        if not indexer or indexer in seen:
+            continue
+        seen.add(indexer)
+        indexers.append(indexer)
+    return indexers
+
+
+def _search_indexers_from_language(session: Session, language: str) -> list[str]:
+    normalized_languages = _normalize_language_list(language)
+    if not normalized_languages:
+        return []
+    settings = SettingsService.get_or_create(session)
+    jackett = SettingsService.resolve_jackett(settings)
+    if not jackett.app_ready:
+        return []
+    try:
+        client = JackettClient(
+            jackett.api_url,
+            jackett.api_key,
+            language_overrides=jackett.language_overrides,
+        )
+        language_map = client.configured_indexer_languages()
+    except JackettClientError:
+        return []
+    selected: list[str] = []
+    seen: set[str] = set()
+    for indexer in sorted(language_map):
+        languages = {str(code).strip().casefold() for code in language_map.get(indexer, [])}
+        if set(normalized_languages).isdisjoint(languages):
+            continue
+        if indexer in seen:
+            continue
+        seen.add(indexer)
+        selected.append(indexer)
+    return selected
+
+
+def _resolve_rule_payload_search_indexers(
+    session: Session,
+    payload: RuleFormPayload,
+    *,
+    existing_rule: Rule | None = None,
+) -> list[str]:
+    explicit_indexers = _normalize_search_indexers(payload.search_indexers)
+    if explicit_indexers:
+        return explicit_indexers
+    feed_indexers = _search_indexers_from_feed_urls(payload.feed_urls)
+    if feed_indexers:
+        return feed_indexers
+    language_indexers = _search_indexers_from_language(session, payload.language)
+    if language_indexers:
+        return language_indexers
+    if existing_rule is not None:
+        existing_language = _normalize_language_list(getattr(existing_rule, "language", ""))
+        if existing_language == _normalize_language_list(payload.language):
+            return _normalize_search_indexers(getattr(existing_rule, "search_indexers", []) or [])
+    return []
 
 
 def _render_taxonomy_page(
@@ -564,6 +652,7 @@ def _apply_rule_payload_to_model(
     *,
     settings: AppSettings,
     feed_resolution_notice: str | None = None,
+    search_indexers: list[str] | None = None,
 ) -> None:
     rule.rule_name = payload.rule_name
     rule.content_name = payload.content_name
@@ -597,6 +686,9 @@ def _apply_rule_payload_to_model(
     rule.smart_filter = payload.smart_filter
     rule.language = payload.language
     rule.feed_urls = payload.feed_urls
+    rule.search_indexers = _normalize_search_indexers(
+        search_indexers if search_indexers is not None else payload.search_indexers
+    )
     if _normalize_language_list(payload.language):
         rule.feed_resolution_status = "unavailable" if feed_resolution_notice else "resolved"
         rule.feed_resolution_message = feed_resolution_notice or ""
@@ -1166,6 +1258,7 @@ async def create_rule(
         session,
         payload,
     )
+    search_indexers = _resolve_rule_payload_search_indexers(session, payload)
     if resolution_error:
         return _render_rule_form(
             request,
@@ -1184,6 +1277,7 @@ async def create_rule(
         payload,
         settings=settings,
         feed_resolution_notice=feed_resolution_notice,
+        search_indexers=search_indexers,
     )
     session.add(rule)
     if remember_feed_defaults:
@@ -1244,6 +1338,11 @@ async def update_rule(
         payload,
         existing_rule=rule,
     )
+    search_indexers = _resolve_rule_payload_search_indexers(
+        session,
+        payload,
+        existing_rule=rule,
+    )
     if resolution_error:
         return _render_rule_form(
             request,
@@ -1262,6 +1361,7 @@ async def update_rule(
         payload,
         settings=settings,
         feed_resolution_notice=feed_resolution_notice,
+        search_indexers=search_indexers,
     )
     if remember_feed_defaults:
         settings.default_feed_urls = list(payload.feed_urls)

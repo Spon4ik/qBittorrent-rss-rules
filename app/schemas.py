@@ -510,6 +510,7 @@ class RuleFormPayload(BaseModel):
     assigned_category: str = ""
     save_path: str = ""
     feed_urls: list[str] = Field(default_factory=list)
+    search_indexers: list[str] = Field(default_factory=list)
     notes: str = ""
 
     @field_validator("imdb_id")
@@ -605,6 +606,19 @@ class RuleFormPayload(BaseModel):
         seen: set[str] = set()
         for item in value:
             candidate = item.strip()
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            cleaned.append(candidate)
+        return cleaned
+
+    @field_validator("search_indexers")
+    @classmethod
+    def dedupe_search_indexers(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            candidate = str(item or "").strip().casefold()
             if not candidate or candidate in seen:
                 continue
             seen.add(candidate)

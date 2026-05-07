@@ -126,6 +126,51 @@ def test_sync_service_keeps_feeds_when_all_sample_downloads_work(monkeypatch, db
     ]
 
 
+def test_sync_rule_uses_feed_urls_for_qb_payload_not_search_indexers(
+    monkeypatch, db_session
+) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+    )
+    rule = Rule(
+        rule_name="Split Scope",
+        content_name="Split Scope",
+        normalized_title="Split Scope",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=[
+            "http://localhost:9117/api/v2.0/indexers/rutor/results/torznab/api?apikey=abc&t=search"
+        ],
+        search_indexers=["kinozal"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    sent_rule_defs: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        SyncService,
+        "_jackett_feed_sample_download_works",
+        lambda self, feed_url: True,
+    )
+    monkeypatch.setattr("app.services.sync.QbittorrentClient.create_category", lambda self, name: None)
+    monkeypatch.setattr(
+        "app.services.sync.QbittorrentClient.set_rule",
+        lambda self, rule_name, rule_def: sent_rule_defs.append(rule_def),
+    )
+
+    result = SyncService(db_session, settings).sync_rule(rule.id)
+
+    assert result.success is True
+    assert sent_rule_defs[0]["affectedFeeds"] == [
+        "http://localhost:9117/api/v2.0/indexers/rutor/results/torznab/api?apikey=abc&t=search"
+    ]
+    assert "kinozal" not in sent_rule_defs[0]["affectedFeeds"]
+
+
 def test_sync_rule_persists_qb_payload_diagnostics(monkeypatch, db_session) -> None:
     settings = AppSettings(
         id="default",

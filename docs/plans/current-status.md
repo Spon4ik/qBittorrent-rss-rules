@@ -2,6 +2,7 @@
 
 ## Current focus
 
+- Phase 28 is implemented and release-validated as the post-`v1.1.5` rule/search scope-authority stabilization slice; patch release `v1.1.6` is being packaged.
 - Phase R8 is completed and merged as the pre-feature qB rule enforcement-parity stabilization gate; Phase 25 release closeout is published as `v1.1.3`, the legacy `P4-01` browser expectation has been retired, Phase 26 is published as the `v1.1.4` structured Jackett audio-search scope patch, and Phase 27 is published as the `v1.1.5` structured audio search fields patch.
 - Current GitHub release is `v1.1.5`, adding structured audio search form fields on top of the `v1.1.4` scoped direct-indexer parity release.
 - Current packaging rule: after each phase, inspect newly discovered facts, adjust later roadmap scope/tests when needed, and continue through validation, commit, push, and GitHub handoff without stopping for routine reruns or environment recovery.
@@ -1231,6 +1232,13 @@
 
 ## In progress
 
+- Implemented Phase 28 rule/search scope authority on 2026-05-07:
+  - added persisted rule-level `search_indexers` with SQLite startup backfill and schema normalization;
+  - language-managed rule create/update now saves both passive qB RSS feed URLs and active Jackett search indexers, while legacy/manual rules keep working through feed-derived fallback when the explicit field is empty;
+  - `/search`, inline rule search, and rule-fetch snapshots prefer saved `search_indexers` and only fall back to feed-url inference for older rows or explicit unsaved feed overrides;
+  - qB sync and generated qB RSS payloads still use `feed_urls` for `affectedFeeds`;
+  - rule edit pages now show passive qB RSS feed scope, active Jackett search scope, and whether search scope is explicit or legacy-inferred;
+  - validation evidence: `tests/test_routes.py tests/test_sync_service.py tests/test_rule_builder.py tests/test_jackett.py` passed (`230 passed`), `tests/test_rule_fetch_ops.py` passed (`6 passed`), Ruff passed on touched Python files, `cmd.exe /c scripts\check.bat` passed (`378 passed`), `cmd.exe /c scripts\run_dev.bat desktop-build` passed (`0 Warning(s)`, `0 Error(s)`), browser closeout report `logs/qa/phase-closeout-20260507T191237Z/closeout-report.md` passed all checks, shared Docker Compose rebuild passed, Docker `/health` returned `app_version=1.1.6`, inside-container qB login returned `qb_test=ok`, and inside-container Jackett discovery returned `jackett_indexers=12`.
 - Investigated qB credential rejection on 2026-05-06:
   - Docker was overriding the saved app username with the shared Compose default `QB_RULES_QB_USERNAME=admin`, while the DB settings use `spon4ik`; the shared Compose default was changed to empty so Docker falls back to saved settings unless an explicit env override is provided;
   - after rebuild, Docker resolved `http://host.docker.internal:8080` with saved username `spon4ik` and the saved DB password, but qBittorrent `v5.2.0` returned a successful `204 No Content` login response with a session cookie instead of the older `Ok.` text body;
@@ -1265,7 +1273,7 @@
 
 ## Next actions
 
-- Select the next post-`v1.1.5` backlog phase. Phase 27 closed the immediate structured-audio UX gap; the remaining candidates are qB/manual feed-scope cleanup, explicit persisted Jackett search-scope indexers, richer structured audio metadata population, or the planned large-file split queue.
+- Commit, push, tag, and publish the `v1.1.6` Phase 28 patch release, then perform the next discovery review before selecting the next backlog phase.
 - Preserve qB enforcement diagnostics and keep live qB remote readback in scope for future rule-payload/feed-filtering changes.
 - Contract roadmap Phases R1.5 through R8, Phase 25 release closeout, and the `P4-01` QA cleanup are complete; next roadmap work should come from the normal backlog after this cleanup is published.
 - Keep qBittorrent running before Docker closeout probes; after reboot it was not listening on `127.0.0.1:8080`, and the Docker backend could not complete qB sync until `C:\\Program Files\\qBittorrent\\qbittorrent.exe` was started.

@@ -642,6 +642,24 @@ textarea {
   margin-top: -0.25rem;
 }
 
+.status-panel {
+  padding: 0.75rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.rule-diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+}
+
+.rule-diagnostics-grid strong {
+  display: block;
+  margin-bottom: 0.15rem;
+}
+
 .rules-table [data-rules-row] {
   transition: background 120ms ease;
 }

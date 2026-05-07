@@ -1,10 +1,10 @@
 # Roadmap
 
-## Current release target: Phase 28 rule/search scope authority release
+## Current release target: post-v1.1.6 backlog selection
 
 ### In progress
 
-- Phase 28 is implemented and being packaged as the `v1.1.6` patch slice: persisted Jackett active-search indexers now own saved-rule search/snapshot scope while `feed_urls` remains qB RSS passive sync scope (`docs/plans/phase-28-rule-search-scope-authority.md`).
+- Phase 28 is published as the `v1.1.6` patch slice: persisted Jackett active-search indexers now own saved-rule search/snapshot scope while `feed_urls` remains qB RSS passive sync scope (`docs/plans/phase-28-rule-search-scope-authority.md`).
 - Phase 26 is published as the `v1.1.4` patch slice: structured Jackett music/audiobook direct searches now respect explicit indexer scope before later cleanup considers larger search-form or metadata-field work.
 - Phase 27 is published as the `v1.1.5` structured-audio cleanup: expose the backend-supported music/audiobook metadata fields on the active search page so native Jackett audio params can be driven deliberately.
 - Phase 25 is now closed and published in `v1.1.3`: qBittorrent RSS Rules no longer hosts the native Stremio addon surface and keeps only Stremio library/watch-progress synchronization, because addon hosting moved to `jackett-stremio-fork`.
@@ -23,7 +23,7 @@
 
 ### Current phase track
 
-- Phase 28: rule/search scope authority (implemented, packaging as `v1.1.6`; `docs/plans/phase-28-rule-search-scope-authority.md`)
+- Phase 28: rule/search scope authority (published in `v1.1.6`; `docs/plans/phase-28-rule-search-scope-authority.md`)
 - Phase 27: structured audio search fields (published in `v1.1.5`; `docs/plans/phase-27-structured-audio-search-fields.md`)
 - Phase 26: structured Jackett audio search scope (published in `v1.1.4`; `docs/plans/phase-26-structured-jackett-audio-search.md`)
 - Phase 25: native Stremio addon removal and sync retention (published in `v1.1.3`; `docs/plans/phase-25-stremio-addon-removal-and-sync-retention.md`)

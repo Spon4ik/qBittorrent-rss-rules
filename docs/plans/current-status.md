@@ -2,9 +2,9 @@
 
 ## Current focus
 
-- Phase 28 is implemented and release-validated as the post-`v1.1.5` rule/search scope-authority stabilization slice; patch release `v1.1.6` is being packaged.
+- Phase 28 is published as `v1.1.6`, the post-`v1.1.5` rule/search scope-authority stabilization slice.
 - Phase R8 is completed and merged as the pre-feature qB rule enforcement-parity stabilization gate; Phase 25 release closeout is published as `v1.1.3`, the legacy `P4-01` browser expectation has been retired, Phase 26 is published as the `v1.1.4` structured Jackett audio-search scope patch, and Phase 27 is published as the `v1.1.5` structured audio search fields patch.
-- Current GitHub release is `v1.1.5`, adding structured audio search form fields on top of the `v1.1.4` scoped direct-indexer parity release.
+- Current GitHub release is `v1.1.6`, adding persisted rule-level Jackett search indexer scope on top of the `v1.1.5` structured audio search fields release.
 - Current packaging rule: after each phase, inspect newly discovered facts, adjust later roadmap scope/tests when needed, and continue through validation, commit, push, and GitHub handoff without stopping for routine reruns or environment recovery.
 - Phase 23 is now closed and release-validated in `v0.9.0` as the Stremio cross-addon aggregation slice, merging qB RSS and Torrentio-compatible provider rows into one locally owned addon response with global ordering, persisted provider configuration, and real desktop proof.
 - Phase 24 remains closed and release-validated in `v0.8.3` as the hotfix slice for Stremio long-running series episode lookups that disappear because the addon applies the original series year as a hard search filter.
@@ -1239,6 +1239,7 @@
   - qB sync and generated qB RSS payloads still use `feed_urls` for `affectedFeeds`;
   - rule edit pages now show passive qB RSS feed scope, active Jackett search scope, and whether search scope is explicit or legacy-inferred;
   - validation evidence: `tests/test_routes.py tests/test_sync_service.py tests/test_rule_builder.py tests/test_jackett.py` passed (`230 passed`), `tests/test_rule_fetch_ops.py` passed (`6 passed`), Ruff passed on touched Python files, `cmd.exe /c scripts\check.bat` passed (`378 passed`), `cmd.exe /c scripts\run_dev.bat desktop-build` passed (`0 Warning(s)`, `0 Error(s)`), browser closeout report `logs/qa/phase-closeout-20260507T191237Z/closeout-report.md` passed all checks, shared Docker Compose rebuild passed, Docker `/health` returned `app_version=1.1.6`, inside-container qB login returned `qb_test=ok`, and inside-container Jackett discovery returned `jackett_indexers=12`.
+  - GitHub release state: commit `678f9938` is pushed to `main`, tag `v1.1.6` is pushed, and GitHub Release `https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.1.6` is published.
 - Investigated qB credential rejection on 2026-05-06:
   - Docker was overriding the saved app username with the shared Compose default `QB_RULES_QB_USERNAME=admin`, while the DB settings use `spon4ik`; the shared Compose default was changed to empty so Docker falls back to saved settings unless an explicit env override is provided;
   - after rebuild, Docker resolved `http://host.docker.internal:8080` with saved username `spon4ik` and the saved DB password, but qBittorrent `v5.2.0` returned a successful `204 No Content` login response with a session cookie instead of the older `Ok.` text body;
@@ -1273,7 +1274,7 @@
 
 ## Next actions
 
-- Commit, push, tag, and publish the `v1.1.6` Phase 28 patch release, then perform the next discovery review before selecting the next backlog phase.
+- Perform the next discovery review before selecting the next backlog phase. Phase 28 exposed and closed the second scope bridge in rule snapshot fetches; the remaining likely candidates are manual affected-feed UX cleanup, richer structured audio metadata population, or the planned large-file split queue.
 - Preserve qB enforcement diagnostics and keep live qB remote readback in scope for future rule-payload/feed-filtering changes.
 - Contract roadmap Phases R1.5 through R8, Phase 25 release closeout, and the `P4-01` QA cleanup are complete; next roadmap work should come from the normal backlog after this cleanup is published.
 - Keep qBittorrent running before Docker closeout probes; after reboot it was not listening on `127.0.0.1:8080`, and the Docker backend could not complete qB sync until `C:\\Program Files\\qBittorrent\\qbittorrent.exe` was started.

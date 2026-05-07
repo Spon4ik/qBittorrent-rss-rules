@@ -38,7 +38,7 @@ from app.services.quality_filters import (
 )
 from app.services.settings_service import SettingsService
 
-DEFAULT_QUALITY_TAXONOMY_PATH = quality_filters.QUALITY_TAXONOMY_PATH
+DEFAULT_QUALITY_TAXONOMY_PATH = quality_filters.QUALITY_TAXONOMY_SEED_PATH
 
 
 @pytest.fixture(autouse=True)
@@ -154,6 +154,62 @@ def test_builtin_video_profiles_follow_runtime_resolution_rank(tmp_path, monkeyp
     )
 
 
+def test_preview_taxonomy_update_reports_rank_derived_managed_profile_changes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    payload = _read_default_quality_taxonomy()
+    monkeypatch.setattr(
+        quality_filters,
+        "QUALITY_TAXONOMY_PATH",
+        _write_quality_taxonomy(tmp_path, _read_default_quality_taxonomy()),
+    )
+    _clear_quality_taxonomy_cache()
+
+    options = payload["options"]
+    ranks = payload["ranks"]
+    assert isinstance(options, list)
+    assert isinstance(ranks, list)
+    options.insert(
+        0,
+        {
+            "value": "144p",
+            "label": "144p",
+            "pattern": "144p",
+            "group": "resolution",
+            "media_types": ["series", "movie"],
+        },
+    )
+    options.append(
+        {
+            "value": "4320p",
+            "label": "4320p",
+            "pattern": "4320p|8k",
+            "group": "resolution",
+            "media_types": ["series", "movie"],
+        },
+    )
+    for rank in ranks:
+        if rank["key"] == "resolution":
+            rank["tokens"].insert(0, "144p")
+            rank["tokens"].append("4320p")
+
+    preview = preview_quality_taxonomy_update(
+        json.dumps(payload),
+        settings=None,
+        rules=[],
+    )
+
+    changes = {
+        item["profile_key"]: item
+        for item in preview["managed_profile_changes"]
+    }
+    assert changes[QualityProfile.HD_1080P.value]["added_include_tokens"] == ["4320p"]
+    assert changes[QualityProfile.HD_1080P.value]["added_exclude_tokens"] == ["144p"]
+    assert changes[QualityProfile.UHD_2160P_HDR.value]["added_include_tokens"] == ["4320p"]
+    assert changes[QualityProfile.UHD_2160P_HDR.value]["added_exclude_tokens"] == ["144p"]
+
+
 def test_effective_rule_quality_tokens_refreshes_profile_owned_resolution_snapshot(
     tmp_path,
     monkeypatch,
@@ -238,16 +294,66 @@ def test_effective_rule_quality_tokens_refreshes_profile_owned_resolution_snapsh
     ) == "builtin-ultra-hd-hdr"
 
 
-def test_quality_option_choices_preserve_current_order_and_groups() -> None:
+def test_explicit_managed_rule_inherits_preset_edits_while_manual_rule_keeps_snapshot() -> None:
+    settings = AppSettings(
+        id="default",
+        quality_profile_rules={
+            QualityProfile.HD_1080P.value: {
+                "include_tokens": ["full_hd", "1080p", "web_dl"],
+                "exclude_tokens": ["sd", "cam"],
+            },
+            QualityProfile.UHD_2160P_HDR.value: {
+                "include_tokens": ["ultra_hd", "2160p", "hdr"],
+                "exclude_tokens": ["sd", "720p"],
+            },
+        },
+    )
+    managed_rule = Rule(
+        rule_name="Managed Preset Edit",
+        content_name="Managed Preset Edit",
+        normalized_title="Managed Preset Edit",
+        quality_profile=QualityProfile.HD_1080P,
+        quality_mode=QualityMode.MANAGED,
+        quality_include_tokens=["full_hd", "1080p"],
+        quality_exclude_tokens=["sd"],
+    )
+    manual_rule = Rule(
+        rule_name="Manual Preset Edit",
+        content_name="Manual Preset Edit",
+        normalized_title="Manual Preset Edit",
+        quality_profile=QualityProfile.HD_1080P,
+        quality_mode=QualityMode.MANUAL,
+        quality_include_tokens=["full_hd", "1080p"],
+        quality_exclude_tokens=["sd"],
+    )
+
+    assert effective_rule_quality_tokens(managed_rule, settings) == (
+        ["full_hd", "1080p", "web_dl"],
+        ["sd", "cam"],
+    )
+    assert effective_rule_quality_tokens(manual_rule, settings) == (
+        ["full_hd", "1080p"],
+        ["sd"],
+    )
+
+
+def test_quality_option_choices_preserve_seed_order_and_groups(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        quality_filters,
+        "QUALITY_TAXONOMY_PATH",
+        _write_quality_taxonomy(tmp_path, _read_default_quality_taxonomy()),
+    )
+    _clear_quality_taxonomy_cache()
+
     choices = quality_option_choices()
 
     assert [item["value"] for item in choices[:6]] == [
         "sd",
-        "240p",
         "360p",
-        "400p",
         "480p",
         "hd",
+        "720p",
+        "full_hd",
     ]
     assert [item["value"] for item in choices[-4:]] == ["vbr", "lossless", "mono", "stereo"]
     assert [item["key"] for item in quality_option_groups()] == [
@@ -444,8 +550,18 @@ def test_quality_taxonomy_rejects_rank_with_unknown_option(tmp_path, monkeypatch
         quality_option_choices()
 
 
-def test_preview_quality_taxonomy_update_flags_orphaned_rule_tokens() -> None:
+def test_preview_quality_taxonomy_update_flags_orphaned_rule_tokens(
+    tmp_path,
+    monkeypatch,
+) -> None:
     payload = _read_default_quality_taxonomy()
+    monkeypatch.setattr(
+        quality_filters,
+        "QUALITY_TAXONOMY_PATH",
+        _write_quality_taxonomy(tmp_path, _read_default_quality_taxonomy()),
+    )
+    _clear_quality_taxonomy_cache()
+
     options = payload["options"]
     aliases = payload["aliases"]
     assert isinstance(options, list)
@@ -479,10 +595,18 @@ def test_preview_quality_taxonomy_update_flags_orphaned_rule_tokens() -> None:
     assert preview["existing_invalid_references"] == []
 
 
-def test_preview_quality_taxonomy_update_allows_label_changes_when_invalid_tokens_already_exist() -> (
-    None
-):
+def test_preview_quality_taxonomy_update_allows_label_changes_when_invalid_tokens_already_exist(
+    tmp_path,
+    monkeypatch,
+) -> None:
     payload = _read_default_quality_taxonomy()
+    monkeypatch.setattr(
+        quality_filters,
+        "QUALITY_TAXONOMY_PATH",
+        _write_quality_taxonomy(tmp_path, _read_default_quality_taxonomy()),
+    )
+    _clear_quality_taxonomy_cache()
+
     bundles = payload["bundles"]
     assert isinstance(bundles, list)
     bundles[0]["label"] = "At Least Full HD"

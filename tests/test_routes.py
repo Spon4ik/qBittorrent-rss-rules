@@ -263,6 +263,37 @@ def test_rules_page_renders_sync_error_details(app_client, db_session) -> None:
     assert "qBittorrent rejected the RSS rule: invalid episode filter" in response.text
 
 
+def test_edit_rule_page_renders_qb_enforcement_diagnostics(app_client, db_session) -> None:
+    rule = Rule(
+        rule_name="The Boys",
+        content_name="The Boys",
+        normalized_title="The Boys",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.UHD_2160P_HDR,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/rutor/results/torznab/api"],
+        last_synced_rule_payload={
+            "mustContain": "(?i)(?=.*the[\\s._-]*boys)(?!.*400p)",
+            "useRegex": True,
+        },
+        last_remote_rule_payload={
+            "mustContain": "The Boys",
+            "useRegex": False,
+        },
+        remote_rule_drift_message="Remote qB RSS rule differed from the app-generated payload for The Boys.",
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    response = app_client.get(f"/rules/{rule.id}")
+
+    assert response.status_code == 200
+    assert "qB enforcement diagnostics" in response.text
+    assert "Remote drift detected" in response.text
+    assert "Last synced qB mustContain" in response.text
+    assert "400p" in response.text
+    assert "Last remote qB mustContain observed during drift check" in response.text
+
+
 def test_rules_page_renders_exact_status_from_snapshots(app_client, db_session) -> None:
     exact_rule = Rule(
         rule_name="Exact Rule",
@@ -926,6 +957,15 @@ def test_inline_local_filters_keep_precise_primary_rows_separate_from_fallback_r
         "if (!isPrecisePrimaryRow && filters.generatedPatternRegex && !filters.generatedPatternRegex.test(entry.regexSurface)) {"
         in app_js_source
     )
+
+
+def test_inline_hidden_summary_lists_top_filter_blockers() -> None:
+    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+    app_js_source = app_js_path.read_text(encoding="utf-8")
+
+    assert "const hiddenReasonCounts = new Map();" in app_js_source
+    assert "const topHiddenReasons = Array.from(hiddenReasonCounts.entries())" in app_js_source
+    assert "Top blockers:" in app_js_source
 
 
 def test_run_rule_search_route_redirects_to_inline_rule_page(app_client, db_session) -> None:
@@ -3487,6 +3527,119 @@ def test_queue_search_result_api_refreshes_stale_local_jackett_link_from_rule_sn
     assert seen_links == [stale_link, fresh_link]
 
 
+def test_queue_search_result_api_refreshes_stale_fallback_link_from_rule_snapshot(
+    app_client, db_session, monkeypatch
+) -> None:
+    stale_link = "http://localhost:9117/dl/fallback/?jackett_apikey=secret&path=stale"
+    fresh_link = "http://localhost:9117/dl/fallback/?jackett_apikey=secret&path=fresh"
+
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jackett_api_url="http://localhost:9117",
+        jackett_api_key_encrypted=obfuscate_secret("jackett-secret"),
+        default_add_paused=True,
+    )
+    rule = Rule(
+        rule_name="Queue Fallback Refresh Rule",
+        content_name="Queue Fallback Refresh Rule",
+        normalized_title="Queue Fallback Refresh Rule",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule.id,
+            payload={"query": "Queue Fallback Refresh Rule", "media_type": "movie"},
+            inline_search={
+                "raw_fallback_results": [
+                    {
+                        "title": "Queue Fallback Refresh Rule 2026 WEB-DL",
+                        "link": stale_link,
+                        "indexer": "FallbackIndexer",
+                        "guid": "https://fallback.example/download.php?id=123",
+                        "details_url": "https://fallback.example/details.php?id=123",
+                        "merge_key": "guid:https://fallback.example/download.php?id=123",
+                    }
+                ],
+                "fallback_results": [
+                    {
+                        "title": "Queue Fallback Refresh Rule 2026 WEB-DL",
+                        "link": stale_link,
+                        "indexer": "FallbackIndexer",
+                        "guid": "https://fallback.example/download.php?id=123",
+                        "details_url": "https://fallback.example/details.php?id=123",
+                        "merge_key": "guid:https://fallback.example/download.php?id=123",
+                    }
+                ],
+            },
+        )
+    )
+    db_session.commit()
+
+    seen_links: list[str] = []
+
+    def fake_queue_result(**kwargs):
+        seen_links.append(str(kwargs["link"]))
+        if kwargs["link"] == stale_link:
+            raise SelectiveQueueError(
+                "qBittorrent accepted the remote URL fetch request, but no torrent appeared in the list."
+            )
+        return SimpleNamespace(
+            message="Queued fallback after refresh.",
+            selected_file_count=0,
+            skipped_file_count=0,
+            deferred_file_selection=False,
+            queued_via_torrent_file=False,
+        )
+
+    monkeypatch.setattr(
+        "app.routes.api.queue_result_with_optional_file_selection",
+        fake_queue_result,
+    )
+    monkeypatch.setattr(
+        "app.routes.api.build_search_request_from_rule",
+        lambda rule: (JackettSearchRequest(query="Queue Fallback Refresh Rule"), False),
+    )
+    monkeypatch.setattr(
+        JackettClient,
+        "search",
+        lambda self, payload: JackettSearchRun(
+            results=[],
+            raw_results=[],
+            fallback_results=[
+                JackettSearchResult(
+                    title="Queue Fallback Refresh Rule 2026 WEB-DL",
+                    link=fresh_link,
+                    indexer="FallbackIndexer",
+                    guid="https://fallback.example/download.php?id=123",
+                    details_url="https://fallback.example/details.php?id=123",
+                    merge_key="guid:https://fallback.example/download.php?id=123",
+                )
+            ],
+            raw_fallback_results=[],
+        ),
+    )
+
+    response = app_client.post(
+        "/api/search/queue",
+        json={
+            "rule_id": rule.id,
+            "link": stale_link,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
+    assert response.json()["message"] == "Queued fallback after refresh."
+    assert seen_links == [stale_link, fresh_link]
+
+
 def test_queue_search_result_api_reports_missing_only_selection_details(
     app_client, db_session, monkeypatch
 ) -> None:
@@ -3662,6 +3815,52 @@ def test_apply_taxonomy_updates_source_and_records_audit(app_client, tmp_path, m
         == "At Least HD Revised"
     )
     assert "rename bundle label" in audit_path.read_text(encoding="utf-8")
+
+
+def test_validate_taxonomy_renders_managed_preset_impact(
+    app_client,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    payload, taxonomy_path, ignored_audit_path = _use_temp_taxonomy(tmp_path, monkeypatch)
+    options = payload["options"]
+    ranks = payload["ranks"]
+    assert isinstance(options, list)
+    assert isinstance(ranks, list)
+    options.insert(
+        0,
+        {
+            "value": "144p",
+            "label": "144p",
+            "pattern": "144p",
+            "group": "resolution",
+            "media_types": ["series", "movie"],
+        },
+    )
+    options.append(
+        {
+            "value": "4320p",
+            "label": "4320p",
+            "pattern": "4320p|8k",
+            "group": "resolution",
+            "media_types": ["series", "movie"],
+        },
+    )
+    for rank in ranks:
+        if rank["key"] == "resolution":
+            rank["tokens"].insert(0, "144p")
+            rank["tokens"].append("4320p")
+
+    response = app_client.post(
+        "/api/taxonomy/validate",
+        data={"taxonomy_json": json.dumps(payload), "taxonomy_change_note": "preview rank impact"},
+    )
+
+    assert response.status_code == 200
+    assert "Managed preset impact" in response.text
+    assert "At Least Full HD" in response.text
+    assert "adds includes: 4320p" in response.text
+    assert "adds excludes: 144p" in response.text
 
 
 def test_taxonomy_update_writes_runtime_data_file_not_packaged_seed(
@@ -3971,7 +4170,22 @@ def test_settings_uses_taxonomy_bundle_labels_for_builtin_profiles(
     response = app_client.get("/settings")
 
     assert response.status_code == 200
-    assert "<legend>At Least Full HD include</legend>" in response.text
+    assert "<th>At Least Full HD</th>" in response.text
+
+
+def test_settings_page_renders_quality_profile_matrix(app_client) -> None:
+    response = app_client.get("/settings")
+
+    assert response.status_code == 200
+    assert 'data-quality-profile-matrix="true"' in response.text
+    assert 'data-quality-profile-column="1080p"' in response.text
+    assert 'data-quality-profile-column="2160p_hdr"' in response.text
+    assert 'name="profile_1080p_include_tokens"' in response.text
+    assert 'name="profile_1080p_exclude_tokens"' in response.text
+    assert 'name="profile_2160p_hdr_include_tokens"' in response.text
+    assert 'name="profile_2160p_hdr_exclude_tokens"' in response.text
+    assert 'data-quality-selector="profile-1080-include"' not in response.text
+    assert 'data-quality-selector="profile-2160-exclude"' not in response.text
 
 
 def test_settings_page_renders_jellyfin_controls(app_client) -> None:
@@ -4040,6 +4254,11 @@ def test_new_rule_uses_ultra_hd_hdr_defaults(app_client) -> None:
 
     assert response.status_code == 200
     assert 'name="quality_profile" value="2160p_hdr"' in response.text
+    assert 'data-quality-mode-panel="true"' in response.text
+    assert 'data-quality-mode-label' in response.text
+    assert "Managed profile" in response.text
+    assert 'data-quality-mode-action="manual"' in response.text
+    assert 'data-quality-mode-action="managed"' in response.text
     assert 'option value="builtin-ultra-hd-hdr" selected' in response.text
     assert 'option value="builtin-music-lossless"' not in response.text
     assert 'id="metadata-lookup-provider"' in response.text
@@ -5160,9 +5379,16 @@ def test_create_rule_with_language_saves_when_qb_feeds_are_unavailable(
         follow_redirects=False,
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 303
     saved_rule = db_session.scalar(select(Rule).where(Rule.rule_name == "Rule Without qB Feeds"))
-    assert saved_rule is None
+    assert saved_rule is not None
+    assert saved_rule.language == "ru"
+    assert saved_rule.feed_urls == []
+    assert saved_rule.feed_resolution_status == "unavailable"
+    assert (
+        saved_rule.feed_resolution_message
+        == "Language-based feed selection could not read Jackett indexer metadata."
+    )
 
 
 def test_update_rule_with_language_preserves_saved_feeds_when_qb_feeds_are_unavailable(
@@ -5226,6 +5452,11 @@ def test_update_rule_with_language_preserves_saved_feeds_when_qb_feeds_are_unava
     assert refreshed_rule.feed_urls == [
         "http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc"
     ]
+    assert refreshed_rule.feed_resolution_status == "unavailable"
+    assert (
+        refreshed_rule.feed_resolution_message
+        == "Language-based feed selection could not read Jackett indexer metadata."
+    )
 
 
 def test_update_rule_with_new_language_saves_when_qb_feeds_are_unavailable(
@@ -5281,15 +5512,18 @@ def test_update_rule_with_new_language_saves_when_qb_feeds_are_unavailable(
         follow_redirects=False,
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 303
     db_session.expire_all()
     refreshed_rule = db_session.get(Rule, rule.id)
     assert refreshed_rule is not None
-    assert refreshed_rule.language == "he"
-    assert refreshed_rule.normalized_title == "Language Change Rule"
-    assert refreshed_rule.feed_urls == [
-        "http://jackett.test/api/v2.0/indexers/fuzer/results/torznab/api?apikey=abc"
-    ]
+    assert refreshed_rule.language == "ru"
+    assert refreshed_rule.normalized_title == "Language Change Rule Updated"
+    assert refreshed_rule.feed_urls == []
+    assert refreshed_rule.feed_resolution_status == "unavailable"
+    assert (
+        refreshed_rule.feed_resolution_message
+        == "Language-based feed selection could not read Jackett indexer metadata."
+    )
 
 
 def test_edit_rule_defaults_to_remembering_selected_feeds(app_client, db_session) -> None:

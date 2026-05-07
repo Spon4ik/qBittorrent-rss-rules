@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.routes.pages import (
     DEFAULT_RULE_LANGUAGE,
+    LANGUAGE_FEED_SELECTION_NO_MATCHING_FEEDS,
     LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE,
     _normalize_language_list,
     _resolve_language_feed_urls,
@@ -216,8 +217,14 @@ def _refresh_stale_rule_queue_link(
         language_overrides=jackett.language_overrides,
     )
     refreshed_run = client.search(payload)
+    refreshed_rows = [
+        *list(refreshed_run.results or []),
+        *list(refreshed_run.fallback_results or []),
+        *list(refreshed_run.raw_results or []),
+        *list(refreshed_run.raw_fallback_results or []),
+    ]
     refreshed_link = _matching_refreshed_queue_link(
-        refreshed_run.results,
+        refreshed_rows,
         snapshot_row=snapshot_row,
     )
     if not refreshed_link or refreshed_link == str(stale_link or "").strip():
@@ -444,10 +451,10 @@ def _resolve_rule_payload_feeds(
     payload: RuleFormPayload,
     *,
     existing_rule: Rule | None = None,
-) -> tuple[RuleFormPayload, str | None]:
+) -> tuple[RuleFormPayload, str | None, str | None]:
     had_language = bool(_normalize_language_list(payload.language))
     if not payload.language and list(payload.feed_urls or []):
-        return payload, None
+        return payload, None, None
     if not payload.language:
         payload = payload.model_copy(update={"language": DEFAULT_RULE_LANGUAGE})
     resolved_feed_urls, resolution_error = _resolve_language_feed_urls(
@@ -467,13 +474,14 @@ def _resolve_rule_payload_feeds(
                     update={"feed_urls": list(getattr(existing_rule, "feed_urls", []) or [])}
                 ),
                 None,
+                resolution_error,
             )
-        if had_language:
-            return payload, resolution_error
+        if had_language and resolution_error == LANGUAGE_FEED_SELECTION_NO_MATCHING_FEEDS:
+            return payload, resolution_error, None
         if resolution_error == LANGUAGE_FEED_SELECTION_QB_FEEDS_UNAVAILABLE:
-            return payload.model_copy(update={"feed_urls": []}), None
-        return payload, None
-    return payload.model_copy(update={"feed_urls": resolved_feed_urls}), None
+            return payload.model_copy(update={"feed_urls": []}), None, resolution_error
+        return payload.model_copy(update={"feed_urls": []}), None, resolution_error
+    return payload.model_copy(update={"feed_urls": resolved_feed_urls}), None, None
 
 
 def _render_taxonomy_page(
@@ -555,6 +563,7 @@ def _apply_rule_payload_to_model(
     payload: RuleFormPayload,
     *,
     settings: AppSettings,
+    feed_resolution_notice: str | None = None,
 ) -> None:
     rule.rule_name = payload.rule_name
     rule.content_name = payload.content_name
@@ -588,6 +597,12 @@ def _apply_rule_payload_to_model(
     rule.smart_filter = payload.smart_filter
     rule.language = payload.language
     rule.feed_urls = payload.feed_urls
+    if _normalize_language_list(payload.language):
+        rule.feed_resolution_status = "unavailable" if feed_resolution_notice else "resolved"
+        rule.feed_resolution_message = feed_resolution_notice or ""
+    else:
+        rule.feed_resolution_status = "manual"
+        rule.feed_resolution_message = ""
     rule.notes = payload.notes
     rule.assigned_category = payload.assigned_category
     rule.save_path = payload.save_path
@@ -1147,7 +1162,10 @@ async def create_rule(
         )
 
     settings = SettingsService.get_or_create(session)
-    payload, resolution_error = _resolve_rule_payload_feeds(session, payload)
+    payload, resolution_error, feed_resolution_notice = _resolve_rule_payload_feeds(
+        session,
+        payload,
+    )
     if resolution_error:
         return _render_rule_form(
             request,
@@ -1161,7 +1179,12 @@ async def create_rule(
         )
     remember_feed_defaults = bool(raw_form.get("remember_feed_defaults"))
     rule = Rule()
-    _apply_rule_payload_to_model(rule, payload, settings=settings)
+    _apply_rule_payload_to_model(
+        rule,
+        payload,
+        settings=settings,
+        feed_resolution_notice=feed_resolution_notice,
+    )
     session.add(rule)
     if remember_feed_defaults:
         settings.default_feed_urls = list(payload.feed_urls)
@@ -1216,7 +1239,7 @@ async def update_rule(
         )
 
     settings = SettingsService.get_or_create(session)
-    payload, resolution_error = _resolve_rule_payload_feeds(
+    payload, resolution_error, feed_resolution_notice = _resolve_rule_payload_feeds(
         session,
         payload,
         existing_rule=rule,
@@ -1234,7 +1257,12 @@ async def update_rule(
             rule_id=rule_id,
         )
     remember_feed_defaults = bool(raw_form.get("remember_feed_defaults"))
-    _apply_rule_payload_to_model(rule, payload, settings=settings)
+    _apply_rule_payload_to_model(
+        rule,
+        payload,
+        settings=settings,
+        feed_resolution_notice=feed_resolution_notice,
+    )
     if remember_feed_defaults:
         settings.default_feed_urls = list(payload.feed_urls)
 

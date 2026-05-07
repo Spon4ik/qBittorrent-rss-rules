@@ -139,6 +139,50 @@ def test_resolve_qb_connection_rewrites_env_localhost_in_wsl(
     assert resolved.password == "env-pass"
 
 
+def test_resolve_qb_connection_uses_saved_settings_when_env_values_are_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("QB_RULES_QB_BASE_URL", "")
+    monkeypatch.setenv("QB_RULES_QB_USERNAME", "")
+    monkeypatch.setenv("QB_RULES_QB_PASSWORD", "")
+    _clear_env_cache()
+
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://qb.saved:8080/",
+        qb_username="saved-user",
+        qb_password_encrypted=obfuscate_secret("saved-pass"),
+    )
+
+    resolved = SettingsService.resolve_qb_connection(settings)
+
+    assert resolved.base_url == "http://qb.saved:8080/"
+    assert resolved.username == "saved-user"
+    assert resolved.password == "saved-pass"
+
+
+def test_resolve_qb_connection_prefers_non_empty_env_over_saved_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("QB_RULES_QB_BASE_URL", "http://qb.env:8080/")
+    monkeypatch.setenv("QB_RULES_QB_USERNAME", "env-user")
+    monkeypatch.setenv("QB_RULES_QB_PASSWORD", "env-pass")
+    _clear_env_cache()
+
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://qb.saved:8080/",
+        qb_username="saved-user",
+        qb_password_encrypted=obfuscate_secret("saved-pass"),
+    )
+
+    resolved = SettingsService.resolve_qb_connection(settings)
+
+    assert resolved.base_url == "http://qb.env:8080/"
+    assert resolved.username == "env-user"
+    assert resolved.password == "env-pass"
+
+
 def test_resolve_jellyfin_prefers_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QB_RULES_JELLYFIN_DB_PATH", r"D:\Env\jellyfin.db")
     monkeypatch.setenv("QB_RULES_JELLYFIN_USER_NAME", "EnvUser")

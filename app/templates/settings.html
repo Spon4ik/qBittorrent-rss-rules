@@ -1,5 +1,59 @@
 {% extends "base.html" %}
 {% block content %}
+{% macro render_profile_matrix_cell(profile_key, include_name, exclude_name, include_tokens, exclude_tokens, choice, profile_label) -%}
+{% set include_selected = choice.value in include_tokens %}
+{% set exclude_selected = (choice.value in exclude_tokens) and (not include_selected) %}
+{% set mode_value = "include" if include_selected else ("exclude" if exclude_selected else "off") %}
+{% set mode_index = 1 if include_selected else (2 if exclude_selected else 0) %}
+{% set mode_text = "Include" if include_selected else ("Exclude" if exclude_selected else "Off") %}
+<td
+  class="quality-profile-matrix-cell"
+  data-quality-profile-column="{{ profile_key }}"
+  data-quality-token-item="true"
+  data-quality-token="{{ choice.value }}"
+>
+  <input
+    type="checkbox"
+    name="{{ include_name }}"
+    value="{{ choice.value }}"
+    class="quality-token-state-input"
+    data-quality-token-state="include"
+    hidden
+    {% if include_selected %}checked{% endif %}
+  />
+  <input
+    type="checkbox"
+    name="{{ exclude_name }}"
+    value="{{ choice.value }}"
+    class="quality-token-state-input"
+    data-quality-token-state="exclude"
+    hidden
+    {% if exclude_selected %}checked{% endif %}
+  />
+  <div
+    class="quality-token-slider quality-profile-matrix-slider"
+    data-quality-token-slider
+    data-quality-token-mode="{{ mode_value }}"
+  >
+    <button
+      type="button"
+      class="quality-token-slider-control"
+      data-quality-token-slider-control
+      aria-label="{{ profile_label }} {{ choice.label }} mode"
+      role="slider"
+      aria-valuemin="0"
+      aria-valuemax="2"
+      aria-valuenow="{{ mode_index }}"
+      aria-valuetext="{{ mode_text }}"
+    >
+      <span class="quality-token-slider-thumb" data-quality-token-slider-thumb aria-hidden="true"></span>
+      <span class="quality-token-slider-option" data-quality-token-mode-label="off">Off</span>
+      <span class="quality-token-slider-option" data-quality-token-mode-label="include">In</span>
+      <span class="quality-token-slider-option" data-quality-token-mode-label="exclude">Out</span>
+    </button>
+  </div>
+</td>
+{%- endmacro %}
 <section class="panel-head">
   <div>
     <p class="eyebrow">Settings</p>
@@ -235,44 +289,50 @@
         <p class="eyebrow">Saved custom profiles: {{ form_data.saved_quality_profile_count }}</p>
       </div>
     </div>
-    <section class="form-grid">
-      <fieldset class="stack" data-quality-selector="profile-1080-include">
-        <legend>{{ profile_1080p_label }} include</legend>
-        {% for choice in quality_options %}
-        <label class="toggle">
-          <input type="checkbox" name="profile_1080p_include_tokens" value="{{ choice.value }}" {% if choice.value in form_data.profile_1080p_include_tokens %}checked{% endif %} />
-          <span>{{ choice.label }}</span>
-        </label>
-        {% endfor %}
-      </fieldset>
-      <fieldset class="stack" data-quality-selector="profile-1080-exclude">
-        <legend>{{ profile_1080p_label }} exclude</legend>
-        {% for choice in quality_options %}
-        <label class="toggle">
-          <input type="checkbox" name="profile_1080p_exclude_tokens" value="{{ choice.value }}" {% if choice.value in form_data.profile_1080p_exclude_tokens %}checked{% endif %} />
-          <span>{{ choice.label }}</span>
-        </label>
-        {% endfor %}
-      </fieldset>
-      <fieldset class="stack" data-quality-selector="profile-2160-include">
-        <legend>{{ profile_2160p_hdr_label }} include</legend>
-        {% for choice in quality_options %}
-        <label class="toggle">
-          <input type="checkbox" name="profile_2160p_hdr_include_tokens" value="{{ choice.value }}" {% if choice.value in form_data.profile_2160p_hdr_include_tokens %}checked{% endif %} />
-          <span>{{ choice.label }}</span>
-        </label>
-        {% endfor %}
-      </fieldset>
-      <fieldset class="stack" data-quality-selector="profile-2160-exclude">
-        <legend>{{ profile_2160p_hdr_label }} exclude</legend>
-        {% for choice in quality_options %}
-        <label class="toggle">
-          <input type="checkbox" name="profile_2160p_hdr_exclude_tokens" value="{{ choice.value }}" {% if choice.value in form_data.profile_2160p_hdr_exclude_tokens %}checked{% endif %} />
-          <span>{{ choice.label }}</span>
-        </label>
-        {% endfor %}
-      </fieldset>
-    </section>
+    <div class="quality-profile-matrix-wrap">
+      <table class="quality-profile-matrix" data-quality-profile-matrix="true">
+        <thead>
+          <tr>
+            <th>Token</th>
+            <th>{{ profile_1080p_label }}</th>
+            <th>{{ profile_2160p_hdr_label }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for group in quality_option_groups %}
+          <tr class="quality-profile-matrix-group">
+            <th colspan="3">{{ group.label }}</th>
+          </tr>
+          {% for choice in group.options %}
+          <tr>
+            <th class="quality-profile-matrix-token" scope="row">
+              <span>{{ choice.label }}</span>
+              <code>{{ choice.value }}</code>
+            </th>
+            {{ render_profile_matrix_cell(
+              "1080p",
+              "profile_1080p_include_tokens",
+              "profile_1080p_exclude_tokens",
+              form_data.profile_1080p_include_tokens,
+              form_data.profile_1080p_exclude_tokens,
+              choice,
+              profile_1080p_label
+            ) }}
+            {{ render_profile_matrix_cell(
+              "2160p_hdr",
+              "profile_2160p_hdr_include_tokens",
+              "profile_2160p_hdr_exclude_tokens",
+              form_data.profile_2160p_hdr_include_tokens,
+              form_data.profile_2160p_hdr_exclude_tokens,
+              choice,
+              profile_2160p_hdr_label
+            ) }}
+          </tr>
+          {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
 
   <div class="card-actions">

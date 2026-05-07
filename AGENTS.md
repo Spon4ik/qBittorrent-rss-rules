@@ -53,6 +53,16 @@ The WinUI shell (`QbRssRulesDesktop`) embeds `RequiredDesktopBackendAppVersion` 
 - Be proactive about logical bugs, weak assumptions, and non-optimal designs discovered while working when they are clearly in scope.
 - Make hidden constraints and tradeoffs explicit.
 
+## Autonomous execution and validation
+
+- When a task requires tests, fresh shells, clean Python processes, Docker rebuilds, health probes, or local service checks, do them autonomously instead of asking the user to intervene.
+- If a command/test run hangs or leaves stale helper processes, recover autonomously with the smallest safe cleanup needed, then rerun the validation in a fresh process.
+- Do not hand work back to the user for routine environment recovery, reruns, dependency checks, or non-destructive diagnostics.
+- Pause for user confirmation only when the next step risks destructive data loss, credential exposure, broad behavior changes outside the active phase, or other dangerous intent/behavior.
+- Continue phase work sequentially until the active phase is actually validated and documented; only then proceed to the next planned phase.
+- After closing each phase, inspect whether the work exposed previously unknown facts that should change later scope, sequencing, tests, or release criteria. If so, update the roadmap/status docs first, then keep following the adjusted plan without waiting for routine user intervention.
+- Keep packaging, commit, push, PR, and release handoff work moving after validation passes; do not leave completed phase work local unless a concrete blocker is documented.
+
 ## Session Closeout
 
 Before ending a meaningful work session:

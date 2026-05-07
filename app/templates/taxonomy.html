@@ -215,6 +215,21 @@
     </div>
     {% endif %}
 
+    {% if taxonomy_preview.managed_profile_changes %}
+    <div class="stack">
+      <strong>Managed preset impact</strong>
+      {% for item in taxonomy_preview.managed_profile_changes %}
+      <div>
+        {{ item.profile_label }}
+        {% if item.added_include_tokens %} adds includes: {{ item.added_include_tokens | join(", ") }}.{% endif %}
+        {% if item.removed_include_tokens %} removes includes: {{ item.removed_include_tokens | join(", ") }}.{% endif %}
+        {% if item.added_exclude_tokens %} adds excludes: {{ item.added_exclude_tokens | join(", ") }}.{% endif %}
+        {% if item.removed_exclude_tokens %} removes excludes: {{ item.removed_exclude_tokens | join(", ") }}.{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     {% if taxonomy_preview.blocking_references %}
     <div class="stack">
       <strong>Blocking references</strong>

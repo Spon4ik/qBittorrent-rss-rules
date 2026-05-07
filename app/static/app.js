@@ -3070,6 +3070,7 @@ function initSearchPage(container) {
 
     const visibleEntries = [];
     const hiddenEntries = [];
+    const hiddenReasonCounts = new Map();
     let visibleCount = 0;
     for (const entry of sortedEntries) {
       const failure = entryFilterFailure(entry, filters);
@@ -3104,6 +3105,7 @@ function initSearchPage(container) {
         visibleEntries.push(entry);
       } else {
         hiddenEntries.push(entry);
+        hiddenReasonCounts.set(failure, (hiddenReasonCounts.get(failure) || 0) + 1);
       }
     }
 
@@ -3120,13 +3122,28 @@ function initSearchPage(container) {
     }
     if (state.hiddenSummaryElement) {
       if (hiddenEntries.length > 0) {
+        const topHiddenReasons = Array.from(hiddenReasonCounts.entries())
+          .sort((left, right) => {
+            if (right[1] !== left[1]) {
+              return right[1] - left[1];
+            }
+            return String(left[0] || "").localeCompare(String(right[0] || ""), undefined, { sensitivity: "base" });
+          })
+          .slice(0, 3)
+          .map(([reason, count]) => {
+            const label = String(reason || "").replace(/[.\s]+$/u, "");
+            return `${label} (${count})`;
+          })
+          .join("; ");
         const actionLabel = controlState.showHiddenRows
           ? "Hidden rows are shown below with their first blocker."
           : "Enable \"Show hidden fetched rows\" to inspect them in the table.";
         const rowLabel = hiddenEntries.length === 1 ? "row is" : "rows are";
         state.hiddenSummaryElement.textContent = (
           `${hiddenEntries.length} fetched row${hiddenEntries.length === 1 ? "" : "s"} `
-          + `${rowLabel} currently hidden. ${actionLabel}`
+          + `${rowLabel} currently hidden. `
+          + (topHiddenReasons ? `Top blockers: ${topHiddenReasons}. ` : "")
+          + actionLabel
         );
         state.hiddenSummaryElement.hidden = false;
       } else {
@@ -3481,6 +3498,10 @@ function initRuleForm(form) {
     const mediaField = form.querySelector('select[name="media_type"]');
   const qualityProfileInput = form.querySelector('input[name="quality_profile"]');
   const qualityModeInput = form.querySelector('input[name="quality_mode"]');
+  const qualityModePanel = form.querySelector("[data-quality-mode-panel]");
+  const qualityModeLabel = form.querySelector("[data-quality-mode-label]");
+  const qualityModeDescription = form.querySelector("[data-quality-mode-description]");
+  const qualityModeActionButtons = Array.from(form.querySelectorAll("[data-quality-mode-action]"));
   const filterProfileSelect = form.querySelector("#filter-profile-select");
   const saveNewProfileButton = form.querySelector("#filter-profile-save-new");
   const overwriteProfileButton = form.querySelector("#filter-profile-overwrite");
@@ -3684,8 +3705,34 @@ function initRuleForm(form) {
     return "";
   };
 
+  const currentQualityMode = () => String(qualityModeInput?.value || "manual").trim() || "manual";
+
+  const renderQualityModePanel = () => {
+    if (!qualityModePanel) {
+      return;
+    }
+    const mode = currentQualityMode();
+    const selectedProfile = availableFilterProfileMap[
+      filterProfileSelect?.value || detectMatchingFilterProfileKey(getCurrentMediaType())
+    ];
+    if (qualityModeLabel) {
+      qualityModeLabel.textContent = mode === "managed"
+        ? `Managed profile${selectedProfile?.label ? `: ${selectedProfile.label}` : ""}`
+        : "Manual snapshot";
+    }
+    if (qualityModeDescription) {
+      qualityModeDescription.textContent = mode === "managed"
+        ? "This rule follows preset changes until you make it manual."
+        : "This rule keeps its current include/exclude tokens until you choose a managed profile.";
+    }
+    for (const button of qualityModeActionButtons) {
+      button.dataset.active = button.dataset.qualityModeAction === mode ? "1" : "0";
+    }
+  };
+
   const syncQualityProfileValue = () => {
     if (!qualityProfileInput) {
+      renderQualityModePanel();
       return;
     }
     const matchingProfile = availableFilterProfileMap[detectMatchingFilterProfileKey(getCurrentMediaType())];
@@ -3694,6 +3741,7 @@ function initRuleForm(form) {
       if (qualityModeInput) {
         qualityModeInput.value = matchingProfile.quality_profile_value === "custom" ? "manual" : "managed";
       }
+      renderQualityModePanel();
       return;
     }
     const currentProfile = buildCurrentProfilePayload();
@@ -3702,12 +3750,14 @@ function initRuleForm(form) {
       if (qualityModeInput) {
         qualityModeInput.value = "manual";
       }
+      renderQualityModePanel();
       return;
     }
     qualityProfileInput.value = "custom";
     if (qualityModeInput) {
       qualityModeInput.value = "manual";
     }
+    renderQualityModePanel();
   };
 
   const applyFilterProfile = (profileKey) => {
@@ -3963,6 +4013,43 @@ function initRuleForm(form) {
   };
   filterProfileSelect?.addEventListener("input", handleFilterProfileSelection);
   filterProfileSelect?.addEventListener("change", handleFilterProfileSelection);
+  for (const button of qualityModeActionButtons) {
+    button.addEventListener("click", () => {
+      const action = button.dataset.qualityModeAction || "";
+      if (action === "manual") {
+        if (qualityProfileInput) {
+          qualityProfileInput.value = "custom";
+        }
+        if (qualityModeInput) {
+          qualityModeInput.value = "manual";
+        }
+        if (filterProfileSelect) {
+          filterProfileSelect.value = "";
+        }
+        renderQualityModePanel();
+        refreshDerivedFields();
+        return;
+      }
+      if (action !== "managed") {
+        return;
+      }
+      const selectedKey = filterProfileSelect?.value || detectMatchingFilterProfileKey(getCurrentMediaType());
+      const selectedProfile = availableFilterProfileMap[selectedKey];
+      if (!selectedKey || !selectedProfile || selectedProfile.quality_profile_value === "custom") {
+        window.alert("Select a built-in filter profile before switching this rule to managed.");
+        return;
+      }
+      applyFilterProfile(selectedKey);
+      if (qualityProfileInput) {
+        qualityProfileInput.value = selectedProfile.quality_profile_value || "custom";
+      }
+      if (qualityModeInput) {
+        qualityModeInput.value = "managed";
+      }
+      renderQualityModePanel();
+      refreshDerivedFields();
+    });
+  }
   saveNewProfileButton?.addEventListener("click", async () => {
     const profileName = window.prompt("New profile name");
     if (!profileName || !profileName.trim()) {
@@ -4159,6 +4246,7 @@ function initRuleForm(form) {
 }
 
 function initSettingsForm(form) {
+  initUnifiedQualityTokenControls(form);
   bindExclusiveQualitySelections(
     form,
     "profile_1080p_include_tokens",

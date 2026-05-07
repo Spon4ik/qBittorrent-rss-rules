@@ -261,6 +261,26 @@ def test_build_generated_pattern_uses_selected_quality_profile_when_tokens_are_e
     assert "1080p" in pattern
 
 
+def test_build_generated_pattern_rejects_runtime_lower_resolution_exclusion() -> None:
+    builder = RuleBuilder(settings=AppSettings())
+    pattern = builder.build_generated_pattern(
+        build_rule(
+            normalized_title="The Boys",
+            content_name="The Boys",
+            quality_profile=QualityProfile.UHD_2160P_HDR,
+            quality_include_tokens=[],
+            quality_exclude_tokens=["sd", "240p", "360p", "400p", "480p", "720p", "1080p"],
+            use_regex=False,
+            start_season=5,
+            start_episode=1,
+        )
+    )
+
+    assert "400p" in pattern
+    assert re.search(pattern, "The.Boys.S05E01.2160p.HDR") is not None
+    assert re.search(pattern, "The.Boys.S05.400p.Kerob") is None
+
+
 def test_build_generated_pattern_supports_start_season_episode_floor() -> None:
     builder = RuleBuilder(settings=None)
     pattern = builder.build_generated_pattern(

@@ -409,9 +409,9 @@ def _rule_local_filter_cache_key(rule: Rule) -> str:
     )
 
 
-def _snapshot_row_matches_rule_filters(row: dict[str, Any], state: dict[str, Any]) -> bool:
+def _snapshot_row_filter_failure(row: dict[str, Any], state: dict[str, Any]) -> str | None:
     if bool(state.get("feed_scope_blocks_all")):
-        return False
+        return "No affected feeds are selected."
 
     text_surface = str(row.get("text_surface") or "").strip()
     if not text_surface:
@@ -420,44 +420,45 @@ def _snapshot_row_matches_rule_filters(row: dict[str, Any], state: dict[str, Any
 
     for keyword in state.get("keywords_all", []):
         if not _matches_included_keyword(text_surface, str(keyword)):
-            return False
+            return f"Missing include keyword: {keyword}."
 
-    for group in state.get("keywords_any_groups", []):
+    for group_index, group in enumerate(state.get("keywords_any_groups", []), start=1):
         if not any(_matches_included_keyword(text_surface, str(keyword)) for keyword in group):
-            return False
+            group_label = " | ".join(str(keyword) for keyword in group if str(keyword).strip())
+            return f"Missing any-of group {group_index}: {group_label}."
 
     for keyword in state.get("keywords_not", []):
         if _matches_excluded_keyword(text_surface, str(keyword)):
-            return False
+            return f"Matched excluded keyword: {keyword}."
 
     for include_pattern in state.get("quality_include_patterns", []):
         if not include_pattern.search(regex_surface):
-            return False
+            return "Missing required quality tags."
 
     exclude_pattern = state.get("quality_exclude_pattern")
     if exclude_pattern is not None and exclude_pattern.search(regex_surface):
-        return False
+        return "Matched an excluded quality tag."
 
     generated_pattern = state.get("generated_pattern")
     if generated_pattern is not None and not generated_pattern.search(regex_surface):
         if _same_season_complete_pack_allowed(row, state):
             pass
         else:
-            return False
+            return "Does not match the generated rule pattern."
 
     release_year = str(state.get("release_year") or "").strip()
     if release_year:
         result_year = normalize_release_year(str(row.get("year") or row.get("title") or ""))
         if not result_year or result_year != release_year:
-            return False
+            return f"Release year does not match {release_year}."
 
     allowed_feed_indexer_keys = set(state.get("allowed_feed_indexer_keys", set()) or set())
     if allowed_feed_indexer_keys:
         indexer_keys = set(_build_indexer_key_variants(row.get("indexer") or ""))
         if not indexer_keys.intersection(allowed_feed_indexer_keys):
-            return False
+            return "Indexer is outside the affected-feed scope."
 
-    return True
+    return None
 
 
 def _snapshot_unified_raw_rows(snapshot: RuleSearchSnapshot) -> list[dict[str, Any]]:
@@ -479,20 +480,30 @@ def _rule_local_filtered_count_from_rows(
     *,
     state: dict[str, Any] | None = None,
 ) -> int:
-    filter_state = state or _rule_local_filter_state(rule)
-    filtered_count = 0
-    for item in raw_rows:
-        if _snapshot_row_matches_rule_filters(item, filter_state):
-            filtered_count += 1
+    filtered_count, _hidden_reasons = _rule_local_filter_diagnostics_from_rows(
+        rule,
+        raw_rows,
+        state=state,
+    )
     return filtered_count
 
 
-def _rule_local_filtered_count(rule: Rule, inline_search: dict[str, Any]) -> int:
-    raw_rows = inline_search.get("unified_raw_results")
-    if not isinstance(raw_rows, list):
-        return 0
-    typed_rows = [item for item in raw_rows if isinstance(item, dict)]
-    return _rule_local_filtered_count_from_rows(rule, typed_rows)
+def _rule_local_filter_diagnostics_from_rows(
+    rule: Rule,
+    raw_rows: list[dict[str, Any]],
+    *,
+    state: dict[str, Any] | None = None,
+) -> tuple[int, dict[str, int]]:
+    filter_state = state or _rule_local_filter_state(rule)
+    filtered_count = 0
+    hidden_reasons: dict[str, int] = {}
+    for item in raw_rows:
+        failure = _snapshot_row_filter_failure(item, filter_state)
+        if failure is None:
+            filtered_count += 1
+            continue
+        hidden_reasons[failure] = hidden_reasons.get(failure, 0) + 1
+    return filtered_count, hidden_reasons
 
 
 def refresh_snapshot_release_cache(snapshot: RuleSearchSnapshot, *, rule: Rule) -> bool:
@@ -503,7 +514,11 @@ def refresh_snapshot_release_cache(snapshot: RuleSearchSnapshot, *, rule: Rule) 
         raw_rows = inline_search.get("unified_raw_results")
     typed_rows = [item for item in raw_rows or [] if isinstance(item, dict)]
     state = _rule_local_filter_state(rule)
-    filtered_count = _rule_local_filtered_count_from_rows(rule, typed_rows, state=state)
+    filtered_count, hidden_reasons = _rule_local_filter_diagnostics_from_rows(
+        rule,
+        typed_rows,
+        state=state,
+    )
     cache_key = _rule_local_filter_cache_key(rule)
     current_key = str(
         snapshot.release_filter_cache_key or inline_search.get("rule_local_filter_cache_key") or ""
@@ -516,15 +531,26 @@ def refresh_snapshot_release_cache(snapshot: RuleSearchSnapshot, *, rule: Rule) 
     count_matches = (
         current_count is not None and _coerce_int(current_count, default=-1) == filtered_count
     )
+    current_hidden_reasons = inline_search.get("rule_local_hidden_reasons")
+    hidden_reasons_match = (
+        isinstance(current_hidden_reasons, dict)
+        and {
+            str(reason): _coerce_int(count, default=0)
+            for reason, count in current_hidden_reasons.items()
+        }
+        == hidden_reasons
+    )
     fetched_count = len(typed_rows)
     if (
         current_key == cache_key
         and count_matches
+        and hidden_reasons_match
         and snapshot.release_fetched_count == fetched_count
     ):
         return False
     inline_search["rule_local_filter_cache_key"] = cache_key
     inline_search["rule_local_filtered_count"] = filtered_count
+    inline_search["rule_local_hidden_reasons"] = hidden_reasons
     inline_search["combined_fetched_count"] = fetched_count
     snapshot.inline_search = cast(dict[str, object], inline_search)
     snapshot.release_filter_cache_key = cache_key

@@ -80,6 +80,11 @@
   - live Docker logs showed `sqlite3.OperationalError: database is locked` causing transient `Internal Server Error` responses on regular page reads while background work was active;
   - SQLite connections now set `PRAGMA busy_timeout = 30000` and `PRAGMA journal_mode = WAL`, reducing reader/write contention during scheduled fetch or startup sync work;
   - regression coverage now verifies the SQLite engine busy-timeout/WAL contract, with focused config tests and Ruff passing.
+- Phase 25 release closeout resumed on 2026-05-07 after the R1.5-R8 guardrail package merged:
+  - confirmed the live app still has no native addon router, no addon/local-playback modules, no addon smoke scripts, no `stremio_native_addon` capability, and no `Queue Stremio Variant` UI;
+  - discovered that `v1.1.2` already tags the earlier taxonomy/profile inheritance patch, so the final post-R8 release candidate is version-synced to `1.1.3` instead of reusing the existing tag;
+  - kept Phase 25 as a sync-only boundary closeout and did not restore or start any native addon behavior;
+  - release validation passed with focused pytest, full `scripts\check.bat` (`370 passed`), Ruff, `node --check`, shared Docker rebuild, Docker `/health` (`app_version=1.1.3`), inside-container qB and Jackett probes, sync-only Stremio HTTP probes, Docker Stremio test/sync proof, desktop build, and browser closeout with only the accepted legacy `P4-01` caveat.
 
 
 - Product/design follow-up planning session completed on 2026-05-05 without changing phase-25 implementation scope:
@@ -153,7 +158,7 @@ Make qBittorrent RSS Rules a qB + sync app again: no native Stremio addon hostin
 | P25-01 | Update roadmap and phase docs for the repo split. | Codex | 2026-04-19 | completed | Roadmap/current-status/phase docs state that addon hosting moved out of this repo and sync remains. | This phase plan plus 2026-04-19 roadmap/current-status updates. |
 | P25-02 | Remove native addon codepaths while keeping Stremio sync intact. | Codex | 2026-04-19 | completed | Native addon routes/services/UI/settings/scripts/tests are gone, and the backend/desktop capability contract reflects sync-only Stremio support. | 2026-04-19 changes in `app/main.py`, `app/routes/pages.py`, `app/routes/api.py`, `app/services/selective_queue.py`, `app/services/settings_service.py`, `app/static/app.js`, templates, desktop contract constants, deleted addon modules/scripts/tests, and focused green pytest/ruff runs. |
 | P25-03 | Validate the split in the real local environment. | Codex | 2026-04-19 | completed | Running backend/desktop proves addon endpoints are gone while Stremio sync flows still work. | 2026-04-19 live checks on backend `1.0.0`: `/stremio/manifest.json` returned `404`; `/settings` and `/search` no longer exposed addon/provider/variant-queue UI; `/api/settings/test-stremio` succeeded against the local Stremio WebView storage; `/api/settings/sync-stremio` completed for `147 active title(s)`; `scripts\\check.bat` passed (`308 passed`); and `scripts\\run_dev.bat desktop-build` succeeded with `0 Warning(s)` / `0 Error(s)`. |
-| P25-04 | Cut and publish the breaking-change release. | Codex | 2026-04-19 | in progress | Version is bumped consistently, changelog/docs are updated, and the release commit/tag are published to git. | `1.1.1` candidate is version-synced and release-validated locally on 2026-04-29; commit/tag/push remain pending. |
+| P25-04 | Cut and publish the breaking-change release. | Codex | 2026-04-19 | in progress | Version is bumped consistently, changelog/docs are updated, and the release commit/tag are published to git. | `v1.1.2` already exists for the taxonomy/profile patch, so the final post-R8 closeout is now version-synced to `1.1.3`; release validation is green and commit/tag/push are the remaining actions. |
 | P25-05 | Add backend Docker runtime support. | Codex | 2026-04-30 | completed | Backend has Dockerfile/Compose support with persistent data, documented host-service configuration, and a running shared-stack container. | `Dockerfile`, `.dockerignore`, `C:\\Users\\nucc\\docker-config\\docker-compose.yml`, README/.env docs, AGENTS closeout instruction, green health-route pytest, and live Docker `/health` proof on 2026-04-30. |
 | P25-06 | Restore repo-move-safe database pathing. | Codex | 2026-04-30 | completed | Local and Docker backends read the repo-owned `data\\qb_rules.db`, and relative SQLite URLs no longer depend on process working directory. | `app/config.py`, `tests/test_config.py`, `C:\\Users\\nucc\\docker-config\\docker-compose.yml`, README/AGENTS docs, green config tests, and live Docker DB count of `190` rules. |
 | P25-07 | Harden Docker host file-path integrations. | Codex | 2026-04-30 | completed | Stremio LevelDB and Jellyfin DB paths saved as Windows paths work from the Docker backend. | `resolve_runtime_path(...)`, Stremio/Jellyfin service updates, shared Docker `C:\\Users` and `C:\\ProgramData` mounts, focused pytest/ruff checks, and live Docker Stremio/Jellyfin probes. |
@@ -168,9 +173,9 @@ Make qBittorrent RSS Rules a qB + sync app again: no native Stremio addon hostin
 
 - Trigger: old docs/tests/scripts still refer to addon manifests or addon smoke gates.
 - Impact: future work could accidentally restore or depend on removed surfaces.
-- Mitigation: remove addon touchpoints from release/version tooling now and follow with README/docs cleanup in this release.
+- Mitigation: keep active release/status docs focused on sync-only Stremio ownership; historical phase docs may still describe already-removed addon behavior as past release evidence.
 - Owner: Codex
-- Status: active
+- Status: mitigated for active release docs; historical references remain intentionally archival
 
 ### Risk: leftover schema fields may confuse future maintenance
 
@@ -182,7 +187,7 @@ Make qBittorrent RSS Rules a qB + sync app again: no native Stremio addon hostin
 
 ## Next Concrete Steps
 
-1. Finish validation for the `1.1.2` taxonomy/profile inheritance patch, then publish the release commit and tag to git.
+1. Publish the validated `1.1.3` release commit and `v1.1.3` tag to git.
 2. Verify qBittorrent and Jackett connectivity from the running Docker backend using `host.docker.internal` URLs.
 3. If the repo moves again, update the shared Docker bind mount to the new repo `data` path before rebuilding `qb-rss-rules`.
 4. Keep using `resolve_runtime_path(...)` for any future settings/env path that points at a local host file needed by Docker.

@@ -2,7 +2,8 @@
 
 ## Current focus
 
-- Phase R8 is now completed as the pre-feature qB rule enforcement-parity stabilization gate; Phase 25 feature work remains paused/not started in this package until the contract-roadmap branch is reviewed.
+- Phase R8 is completed and merged as the pre-feature qB rule enforcement-parity stabilization gate; Phase 25 release closeout is now active as a sync-only boundary/version publication pass.
+- Current release candidate is `1.1.3` because `v1.1.2` already tags the earlier taxonomy/profile inheritance patch, while the merged R1.5-R8 guardrails landed after that tag.
 - Current packaging rule: after each phase, inspect newly discovered facts, adjust later roadmap scope/tests when needed, and continue through validation, commit, push, and GitHub handoff without stopping for routine reruns or environment recovery.
 - Phase 23 is now closed and release-validated in `v0.9.0` as the Stremio cross-addon aggregation slice, merging qB RSS and Torrentio-compatible provider rows into one locally owned addon response with global ordering, persisted provider configuration, and real desktop proof.
 - Phase 24 remains closed and release-validated in `v0.8.3` as the hotfix slice for Stremio long-running series episode lookups that disappear because the addon applies the original series year as a hard search filter.
@@ -24,6 +25,12 @@
 
 ## Implemented
 
+
+- Resumed Phase 25 release closeout on 2026-05-07 after R1.5-R8 merged:
+  - confirmed the live codebase still has no native Stremio addon router/modules/smoke scripts, no `stremio_native_addon` capability, and no `Queue Stremio Variant` UI, while Stremio sync/test settings remain in the app;
+  - version-synced the final post-R8 release candidate to `1.1.3` across Python, health-route, WinUI desktop, tests, and changelog because the existing `v1.1.2` tag points at the earlier taxonomy/profile patch;
+  - kept the release boundary sync-only and did not restore or start any native addon behavior;
+  - release validation evidence: focused pytest slices passed, Ruff passed for touched Python files, `node --check app/static/app.js` passed, `cmd.exe /c scripts\check.bat` passed (`370 passed`), `cmd.exe /c scripts\run_dev.bat desktop-build` passed (`0 Warning(s)`, `0 Error(s)`), shared Docker Compose rebuild passed, Docker `/health` reports `app_version=1.1.3`, `/stremio/manifest.json` returns `404`, `/settings` keeps Stremio test/sync controls without addon manifest controls, `/search` has no `Queue Stremio Variant`, inside-container qB login reports `qb_test=ok`, inside-container Jackett discovery reports `jackett_indexers=12`, Docker Stremio test reports `181 active` of `309` items, Docker Stremio sync completed for `181 active title(s)` with `0 errors`, and browser closeout report `logs/qa/phase-closeout-20260507T072541Z/closeout-report.md` passed 22/23 checks with only the accepted legacy `P4-01` feed-checkbox failure.
 
 - Implemented contract-roadmap Phase R8 on 2026-05-07:
   - treated the reported `The Boys` / `400p` autodownload as a qB enforcement-parity stabilization gate before any Phase 25 feature work;
@@ -1217,7 +1224,7 @@
 - The new qB rule-language selector currently coexists with the older manual affected-feed checklist: language mode now resolves/saves the real qB RSS feed scope automatically, while the manual checklist remains visible as a compatibility/fallback UI until a later deprecation pass is approved.
 - Saved-rule active search no longer shares the same runtime dependency on qB feed availability: when a language-managed rule cannot derive search scope from saved qB feed URLs, the rule-search path now falls back to Jackett configured indexers for that language instead of collapsing back to unscoped/default behavior.
 - Rule persistence is now decoupled from live qB RSS availability for language-managed rules: passive feed URLs are still resolved and used when qB feeds are reachable, but a temporary qB outage now degrades to warning-only behavior instead of blocking creates/updates or erasing the saved language/search intent.
-- The local release candidate is now `1.1.2`, adding the runtime taxonomy/filter-profile inheritance patch on top of the already-finished `1.1.1` Stremio auth-session fallback, quality-token boundary patch, phase-25 Stremio-boundary split, and qB rule-language feed-selection follow-up; publication to git remains pending.
+- The local release candidate is now `1.1.3`, adding the merged R1.5-R8 contract-roadmap guardrails and qB enforcement-parity diagnostics on top of the already tagged `v1.1.2` taxonomy/profile inheritance patch; publication to git remains pending.
 - Docker backend support is now present locally through the repo `Dockerfile` and the shared Compose service in `C:\\Users\\nucc\\docker-config\\docker-compose.yml`; session instructions now require `& 'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe' compose -f C:\\Users\\nucc\\docker-config\\docker-compose.yml up --build -d qb-rss-rules` and a `/health` check after code edits. The container is currently running, serving `/health` on `127.0.0.1:8000`, and reading the repo DB with `190` rules through the `/app/data` bind mount.
 - Stremio and Jellyfin host file paths now work from Docker through `/host/C/...` bind mounts; avoid adding new direct `Path.cwd()`-based handling for saved local paths.
 - The qB-side precursor track is now extended locally beyond `v0.8.5`: desktop unified results are exact-first with visible fallback/debug rows, same-infohash duplicates are grouped instead of discarded, grouped queue actions can merge missing trackers into the existing qB torrent, and Stremio qB rows expose clearer provenance/source detail.
@@ -1238,9 +1245,9 @@
 
 ## Next actions
 
-- Package R1.5-R8 for GitHub review/release readiness: rerun final focused validation, rerun browser closeout because UI/JS/CSS/QA files changed, accept only known legacy `P4-01` if no new failures appear, commit `Complete contract roadmap R1.5-R8 guardrails and qB parity`, push the branch, and open a draft PR/release handoff.
-- Before Phase 25 resumes, perform the documented post-R8 discovery review: preserve qB enforcement diagnostics and keep live qB remote readback in scope for future rule-payload/feed-filtering changes.
-- Contract roadmap Phases R1.5 through R7 are complete; next work should come from the normal backlog, with the legacy `P4-01` browser closeout expectation either updated to the current Jackett/language-managed feed source or explicitly retired.
+- Commit the validated `1.1.3` release closeout, push the branch, open/merge the release PR, and tag `v1.1.3` from the validated main tip.
+- Preserve qB enforcement diagnostics and keep live qB remote readback in scope for future rule-payload/feed-filtering changes.
+- Contract roadmap Phases R1.5 through R8 are complete; next roadmap work after the `v1.1.3` release should come from the normal backlog, with the legacy `P4-01` browser closeout expectation either updated to the current Jackett/language-managed feed source or explicitly retired.
 - Keep qBittorrent running before Docker closeout probes; after reboot it was not listening on `127.0.0.1:8080`, and the Docker backend could not complete qB sync until `C:\\Program Files\\qBittorrent\\qbittorrent.exe` was started.
 - Decide whether the keep-searching watched-progress search floor should also influence qB RSS rule generation later, or remain active-search-only while qB keeps using the stored progression floor.
 - Decide whether the next qB follow-up should fully remove manual affected-feed/indexer selection now that language-managed feed resolution is working against the real local Jackett/qB setup.
@@ -1250,14 +1257,7 @@
 - If the repo moves again, update the `qb-rss-rules` bind mount in `C:\\Users\\nucc\\docker-config\\docker-compose.yml` to the new repo `data` path before rebuilding Docker.
 - Keep `C:\\Users` and `C:\\ProgramData` mounted in the shared Docker service whenever Stremio local storage or Jellyfin DB sync are expected to run from Docker.
 - Use `/settings` `Indexer language overrides` for any configured Jackett indexer that remains `Unknown` / unclassified or has incorrect metadata; keep broader automatic detection improvements as a later follow-up if override maintenance becomes noisy.
-- Keep `Death in Paradise` season 14/15 routes in the live Stremio addon regression set.
-- Keep the new persisted-provider merge path in the focused Stremio regression set whenever addon ranking, provider formatting, or `/settings` serialization changes again.
-- Harden the Torrentio-compatible provider adapter contract as needed after more live manifest runs, especially around provider-specific row fields, timeout behavior, and attribution formatting.
-- Keep `tt22074164` (`Jury Duty Presents: Company Retreat`) in the manual desktop `/search`, Stremio catalog, and addon smoke regression set through the `v0.9.0` release because it exercises the exact IMDb-first-plus-subtitle-title blind spot that escaped earlier QA.
-- Keep `tt22074164` in the focused addon smoke set with and without `QB_RULES_STREMIO_PREFERRED_LANGUAGES=ru`, because the remaining parity difference is now mostly about season-pack/language selection rather than raw discovery.
-- Keep the new direct-indexer subtitle fallback path in the focused addon QA set, because it is what restored the wanted `14544b87...` RuTor row after the aggregate `all` broad fallback proved too slow and unreliable on this machine.
-- Keep the restored addon-baseline exact-vs-fallback split in the focused route/browser QA set whenever desktop local filtering or unified-row source labeling changes again.
-- Continue simplifying toward one precise enriched engine: desktop should keep the new addon-baseline contract, but the shared collector still needs real live latency reduction rather than more desktop-side merge work.
+- Keep former addon QA references in historical phase docs only; active Stremio validation in this repo is now limited to library/watch-progress sync, settings test/sync flows, and absence of native addon surfaces.
 - Keep the new desktop exact-row filtering contract in place whenever local refinement changes again: precise IMDb-backed rows should be governed by structured metadata fields, while broader title/pattern filtering stays on fallback rows.
 - Keep the new exact-first combined-table ordering, grouped same-hash queue/tracker merge, and richer Stremio provenance-label regressions in the focused route/service test slice whenever desktop search or addon row rendering changes again.
 - Keep the new broken-local-Jackett queue regression in the focused queue/API slice whenever HTTP torrent queue fallback behavior changes again.
@@ -1270,9 +1270,7 @@
 - Track the explicit music/audiobook structured-search follow-up as the next Jackett cleanup slice: prefer direct capable indexers over aggregate `all`, use `t=caps` / `t=indexers&configured=true` more aggressively, and retire manual regex-heavy narrowing where Jackett's native `music` / `book` params can do the work.
 - Keep the new `bluray` versus `BDRip/BRRip` taxonomy regression in both the focused quality-filter tests and the phase-23 browser matrix whenever quality-token semantics or exact local filtering changes.
 - Keep the new rules-page exact-result indicator/filter plus the phase-23 browser matrix in `scripts\\closeout_browser_qa.py` whenever precise-vs-fallback classification or rules-page snapshot summaries change.
-- Keep `scripts\\stremio_addon_smoke.py` and `scripts\\stremio_desktop_smoke.py` as the required acceptance pair before changing native addon stream/search behavior again.
-- Repair the mock-addon install path inside `scripts\\stremio_desktop_variant_matrix.py` so the temporary QA addon reaches the stream-request stage and can keep bisecting future acceptance regressions automatically.
-- Correct the saved OMDb API key so `/stremio/catalog/...` can contribute search results again; stream lookups now degrade through Cinemeta metadata for known IMDb items, but title-search catalog results still depend on a working metadata provider.
+- Keep native addon/provider/catalog follow-ups in the separate addon project unless this roadmap explicitly changes ownership again.
 - Run one live `/settings` verification pass against the signed-in desktop session to confirm `Test Stremio`, `Save + Sync Stremio Now`, and the shared completed-movie disablement path on real library data.
 - Run one live Jellyfin verification pass after the shared movie-completion change to confirm completed movies stay disabled for the new centralized reason and unfinished movies remain enabled.
 - Decide whether the next catalog step expands beyond OMDb into richer providers or more explicit release-calendar logic.

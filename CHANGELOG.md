@@ -8,6 +8,12 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.1.3] - 2026-05-07
+
+- Completed the contract-roadmap guardrail package across R1.5-R8, adding qB settings precedence coverage, qB WebUI auth compatibility coverage, runtime-taxonomy test isolation, responsive/layout foundations, preset/profile UX contracts, search diagnostics, queue refresh resiliency, and qB rule-enforcement parity diagnostics.
+- Added qB RSS rule sync evidence for app-managed payloads, remote drift readback, and visible rule diagnostics so local effective exclusions, generated qB patterns, and live qB remote rules can be compared when qB behavior looks surprising.
+- Closed the Phase 25 sync-only Stremio boundary release path after verifying the native addon files/routes remain removed, Stremio sync/test settings remain intact, and future Stremio work in this repo stays scoped to library/watch-progress sync.
+
 ## [1.1.2] - 2026-05-02
 
 - Fixed built-in video filter profiles so `At Least Full HD`, `At Least Ultra HD`, and `Ultra HD HDR` derive their include/exclude resolution tokens from the live runtime taxonomy rank instead of frozen preset lists.

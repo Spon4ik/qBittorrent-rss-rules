@@ -135,6 +135,49 @@
         <span class="helper-text">Local cached filter.</span>
       </label>
     </div>
+    <details class="search-section-nested full-span">
+      <summary class="search-section-summary">
+        <span>
+          <span class="eyebrow">Structured audio</span>
+          <span class="search-section-title">Music and audiobook fields</span>
+        </span>
+        <span class="search-section-summary-meta" aria-hidden="true"></span>
+      </summary>
+      <div class="search-core-grid">
+        <label class="search-field">
+          Artist
+          <input type="text" name="artist" value="{{ form_data.artist }}" placeholder="Andrew Michael" />
+        </label>
+        <label class="search-field">
+          Album
+          <input type="text" name="album" value="{{ form_data.album }}" placeholder="Blues Band" />
+        </label>
+        <label class="search-field">
+          Track
+          <input type="text" name="track" value="{{ form_data.track }}" placeholder="Blue Sunrise" />
+        </label>
+        <label class="search-field">
+          Label
+          <input type="text" name="label" value="{{ form_data.label }}" placeholder="Blue Note" />
+        </label>
+        <label class="search-field">
+          Book title
+          <input type="text" name="title" value="{{ form_data.title }}" placeholder="The Way of Kings" />
+        </label>
+        <label class="search-field">
+          Author
+          <input type="text" name="author" value="{{ form_data.author }}" placeholder="Brandon Sanderson" />
+        </label>
+        <label class="search-field">
+          Publisher
+          <input type="text" name="publisher" value="{{ form_data.publisher }}" placeholder="Macmillan Audio" />
+        </label>
+        <label class="search-field">
+          Genre
+          <input type="text" name="genre" value="{{ form_data.genre }}" placeholder="Fantasy" />
+        </label>
+      </div>
+    </details>
   </section>
 
   <details class="search-section search-keyword-section full-span" open>

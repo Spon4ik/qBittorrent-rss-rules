@@ -93,7 +93,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.1.4"
+    assert payload["app_version"] == "1.1.5"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -1257,6 +1257,104 @@ def test_search_page_persists_indexer_category_catalog_entries(
     assert row is not None
     assert row.category_name == "Audiobooks"
     assert row.source == "indexer_caps"
+
+
+def test_search_page_passes_structured_music_fields_to_jackett(
+    app_client,
+    monkeypatch,
+) -> None:
+    captured_payloads: list[JackettSearchRequest] = []
+
+    def fake_search(self, payload):
+        captured_payloads.append(payload)
+        return JackettSearchRun(
+            query_variants=["Andrew Michael Blues Band"],
+            request_variants=[
+                't=music q="Andrew Michael Blues Band" artist=Andrew Michael album=Blues Band'
+            ],
+            results=[
+                JackettSearchResult(
+                    title="Andrew Michael Blues Band 2026 FLAC",
+                    link="magnet:?xt=urn:btih:MUSIC111",
+                    indexer="musictracker",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "Andrew Michael Blues Band",
+            "media_type": "music",
+            "artist": "Andrew Michael",
+            "album": "Blues Band",
+            "track": "Blue Sunrise",
+            "label": "Blue Note",
+            "genre": "Blues",
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(captured_payloads) == 1
+    payload = captured_payloads[0]
+    assert payload.media_type == MediaType.MUSIC
+    assert payload.artist == "Andrew Michael"
+    assert payload.album == "Blues Band"
+    assert payload.track == "Blue Sunrise"
+    assert payload.label == "Blue Note"
+    assert payload.genre == "Blues"
+    assert 'name="artist" value="Andrew Michael"' in response.text
+    assert 'name="album" value="Blues Band"' in response.text
+    assert 'name="track" value="Blue Sunrise"' in response.text
+
+
+def test_search_page_passes_structured_audiobook_fields_to_jackett(
+    app_client,
+    monkeypatch,
+) -> None:
+    captured_payloads: list[JackettSearchRequest] = []
+
+    def fake_search(self, payload):
+        captured_payloads.append(payload)
+        return JackettSearchRun(
+            query_variants=["The Way of Kings"],
+            request_variants=['t=book title="The Way of Kings" author=Brandon Sanderson'],
+            results=[
+                JackettSearchResult(
+                    title="The Way of Kings Audiobook 2010",
+                    link="magnet:?xt=urn:btih:BOOK111",
+                    indexer="booktracker",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get(
+        "/search",
+        params={
+            "query": "The Way of Kings",
+            "media_type": "audiobook",
+            "title": "The Way of Kings",
+            "author": "Brandon Sanderson",
+            "publisher": "Macmillan Audio",
+            "genre": "Fantasy",
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(captured_payloads) == 1
+    payload = captured_payloads[0]
+    assert payload.media_type == MediaType.AUDIOBOOK
+    assert payload.title == "The Way of Kings"
+    assert payload.author == "Brandon Sanderson"
+    assert payload.publisher == "Macmillan Audio"
+    assert payload.genre == "Fantasy"
+    assert 'name="title" value="The Way of Kings"' in response.text
+    assert 'name="author" value="Brandon Sanderson"' in response.text
+    assert 'name="publisher" value="Macmillan Audio"' in response.text
 
 
 def test_search_page_resolves_colliding_category_ids_per_indexer(

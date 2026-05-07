@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.1.5] - 2026-05-07
+
+- Added structured music and audiobook fields to the active Jackett search form, wiring artist, album, track, label, book title, author, publisher, and genre into the existing native Torznab audio-search request schema.
+- Added route regressions proving submitted structured audio fields reach `JackettClient.search` and remain visible in the rendered search form.
 ## [1.1.4] - 2026-05-07
 
 - Fixed structured Jackett music and audiobook searches so native `t=music` / `t=book` direct-indexer probes honor explicit indexer and feed-derived `filter_indexers` scope instead of fanning out to every capable configured indexer.

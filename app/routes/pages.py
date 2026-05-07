@@ -125,6 +125,17 @@ def _sync_search_form_data_with_payload(
     form_data["imdb_id"] = payload.imdb_id or ""
     form_data["include_release_year"] = bool(payload.release_year)
     form_data["release_year"] = payload.release_year or ""
+    for field_name in (
+        "artist",
+        "album",
+        "track",
+        "label",
+        "title",
+        "author",
+        "publisher",
+        "genre",
+    ):
+        form_data[field_name] = getattr(payload, field_name) or ""
 
 
 def _base_context(request: Request, page_title: str) -> dict[str, object]:
@@ -1186,6 +1197,14 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
         "size_max_mb": query_params.get("size_max_mb", "").strip(),
         "filter_indexers": ", ".join(filter_indexers),
         "filter_category_ids": ", ".join(filter_category_ids),
+        "artist": query_params.get("artist", "").strip(),
+        "album": query_params.get("album", "").strip(),
+        "track": query_params.get("track", "").strip(),
+        "label": query_params.get("label", "").strip(),
+        "title": query_params.get("title", "").strip(),
+        "author": query_params.get("author", "").strip(),
+        "publisher": query_params.get("publisher", "").strip(),
+        "genre": query_params.get("genre", "").strip(),
     }
     errors: list[str] = []
     search_run: dict[str, object] | None = None
@@ -1327,6 +1346,14 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "size_max_mb": "",
                         "filter_indexers": ", ".join(payload_from_rule.filter_indexers),
                         "filter_category_ids": "",
+                        "artist": payload_from_rule.artist or "",
+                        "album": payload_from_rule.album or "",
+                        "track": payload_from_rule.track or "",
+                        "label": payload_from_rule.label or "",
+                        "title": payload_from_rule.title or "",
+                        "author": payload_from_rule.author or "",
+                        "publisher": payload_from_rule.publisher or "",
+                        "genre": payload_from_rule.genre or "",
                     }
                 )
 
@@ -1379,6 +1406,14 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "size_max_mb": form_data["size_max_mb"],
                         "filter_indexers": filter_indexers,
                         "filter_category_ids": filter_category_ids,
+                        "artist": form_data["artist"],
+                        "album": form_data["album"],
+                        "track": form_data["track"],
+                        "label": form_data["label"],
+                        "title": form_data["title"],
+                        "author": form_data["author"],
+                        "publisher": form_data["publisher"],
+                        "genre": form_data["genre"],
                     }
                 )
             except ValidationError as exc:

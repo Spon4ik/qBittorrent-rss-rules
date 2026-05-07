@@ -1572,7 +1572,7 @@ def main() -> int:
             run_check(
                 "P4-01",
                 "Phase 4",
-                "Feed checkboxes render with remembered default prefill",
+                "Remembered Jackett feed defaults render without qB-only feed leakage",
                 lambda: (
                     page.goto(
                         f"{app_base_url}/rules/new",
@@ -1583,8 +1583,12 @@ def main() -> int:
                         '#feed-options input[name="feed_urls"]', timeout=args.timeout_ms
                     ),
                     _expect(
-                        len(all_feed_values()) >= 3,
-                        "Expected at least 3 feed checkboxes from mock qB.",
+                        _sorted_values(all_feed_values()) == _sorted_values(DEFAULT_FEEDS),
+                        (
+                            "Expected only remembered Jackett-backed defaults to render "
+                            "as manual feed options. "
+                            f"Rendered={_sorted_values(all_feed_values())}"
+                        ),
                     ),
                     _expect(
                         set(DEFAULT_FEEDS).issubset(set(checked_feed_values())),

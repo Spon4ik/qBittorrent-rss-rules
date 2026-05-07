@@ -86,6 +86,10 @@
   - kept Phase 25 as a sync-only boundary closeout and did not restore or start any native addon behavior;
   - release validation passed with focused pytest, full `scripts\check.bat` (`370 passed`), Ruff, `node --check`, shared Docker rebuild, Docker `/health` (`app_version=1.1.3`), inside-container qB and Jackett probes, sync-only Stremio HTTP probes, Docker Stremio test/sync proof, desktop build, and browser closeout with only the accepted legacy `P4-01` caveat;
   - PR `https://github.com/Spon4ik/qBittorrent-rss-rules/pull/10` merged, tag `v1.1.3` was pushed, and GitHub Release `https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.1.3` was published.
+- Legacy browser closeout cleanup resumed after `v1.1.3` publication on 2026-05-07:
+  - `P4-01` now asserts the current Jackett-owned manual feed contract instead of expecting every mock qB feed to render as a manual checkbox;
+  - the check still covers remembered default prefill, but it now rejects qB-only feed leakage that would contradict the Phase 25/R1.5 feed ownership model;
+  - browser closeout now passes all checks with report `logs/qa/phase-closeout-20260507T150331Z/closeout-report.md`, and focused QA/static route checks plus Docker health/qB/Jackett probes passed after the script change.
 
 
 - Product/design follow-up planning session completed on 2026-05-05 without changing phase-25 implementation scope:
@@ -177,6 +181,14 @@ Make qBittorrent RSS Rules a qB + sync app again: no native Stremio addon hostin
 - Mitigation: keep active release/status docs focused on sync-only Stremio ownership; historical phase docs may still describe already-removed addon behavior as past release evidence.
 - Owner: Codex
 - Status: mitigated for active release docs; historical references remain intentionally archival
+
+### Risk: closeout QA could keep accepting legacy feed-source behavior
+
+- Trigger: `P4-01` expected old qB feed-checkbox rendering even after feeds became Jackett/language-managed.
+- Impact: browser closeout stayed non-green and could hide a real feed-ownership regression behind an accepted caveat.
+- Mitigation: update `P4-01` to assert remembered Jackett-backed defaults and absence of qB-only feed leakage.
+- Owner: Codex
+- Status: completed
 
 ### Risk: leftover schema fields may confuse future maintenance
 

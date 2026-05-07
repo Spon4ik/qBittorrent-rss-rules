@@ -2,7 +2,7 @@
 
 ## Current focus
 
-- Phase R8 is completed and merged as the pre-feature qB rule enforcement-parity stabilization gate; Phase 25 release closeout is now published as `v1.1.3`.
+- Phase R8 is completed and merged as the pre-feature qB rule enforcement-parity stabilization gate; Phase 25 release closeout is published as `v1.1.3`, and the legacy `P4-01` browser expectation has been retired.
 - Current GitHub release is `v1.1.3` because `v1.1.2` already tags the earlier taxonomy/profile inheritance patch, while the merged R1.5-R8 guardrails landed after that tag.
 - Current packaging rule: after each phase, inspect newly discovered facts, adjust later roadmap scope/tests when needed, and continue through validation, commit, push, and GitHub handoff without stopping for routine reruns or environment recovery.
 - Phase 23 is now closed and release-validated in `v0.9.0` as the Stremio cross-addon aggregation slice, merging qB RSS and Torrentio-compatible provider rows into one locally owned addon response with global ordering, persisted provider configuration, and real desktop proof.
@@ -32,6 +32,11 @@
   - kept the release boundary sync-only and did not restore or start any native addon behavior;
   - release validation evidence: focused pytest slices passed, Ruff passed for touched Python files, `node --check app/static/app.js` passed, `cmd.exe /c scripts\check.bat` passed (`370 passed`), `cmd.exe /c scripts\run_dev.bat desktop-build` passed (`0 Warning(s)`, `0 Error(s)`), shared Docker Compose rebuild passed, Docker `/health` reports `app_version=1.1.3`, `/stremio/manifest.json` returns `404`, `/settings` keeps Stremio test/sync controls without addon manifest controls, `/search` has no `Queue Stremio Variant`, inside-container qB login reports `qb_test=ok`, inside-container Jackett discovery reports `jackett_indexers=12`, Docker Stremio test reports `181 active` of `309` items, Docker Stremio sync completed for `181 active title(s)` with `0 errors`, and browser closeout report `logs/qa/phase-closeout-20260507T072541Z/closeout-report.md` passed 22/23 checks with only the accepted legacy `P4-01` feed-checkbox failure;
   - GitHub release state: PR `https://github.com/Spon4ik/qBittorrent-rss-rules/pull/10` merged, tag `v1.1.3` pushed, and GitHub Release `https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.1.3` published.
+
+- Retired the legacy browser closeout `P4-01` caveat on 2026-05-07:
+  - updated `scripts/closeout_browser_qa.py` so `P4-01` now asserts the current Jackett-owned manual feed contract: the rule form renders remembered Jackett-backed default feed checkboxes and no longer leaks the unselected qB mock feed tree into manual options;
+  - this keeps the older Phase 4 remembered-default coverage while aligning it with the Phase 25/R1.5 language-managed feed ownership model;
+  - validation evidence: `cmd.exe /c scripts\closeout_qa.bat --timeout-ms 60000` passed all browser closeout checks with report `logs/qa/phase-closeout-20260507T150331Z/closeout-report.md`, `ruff check scripts/closeout_browser_qa.py` passed, `py_compile scripts/closeout_browser_qa.py` passed, `tests/test_static_assets.py tests/test_routes.py` passed, shared Docker Compose rebuild passed, Docker `/health` reports `app_version=1.1.3`, inside-container qB login reports `qb_test=ok`, and inside-container Jackett discovery reports `jackett_indexers=12`.
 
 - Implemented contract-roadmap Phase R8 on 2026-05-07:
   - treated the reported `The Boys` / `400p` autodownload as a qB enforcement-parity stabilization gate before any Phase 25 feature work;
@@ -1246,9 +1251,9 @@
 
 ## Next actions
 
-- Select the next post-`v1.1.3` backlog phase before starting new implementation; keep the R8 qB enforcement-parity diagnostics as a required gate for future qB rule-payload/feed-filtering changes.
+- Select the next post-`v1.1.3` backlog phase before starting new implementation; keep the R8 qB enforcement-parity diagnostics and the now-green browser closeout as required gates for future qB rule-payload/feed-filtering changes.
 - Preserve qB enforcement diagnostics and keep live qB remote readback in scope for future rule-payload/feed-filtering changes.
-- Contract roadmap Phases R1.5 through R8 and Phase 25 release closeout are complete; next roadmap work should come from the normal backlog, with the legacy `P4-01` browser closeout expectation either updated to the current Jackett/language-managed feed source or explicitly retired.
+- Contract roadmap Phases R1.5 through R8, Phase 25 release closeout, and the `P4-01` QA cleanup are complete; next roadmap work should come from the normal backlog after this cleanup is published.
 - Keep qBittorrent running before Docker closeout probes; after reboot it was not listening on `127.0.0.1:8080`, and the Docker backend could not complete qB sync until `C:\\Program Files\\qBittorrent\\qbittorrent.exe` was started.
 - Decide whether the keep-searching watched-progress search floor should also influence qB RSS rule generation later, or remain active-search-only while qB keeps using the stored progression floor.
 - Decide whether the next qB follow-up should fully remove manual affected-feed/indexer selection now that language-managed feed resolution is working against the real local Jackett/qB setup.

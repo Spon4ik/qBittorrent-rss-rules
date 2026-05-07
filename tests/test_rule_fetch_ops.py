@@ -180,3 +180,63 @@ def test_rule_local_filter_keeps_same_season_complete_pack_when_keep_searching_e
         )
         == 1
     )
+
+
+def test_refresh_snapshot_release_cache_records_hidden_reason_counts(db_session) -> None:
+    rule = Rule(
+        rule_name="Reason Count Rule",
+        content_name="Reason Count Rule",
+        normalized_title="Reason Count Rule",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        additional_includes="wanted",
+        must_not_contain="bad",
+        include_release_year=True,
+        release_year="2026",
+    )
+    db_session.add(rule)
+    db_session.flush()
+
+    snapshot = RuleSearchSnapshot(
+        rule_id=rule.id,
+        inline_search={
+            "combined_filtered_count": 4,
+            "combined_fetched_count": 4,
+            "unified_raw_results": [
+                {
+                    "title": "Reason Count Rule wanted 2026",
+                    "text_surface": "reason count rule wanted 2026",
+                    "year": "2026",
+                },
+                {
+                    "title": "Reason Count Rule 2026",
+                    "text_surface": "reason count rule 2026",
+                    "year": "2026",
+                },
+                {
+                    "title": "Reason Count Rule wanted bad 2026",
+                    "text_surface": "reason count rule wanted bad 2026",
+                    "year": "2026",
+                },
+                {
+                    "title": "Reason Count Rule wanted 2025",
+                    "text_surface": "reason count rule wanted 2025",
+                    "year": "2025",
+                },
+            ],
+        },
+        fetched_at=utcnow(),
+    )
+    db_session.add(snapshot)
+    db_session.commit()
+
+    assert refresh_snapshot_release_cache(snapshot, rule=rule) is True
+    db_session.commit()
+
+    assert snapshot.release_filtered_count == 1
+    assert snapshot.release_fetched_count == 4
+    assert snapshot.inline_search["rule_local_hidden_reasons"] == {
+        "Missing include keyword: wanted.": 1,
+        "Matched excluded keyword: bad.": 1,
+        "Release year does not match 2026.": 1,
+    }

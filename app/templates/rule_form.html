@@ -85,6 +85,31 @@
   {% endif %}
 </section>
 
+{% if mode == 'edit' and rule_sync_diagnostics %}
+<section class="summary-strip">
+  <div>
+    <p class="eyebrow">qB enforcement diagnostics</p>
+    {% if rule_sync_diagnostics.drift_message %}
+    <p class="rules-sync-error"><strong>Remote drift detected:</strong> {{ rule_sync_diagnostics.drift_message }}</p>
+    {% else %}
+    <p class="helper-text">Last synced qB payload is recorded after each successful rule sync.</p>
+    {% endif %}
+    {% if rule_sync_diagnostics.has_last_synced_payload %}
+    <details>
+      <summary>Last synced qB mustContain</summary>
+      <pre class="debug-json">{{ rule_sync_diagnostics.last_synced_must_contain }}</pre>
+    </details>
+    {% endif %}
+    {% if rule_sync_diagnostics.has_last_remote_payload %}
+    <details>
+      <summary>Last remote qB mustContain observed during drift check</summary>
+      <pre class="debug-json">{{ rule_sync_diagnostics.last_remote_must_contain }}</pre>
+    </details>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
 <div
   {% if mode == 'edit' and inline_search %}
   data-search-page
@@ -119,6 +144,29 @@
   <input type="hidden" name="quality_profile" value="{{ form_data.quality_profile }}" />
   <input type="hidden" name="quality_mode" value="{{ form_data.quality_mode }}" />
   <input type="hidden" name="poster_url" value="{{ form_data.poster_url }}" />
+  <section class="quality-mode-panel" data-quality-mode-panel="true">
+    <div>
+      <p class="eyebrow">Quality authority</p>
+      <strong data-quality-mode-label>
+        {% if form_data.quality_mode == "managed" %}
+        Managed profile
+        {% else %}
+        Manual snapshot
+        {% endif %}
+      </strong>
+      <p class="helper-text" data-quality-mode-description>
+        {% if form_data.quality_mode == "managed" %}
+        This rule follows the selected preset until you make it manual.
+        {% else %}
+        This rule keeps its saved include/exclude tokens until you choose a managed profile.
+        {% endif %}
+      </p>
+    </div>
+    <div class="button-row">
+      <button type="button" class="button-link muted" data-quality-mode-action="managed">Use managed profile</button>
+      <button type="button" class="button-link muted" data-quality-mode-action="manual">Make manual snapshot</button>
+    </div>
+  </section>
   <details class="rule-criteria-section" open>
     <summary class="rule-criteria-summary">
       <span class="eyebrow">Criteria</span>

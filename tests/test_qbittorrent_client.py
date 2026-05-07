@@ -38,6 +38,21 @@ def test_login_rejects_bad_credentials() -> None:
         client.login()
 
 
+def test_login_accepts_legacy_ok_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="Ok.")
+
+    transport = httpx.MockTransport(handler)
+    client = QbittorrentClient(
+        "http://127.0.0.1:8080",
+        "admin",
+        "adminadmin",
+        transport=transport,
+    )
+
+    client.login()
+
+
 def test_login_accepts_no_content_response_with_session_cookie() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(204, headers={"set-cookie": "SID=abc123; HttpOnly"})

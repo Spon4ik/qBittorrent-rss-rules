@@ -1,6 +1,6 @@
 # Test Strategy for Contract Protection
 
-Last updated: 2026-05-05
+Last updated: 2026-05-07
 
 ## 1) Unit tests
 
@@ -29,6 +29,7 @@ Last updated: 2026-05-05
 - Route save/search regressions in `tests/test_routes.py`.
 - Jackett payload/filter regressions in `tests/test_jackett.py`.
 - Snapshot and rule fetch regressions in `tests/test_rule_fetch_ops.py`.
+- qB enforcement parity regressions in `tests/test_rule_builder.py` and `tests/test_sync_service.py`.
 
 ## 5) Migration/default handling tests
 
@@ -53,12 +54,19 @@ Last updated: 2026-05-05
 - Rules linked to `At Least Full HD` and `Ultra HD HDR` retain linkage across taxonomy and preset edits.
 - Converted manual rules remain independent from future preset edits.
 
-## 9) Responsive/layout tests
+## 9) qB enforcement parity tests
+
+- Generated qB RSS patterns must reject releases excluded by effective local rule semantics, including runtime-taxonomy resolution additions such as `400p`.
+- Sync must persist the exact qB payload sent after successful rule sync.
+- Sync-all drift checks must record the stale remote qB payload before repairing qB from local rule semantics.
+- Edit-rule diagnostics must expose last synced qB payload and last observed remote drift payload so UI-visible rule state can be compared with qB enforcement state.
+
+## 10) Responsive/layout tests
 
 - Automated browser checks at narrow/medium/wide widths on `/`, `/rules/new`, `/settings`, `/taxonomy`, `/search`.
 - Assert no clipped primary actions and no unintended horizontal overflow.
 
-## 10) Suggested first tests to add
+## 11) Suggested first tests to add
 
 1. `test_rule_managed_mode_persists_after_taxonomy_add_value`.
 2. `test_rule_managed_mode_persists_after_preset_edit`.

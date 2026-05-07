@@ -84,6 +84,32 @@ In the current shared Compose stack, Jackett publishes port `9117` on the host w
 
 Windows host file paths saved in settings are also container-aware. The shared Compose service mounts `C:\Users` at `/host/C/Users` and `C:\ProgramData` at `/host/C/ProgramData`, and the backend translates paths such as `C:\Users\nucc\...` or `C:\ProgramData\Jellyfin\...` through `QB_RULES_WINDOWS_HOST_MOUNT_ROOT=/host`. This keeps Stremio local storage sync and Jellyfin DB sync working after moving the project into Docker.
 
+Docker validation checklist for this machine:
+
+1. Rebuild and start the shared backend service:
+
+   ```powershell
+   & 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' compose -f C:\Users\nucc\docker-config\docker-compose.yml up --build -d qb-rss-rules
+   ```
+
+2. Verify backend health:
+
+   ```powershell
+   Invoke-WebRequest http://127.0.0.1:8000/health
+   ```
+
+3. Verify qBittorrent connectivity from inside the running backend container:
+
+   ```powershell
+   & 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' exec qb-rss-rules python -c "from app.db import get_session_factory; from app.services.settings_service import SettingsService; from app.services.qbittorrent import QbittorrentClient; s=get_session_factory()(); settings=SettingsService.get_or_create(s); c=SettingsService.resolve_qb_connection(settings); QbittorrentClient(c.base_url, c.username, c.password).test_connection(); print('qb_test=ok')"
+   ```
+
+4. Verify Jackett reachability from inside the running backend container:
+
+   ```powershell
+   & 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' exec qb-rss-rules python -c "from app.db import get_session_factory; from app.services.settings_service import SettingsService; from app.services.jackett import JackettClient; s=get_session_factory()(); settings=SettingsService.get_or_create(s); j=SettingsService.resolve_jackett(settings); print('jackett_indexers=' + str(len(JackettClient(j.api_url or '', j.api_key or '', language_overrides=j.language_overrides).configured_indexer_options())))"
+   ```
+
 To build and run without compose:
 
 ```bash

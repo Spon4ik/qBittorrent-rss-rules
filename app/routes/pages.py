@@ -227,6 +227,11 @@ def _resolve_language_feed_urls(
             jackett.api_key,
             language_overrides=jackett.language_overrides,
         )
+        language_map = client.configured_indexer_languages()
+        if not language_map:
+            return _normalize_feed_url_list(selected_urls), (
+                "Language-based feed selection could not read Jackett indexer metadata."
+            )
         feed_map: dict[str, str] = {}
         for normalized_language in normalized_languages:
             feed_map.update(client.configured_indexer_feed_urls(language=normalized_language))
@@ -465,6 +470,22 @@ def _rule_to_form_data(rule: Rule) -> dict[str, object]:
         "notes": rule.notes,
         "remember_feed_defaults": True,
         "metadata_lookup_provider": default_metadata_lookup_provider(rule.media_type),
+    }
+
+
+def _rule_sync_diagnostics(rule: Rule) -> dict[str, object]:
+    last_synced_payload = dict(getattr(rule, "last_synced_rule_payload", {}) or {})
+    last_remote_payload = dict(getattr(rule, "last_remote_rule_payload", {}) or {})
+    drift_message = str(getattr(rule, "remote_rule_drift_message", "") or "")
+    return {
+        "last_synced_payload": last_synced_payload,
+        "last_remote_payload": last_remote_payload,
+        "drift_message": drift_message,
+        "drift_detected_at": getattr(rule, "remote_rule_drift_detected_at", None),
+        "has_last_synced_payload": bool(last_synced_payload),
+        "has_last_remote_payload": bool(last_remote_payload),
+        "last_synced_must_contain": str(last_synced_payload.get("mustContain", "") or ""),
+        "last_remote_must_contain": str(last_remote_payload.get("mustContain", "") or ""),
     }
 
 
@@ -1931,6 +1952,7 @@ def edit_rule(
                     getattr(settings, "default_first_last_piece_prio", True)
                 ),
             },
+            "rule_sync_diagnostics": _rule_sync_diagnostics(rule),
             "shell_layout": "wide",
             "content_layout": "wide",
         }

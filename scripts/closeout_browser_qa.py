@@ -19,6 +19,10 @@ from urllib.parse import parse_qs, quote, unquote_plus, urlparse
 from urllib.request import ProxyHandler, build_opener
 from xml.sax.saxutils import escape
 
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
 
 @dataclass(slots=True)
 class CheckResult:
@@ -1021,7 +1025,7 @@ def build_svg_data_url(label: str) -> str:
 
 def main() -> int:
     args = parse_args()
-    project_dir = Path(__file__).resolve().parent.parent
+    project_dir = PROJECT_DIR
     output_root = Path(args.output_dir)
     if not output_root.is_absolute():
         output_root = project_dir / output_root
@@ -1055,6 +1059,7 @@ def main() -> int:
         torrent_add_calls=[],
     )
     jackett_state = MockJackettState(request_count=0)
+    r4_layout_artifacts: list[str] = []
     p9_hover_artifacts: list[str] = []
     p9_hover_manifest_path: str | None = None
     p9_hover_video_path: str | None = None
@@ -1179,6 +1184,150 @@ def main() -> int:
                 return len(app_requests)
 
             phase7_context: dict[str, str] = {}
+
+            def check_phase_r4_responsive_layout_foundations() -> None:
+                nonlocal r4_layout_artifacts
+
+                route_specs = [
+                    ("/", "rules"),
+                    ("/rules/new", "new-rule"),
+                    ("/settings", "settings"),
+                    ("/taxonomy", "taxonomy"),
+                    ("/search", "search"),
+                ]
+                viewport_specs = [
+                    ("narrow", {"width": 390, "height": 844}),
+                    ("medium", {"width": 1180, "height": 900}),
+                    ("wide", {"width": 1720, "height": 1040}),
+                ]
+                screenshot_dir = run_dir / "r4-layout"
+                screenshot_dir.mkdir(parents=True, exist_ok=True)
+                failures: list[str] = []
+
+                for viewport_name, viewport in viewport_specs:
+                    layout_context = browser.new_context(viewport=viewport)
+                    layout_page = layout_context.new_page()
+                    try:
+                        for route_path, route_slug in route_specs:
+                            layout_page.goto(
+                                f"{app_base_url}{route_path}",
+                                wait_until="networkidle",
+                                timeout=args.timeout_ms,
+                            )
+                            layout_page.wait_for_selector(".page-shell", timeout=args.timeout_ms)
+                            metrics = layout_page.evaluate(
+                                """
+                                () => {
+                                  const viewportWidth = window.innerWidth;
+                                  const documentWidth = Math.max(
+                                    document.documentElement.scrollWidth,
+                                    document.body.scrollWidth
+                                  );
+                                  const clippedPrimaryActions = Array
+                                    .from(document.querySelectorAll(
+                                      '.site-header a, main > .panel-head .button-link, '
+                                      + 'main > .panel-head button, .rule-form-actions button, '
+                                      + '.search-form-submit button'
+                                    ))
+                                    .filter((el) => {
+                                      const style = window.getComputedStyle(el);
+                                      const rect = el.getBoundingClientRect();
+                                      if (
+                                        style.display === 'none'
+                                        || style.visibility === 'hidden'
+                                        || rect.width === 0
+                                        || rect.height === 0
+                                      ) {
+                                        return false;
+                                      }
+                                      if (el.closest('.table-wrap, .search-table-wrap')) {
+                                        return false;
+                                      }
+                                      return rect.left < -1 || rect.right > viewportWidth + 1;
+                                    })
+                                    .map((el) => {
+                                      const rect = el.getBoundingClientRect();
+                                      return {
+                                        text: (el.textContent || el.getAttribute('aria-label') || '').trim(),
+                                        left: Math.round(rect.left),
+                                        right: Math.round(rect.right),
+                                      };
+                                    });
+                                  return {
+                                    documentWidth,
+                                    overflow: documentWidth - viewportWidth,
+                                    clippedPrimaryActions,
+                                  };
+                                }
+                                """
+                            )
+                            screenshot_path = (
+                                screenshot_dir / f"{viewport_name}-{route_slug}.png"
+                            )
+                            layout_page.screenshot(path=str(screenshot_path), full_page=False)
+                            r4_layout_artifacts.append(relative_path(screenshot_path, project_dir))
+                            if float(metrics["overflow"]) > 1:
+                                failures.append(
+                                    f"{viewport_name} {route_path} horizontal overflow: "
+                                    f"document={metrics['documentWidth']} "
+                                    f"viewport={viewport['width']}"
+                                )
+                            if metrics["clippedPrimaryActions"]:
+                                failures.append(
+                                    f"{viewport_name} {route_path} clipped primary actions: "
+                                    f"{metrics['clippedPrimaryActions']}"
+                                )
+                    finally:
+                        layout_context.close()
+
+                _expect(not failures, "; ".join(failures[:8]))
+
+            def check_phase_r5_profile_matrix_interactions() -> None:
+                page.goto(
+                    f"{app_base_url}/settings",
+                    wait_until="networkidle",
+                    timeout=args.timeout_ms,
+                )
+                page.wait_for_selector(
+                    '[data-quality-profile-matrix="true"]',
+                    timeout=args.timeout_ms,
+                )
+                token_cell = page.locator(
+                    '[data-quality-profile-column="1080p"][data-quality-token="web_dl"]'
+                ).first
+                slider = token_cell.locator("[data-quality-token-slider-control]").first
+                include_input = token_cell.locator(
+                    'input[name="profile_1080p_include_tokens"]'
+                ).first
+                exclude_input = token_cell.locator(
+                    'input[name="profile_1080p_exclude_tokens"]'
+                ).first
+
+                slider.press("Home")
+                _expect(
+                    not include_input.is_checked() and not exclude_input.is_checked(),
+                    "Home should set the profile matrix cell to Off.",
+                )
+                slider.press("ArrowRight")
+                _expect(
+                    include_input.is_checked() and not exclude_input.is_checked(),
+                    "ArrowRight from Off should include the profile matrix token.",
+                )
+                slider.press("ArrowRight")
+                _expect(
+                    not include_input.is_checked() and exclude_input.is_checked(),
+                    "ArrowRight from Include should exclude the profile matrix token.",
+                )
+
+                page.click('button:has-text("Save Settings")')
+                page.wait_for_selector(".flash-success", timeout=args.timeout_ms)
+                saved_cell = page.locator(
+                    '[data-quality-profile-column="1080p"][data-quality-token="web_dl"]'
+                ).first
+                _expect(
+                    saved_cell.locator('input[name="profile_1080p_exclude_tokens"]').first.is_checked(),
+                    "Profile matrix exclude state should survive settings save/reload.",
+                )
 
             def wait_for_torrent_add_calls(expected_count: int) -> None:
                 timeout_at = time.monotonic() + (args.timeout_ms / 1000)
@@ -1404,6 +1553,21 @@ def main() -> int:
                     """
                 )
                 page.wait_for_timeout(260)
+
+            run_check(
+                "R4-01",
+                "Phase R4",
+                "Responsive shell has no page-level overflow or clipped primary actions",
+                check_phase_r4_responsive_layout_foundations,
+            )
+
+            run_check(
+                "R5-01",
+                "Phase R5",
+                "Settings preset matrix tri-state interactions save and reload",
+                check_phase_r5_profile_matrix_interactions,
+                page=page,
+            )
 
             run_check(
                 "P4-01",
@@ -2434,6 +2598,48 @@ def main() -> int:
                 "&quality_include_tokens=2160p&quality_include_tokens=hdr"
             )
 
+            def check_phase_r6_hidden_reason_summary() -> None:
+                page.goto(search_url, wait_until="networkidle", timeout=args.timeout_ms)
+                page.wait_for_selector(
+                    '[data-search-summary="combined"]', timeout=args.timeout_ms
+                )
+                page.wait_for_function(
+                    """
+                    () => {
+                      const node = document.querySelector('[data-search-hidden-summary="combined"]');
+                      return Boolean(
+                        node
+                        && !node.hidden
+                        && (node.textContent || '').includes('Top blockers:')
+                      );
+                    }
+                    """,
+                    timeout=args.timeout_ms,
+                )
+                summary_text = (
+                    page.text_content('[data-search-hidden-summary="combined"]') or ""
+                ).strip()
+                _expect(
+                    "Top blockers:" in summary_text,
+                    f"Expected hidden-row summary to include top blocker reasons; got {summary_text!r}.",
+                )
+                _expect(
+                    (
+                        "Missing required quality tags" in summary_text
+                        or "Release year does not match 2026" in summary_text
+                        or "Title does not match query" in summary_text
+                    ),
+                    f"Expected a recognizable hidden-row blocker reason; got {summary_text!r}.",
+                )
+
+            run_check(
+                "R6-01",
+                "Phase R6",
+                "Unified search hidden-row summary lists top blocker reasons",
+                check_phase_r6_hidden_reason_summary,
+                page=page,
+            )
+
             def check_phase6_controls() -> None:
                 page.goto(search_url, wait_until="networkidle", timeout=args.timeout_ms)
                 page.wait_for_selector("[data-search-controls]", timeout=args.timeout_ms)
@@ -3268,6 +3474,7 @@ def main() -> int:
             "run_dir": relative_path(run_dir, project_dir),
             "db": relative_path(db_path, project_dir),
             "uvicorn_log": relative_path(app_log_path, project_dir),
+            "r4_layout_screenshots": r4_layout_artifacts,
             "p9_hover_screenshots": p9_hover_artifacts,
             "p9_hover_manifest": p9_hover_manifest_path,
             "p9_hover_video": p9_hover_video_path,
@@ -3282,7 +3489,7 @@ def main() -> int:
     report_json_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     headline = (
-        f"# Phase 4/5/6/7/9 Browser Closeout QA ({run_stamp})\n\n"
+        f"# Phase R4/R5/R6/4/5/6/7/9 Browser Closeout QA ({run_stamp})\n\n"
         f"- Total checks: **{len(checks)}**\n"
         f"- Passed: **{passed}**\n"
         f"- Failed: **{len(failures)}**\n"
@@ -3292,6 +3499,11 @@ def main() -> int:
         f"- Jackett requests observed: **{jackett_state.request_count}**\n\n"
     )
     artifact_lines: list[str] = []
+    if r4_layout_artifacts:
+        artifact_lines.extend(["## R4 Responsive Layout Evidence", ""])
+        for screenshot_path in r4_layout_artifacts:
+            artifact_lines.append(f"- Screenshot: `{screenshot_path}`")
+        artifact_lines.append("")
     if p9_hover_artifacts or p9_hover_manifest_path or p9_hover_video_path:
         artifact_lines.extend(["## Hover Overlay Evidence", ""])
         if p9_hover_manifest_path:

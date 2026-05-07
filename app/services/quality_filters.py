@@ -600,6 +600,53 @@ def _quality_taxonomy_references(
     return references
 
 
+def _token_delta(
+    before_tokens: list[str],
+    after_tokens: list[str],
+) -> tuple[list[str], list[str]]:
+    before_set = set(before_tokens)
+    after_set = set(after_tokens)
+    added = [token for token in after_tokens if token not in before_set]
+    removed = [token for token in before_tokens if token not in after_set]
+    return added, removed
+
+
+def _managed_profile_changes_for_taxonomy(
+    candidate_taxonomy: dict[str, Any],
+) -> list[dict[str, object]]:
+    current_rules = dynamic_default_quality_profile_rules()
+    candidate_rules = _dynamic_default_quality_profile_rules_from_taxonomy(candidate_taxonomy)
+    changes: list[dict[str, object]] = []
+    for profile in (QualityProfile.HD_1080P, QualityProfile.UHD_2160P_HDR):
+        profile_key = profile.value
+        current_rule = current_rules.get(profile_key, {"include_tokens": [], "exclude_tokens": []})
+        candidate_rule = candidate_rules.get(
+            profile_key,
+            {"include_tokens": [], "exclude_tokens": []},
+        )
+        added_include, removed_include = _token_delta(
+            current_rule["include_tokens"],
+            candidate_rule["include_tokens"],
+        )
+        added_exclude, removed_exclude = _token_delta(
+            current_rule["exclude_tokens"],
+            candidate_rule["exclude_tokens"],
+        )
+        if not (added_include or removed_include or added_exclude or removed_exclude):
+            continue
+        changes.append(
+            {
+                "profile_key": profile_key,
+                "profile_label": quality_profile_label(profile),
+                "added_include_tokens": added_include,
+                "removed_include_tokens": removed_include,
+                "added_exclude_tokens": added_exclude,
+                "removed_exclude_tokens": removed_exclude,
+            }
+        )
+    return changes
+
+
 def preview_quality_taxonomy_update(
     raw_payload: str,
     *,
@@ -650,6 +697,7 @@ def preview_quality_taxonomy_update(
         "summary": _quality_taxonomy_summary(validated),
         "added_tokens": added_tokens,
         "removed_tokens": removed_tokens,
+        "managed_profile_changes": _managed_profile_changes_for_taxonomy(validated),
         "existing_invalid_references": existing_invalid_references,
         "blocking_references": blocking_references,
         "safe_to_apply": not blocking_references,
@@ -979,15 +1027,23 @@ DEFAULT_QUALITY_PROFILE_RULES: dict[str, dict[str, list[str]]] = {
     QualityProfile.CUSTOM.value: {"include_tokens": [], "exclude_tokens": []},
 }
 
-def _rank_tokens(rank_key: str) -> list[str]:
-    for rank in cast(tuple[dict[str, object], ...], _load_quality_taxonomy()["ranks"]):
+def _rank_tokens_from_taxonomy(taxonomy: dict[str, Any], rank_key: str) -> list[str]:
+    for rank in cast(tuple[dict[str, object], ...], taxonomy["ranks"]):
         if str(rank.get("key", "")) == rank_key:
             return _coerce_token_values(rank.get("tokens"))
     return []
 
 
-def _tokens_below_rank_value(rank_key: str, threshold_token: str) -> list[str]:
-    tokens = _rank_tokens(rank_key)
+def _rank_tokens(rank_key: str) -> list[str]:
+    return _rank_tokens_from_taxonomy(_load_quality_taxonomy(), rank_key)
+
+
+def _tokens_below_rank_value_from_taxonomy(
+    taxonomy: dict[str, Any],
+    rank_key: str,
+    threshold_token: str,
+) -> list[str]:
+    tokens = _rank_tokens_from_taxonomy(taxonomy, rank_key)
     try:
         threshold_index = tokens.index(threshold_token)
     except ValueError:
@@ -995,8 +1051,20 @@ def _tokens_below_rank_value(rank_key: str, threshold_token: str) -> list[str]:
     return tokens[:threshold_index]
 
 
-def _tokens_at_or_above_rank_value(rank_key: str, threshold_token: str) -> list[str]:
-    tokens = _rank_tokens(rank_key)
+def _tokens_below_rank_value(rank_key: str, threshold_token: str) -> list[str]:
+    return _tokens_below_rank_value_from_taxonomy(
+        _load_quality_taxonomy(),
+        rank_key,
+        threshold_token,
+    )
+
+
+def _tokens_at_or_above_rank_value_from_taxonomy(
+    taxonomy: dict[str, Any],
+    rank_key: str,
+    threshold_token: str,
+) -> list[str]:
+    tokens = _rank_tokens_from_taxonomy(taxonomy, rank_key)
     try:
         threshold_index = tokens.index(threshold_token)
     except ValueError:
@@ -1004,11 +1072,37 @@ def _tokens_at_or_above_rank_value(rank_key: str, threshold_token: str) -> list[
     return tokens[threshold_index:]
 
 
-def dynamic_default_quality_profile_rules() -> dict[str, dict[str, list[str]]]:
-    hd_resolution_tokens = _tokens_at_or_above_rank_value("resolution", "hd")
-    uhd_resolution_tokens = _tokens_at_or_above_rank_value("resolution", "ultra_hd")
-    below_hd_resolution_tokens = _tokens_below_rank_value("resolution", "hd")
-    below_uhd_resolution_tokens = _tokens_below_rank_value("resolution", "ultra_hd")
+def _tokens_at_or_above_rank_value(rank_key: str, threshold_token: str) -> list[str]:
+    return _tokens_at_or_above_rank_value_from_taxonomy(
+        _load_quality_taxonomy(),
+        rank_key,
+        threshold_token,
+    )
+
+
+def _dynamic_default_quality_profile_rules_from_taxonomy(
+    taxonomy: dict[str, Any],
+) -> dict[str, dict[str, list[str]]]:
+    hd_resolution_tokens = _tokens_at_or_above_rank_value_from_taxonomy(
+        taxonomy,
+        "resolution",
+        "hd",
+    )
+    uhd_resolution_tokens = _tokens_at_or_above_rank_value_from_taxonomy(
+        taxonomy,
+        "resolution",
+        "ultra_hd",
+    )
+    below_hd_resolution_tokens = _tokens_below_rank_value_from_taxonomy(
+        taxonomy,
+        "resolution",
+        "hd",
+    )
+    below_uhd_resolution_tokens = _tokens_below_rank_value_from_taxonomy(
+        taxonomy,
+        "resolution",
+        "ultra_hd",
+    )
 
     return {
         QualityProfile.PLAIN.value: {"include_tokens": [], "exclude_tokens": []},
@@ -1026,6 +1120,10 @@ def dynamic_default_quality_profile_rules() -> dict[str, dict[str, list[str]]]:
         },
         QualityProfile.CUSTOM.value: {"include_tokens": [], "exclude_tokens": []},
     }
+
+
+def dynamic_default_quality_profile_rules() -> dict[str, dict[str, list[str]]]:
+    return _dynamic_default_quality_profile_rules_from_taxonomy(_load_quality_taxonomy())
 
 
 def at_least_uhd_profile_tokens() -> dict[str, list[str]]:

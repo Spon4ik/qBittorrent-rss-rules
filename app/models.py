@@ -150,8 +150,25 @@ class Rule(Base):
     assigned_category: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     save_path: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     feed_urls: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    feed_resolution_status: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    feed_resolution_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     remote_rule_name_last_synced: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_synced_rule_payload: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
+    last_remote_rule_payload: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
+    remote_rule_drift_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    remote_rule_drift_detected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     last_sync_status: Mapped[SyncStatus] = mapped_column(
         Enum(SyncStatus, name="sync_status"),
         nullable=False,

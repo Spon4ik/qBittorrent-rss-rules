@@ -99,6 +99,12 @@ def _ensure_rule_columns() -> None:
         "stremio_auto_disabled": "BOOLEAN NOT NULL DEFAULT 0",
         "poster_url": "VARCHAR(512)",
         "language": "VARCHAR(32) NOT NULL DEFAULT ''",
+        "feed_resolution_status": "VARCHAR(32) NOT NULL DEFAULT ''",
+        "feed_resolution_message": "TEXT NOT NULL DEFAULT ''",
+        "last_synced_rule_payload": "JSON NOT NULL DEFAULT '{}'",
+        "last_remote_rule_payload": "JSON NOT NULL DEFAULT '{}'",
+        "remote_rule_drift_message": "TEXT NOT NULL DEFAULT ''",
+        "remote_rule_drift_detected_at": "DATETIME",
     }
     expected_settings_columns = {
         "jackett_api_url": "VARCHAR(255)",

@@ -2,7 +2,8 @@
 
 ## Current focus
 
-- Phase 25 is now active for the repo boundary split: qBittorrent RSS Rules is removing the native Stremio addon host/queue/provider surface and keeping only Stremio library/watch-progress synchronization now that addon ownership moved to `jackett-stremio-fork`.
+- Phase R8 is now completed as the pre-feature qB rule enforcement-parity stabilization gate; Phase 25 feature work remains paused/not started in this package until the contract-roadmap branch is reviewed.
+- Current packaging rule: after each phase, inspect newly discovered facts, adjust later roadmap scope/tests when needed, and continue through validation, commit, push, and GitHub handoff without stopping for routine reruns or environment recovery.
 - Phase 23 is now closed and release-validated in `v0.9.0` as the Stremio cross-addon aggregation slice, merging qB RSS and Torrentio-compatible provider rows into one locally owned addon response with global ordering, persisted provider configuration, and real desktop proof.
 - Phase 24 remains closed and release-validated in `v0.8.3` as the hotfix slice for Stremio long-running series episode lookups that disappear because the addon applies the original series year as a hard search filter.
 - Phase 22 is now closed and release-validated in `v0.8.2` as the Stremio variant-parity follow-up, keeping the broader qB RSS variant set, sorting it by quality then seeds, and upgrading exact locally available variants in-place instead of suppressing the rest of the addon rows.
@@ -23,6 +24,73 @@
 
 ## Implemented
 
+
+- Implemented contract-roadmap Phase R8 on 2026-05-07:
+  - treated the reported `The Boys` / `400p` autodownload as a qB enforcement-parity stabilization gate before any Phase 25 feature work;
+  - confirmed local effective rule semantics already excluded `400p` and generated qB `mustContain` already included the `400p` negative match, shifting the durable fix to qB payload/drift evidence rather than changing taxonomy semantics;
+  - added additive rule diagnostics fields for the last app-synced qB RSS payload, last observed remote qB RSS payload, remote drift message, and drift timestamp;
+  - `SyncService.sync_rule` now records the exact qB RSS payload sent to qB, while `sync_all` records stale remote payload evidence before repairing drift and compares only app-managed qB keys after applying the same Jackett feed-health filtering as sync;
+  - edit-rule pages now expose qB enforcement diagnostics so visible rule semantics can be compared with the last synced and last observed remote qB `mustContain` payloads;
+  - validation evidence: `tests/test_rule_builder.py tests/test_sync_service.py tests/test_quality_filters.py` passed, `tests/test_routes.py` passed, Ruff passed for touched Python files, shared Docker Compose rebuild passed, Docker `/health` reports `app_version=1.1.2`, inside-container qB login reports `qb_test=ok`, inside-container Jackett discovery reports `jackett_indexers=18`, and live qB readback for rule `584372ae-1d88-4c01-be8d-4b43b9fc822c` reports effective exclusions include `400p`, generated qB `mustContain` includes `400p`, remote qB `mustContain` includes `400p`, and app-managed remote fields match after health filtering.
+
+- Implemented the continuous phase-to-release workflow on 2026-05-07:
+  - documented that after each phase the agent must inspect newly discovered implementation/QA facts, adjust later roadmap scope/tests when needed, and keep moving through validation, packaging, commit, push, and GitHub handoff without stopping for routine reruns or environment recovery;
+  - added the loop to `AGENTS.md` and `docs/plans/refactoring-roadmap.md`, with post-R8 packaging/release handoff criteria before Phase 25 can resume;
+  - final package validation evidence before commit/push: `tests/test_quality_filters.py tests/test_routes.py` passed, `tests/test_settings_service.py tests/test_qbittorrent_client.py` passed, `tests/test_rule_fetch_ops.py tests/test_selective_queue.py tests/test_static_assets.py` passed, `tests/test_rule_builder.py tests/test_sync_service.py` passed, `node --check app/static/app.js` passed, Ruff passed for touched Python files, `py_compile scripts/closeout_browser_qa.py` passed, `git diff --check` passed, browser closeout report `logs/qa/phase-closeout-20260507T063010Z/closeout-report.md` passed 22/23 checks with only the accepted legacy `P4-01` feed-checkbox failure, shared Docker Compose rebuild passed, Docker `/health` reports `app_version=1.1.2`, inside-container qB login reports `qb_test=ok`, inside-container Jackett discovery reports `jackett_indexers=18`, and live qB readback for rule `584372ae-1d88-4c01-be8d-4b43b9fc822c` still shows `400p` parity between effective exclusions, generated qB payload, and remote qB payload.
+  - GitHub handoff: committed `Complete contract roadmap R1.5-R8 guardrails and qB parity`, pushed branch `codex/package-contract-roadmap-r1-5-r7`, and opened draft PR `https://github.com/Spon4ik/qBittorrent-rss-rules/pull/9`.
+
+- Packaged contract-roadmap Phases R1.5-R7 for review on 2026-05-07:
+  - isolated the worktree on branch `codex/package-contract-roadmap-r1-5-r7`;
+  - reviewed the diff by subsystem and found it scoped to the completed R1.5-R7 guardrails, UX, diagnostics, cleanup, documentation, and test/QA changes;
+  - confirmed Phase 25 implementation work has not started in this package;
+  - final verification evidence: `tests/test_quality_filters.py tests/test_routes.py` passed, `tests/test_settings_service.py tests/test_qbittorrent_client.py` passed, `tests/test_rule_fetch_ops.py tests/test_selective_queue.py tests/test_static_assets.py` passed, `node --check app/static/app.js` passed, Ruff and `py_compile` passed for touched Python/QA files, browser closeout report `logs/qa/phase-closeout-20260507T053338Z/closeout-report.md` passed `R4-01`, `R5-01`, `R6-01`, and `P23-01` with only the accepted legacy `P4-01` feed-checkbox failure, shared Docker Compose rebuild passed, Docker `/health` reports `app_version=1.1.2`, inside-container qB login reports `qb_test=ok`, and inside-container Jackett discovery reports `jackett_indexers=12`.
+
+- Implemented contract-roadmap Phase R7 on 2026-05-06:
+  - pruned dead private rule-snapshot filter helpers that were superseded by the R6 filter-diagnostics path;
+  - kept the cleanup behavior-neutral: no public API contracts, routes, templates, static behavior, or persisted data semantics changed;
+  - validation evidence: no references remain to the removed helpers; `tests/test_rule_fetch_ops.py tests/test_routes.py tests/test_selective_queue.py` passed; Ruff passed for the touched cleanup slice; shared Docker Compose rebuild succeeded, Docker `/health` reports `app_version=1.1.2`, inside-container qB login reports `qb_test=ok`, and inside-container Jackett discovery reports `jackett_indexers=12`.
+
+- Implemented contract-roadmap Phase R6 on 2026-05-06:
+  - queueing a stale rule snapshot result now refreshes against refreshed primary, fallback, raw-primary, and raw-fallback rows before retrying, so fallback-only rows can recover fresh Jackett download links;
+  - rule snapshot refresh now records `rule_local_hidden_reasons` with first-blocker counts alongside the existing filtered/fetched cache metadata, keeping persisted snapshot diagnostics aligned with server-side rule-local filtering;
+  - the unified search hidden-row summary now includes the top blocker reasons before the user expands hidden rows;
+  - browser closeout QA now includes `R6-01`, proving rendered unified search summaries list hidden-row blocker reasons;
+  - validation evidence: the focused R6 tests failed before implementation and passed after it; `tests/test_routes.py tests/test_rule_fetch_ops.py tests/test_selective_queue.py` passed; `node --check app/static/app.js`, Ruff, and `py_compile` passed for touched files; browser closeout report `logs/qa/phase-closeout-20260506T201033Z/closeout-report.md` has `R4-01`, `R5-01`, `R6-01`, and `P23-01` passing while the full command still exits nonzero only because legacy `P4-01` expects the old feed-checkbox source; shared Docker Compose rebuild succeeded, Docker `/health` reports `app_version=1.1.2`, inside-container qB login reports `qb_test=ok`, and inside-container Jackett discovery reports `jackett_indexers=12`.
+
+- Implemented contract-roadmap Phase R5 on 2026-05-06:
+  - replaced the tall settings profile token editor with a compact profile-by-token matrix using the existing tri-state controls and the same persisted hidden field names;
+  - added explicit rule-form quality authority controls that show whether a rule is managed by a built-in profile or stored as a manual snapshot, with deliberate managed/manual conversion actions;
+  - wired the settings matrix and rule-form mode actions in the existing JavaScript path without changing preset keys, route names, or backend token semantics;
+  - extended browser closeout QA with `R5-01`, which exercises a matrix tri-state Include/Exclude change, saves settings, and verifies the saved state survives reload;
+  - validation evidence: the focused R5 route/UI tests failed before implementation and passed after it; the broader settings/quality route slice passed; `tests/test_routes.py tests/test_static_assets.py` passed; `node --check app/static/app.js`, Ruff, and `py_compile` passed for touched files; browser closeout report `logs/qa/phase-closeout-20260506T195945Z/closeout-report.md` has `R4-01`, `R5-01`, and `P23-01` passing while the full command still exits nonzero only because legacy `P4-01` expects the old feed-checkbox source; shared Docker Compose rebuild succeeded, Docker `/health` reports `app_version=1.1.2`, inside-container qB login reports `qb_test=ok`, inside-container Jackett discovery reports `jackett_indexers=12`, and the in-app browser loaded Docker `/health` with no warning/error logs.
+
+- Implemented contract-roadmap Phase R4 on 2026-05-06:
+  - added global shell/layout CSS tokens for page gutters, normal/wide shell max widths, content padding, density gaps, and shared control height;
+  - consolidated the responsive foundation around the contract breakpoints, with narrow layout behavior at `900px` and medium density tuning for `901px` to `1400px`;
+  - added small reusable layout/density utility classes without changing navigation structure or page templates;
+  - fixed the rules table wrapper so wide operational tables scroll inside the content surface instead of forcing page-level horizontal overflow;
+  - extended deterministic browser closeout QA with `R4-01`, which captures `/`, `/rules/new`, `/settings`, `/taxonomy`, and `/search` at narrow `390px`, medium `1180px`, and wide `1720px` viewports and asserts no page-level horizontal overflow or clipped primary actions;
+  - validation evidence: the new CSS contract test failed before the token implementation and passed after it; `tests/test_routes.py tests/test_static_assets.py` passed; Ruff and `py_compile` passed for the touched QA/static-test Python files; browser closeout report `logs/qa/phase-closeout-20260506T194654Z/closeout-report.md` has `R4-01` passing with 15 layout screenshots, while the full legacy closeout command still exits nonzero because pre-existing `P4-01` feed-checkbox expectations no longer match the current Jackett/language-managed feed source; shared Docker Compose rebuild succeeded, Docker `/health` reports `app_version=1.1.2`, inside-container qB login reports `qb_test=ok`, inside-container Jackett discovery reports `jackett_indexers=12`, and the in-app browser loaded Docker `/health` with no warning/error logs.
+
+- Implemented contract-roadmap Phase R1.5 on 2026-05-06:
+  - added explicit qB settings precedence tests proving empty Docker-style `QB_RULES_QB_*` values fall back to saved DB settings while non-empty env values remain authoritative overrides;
+  - made qB WebUI auth coverage explicit for both legacy `Ok.` login responses and qB `v5.2.0` `204 No Content` responses that set a session cookie;
+  - isolated the seed-order quality taxonomy assertion from machine-local runtime taxonomy additions by running that ordering check against a temp copy of the packaged seed taxonomy;
+  - documented a repeatable Docker validation checklist covering shared Compose rebuild, `/health`, qB login from inside the container, and Jackett reachability from inside the container;
+  - validation evidence: focused new qB precedence tests passed, focused qB auth compatibility tests passed, `tests/test_quality_filters.py tests/test_routes.py` passed in a clean local process, Ruff passed for touched Python files, shared Docker Compose rebuild succeeded, Docker `/health` reports `app_version=1.1.2`, inside-container qB login reports `qb_test=ok`, and inside-container Jackett discovery reports `jackett_indexers=12`.
+
+- Implemented contract-roadmap Phase R2 on 2026-05-06:
+  - added pure taxonomy-preview diagnostics for rank-derived managed profile changes, so a draft that changes resolution ranks reports which managed presets would add/remove include or exclude tokens before apply;
+  - surfaced those managed preset impacts on the taxonomy draft preview page;
+  - added explicit contract tests proving managed rules inherit preset edits while manual rules keep their saved token snapshots;
+  - kept taxonomy runtime persistence behavior unchanged and avoided editing the user's live `data/quality_taxonomy.json`;
+  - validation evidence: new R2 focused service/route tests passed, `tests/test_quality_filters.py tests/test_routes.py` passed, `tests/test_settings_service.py tests/test_qbittorrent_client.py` passed, Ruff passed for touched Python files, shared Docker Compose rebuild succeeded, Docker `/health` reports `app_version=1.1.2`, inside-container qB login reports `qb_test=ok`, and inside-container Jackett discovery reports `jackett_indexers=12`.
+
+- Implemented contract-roadmap Phase R3 on 2026-05-06:
+  - added additive rule feed-resolution status fields so semantic language intent can be saved separately from transient operational feed resolution;
+  - rule create/update now treats unavailable Jackett language metadata as a non-blocking resolution status while still blocking real no-matching-language cases when metadata is available;
+  - existing language-managed rules keep their saved operational feed URLs when metadata is temporarily unavailable, while new/changed language saves preserve semantic language intent with an empty resolved feed list and an unavailable status message;
+  - validation evidence: focused offline language-save tests passed, no-matching-language regression stayed green, `tests/test_routes.py tests/test_sync_service.py tests/test_rule_builder.py` passed, Ruff passed for touched route/model/db/sync/rule-builder test slices, shared Docker Compose rebuild succeeded, Docker `/health` reports `app_version=1.1.2`, inside-container qB login reports `qb_test=ok`, and inside-container Jackett discovery reports `jackett_indexers=12`.
 
 - Implemented contract-roadmap Phase R1 on 2026-05-05:
   - added explicit managed/manual quality-mode authority with a nullable legacy-compatible `Rule.quality_mode` column;
@@ -1170,6 +1238,9 @@
 
 ## Next actions
 
+- Package R1.5-R8 for GitHub review/release readiness: rerun final focused validation, rerun browser closeout because UI/JS/CSS/QA files changed, accept only known legacy `P4-01` if no new failures appear, commit `Complete contract roadmap R1.5-R8 guardrails and qB parity`, push the branch, and open a draft PR/release handoff.
+- Before Phase 25 resumes, perform the documented post-R8 discovery review: preserve qB enforcement diagnostics and keep live qB remote readback in scope for future rule-payload/feed-filtering changes.
+- Contract roadmap Phases R1.5 through R7 are complete; next work should come from the normal backlog, with the legacy `P4-01` browser closeout expectation either updated to the current Jackett/language-managed feed source or explicitly retired.
 - Keep qBittorrent running before Docker closeout probes; after reboot it was not listening on `127.0.0.1:8080`, and the Docker backend could not complete qB sync until `C:\\Program Files\\qBittorrent\\qbittorrent.exe` was started.
 - Decide whether the keep-searching watched-progress search floor should also influence qB RSS rule generation later, or remain active-search-only while qB keeps using the stored progression floor.
 - Decide whether the next qB follow-up should fully remove manual affected-feed/indexer selection now that language-managed feed resolution is working against the real local Jackett/qB setup.

@@ -20,6 +20,20 @@ class SyncServiceError(RuntimeError):
     pass
 
 
+def _remote_rule_drift_message(rule_name: str) -> str:
+    return (
+        f"Remote qB RSS rule differed from the app-generated payload for {rule_name}; "
+        "the next sync rewrites qB from local rule semantics."
+    )
+
+
+def _remote_rule_matches_expected(
+    remote_rule: dict[str, object],
+    expected_rule: dict[str, object],
+) -> bool:
+    return all(remote_rule.get(key) == value for key, value in expected_rule.items())
+
+
 @dataclass(slots=True)
 class SyncService:
     session: Session
@@ -69,6 +83,7 @@ class SyncService:
             )
 
         rule.remote_rule_name_last_synced = rule.rule_name
+        rule.last_synced_rule_payload = qb_rule
         rule.last_sync_status = SyncStatus.OK
         rule.last_sync_error = None
         rule.last_synced_at = utcnow()
@@ -95,8 +110,21 @@ class SyncService:
         for rule in rules:
             if remote_rules is not None and rule.rule_name in remote_rules:
                 expected = RuleBuilder(self.app_settings).build_qb_rule(rule)
-                if remote_rules[rule.rule_name] != expected:
+                expected, _feed_warnings = self._filter_unhealthy_jackett_feeds(expected)
+                remote_rule = remote_rules[rule.rule_name]
+                if not _remote_rule_matches_expected(remote_rule, expected):
                     result.drift_detected += 1
+                    rule.last_remote_rule_payload = remote_rule
+                    rule.remote_rule_drift_message = _remote_rule_drift_message(rule.rule_name)
+                    rule.remote_rule_drift_detected_at = utcnow()
+                    rule.last_sync_status = SyncStatus.DRIFT
+                    rule.last_sync_error = rule.remote_rule_drift_message
+                    self.session.flush()
+                elif rule.remote_rule_drift_message:
+                    rule.remote_rule_drift_message = ""
+                    rule.remote_rule_drift_detected_at = None
+                    rule.last_remote_rule_payload = {}
+                    self.session.flush()
             sync_result = self.sync_rule(rule.id, reconcile_feeds=False)
             if sync_result.success:
                 result.success_count += 1

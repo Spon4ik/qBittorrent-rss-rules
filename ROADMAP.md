@@ -1,10 +1,10 @@
 # Roadmap
 
-## Current release target: v1.1.4 structured Jackett audio search scope
+## Current release target: post-v1.1.4 backlog selection
 
 ### In progress
 
-- Phase 26 is implemented locally as the `v1.1.4` patch slice: structured Jackett music/audiobook direct searches now respect explicit indexer scope before later cleanup considers larger search-form or metadata-field work.
+- Phase 26 is published as the `v1.1.4` patch slice: structured Jackett music/audiobook direct searches now respect explicit indexer scope before later cleanup considers larger search-form or metadata-field work.
 - Phase 25 is now closed and published in `v1.1.3`: qBittorrent RSS Rules no longer hosts the native Stremio addon surface and keeps only Stremio library/watch-progress synchronization, because addon hosting moved to `jackett-stremio-fork`.
 - The `v1.1.3` release published the post-`v1.1.2` contract-roadmap guardrails and qB enforcement-parity diagnostics after the existing `v1.1.2` taxonomy/profile tag.
 - Phase 23 is now closed and release-validated in `v0.9.0` as the Stremio cross-addon aggregation slice, including persisted provider manifests, live Torrentio-compatible provider ingestion inside the local addon, exact-first desktop/result-contract precursors, and real desktop smoke proof for merged provider ordering.
@@ -21,7 +21,7 @@
 
 ### Current phase track
 
-- Phase 26: structured Jackett audio search scope (validated locally, release publication in progress; `docs/plans/phase-26-structured-jackett-audio-search.md`)
+- Phase 26: structured Jackett audio search scope (published in `v1.1.4`; `docs/plans/phase-26-structured-jackett-audio-search.md`)
 - Phase 25: native Stremio addon removal and sync retention (published in `v1.1.3`; `docs/plans/phase-25-stremio-addon-removal-and-sync-retention.md`)
 - Phase 24: Stremio long-running series year hotfix (implemented and release-validated in `v0.8.3`; `docs/plans/phase-24-stremio-long-running-series-year-hotfix.md`)
 - Phase 23: global cross-addon stream ordering (implemented and release-validated in `v0.9.0`; `docs/plans/phase-23-global-cross-addon-stream-ordering.md`)

@@ -35,5 +35,7 @@ Tighten the structured Jackett music/audiobook search path so native Torznab `mu
 ## Closeout
 
 - Implementation: `JackettClient._search_structured_media_first` now filters configured native-mode indexers through the same explicit `indexer` / `filter_indexers` scope used by standard search before issuing direct structured requests.
-- Versioning: prepared as patch release `v1.1.4`.
+- Versioning: published as patch release `v1.1.4`.
 - Validation evidence: scoped structured regressions passed before the broader gate; `tests/test_jackett.py tests/test_routes.py` passed; Ruff passed for touched Python files; `git diff --check` passed; `cmd.exe /c scripts\check.bat` passed with `372 passed`; shared Docker Compose rebuild passed and `/health` reports `app_version=1.1.4`; inside-container qB login reports `qb_test=ok`; inside-container Jackett discovery reports `jackett_indexers=12`; `cmd.exe /c scripts\run_dev.bat desktop-build` passed with `0 Warning(s)` and `0 Error(s)`; browser closeout report `logs/qa/phase-closeout-20260507T151814Z/closeout-report.md` passed all checks.
+- GitHub release: `https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.1.4`.
+- Discovery review: the fanout bug class is now covered for structured music/book direct probes. The next audio-search cleanup, if selected, should expose/populate structured fields intentionally rather than infer them implicitly in the service layer.

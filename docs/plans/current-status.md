@@ -2,6 +2,7 @@
 
 ## Current focus
 
+- Phase 30 is implemented and locally/Docker validated as the post-Phase 29 IMDb-backed Jackett precision hardening slice (`docs/plans/phase-30-imdb-backed-jackett-precision.md`): IMDb-backed movie/series rows now use one shared identity classifier across Jackett filtering and saved snapshot replay, broad token-only fallback rows such as `They Will Kill You` for `You` stay hidden/debug-only, and generic capability warnings explain when selected Jackett indexers cannot remotely enforce IMDb.
 - Phase 29 is implemented and locally validated as the post-`v1.1.6` rules operations workbench (`docs/plans/phase-29-rules-operations-workbench.md`): fast local rule saves with background qB sync, batch quality assignment/filtering, backend release signal, missing/oldest-first bounded parallel snapshot fetch, compact data-grid UI, icon row actions, version visibility, and optimized snapshot-summary rendering.
 - Phase 28 is published as `v1.1.6`, the post-`v1.1.5` rule/search scope-authority stabilization slice.
 - Phase R8 is completed and merged as the pre-feature qB rule enforcement-parity stabilization gate; Phase 25 release closeout is published as `v1.1.3`, the legacy `P4-01` browser expectation has been retired, Phase 26 is published as the `v1.1.4` structured Jackett audio-search scope patch, and Phase 27 is published as the `v1.1.5` structured audio search fields patch.
@@ -26,6 +27,15 @@
 - The retained desktop direction remains the WinUI WebView-shell + companion-process lifecycle baseline introduced in `v0.6.0`.
 
 ## Implemented
+
+- Implemented Phase 30 IMDb-backed Jackett precision hardening on 2026-05-09:
+  - persisted the phase plan at `docs/plans/phase-30-imdb-backed-jackett-precision.md` before code changes;
+  - added a shared IMDb/title identity classifier in `app/services/jackett.py` with `imdb_exact`, `title_exact`, `title_broad`, `imdb_mismatch`, and `no_match` outcomes;
+  - wired Jackett primary/fallback filtering so IMDb-backed movie/series searches only keep visible rows with matching IMDb ID or strict title identity, while broad fallback rows remain in raw/hidden diagnostics;
+  - reused the same classifier in `app/services/rule_fetch_ops.py` so saved snapshots, edit-page replay, and release-count cache refresh agree on what is visible/countable;
+  - added generic selected-indexer capability warnings when configured Jackett caps do not advertise IMDb-enforced search, without special-casing a tracker;
+  - added regressions for `You`, `Ghosts`, conflicting IMDb IDs, exact-title no-IMDb fallback rows, saved-snapshot replay, and rule release-count filtering;
+  - validation evidence: focused Phase 30 regressions passed, `tests/test_jackett.py tests/test_rule_fetch_ops.py tests/test_routes.py` passed, `cmd.exe /c scripts\check.bat` passed (`392 passed`, `276 warnings`), shared Docker Compose rebuild passed, Docker `/health` reports `status=ok` and `app_version=1.1.6`, and the `qb-rss-rules` container is `healthy`.
 
 - Implemented the main Phase 29 workbench slice on 2026-05-08:
   - rule create/update now saves locally, marks rules pending, redirects immediately, and enqueues background qB sync instead of blocking on qB;
@@ -1288,6 +1298,8 @@
 
 ## Next actions
 
+- Track Phase 30 exactness follow-ups separately from the immediate strict-filter fix: upstream/custom Jackett definition improvements where trackers expose IMDb links but do not advertise/return `imdbid`, plus a later disabled-by-default detail-page enrichment fallback with a per-indexer allowlist, bounded top-N candidates, short timeout/cache, and promotion only after confirming the requested IMDb ID.
+- Keep the new Phase 30 regressions in the focused Jackett/rule-fetch/routes slice whenever IMDb-backed fallback visibility, saved snapshot replay, or rules-grid release counts change.
 - Perform the next discovery review before selecting the next backlog phase. Phase 28 exposed and closed the second scope bridge in rule snapshot fetches; the remaining likely candidates are manual affected-feed UX cleanup, richer structured audio metadata population, or the planned large-file split queue.
 - Preserve qB enforcement diagnostics and keep live qB remote readback in scope for future rule-payload/feed-filtering changes.
 - Contract roadmap Phases R1.5 through R8, Phase 25 release closeout, and the `P4-01` QA cleanup are complete; next roadmap work should come from the normal backlog after this cleanup is published.

@@ -469,3 +469,59 @@ def test_refresh_snapshot_release_cache_requires_rule_title_identity(db_session)
     assert snapshot.inline_search["rule_local_hidden_reasons"] == {
         'Title does not match query "Rule Identity Count".': 1
     }
+
+
+def test_refresh_snapshot_release_cache_rejects_broad_imdb_backed_fallback_rows(
+    db_session,
+) -> None:
+    rule = Rule(
+        rule_name="You",
+        content_name="You",
+        normalized_title="You",
+        imdb_id="tt7335184",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.CUSTOM,
+        quality_include_tokens=["hdr"],
+        quality_exclude_tokens=[],
+        feed_urls=[
+            "https://jackett.test/api/v2.0/indexers/titleonly/results/torznab/api"
+        ],
+    )
+    db_session.add(rule)
+    db_session.flush()
+
+    snapshot = RuleSearchSnapshot(
+        rule_id=rule.id,
+        inline_search={
+            "combined_filtered_count": 2,
+            "combined_fetched_count": 2,
+            "unified_raw_results": [
+                {
+                    "title": "They Will Kill You S01 2160p HDR",
+                    "text_surface": "they will kill you s01 2160p hdr titleonly 5000 tv",
+                    "indexer": "titleonly",
+                    "query_source_key": "fallback",
+                    "visible": False,
+                },
+                {
+                    "title": "You S01 2160p HDR",
+                    "text_surface": "you s01 2160p hdr titleonly 5000 tv",
+                    "indexer": "titleonly",
+                    "query_source_key": "fallback",
+                    "visible": False,
+                },
+            ],
+        },
+        fetched_at=utcnow(),
+    )
+    db_session.add(snapshot)
+    db_session.commit()
+
+    assert refresh_snapshot_release_cache(snapshot, rule=rule) is True
+    db_session.commit()
+
+    assert snapshot.release_filtered_count == 1
+    assert snapshot.release_fetched_count == 2
+    assert snapshot.inline_search["rule_local_hidden_reasons"] == {
+        'Title does not match IMDb-backed exact identity for "You".': 1
+    }

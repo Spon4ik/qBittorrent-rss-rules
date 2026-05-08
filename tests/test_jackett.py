@@ -1638,6 +1638,201 @@ def test_jackett_client_drops_fallback_rows_with_conflicting_imdb_id() -> None:
     assert result.fallback_results == []
 
 
+def test_jackett_client_hides_broad_token_fallback_rows_for_imdb_backed_short_title() -> None:
+    seen_requests: list[tuple[str, dict[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = {key: value for key, value in request.url.params.multi_items()}
+        seen_requests.append((path, params))
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params.get(
+            "apikey"
+        ) == "secret" and params.get("t") == "tvsearch" and params.get("imdbid") == "tt7335184":
+            return httpx.Response(200, text="<rss><channel /></rss>")
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="titleonly">
+    <caps>
+      <searching>
+        <tv-search available="yes" supportedParams="q,season,ep" />
+      </searching>
+    </caps>
+  </indexer>
+</indexers>
+""",
+            )
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params.get(
+            "apikey"
+        ) == "secret" and params.get("t") in {"tvsearch", "search"} and params.get("q") == "You":
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>They Will Kill You S01 2160p HDR</title>
+      <guid>they-will-kill-you</guid>
+      <link>magnet:?xt=urn:btih:THEYWILLKILLYOU</link>
+      <torznab:attr name="jackettindexer" value="titleonly" />
+      <torznab:attr name="category" value="5000" />
+    </item>
+    <item>
+      <title>You S01 2160p HDR</title>
+      <guid>you-exact-title</guid>
+      <link>magnet:?xt=urn:btih:YOUEXACTTITLE</link>
+      <torznab:attr name="jackettindexer" value="titleonly" />
+      <torznab:attr name="category" value="5000" />
+    </item>
+    <item>
+      <title>You Should Have Left 2160p HDR</title>
+      <guid>you-should-have-left</guid>
+      <link>magnet:?xt=urn:btih:YOUSHOULDHAVELEFT</link>
+      <torznab:attr name="jackettindexer" value="titleonly" />
+      <torznab:attr name="category" value="5000" />
+    </item>
+  </channel>
+</rss>
+""",
+            )
+
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="You",
+            media_type="series",
+            imdb_id="tt7335184",
+            imdb_id_only=True,
+            keywords_all=["hdr"],
+            primary_keywords_all=["imdb-only-marker"],
+        )
+    )
+
+    assert (
+        "/api/v2.0/indexers/all/results/torznab/api",
+        {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        },
+    ) in seen_requests
+    assert [item.title for item in result.raw_fallback_results] == [
+        "They Will Kill You S01 2160p HDR",
+        "You S01 2160p HDR",
+        "You Should Have Left 2160p HDR",
+    ]
+    assert [item.title for item in result.fallback_results] == ["You S01 2160p HDR"]
+    assert any("do not advertise IMDb-enforced" in item for item in result.warning_messages)
+    assert any("broad title fallback rows stay hidden" in item for item in result.warning_messages)
+
+
+def test_jackett_client_uses_strict_title_identity_and_year_for_common_title_fallback() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = {key: value for key, value in request.url.params.multi_items()}
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params.get(
+            "apikey"
+        ) == "secret" and params.get("t") == "tvsearch" and params.get("imdbid") == "tt11379026":
+            return httpx.Response(200, text="<rss><channel /></rss>")
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="titleonly">
+    <caps>
+      <searching>
+        <tv-search available="yes" supportedParams="q,season,ep" />
+      </searching>
+    </caps>
+  </indexer>
+</indexers>
+""",
+            )
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params.get(
+            "apikey"
+        ) == "secret" and params.get("t") in {"tvsearch", "search"} and params.get("q") == "Ghosts":
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>Ghosts (2019) S01 1080p</title>
+      <guid>ghosts-exact-year</guid>
+      <link>magnet:?xt=urn:btih:GHOSTSEXACTYEAR</link>
+      <torznab:attr name="jackettindexer" value="titleonly" />
+      <torznab:attr name="year" value="2019" />
+      <torznab:attr name="category" value="5000" />
+    </item>
+    <item>
+      <title>Ghosts of War (2019) 1080p</title>
+      <guid>ghosts-of-war</guid>
+      <link>magnet:?xt=urn:btih:GHOSTSOFWAR</link>
+      <torznab:attr name="jackettindexer" value="titleonly" />
+      <torznab:attr name="year" value="2019" />
+      <torznab:attr name="category" value="5000" />
+    </item>
+    <item>
+      <title>Ghosts S01 1080p</title>
+      <guid>ghosts-wrong-imdb</guid>
+      <link>magnet:?xt=urn:btih:GHOSTSWRONGIMDB</link>
+      <torznab:attr name="imdbid" value="tt8594324" />
+      <torznab:attr name="jackettindexer" value="titleonly" />
+      <torznab:attr name="year" value="2019" />
+      <torznab:attr name="category" value="5000" />
+    </item>
+  </channel>
+</rss>
+""",
+            )
+
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="Ghosts",
+            media_type="series",
+            imdb_id="tt11379026",
+            imdb_id_only=True,
+            release_year="2019",
+            keywords_all=["1080p"],
+            primary_keywords_all=["imdb-only-marker"],
+        )
+    )
+
+    assert [item.title for item in result.fallback_results] == ["Ghosts (2019) S01 1080p"]
+
+
 def test_jackett_client_imdb_title_fallback_uses_scoped_indexers_after_all_timeout() -> None:
     seen_requests: list[tuple[str, dict[str, str]]] = []
 
@@ -2545,7 +2740,7 @@ def test_jackett_client_structured_book_search_respects_filter_indexer_scope() -
     ]
 
 
-def test_jackett_client_precise_title_primary_keeps_non_exact_title_rows_available_for_fallback() -> (
+def test_jackett_client_precise_title_primary_hides_non_exact_imdb_fallback_rows() -> (
     None
 ):
     seen_requests: list[tuple[str, dict[str, str]]] = []
@@ -2672,9 +2867,10 @@ def test_jackett_client_precise_title_primary_keeps_non_exact_title_rows_availab
         "Young Sherlock S01E02 2160p HDR WEB-DL",
     ]
     assert any('q="Young Sherlock"' in item for item in result.fallback_request_variants)
-    assert [item.title for item in result.fallback_results] == [
+    assert [item.title for item in result.raw_fallback_results] == [
         "Young Sherlock Test Cut 2160p HDR10 WEB-DL"
     ]
+    assert result.fallback_results == []
 
 
 def test_jackett_client_falls_back_to_broad_title_search_when_tv_indexers_do_not_support_input_imdb() -> (

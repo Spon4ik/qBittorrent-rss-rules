@@ -20,16 +20,19 @@ from app.services.category_catalog import (
     sync_category_catalog_from_results,
 )
 from app.services.jackett import (
+    IMDB_IDENTITY_IMDB_EXACT,
+    IMDB_IDENTITY_IMDB_MISMATCH,
+    IMDB_IDENTITY_TITLE_EXACT,
     JackettClient,
     JackettClientError,
     _matches_excluded_keyword,
     _matches_included_keyword,
-    _matches_precise_title_identity,
     _matches_query_text,
     _normalize_match_text,
     build_reduced_search_request_from_rule,
     build_search_request_from_rule,
     clamp_search_query_text,
+    classify_imdb_backed_result_identity,
 )
 from app.services.quality_filters import (
     effective_rule_quality_tokens,
@@ -487,24 +490,36 @@ def _snapshot_row_matches_rule_identity(
     state: dict[str, Any],
     title_surface: str,
 ) -> bool:
+    return _snapshot_row_identity_failure(row, state=state, title_surface=title_surface) is None
+
+
+def _snapshot_row_identity_failure(
+    row: dict[str, Any],
+    *,
+    state: dict[str, Any],
+    title_surface: str,
+) -> str | None:
     query = str(state.get("query") or "").strip()
     if not query:
-        return True
+        return None
 
     expected_imdb_id = _normalize_imdb_id(state.get("imdb_id"))
-    result_imdb_id = _normalize_imdb_id(row.get("imdb_id"))
-    if expected_imdb_id and result_imdb_id and expected_imdb_id == result_imdb_id:
-        return True
+    if expected_imdb_id:
+        imdb_identity = classify_imdb_backed_result_identity(
+            query=query,
+            expected_imdb_id=expected_imdb_id,
+            result_imdb_id=_normalize_imdb_id(row.get("imdb_id")) or None,
+            title=str(row.get("title") or ""),
+        )
+        if imdb_identity in {IMDB_IDENTITY_IMDB_EXACT, IMDB_IDENTITY_TITLE_EXACT}:
+            return None
+        if imdb_identity == IMDB_IDENTITY_IMDB_MISMATCH:
+            return "IMDb ID does not match the rule."
+        return f'Title does not match IMDb-backed exact identity for "{query}".'
 
-    source_keys = _snapshot_row_query_source_keys(row)
-    if (
-        expected_imdb_id
-        and "primary" in source_keys
-        and _matches_precise_title_identity(str(row.get("title") or ""), query)
-    ):
-        return True
-
-    return _matches_query_text(title_surface=title_surface, query=query)
+    if _matches_query_text(title_surface=title_surface, query=query):
+        return None
+    return f'Title does not match query "{query}".'
 
 
 def _snapshot_row_filter_failure(row: dict[str, Any], state: dict[str, Any]) -> str | None:
@@ -517,11 +532,13 @@ def _snapshot_row_filter_failure(row: dict[str, Any], state: dict[str, Any]) -> 
     title_surface = _normalize_match_text(str(row.get("title") or ""))
     regex_surface = str(row.get("title") or row.get("text_surface") or "").strip()
 
-    if not _snapshot_row_matches_rule_identity(row, state=state, title_surface=title_surface):
-        query = str(state.get("query") or "").strip()
-        if query:
-            return f'Title does not match query "{query}".'
-        return "Title does not match the rule."
+    identity_failure = _snapshot_row_identity_failure(
+        row,
+        state=state,
+        title_surface=title_surface,
+    )
+    if identity_failure is not None:
+        return identity_failure
 
     for keyword in state.get("keywords_all", []):
         if not _matches_included_keyword(text_surface, str(keyword)):

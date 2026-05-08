@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 
 import httpx
@@ -274,6 +274,24 @@ PRECISE_TITLE_ALLOWED_POSTFIX_TOKENS = frozenset(
 class JackettIndexerCapability:
     indexer_id: str
     supported_params: frozenset[str]
+
+
+ImdbBackedResultIdentity = Literal[
+    "imdb_exact",
+    "title_exact",
+    "title_broad",
+    "imdb_mismatch",
+    "no_match",
+]
+IMDB_IDENTITY_IMDB_EXACT: ImdbBackedResultIdentity = "imdb_exact"
+IMDB_IDENTITY_TITLE_EXACT: ImdbBackedResultIdentity = "title_exact"
+IMDB_IDENTITY_TITLE_BROAD: ImdbBackedResultIdentity = "title_broad"
+IMDB_IDENTITY_IMDB_MISMATCH: ImdbBackedResultIdentity = "imdb_mismatch"
+IMDB_IDENTITY_NO_MATCH: ImdbBackedResultIdentity = "no_match"
+IMDB_UNSUPPORTED_CAPABILITY_WARNING = (
+    "Selected Jackett indexers do not advertise IMDb-enforced search for this media type; "
+    "broad title fallback rows stay hidden unless title identity is exact."
+)
 
 
 def _local_name(tag: str) -> str:
@@ -899,6 +917,29 @@ def _torznab_imdb_lookup_id(value: str | None) -> str | None:
     if cleaned.isdigit():
         return f"tt{cleaned}"
     return None
+
+
+def classify_imdb_backed_result_identity(
+    *,
+    query: str,
+    expected_imdb_id: str | None,
+    result_imdb_id: str | None,
+    title: str,
+) -> ImdbBackedResultIdentity:
+    expected_id = _torznab_imdb_lookup_id(expected_imdb_id)
+    result_id = _torznab_imdb_lookup_id(result_imdb_id)
+    if expected_id and result_id:
+        if expected_id == result_id:
+            return IMDB_IDENTITY_IMDB_EXACT
+        return IMDB_IDENTITY_IMDB_MISMATCH
+
+    if expected_id and _matches_precise_title_identity(title, query):
+        return IMDB_IDENTITY_TITLE_EXACT
+
+    title_surface = _normalize_match_text(title)
+    if _matches_query_text(title_surface=title_surface, query=query):
+        return IMDB_IDENTITY_TITLE_BROAD if expected_id else IMDB_IDENTITY_TITLE_EXACT
+    return IMDB_IDENTITY_NO_MATCH
 
 
 def _torznab_categories_for_media_type(media_type: MediaType) -> tuple[str, ...]:
@@ -1832,10 +1873,11 @@ class JackettClient:
                             primary_query,
                         )
                     )
-                except (JackettHTTPError, JackettClientError):
+                except (JackettHTTPError, JackettClientError) as exc:
                     variant_results = []
                     attempted_requests = []
                     timeout_messages = []
+                    self._add_warning(warning_messages, seen_warning_messages, str(exc))
                 for attempted_request in attempted_requests:
                     self._add_request_label(
                         request_variants, seen_request_variants, attempted_request
@@ -1856,10 +1898,11 @@ class JackettClient:
                         primary_query,
                     )
                 )
-            except (JackettHTTPError, JackettClientError):
+            except (JackettHTTPError, JackettClientError) as exc:
                 variant_results = []
                 attempted_requests = []
                 timeout_messages = []
+                self._add_warning(warning_messages, seen_warning_messages, str(exc))
             for attempted_request in attempted_requests:
                 self._add_request_label(request_variants, seen_request_variants, attempted_request)
             for message in timeout_messages:
@@ -2299,7 +2342,7 @@ class JackettClient:
         list[str],
     ]:
         search_mode = _torznab_mode_for_payload(payload)
-        indexers = self._configured_indexers_for_mode(search_mode)
+        indexers = self._scoped_configured_indexers_for_mode(payload, search_mode)
         successful_requests: list[dict[str, object]] = []
         attempted_requests: list[dict[str, object]] = []
         warning_messages: list[str] = []
@@ -2347,9 +2390,7 @@ class JackettClient:
             raise last_bad_request_error
         if last_timeout_error is not None:
             raise last_timeout_error
-        raise JackettClientError(
-            "Jackett could not find a configured indexer that supports IMDb-enforced search for this media type."
-        )
+        raise JackettClientError(IMDB_UNSUPPORTED_CAPABILITY_WARNING)
 
     @staticmethod
     def _category_family_root(category_id: str) -> str | None:
@@ -3200,25 +3241,21 @@ class JackettClient:
     ) -> tuple[bool, str | None]:
         title_surface = _normalize_match_text(result.title)
         payload_imdb_id = _torznab_imdb_lookup_id(payload.imdb_id)
-        result_imdb_id = _torznab_imdb_lookup_id(result.imdb_id)
-        imdb_exact_match = (
-            payload_imdb_id is not None
-            and result_imdb_id is not None
-            and payload_imdb_id == result_imdb_id
+        imdb_identity = classify_imdb_backed_result_identity(
+            query=payload.query,
+            expected_imdb_id=payload.imdb_id,
+            result_imdb_id=result.imdb_id,
+            title=result.title,
         )
-        if (
-            payload_imdb_id is not None
-            and result_imdb_id is not None
-            and payload_imdb_id != result_imdb_id
-        ):
-            return False, "imdb_id_mismatch"
-        if not imdb_exact_match and not _matches_query_text(
-            title_surface=title_surface, query=payload.query
-        ):
-            return False, "query"
-        if payload.imdb_id_only and not imdb_exact_match:
-            if not _matches_precise_title_identity(result.title, payload.query):
+        if payload_imdb_id is not None and payload.media_type in {MediaType.MOVIE, MediaType.SERIES}:
+            if imdb_identity == IMDB_IDENTITY_IMDB_MISMATCH:
+                return False, "imdb_id_mismatch"
+            if imdb_identity == IMDB_IDENTITY_TITLE_BROAD:
                 return False, "precise_title_mismatch"
+            if imdb_identity == IMDB_IDENTITY_NO_MATCH:
+                return False, "query"
+        elif not _matches_query_text(title_surface=title_surface, query=payload.query):
+            return False, "query"
         text_surface = result.text_surface or title_surface
         for keyword in payload.keywords_all:
             if not _matches_included_keyword(text_surface, keyword):

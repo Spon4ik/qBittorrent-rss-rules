@@ -2748,6 +2748,109 @@ def test_edit_rule_saved_snapshot_hides_rows_that_only_pass_quality_and_scope(
     )
 
 
+def test_edit_rule_saved_snapshot_hides_broad_imdb_title_fallback_rows(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    rule = Rule(
+        rule_name="You",
+        content_name="You",
+        normalized_title="You",
+        imdb_id="tt7335184",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.CUSTOM,
+        quality_mode=QualityMode.MANUAL,
+        quality_include_tokens=["hdr"],
+        quality_exclude_tokens=[],
+        feed_urls=[
+            "http://jackett:9117/api/v2.0/indexers/titleonly/results/torznab/api?apikey=abc&t=tvsearch"
+        ],
+    )
+    db_session.add(rule)
+    db_session.flush()
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule.id,
+            payload={
+                "query": "You",
+                "media_type": "series",
+                "imdb_id": "tt7335184",
+                "imdb_id_only": True,
+            },
+            inline_search={
+                "query": "You",
+                "primary_label": "Precise results",
+                "request_variants": ["t=tvsearch imdbid=tt7335184 cat=5000"],
+                "raw_results": [],
+                "results": [],
+                "fallback_label": "Title fallback",
+                "fallback_request_variants": ['t=tvsearch q="You" cat=5000'],
+                "raw_fallback_results": [
+                    {
+                        "title": "They Will Kill You S01 2160p HDR",
+                        "text_surface": "they will kill you s01 2160p hdr titleonly 5000 tv",
+                        "link": "https://example.com/they-will-kill-you.torrent",
+                        "indexer": "titleonly",
+                        "visible": True,
+                    },
+                    {
+                        "title": "You S01 2160p HDR",
+                        "text_surface": "you s01 2160p hdr titleonly 5000 tv",
+                        "link": "https://example.com/you-s01.torrent",
+                        "indexer": "titleonly",
+                        "visible": True,
+                    },
+                ],
+                "fallback_results": [
+                    {
+                        "title": "They Will Kill You S01 2160p HDR",
+                        "text_surface": "they will kill you s01 2160p hdr titleonly 5000 tv",
+                        "link": "https://example.com/they-will-kill-you.torrent",
+                        "indexer": "titleonly",
+                    },
+                    {
+                        "title": "You S01 2160p HDR",
+                        "text_surface": "you s01 2160p hdr titleonly 5000 tv",
+                        "link": "https://example.com/you-s01.torrent",
+                        "indexer": "titleonly",
+                    },
+                ],
+                "primary_is_exact": True,
+                "warning_messages": [
+                    "Selected Jackett indexers do not advertise IMDb-enforced search for this media type; broad title fallback rows stay hidden unless title identity is exact."
+                ],
+                "ignored_full_regex": False,
+                "show_peers_column": False,
+                "show_leechers_column": False,
+                "show_grabs_column": False,
+            },
+        )
+    )
+    db_session.commit()
+
+    def fail_search(self, payload):
+        raise AssertionError("Jackett search should not run when replaying a saved snapshot.")
+
+    monkeypatch.setattr(JackettClient, "search", fail_search)
+
+    response = app_client.get(f"/rules/{rule.id}")
+
+    assert response.status_code == 200
+    assert "do not advertise IMDb-enforced search" in response.text
+    assert '<span data-search-filtered-count="combined">1</span> filtered' in response.text
+    assert re.search(
+        r'<article[^>]+data-title="They Will Kill You S01 2160p HDR"(?=[^>]*hidden)',
+        response.text,
+        re.DOTALL,
+    )
+    assert re.search(
+        r'<article[^>]+data-title="You S01 2160p HDR"(?![^>]*hidden)',
+        response.text,
+        re.DOTALL,
+    )
+
+
 def test_edit_rule_page_loads_saved_snapshot_by_default_and_can_clear_results(
     app_client,
     db_session,

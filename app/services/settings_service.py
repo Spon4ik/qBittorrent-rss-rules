@@ -54,6 +54,7 @@ RULES_PAGE_SORT_FIELDS = frozenset(
         "last_sync_status",
         "enabled",
         "release_state",
+        "release_signal",
         "exact_filtered_count",
         "combined_filtered_count",
         "combined_fetched_count",
@@ -69,6 +70,9 @@ DEFAULT_RULE_FETCH_SCHEDULE_SCOPE = "enabled"
 DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 360
 MIN_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 5
 MAX_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 10080
+DEFAULT_RULE_FETCH_PARALLELISM = 3
+MIN_RULE_FETCH_PARALLELISM = 1
+MAX_RULE_FETCH_PARALLELISM = 8
 DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED = True
 DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS = 30
 MIN_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS = 5
@@ -211,6 +215,16 @@ def normalize_rule_fetch_schedule_interval_minutes(value: object | None) -> int:
     )
 
 
+def normalize_rule_fetch_parallelism(value: object | None) -> int:
+    if value is None:
+        return DEFAULT_RULE_FETCH_PARALLELISM
+    try:
+        numeric = int(str(value).strip())
+    except (TypeError, ValueError):
+        return DEFAULT_RULE_FETCH_PARALLELISM
+    return max(MIN_RULE_FETCH_PARALLELISM, min(MAX_RULE_FETCH_PARALLELISM, numeric))
+
+
 def normalize_jellyfin_auto_sync_interval_seconds(value: object | None) -> int:
     if value is None:
         return DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS
@@ -349,6 +363,7 @@ class SettingsService:
                 rules_fetch_schedule_scope=DEFAULT_RULE_FETCH_SCHEDULE_SCOPE,
                 rules_fetch_schedule_last_status="idle",
                 rules_fetch_schedule_last_message="",
+                rules_fetch_parallelism=DEFAULT_RULE_FETCH_PARALLELISM,
                 rules_page_view_mode=DEFAULT_RULES_PAGE_VIEW_MODE,
                 rules_page_sort_field=DEFAULT_RULES_PAGE_SORT_FIELD,
                 rules_page_sort_direction=DEFAULT_RULES_PAGE_SORT_DIRECTION,
@@ -610,6 +625,12 @@ class SettingsService:
             settings, "rules_fetch_schedule_last_message", None
         ):
             settings.rules_fetch_schedule_last_message = normalized_schedule_message
+            changed = True
+        normalized_fetch_parallelism = normalize_rule_fetch_parallelism(
+            getattr(settings, "rules_fetch_parallelism", DEFAULT_RULE_FETCH_PARALLELISM)
+        )
+        if normalized_fetch_parallelism != getattr(settings, "rules_fetch_parallelism", None):
+            settings.rules_fetch_parallelism = normalized_fetch_parallelism
             changed = True
         if changed:
             session.add(settings)
@@ -895,5 +916,8 @@ class SettingsService:
             ),
             "rules_fetch_schedule_last_message": str(
                 getattr(settings, "rules_fetch_schedule_last_message", "") or ""
+            ),
+            "rules_fetch_parallelism": normalize_rule_fetch_parallelism(
+                getattr(settings, "rules_fetch_parallelism", DEFAULT_RULE_FETCH_PARALLELISM)
             ),
         }

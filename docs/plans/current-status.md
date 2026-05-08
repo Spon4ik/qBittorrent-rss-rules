@@ -2,6 +2,7 @@
 
 ## Current focus
 
+- Phase 29 is implemented and locally validated as the post-`v1.1.6` rules operations workbench (`docs/plans/phase-29-rules-operations-workbench.md`): fast local rule saves with background qB sync, batch quality assignment/filtering, backend release signal, missing/oldest-first bounded parallel snapshot fetch, compact data-grid UI, icon row actions, version visibility, and optimized snapshot-summary rendering.
 - Phase 28 is published as `v1.1.6`, the post-`v1.1.5` rule/search scope-authority stabilization slice.
 - Phase R8 is completed and merged as the pre-feature qB rule enforcement-parity stabilization gate; Phase 25 release closeout is published as `v1.1.3`, the legacy `P4-01` browser expectation has been retired, Phase 26 is published as the `v1.1.4` structured Jackett audio-search scope patch, and Phase 27 is published as the `v1.1.5` structured audio search fields patch.
 - Current GitHub release is `v1.1.6`, adding persisted rule-level Jackett search indexer scope on top of the `v1.1.5` structured audio search fields release.
@@ -25,6 +26,19 @@
 - The retained desktop direction remains the WinUI WebView-shell + companion-process lifecycle baseline introduced in `v0.6.0`.
 
 ## Implemented
+
+- Implemented the main Phase 29 workbench slice on 2026-05-08:
+  - rule create/update now saves locally, marks rules pending, redirects immediately, and enqueues background qB sync instead of blocking on qB;
+  - added a background sync queue with `pending` / `syncing` transient statuses and regressions for success/failure status updates;
+  - added `/api/rules/batch-quality-profile` for managed `No preset`, `At Least Full HD`, and `Ultra HD HDR` assignment without rewriting stored manual token snapshots;
+  - added a rules-page quality filter, active filter chips, clear-filter localStorage reset, and contextual selected-row batch bar;
+  - added backend release signal values that combine exact/fallback/no-exact/no-matches/no-snapshot ranking with exact and visible/fetched counts in one table cell;
+  - changed batch/scheduled snapshot fetch to prioritize missing snapshots first, then oldest snapshots, with clamped `rules_fetch_parallelism` defaulting to `3`;
+  - redesigned the rules page around the saved desktop data-grid direction, replaced row action text stacks with compact icon controls, and added app version display globally plus backend/desktop contract details in Settings;
+  - added rule-level snapshot summary fields/backfill so the main workbench no longer reads bulky snapshot payload rows just to render release signal; Docker `/` timing after rebuild and summary backfill is now roughly `0.055s` to `0.085s`;
+  - fixed the rule-local release-count cache and rule edit saved-snapshot replay so both the main grid and edit page enforce rule title/IMDb identity before counting fallback rows as visible;
+  - validation evidence: focused route/rule-fetch/sync-queue/static pytest slices passed, `node --check app/static/app.js` passed, Ruff passed on touched Python, `git diff --check` passed, `cmd.exe /c scripts\check.bat` passed (`388 passed`, `274 warnings`), shared Docker Compose rebuild passed, Docker `/health` reports `app_version=1.1.6`, Docker `/` timing is sub-0.15s across three probes, browser visual evidence is saved under `logs/qa/phase-29-visual/`, and a live Docker browser repro for `Spider-Man: Brand New Day` / `tt22084616` now shows `0 filtered / 745 fetched`, `0` visible cards, and the main grid row shows `visible 0 / 745`.
+  - runtime data note: after refreshing persisted release-count caches on 2026-05-08, the SQLite DB reported malformed pages. The malformed DB was backed up under `data/backups/`, a clean recovered DB was rebuilt with `212` rules / `205` snapshots, four affected rule rows were reconstructed from saved snapshots and sync history, Docker write-lock and integrity checks passed, and the running backend is healthy against the recovered DB.
 
 - Implemented Phase 27 structured audio search fields on 2026-05-07:
   - `/search` now exposes structured music/audiobook fields for artist, album, track, label, book title, author, publisher, and genre;

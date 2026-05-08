@@ -106,6 +106,11 @@ def _ensure_rule_columns() -> None:
         "last_remote_rule_payload": "JSON NOT NULL DEFAULT '{}'",
         "remote_rule_drift_message": "TEXT NOT NULL DEFAULT ''",
         "remote_rule_drift_detected_at": "DATETIME",
+        "last_snapshot_at": "DATETIME",
+        "last_release_filtered_count": "INTEGER",
+        "last_release_fetched_count": "INTEGER",
+        "last_exact_filtered_count": "INTEGER",
+        "last_exact_fetched_count": "INTEGER",
     }
     expected_settings_columns = {
         "jackett_api_url": "VARCHAR(255)",
@@ -141,6 +146,7 @@ def _ensure_rule_columns() -> None:
         "rules_fetch_schedule_next_run_at": "DATETIME",
         "rules_fetch_schedule_last_status": "VARCHAR(32) NOT NULL DEFAULT 'idle'",
         "rules_fetch_schedule_last_message": "TEXT NOT NULL DEFAULT ''",
+        "rules_fetch_parallelism": "INTEGER NOT NULL DEFAULT 3",
         "rules_page_view_mode": "VARCHAR(16) NOT NULL DEFAULT 'table'",
         "rules_page_sort_field": "VARCHAR(64) NOT NULL DEFAULT 'updated_at'",
         "rules_page_sort_direction": "VARCHAR(8) NOT NULL DEFAULT 'desc'",
@@ -181,4 +187,59 @@ def _ensure_rule_columns() -> None:
                     continue
                 connection.execute(
                     text(f"ALTER TABLE rule_search_snapshots ADD COLUMN {column_name} {column_def}")
+                )
+            if "rules" in existing_tables:
+                connection.execute(
+                    text(
+                        """
+                        UPDATE rules
+                        SET
+                            last_snapshot_at = COALESCE(
+                                last_snapshot_at,
+                                (
+                                    SELECT fetched_at
+                                    FROM rule_search_snapshots
+                                    WHERE rule_search_snapshots.rule_id = rules.id
+                                )
+                            ),
+                            last_release_filtered_count = COALESCE(
+                                last_release_filtered_count,
+                                (
+                                    SELECT release_filtered_count
+                                    FROM rule_search_snapshots
+                                    WHERE rule_search_snapshots.rule_id = rules.id
+                                )
+                            ),
+                            last_release_fetched_count = COALESCE(
+                                last_release_fetched_count,
+                                (
+                                    SELECT release_fetched_count
+                                    FROM rule_search_snapshots
+                                    WHERE rule_search_snapshots.rule_id = rules.id
+                                )
+                            ),
+                            last_exact_filtered_count = COALESCE(
+                                last_exact_filtered_count,
+                                (
+                                    SELECT exact_filtered_count
+                                    FROM rule_search_snapshots
+                                    WHERE rule_search_snapshots.rule_id = rules.id
+                                )
+                            ),
+                            last_exact_fetched_count = COALESCE(
+                                last_exact_fetched_count,
+                                (
+                                    SELECT exact_fetched_count
+                                    FROM rule_search_snapshots
+                                    WHERE rule_search_snapshots.rule_id = rules.id
+                                )
+                            )
+                        WHERE last_snapshot_at IS NULL
+                          AND EXISTS (
+                              SELECT 1
+                              FROM rule_search_snapshots
+                              WHERE rule_search_snapshots.rule_id = rules.id
+                          )
+                        """
+                    )
                 )

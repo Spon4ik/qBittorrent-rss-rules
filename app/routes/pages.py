@@ -67,15 +67,15 @@ from app.services.quality_filters import (
     resolve_quality_profile_rules,
 )
 from app.services.rule_fetch_ops import (
+    inline_search_from_rule_snapshot,
     refresh_snapshot_release_cache,
+    release_state_from_cached_counts,
     release_state_from_snapshot,
-    run_due_scheduled_fetch,
     schedule_payload,
 )
 from app.services.rule_search_snapshots import (
     build_inline_search_payload,
     get_rule_search_snapshot,
-    inline_search_from_snapshot,
     save_rule_search_snapshot,
 )
 from app.services.settings_service import (
@@ -94,8 +94,11 @@ from app.services.watch_state import format_watch_state_source_labels
 router = APIRouter()
 
 
-def _template_context(_: Request) -> dict[str, object]:
-    return {"static_asset_version": compute_static_asset_version()}
+def _template_context(request: Request) -> dict[str, object]:
+    return {
+        "static_asset_version": compute_static_asset_version(),
+        "app_version": getattr(request.app, "version", ""),
+    }
 
 
 templates = Jinja2Templates(
@@ -142,6 +145,7 @@ def _base_context(request: Request, page_title: str) -> dict[str, object]:
     return {
         "request": request,
         "page_title": page_title,
+        "app_version": getattr(request.app, "version", ""),
         "message": request.query_params.get("message"),
         "message_level": request.query_params.get("level", "info"),
     }
@@ -1042,10 +1046,12 @@ def _apply_catalog_category_labels(session: Session, results: list[Any]) -> None
 
 
 SYNC_STATUS_SORT_RANK = {
-    "ok": 0,
-    "never": 1,
-    "drift": 2,
-    "error": 3,
+    "error": 0,
+    "drift": 1,
+    "pending": 2,
+    "syncing": 3,
+    "never": 4,
+    "ok": 5,
 }
 
 
@@ -1065,9 +1071,9 @@ def _rule_list_sort_value(item: dict[str, Any], field: str) -> Any:
         return SYNC_STATUS_SORT_RANK.get(rule.last_sync_status.value, 9)
     if field == "enabled":
         return 1 if rule.enabled else 0
-    if field == "release_state":
+    if field in {"release_state", "release_signal"}:
         release = cast(dict[str, Any], item.get("release") or {})
-        return int(release.get("rank") or 99)
+        return int(release.get("signal_rank") or release.get("rank") or 99)
     if field == "combined_filtered_count":
         release = cast(dict[str, Any], item.get("release") or {})
         return int(release.get("combined_filtered_count") or 0)
@@ -1102,12 +1108,6 @@ def _sorted_rule_rows(
 @router.get("/", response_class=HTMLResponse)
 def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLResponse:
     settings = SettingsService.get_or_create(session)
-    try:
-        run_due_scheduled_fetch(session)
-        settings = SettingsService.get_or_create(session)
-    except Exception:
-        session.rollback()
-        settings = SettingsService.get_or_create(session)
 
     default_sort_field = normalize_rules_page_sort_field(
         getattr(settings, "rules_page_sort_field", "updated_at")
@@ -1126,6 +1126,7 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
     enabled_filter = request.query_params.get("enabled", "").strip()
     release_filter = request.query_params.get("release", "").strip()
     exact_filter = request.query_params.get("exact", "").strip()
+    quality_filter = request.query_params.get("quality", "").strip()
     sort_field = normalize_rules_page_sort_field(
         request.query_params.get("sort", "").strip() or default_sort_field
     )
@@ -1136,7 +1137,31 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
         request.query_params.get("view", "").strip() or default_view_mode
     )
 
-    rules_query = select(Rule).order_by(Rule.updated_at.desc())
+    rules_query = (
+        select(Rule)
+        .options(
+            load_only(
+                Rule.id,
+                Rule.rule_name,
+                Rule.imdb_id,
+                Rule.normalized_title,
+                Rule.poster_url,
+                Rule.media_type,
+                Rule.quality_profile,
+                Rule.quality_mode,
+                Rule.enabled,
+                Rule.last_sync_status,
+                Rule.last_sync_error,
+                Rule.last_snapshot_at,
+                Rule.last_release_filtered_count,
+                Rule.last_release_fetched_count,
+                Rule.last_exact_filtered_count,
+                Rule.last_exact_fetched_count,
+                Rule.updated_at,
+            )
+        )
+        .order_by(Rule.updated_at.desc())
+    )
     if search_lower:
         rules_query = rules_query.where(
             or_(
@@ -1147,15 +1172,27 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
     valid_media_values = {item.value for item in MediaType}
     if media_filter in valid_media_values:
         rules_query = rules_query.where(Rule.media_type == MediaType(media_filter))
-    if sync_filter in {"never", "ok", "error", "drift"}:
+    if sync_filter in {"never", "pending", "syncing", "ok", "error", "drift"}:
         rules_query = rules_query.where(func.lower(Rule.last_sync_status) == sync_filter.lower())
     if enabled_filter in {"true", "false"}:
         rules_query = rules_query.where(Rule.enabled.is_(enabled_filter == "true"))
+    if quality_filter == "manual_custom":
+        rules_query = rules_query.where(
+            or_(
+                Rule.quality_mode == QualityMode.MANUAL,
+                Rule.quality_profile == QualityProfile.CUSTOM,
+            )
+        )
+    elif quality_filter == "managed":
+        rules_query = rules_query.where(Rule.quality_mode == QualityMode.MANAGED)
+    elif quality_filter in {item.value for item in QualityProfile}:
+        rules_query = rules_query.where(Rule.quality_profile == QualityProfile(quality_filter))
 
     rules = session.scalars(rules_query).all()
 
+    missing_summary_ids = [rule.id for rule in rules if rule.last_snapshot_at is None]
     snapshot_by_rule_id: dict[str, RuleSearchSnapshot] = {}
-    if rules:
+    if missing_summary_ids:
         snapshot_query = (
             select(RuleSearchSnapshot)
             .options(
@@ -1169,15 +1206,28 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
                     RuleSearchSnapshot.exact_fetched_count,
                 )
             )
-            .where(RuleSearchSnapshot.rule_id.in_([rule.id for rule in rules]))
+            .where(RuleSearchSnapshot.rule_id.in_(missing_summary_ids))
         )
         snapshot_by_rule_id = {item.rule_id: item for item in session.scalars(snapshot_query).all()}
 
     rows: list[dict[str, Any]] = []
     for rule in rules:
         snapshot = snapshot_by_rule_id.get(rule.id)
-        release = release_state_from_snapshot(snapshot, rule=rule)
-        if release_filter and str(release.get("state")) != release_filter:
+        release = (
+            release_state_from_snapshot(snapshot, rule=None)
+            if snapshot is not None
+            else release_state_from_cached_counts(
+                filtered_count=rule.last_release_filtered_count,
+                fetched_count=rule.last_release_fetched_count,
+                exact_filtered_count=rule.last_exact_filtered_count,
+                exact_fetched_count=rule.last_exact_fetched_count,
+                snapshot_fetched_at=rule.last_snapshot_at,
+            )
+        )
+        if release_filter and (
+            str(release.get("signal_state")) != release_filter
+            and str(release.get("state")) != release_filter
+        ):
             continue
         if exact_filter and str(release.get("exact_state")) != exact_filter:
             continue
@@ -1205,18 +1255,28 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
                 "enabled": enabled_filter,
                 "release": release_filter,
                 "exact": exact_filter,
+                "quality": quality_filter,
                 "sort": sort_field,
                 "direction": sort_direction,
                 "view": view_mode,
             },
             "media_choices": media_type_choices(),
             "media_type_labels": {item.value: media_type_label(item) for item in MediaType},
-            "sync_choices": ["never", "ok", "error", "drift"],
+            "sync_choices": ["pending", "syncing", "error", "drift", "never", "ok"],
+            "quality_choices": [
+                {"value": "manual_custom", "label": "Manual/custom"},
+                {"value": "managed", "label": "All managed"},
+                {"value": QualityProfile.PLAIN.value, "label": "No preset"},
+                {"value": QualityProfile.HD_1080P.value, "label": "At Least Full HD"},
+                {"value": QualityProfile.UHD_2160P_HDR.value, "label": "Ultra HD HDR"},
+            ],
             "release_choices": [
-                {"value": "matches", "label": "Matches found"},
+                {"value": "exact", "label": "Exact"},
+                {"value": "fallback", "label": "Fallback"},
+                {"value": "no_exact", "label": "No exact"},
                 {"value": "no_matches", "label": "No matches"},
-                {"value": "empty", "label": "No fetched rows"},
-                {"value": "unknown", "label": "No snapshot"},
+                {"value": "no_snapshot", "label": "No snapshot"},
+                {"value": "error", "label": "Error/unknown"},
             ],
             "exact_choices": [
                 {"value": "exact", "label": "Exact found"},
@@ -1933,7 +1993,7 @@ def edit_rule(
         if replay_saved_snapshot:
             snapshot = get_rule_search_snapshot(session, rule_id=rule.id)
             if snapshot is not None:
-                inline_search = inline_search_from_snapshot(snapshot)
+                inline_search = inline_search_from_rule_snapshot(snapshot, rule=rule)
                 inline_search_notices.append(
                     "Showing saved search snapshot from "
                     f"{_format_snapshot_fetched_at(snapshot.fetched_at)}."
@@ -2017,7 +2077,7 @@ def edit_rule(
                         )
                         if not effective_feed_scope_override:
                             refresh_snapshot_release_cache(snapshot, rule=rule)
-                        inline_search = inline_search_from_snapshot(snapshot)
+                        inline_search = inline_search_from_rule_snapshot(snapshot, rule=rule)
                         session.commit()
                         if refresh_inline_snapshot:
                             inline_search_notices.append(

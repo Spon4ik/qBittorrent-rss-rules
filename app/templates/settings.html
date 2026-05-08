@@ -61,6 +61,21 @@
   </div>
 </section>
 
+<section class="status-panel settings-version-panel">
+  <div>
+    <strong>Backend version</strong>
+    <p class="helper-text">v{{ app_version }}</p>
+  </div>
+  <div>
+    <strong>Desktop contract</strong>
+    <p class="helper-text">{{ desktop_backend_contract or "n/a" }}</p>
+  </div>
+  <div>
+    <strong>Capabilities</strong>
+    <p class="helper-text">{{ desktop_capabilities | join(", ") if desktop_capabilities else "n/a" }}</p>
+  </div>
+</section>
+
 <form
   class="stack"
   method="post"

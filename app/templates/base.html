@@ -10,9 +10,12 @@
   <body>
     <div class="page-shell{% if shell_layout == 'wide' %} page-shell--wide{% endif %}">
       <header class="site-header">
-        <div>
+        <div class="site-header-main">
           <p class="eyebrow">Local control plane</p>
-          <h1>qBittorrent RSS Rule Manager</h1>
+          <div class="site-title-row">
+            <h1>qBittorrent RSS Rule Manager</h1>
+            {% if app_version %}<span class="app-version-badge">v{{ app_version }}</span>{% endif %}
+          </div>
           <p class="lede">
             Build and sync RSS rules from structured fields instead of editing raw exports.
           </p>

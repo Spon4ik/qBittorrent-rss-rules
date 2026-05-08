@@ -33,6 +33,7 @@ RULES_PAGE_SORT_FIELDS = {
     "last_sync_status",
     "enabled",
     "release_state",
+    "release_signal",
     "exact_filtered_count",
     "combined_filtered_count",
     "combined_fetched_count",
@@ -797,6 +798,30 @@ class RuleBatchFetchRequest(BaseModel):
     def validate_scope(self) -> RuleBatchFetchRequest:
         if not self.run_all and not self.rule_ids:
             raise ValueError("Select one or more rules, or choose Run all.")
+        return self
+
+
+class RuleBatchQualityProfileRequest(BaseModel):
+    rule_ids: list[str] = Field(default_factory=list)
+    quality_profile: Literal["plain", "1080p", "2160p_hdr"]
+
+    @field_validator("rule_ids")
+    @classmethod
+    def normalize_rule_ids(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            candidate = str(item or "").strip()
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            cleaned.append(candidate)
+        return cleaned
+
+    @model_validator(mode="after")
+    def validate_scope(self) -> RuleBatchQualityProfileRequest:
+        if not self.rule_ids:
+            raise ValueError("Select one or more rules to update.")
         return self
 
 

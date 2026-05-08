@@ -54,6 +54,8 @@ class QualityMode(str, enum.Enum):
 
 class SyncStatus(str, enum.Enum):
     NEVER = "never"
+    PENDING = "pending"
+    SYNCING = "syncing"
     OK = "ok"
     ERROR = "error"
     DRIFT = "drift"
@@ -177,6 +179,11 @@ class Rule(Base):
     )
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_snapshot_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_release_filtered_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_release_fetched_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_exact_filtered_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_exact_fetched_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
     )
@@ -342,6 +349,7 @@ class AppSettings(Base):
         default="idle",
     )
     rules_fetch_schedule_last_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    rules_fetch_parallelism: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     rules_page_view_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="table")
     rules_page_sort_field: Mapped[str] = mapped_column(
         String(64), nullable=False, default="updated_at"

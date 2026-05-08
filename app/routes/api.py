@@ -19,6 +19,7 @@ from app.models import (
     QualityMode,
     QualityProfile,
     Rule,
+    SyncStatus,
     media_type_choices,
     media_type_label,
 )
@@ -37,6 +38,7 @@ from app.schemas import (
     JackettSearchRequest,
     MetadataLookupRequest,
     RuleBatchFetchRequest,
+    RuleBatchQualityProfileRequest,
     RuleFetchSchedulePayload,
     RuleFormPayload,
     RulesPagePreferencesPayload,
@@ -107,13 +109,17 @@ from app.services.static_assets import compute_static_asset_version
 from app.services.stremio import StremioError, StremioService
 from app.services.stremio_sync_ops import StremioSyncBusyError, execute_stremio_sync
 from app.services.sync import SyncService, SyncServiceError
+from app.services.sync_queue import enqueue_rule_sync
 
 router = APIRouter(prefix="/api")
 compat_router = APIRouter()
 
 
-def _template_context(_: Request) -> dict[str, object]:
-    return {"static_asset_version": compute_static_asset_version()}
+def _template_context(request: Request) -> dict[str, object]:
+    return {
+        "static_asset_version": compute_static_asset_version(),
+        "app_version": getattr(request.app, "version", ""),
+    }
 
 
 templates = Jinja2Templates(
@@ -445,6 +451,13 @@ def _render_settings_page(
             "quality_options": quality_option_choices(),
             "quality_option_groups": quality_option_groups(),
             "metadata_choices": ["omdb", "disabled"],
+            "app_version": getattr(request.app, "version", ""),
+            "desktop_backend_contract": getattr(
+                request.app.state, "desktop_backend_contract", ""
+            ),
+            "desktop_capabilities": list(
+                getattr(request.app.state, "desktop_capabilities", []) or []
+            ),
             "message": message,
             "message_level": message_level,
         },
@@ -771,6 +784,7 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
         rules_fetch_schedule_last_message=str(
             getattr(settings, "rules_fetch_schedule_last_message", "")
         ),
+        rules_fetch_parallelism=int(getattr(settings, "rules_fetch_parallelism", 3)),
         rules_page_view_mode=str(getattr(settings, "rules_page_view_mode", "table")),
         rules_page_sort_field=str(getattr(settings, "rules_page_sort_field", "updated_at")),
         rules_page_sort_direction=str(getattr(settings, "rules_page_sort_direction", "desc")),
@@ -995,6 +1009,81 @@ def save_rules_page_preferences(
             "view_mode": settings.rules_page_view_mode,
             "sort_field": settings.rules_page_sort_field,
             "sort_direction": settings.rules_page_sort_direction,
+        }
+    )
+
+
+@router.post("/rules/batch-quality-profile")
+def batch_update_rule_quality_profile(
+    payload: RuleBatchQualityProfileRequest,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    target_profile = QualityProfile(payload.quality_profile)
+    selected_rules = session.scalars(select(Rule).where(Rule.id.in_(payload.rule_ids))).all()
+    rules_by_id = {rule.id: rule for rule in selected_rules}
+    results: list[dict[str, object]] = []
+    changed_rule_ids: list[str] = []
+
+    for rule_id in payload.rule_ids:
+        rule = rules_by_id.get(rule_id)
+        if rule is None:
+            results.append(
+                {
+                    "rule_id": rule_id,
+                    "status": "skipped",
+                    "reason": "Rule not found.",
+                }
+            )
+            continue
+        if rule.quality_profile == target_profile and rule.quality_mode == QualityMode.MANAGED:
+            results.append(
+                {
+                    "rule_id": rule.id,
+                    "rule_name": rule.rule_name,
+                    "status": "skipped",
+                    "reason": "Rule already uses that managed profile.",
+                }
+            )
+            continue
+        rule.quality_profile = target_profile
+        rule.quality_mode = QualityMode.MANAGED
+        rule.last_sync_status = SyncStatus.PENDING
+        rule.last_sync_error = None
+        session.add(rule)
+        changed_rule_ids.append(rule.id)
+        results.append(
+            {
+                "rule_id": rule.id,
+                "rule_name": rule.rule_name,
+                "status": "changed",
+                "quality_profile": target_profile.value,
+                "quality_mode": QualityMode.MANAGED.value,
+            }
+        )
+
+    if changed_rule_ids:
+        session.commit()
+    else:
+        session.rollback()
+
+    sync_enqueued_count = 0
+    sync_results: list[dict[str, object]] = []
+    for rule_id in changed_rule_ids:
+        summary = enqueue_rule_sync(rule_id)
+        if isinstance(summary, dict):
+            sync_results.append({"rule_id": rule_id, **summary})
+            sync_enqueued_count += 1 if summary.get("enqueued") or summary.get("duplicate") else 0
+        else:
+            sync_results.append({"rule_id": rule_id, "enqueued": True})
+            sync_enqueued_count += 1
+
+    return JSONResponse(
+        {
+            "changed_count": len(changed_rule_ids),
+            "skipped_count": len(results) - len(changed_rule_ids),
+            "results": results,
+            "sync_enqueued_count": sync_enqueued_count,
+            "sync": sync_results,
         }
     )
 
@@ -1279,6 +1368,8 @@ async def create_rule(
         feed_resolution_notice=feed_resolution_notice,
         search_indexers=search_indexers,
     )
+    rule.last_sync_status = SyncStatus.PENDING
+    rule.last_sync_error = None
     session.add(rule)
     if remember_feed_defaults:
         settings.default_feed_urls = list(payload.feed_urls)
@@ -1299,9 +1390,9 @@ async def create_rule(
             errors=["Rule name already exists."],
         )
 
-    sync_result = SyncService(session, settings).sync_rule(rule.id)
-    message = sync_result.message
-    level = "success" if sync_result.success else "warning"
+    enqueue_rule_sync(rule.id)
+    message = "Rule saved locally. qB sync is queued in the background."
+    level = "success"
     return RedirectResponse(
         url=f"/rules/{rule.id}?message={message}&level={level}",
         status_code=303,
@@ -1363,6 +1454,8 @@ async def update_rule(
         feed_resolution_notice=feed_resolution_notice,
         search_indexers=search_indexers,
     )
+    rule.last_sync_status = SyncStatus.PENDING
+    rule.last_sync_error = None
     if remember_feed_defaults:
         settings.default_feed_urls = list(payload.feed_urls)
 
@@ -1382,10 +1475,11 @@ async def update_rule(
             rule_id=rule_id,
         )
 
-    sync_result = SyncService(session, settings).sync_rule(rule.id)
-    level = "success" if sync_result.success else "warning"
+    enqueue_rule_sync(rule.id)
+    message = "Rule saved locally. qB sync is queued in the background."
+    level = "success"
     return RedirectResponse(
-        url=f"/rules/{rule.id}?message={sync_result.message}&level={level}",
+        url=f"/rules/{rule.id}?message={message}&level={level}",
         status_code=303,
     )
 

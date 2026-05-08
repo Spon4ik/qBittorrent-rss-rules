@@ -3138,10 +3138,10 @@ function initSearchPage(container) {
         const actionLabel = controlState.showHiddenRows
           ? "Hidden rows are shown below with their first blocker."
           : "Enable \"Show hidden fetched rows\" to inspect them in the table.";
-        const rowLabel = hiddenEntries.length === 1 ? "row is" : "rows are";
+        const rowVerb = hiddenEntries.length === 1 ? "is" : "are";
         state.hiddenSummaryElement.textContent = (
           `${hiddenEntries.length} fetched row${hiddenEntries.length === 1 ? "" : "s"} `
-          + `${rowLabel} currently hidden. `
+          + `${rowVerb} currently hidden. `
           + (topHiddenReasons ? `Top blockers: ${topHiddenReasons}. ` : "")
           + actionLabel
         );
@@ -4262,11 +4262,16 @@ function initSettingsForm(form) {
 function initRulesPage(container) {
   const FILTER_STORAGE_KEY = "qb-rules-page-filters:v1";
   const FILTER_RESTORE_FLAG_KEY = "qb-rules-page-filters:restoring";
-  const FILTER_FIELD_NAMES = ["search", "media", "sync", "enabled", "release", "exact"];
+  const FILTER_FIELD_NAMES = ["search", "media", "quality", "sync", "enabled", "release", "exact"];
   const filterForm = container.querySelector("[data-rules-filter-form]");
+  const clearFiltersButton = container.querySelector("[data-rules-clear-filters]");
   const tableWrap = container.querySelector("[data-rules-table-wrap]");
   const cardsWrap = container.querySelector("[data-rules-cards-wrap]");
   const tableBody = container.querySelector("[data-rules-table-body]");
+  const contextBar = container.querySelector("[data-rules-context-bar]");
+  const selectedCount = container.querySelector("[data-rules-selected-count]");
+  const batchQualityProfileInput = container.querySelector("[data-rules-batch-quality-profile]");
+  const applyQualityButton = container.querySelector("[data-rules-apply-quality]");
   const sortButtons = Array.from(container.querySelectorAll("[data-rules-sort-field]"));
   const selectAllToggle = container.querySelector("[data-rules-select-all]");
   const includeDisabledToggle = container.querySelector("[data-rules-include-disabled]");
@@ -4297,16 +4302,19 @@ function initRulesPage(container) {
     "last_sync_status",
     "enabled",
     "release_state",
+    "release_signal",
     "exact_filtered_count",
     "combined_filtered_count",
     "combined_fetched_count",
     "last_snapshot_at",
   ]);
   const SYNC_STATUS_RANK = {
-    ok: 0,
-    never: 1,
-    drift: 2,
-    error: 3,
+    error: 0,
+    drift: 1,
+    pending: 2,
+    syncing: 3,
+    never: 4,
+    ok: 5,
   };
   const defaultDirectionByField = {
     updated_at: "desc",
@@ -4315,6 +4323,7 @@ function initRulesPage(container) {
     last_sync_status: "asc",
     enabled: "desc",
     release_state: "asc",
+    release_signal: "asc",
     exact_filtered_count: "desc",
     combined_filtered_count: "desc",
     combined_fetched_count: "desc",
@@ -4337,6 +4346,7 @@ function initRulesPage(container) {
       name: "",
       mediaType: "",
       releaseRank: 99,
+      releaseSignalRank: 99,
       exactFilteredCount: 0,
       filteredCount: 0,
       fetchedCount: 0,
@@ -4356,6 +4366,9 @@ function initRulesPage(container) {
     existing.name = String(element.dataset.ruleName || existing.name || "").trim();
     existing.mediaType = String(element.dataset.ruleMediaType || existing.mediaType || "").trim();
     existing.releaseRank = Number(element.dataset.ruleReleaseRank || existing.releaseRank || 99);
+    existing.releaseSignalRank = Number(
+      element.dataset.ruleReleaseSignalRank || existing.releaseSignalRank || 99
+    );
     existing.exactFilteredCount = Number(
       element.dataset.ruleExactFilteredCount || existing.exactFilteredCount || 0
     );
@@ -4519,6 +4532,9 @@ function initRulesPage(container) {
       case "release_state":
         result = compareNumeric(left.releaseRank, right.releaseRank);
         break;
+      case "release_signal":
+        result = compareNumeric(left.releaseSignalRank, right.releaseSignalRank);
+        break;
       case "exact_filtered_count":
         result = compareNumeric(left.exactFilteredCount, right.exactFilteredCount);
         break;
@@ -4588,6 +4604,7 @@ function initRulesPage(container) {
       "updated_at",
       "enabled",
       "release_state",
+      "release_signal",
       "exact_filtered_count",
       "combined_filtered_count",
       "combined_fetched_count",
@@ -4608,7 +4625,7 @@ function initRulesPage(container) {
       button.dataset.sortActive = active ? "1" : "0";
       button.setAttribute("aria-pressed", active ? "true" : "false");
       if (glyph) {
-        glyph.textContent = active ? sortGlyphFor(field) : "↕";
+        glyph.textContent = active ? sortGlyphFor(field) : "sort";
       }
     }
   };
@@ -4655,13 +4672,29 @@ function initRulesPage(container) {
     return selected;
   };
 
+  const updateSelectionState = () => {
+    const selected = selectedRuleIds();
+    if (selectedCount) {
+      selectedCount.textContent = String(selected.length);
+    }
+    if (contextBar) {
+      contextBar.hidden = selected.length === 0;
+    }
+    if (selectAllToggle) {
+      const visible = visibleCheckboxes();
+      const selectedVisible = visible.filter((checkbox) => checkbox.checked);
+      selectAllToggle.checked = visible.length > 0 && selectedVisible.length === visible.length;
+      selectAllToggle.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visible.length;
+    }
+  };
+
   const runBatchFetch = async ({ runAll, ruleIds }) => {
     if (!runAll && ruleIds.length === 0) {
       setRunStatus("Select at least one rule first.", true);
       return;
     }
     const includeDisabled = Boolean(includeDisabledToggle?.checked);
-    const buttons = [runSelectedButton, runAllButton].filter(Boolean);
+    const buttons = [runSelectedButton, runAllButton, applyQualityButton].filter(Boolean);
     for (const button of buttons) {
       button.disabled = true;
     }
@@ -4692,6 +4725,48 @@ function initRulesPage(container) {
     } finally {
       for (const button of buttons) {
         button.disabled = false;
+      }
+    }
+  };
+
+  const applyBatchQualityProfile = async () => {
+    const ruleIds = selectedRuleIds();
+    if (!ruleIds.length) {
+      setRunStatus("Select at least one rule first.", true);
+      return;
+    }
+    const qualityProfile = String(batchQualityProfileInput?.value || "plain");
+    if (applyQualityButton) {
+      applyQualityButton.disabled = true;
+    }
+    setRunStatus("Applying quality profile...");
+    try {
+      const response = await fetch("/api/rules/batch-quality-profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          rule_ids: ruleIds,
+          quality_profile: qualityProfile,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(String(payload?.message || payload?.error || "Could not update quality profile."));
+      }
+      setRunStatus(
+        `Updated ${Number(payload?.changed_count || 0)} rule(s); qB sync queued.`
+      );
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 350);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not update quality profile.";
+      setRunStatus(message, true);
+    } finally {
+      if (applyQualityButton) {
+        applyQualityButton.disabled = false;
       }
     }
   };
@@ -5130,6 +5205,7 @@ function initRulesPage(container) {
     for (const checkbox of entry.checkboxes) {
       checkbox.addEventListener("change", () => {
         setSelectionForRule(entry.id, checkbox.checked);
+        updateSelectionState();
       });
     }
   }
@@ -5140,6 +5216,7 @@ function initRulesPage(container) {
       checkbox.checked = Boolean(selectAllToggle.checked);
       checkbox.dispatchEvent(new Event("change"));
     }
+    updateSelectionState();
   });
 
   runSelectedButton?.addEventListener("click", () => {
@@ -5156,12 +5233,19 @@ function initRulesPage(container) {
     });
   });
 
+  applyQualityButton?.addEventListener("click", applyBatchQualityProfile);
+
   for (const button of viewModeButtons) {
     button.addEventListener("click", () => {
       const mode = normalizeViewMode(button.dataset.rulesViewModeButton || "table");
       state.viewMode = mode;
-      applyViewMode();
       syncFilterHiddenInputs();
+      if (mode === "cards" && !cardsWrap && filterForm) {
+        filterForm.requestSubmit();
+        return;
+      }
+      applyViewMode();
+      updateSelectionState();
     });
   }
 
@@ -5189,10 +5273,20 @@ function initRulesPage(container) {
     syncFilterHiddenInputs();
   });
 
+  clearFiltersButton?.addEventListener("click", () => {
+    try {
+      window.localStorage.removeItem(FILTER_STORAGE_KEY);
+      window.sessionStorage.removeItem(FILTER_RESTORE_FLAG_KEY);
+    } catch {
+      // Ignore storage failures and let the link navigate normally.
+    }
+  });
+
   restoreFilterState();
   sortEntries();
   renderSortHeaders();
   applyViewMode();
+  updateSelectionState();
   syncFilterHiddenInputs();
   renderScheduleStatus();
 }

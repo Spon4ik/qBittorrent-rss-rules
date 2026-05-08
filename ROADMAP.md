@@ -1,9 +1,10 @@
 # Roadmap
 
-## Current release target: post-v1.1.6 backlog selection
+## Current release target: Phase 29 rules operations workbench
 
-### In progress
+### Validated locally
 
+- Phase 29 is implemented and locally validated as the post-`v1.1.6` rules operations workbench: fast local rule saves with background qB sync, main-page batch quality assignment/filtering, backend-derived release signal, missing/oldest-first parallel snapshot fetching, compact data-grid UI, version visibility, compact icon row actions, and snapshot-summary render optimization (`docs/plans/phase-29-rules-operations-workbench.md`).
 - Phase 28 is published as the `v1.1.6` patch slice: persisted Jackett active-search indexers now own saved-rule search/snapshot scope while `feed_urls` remains qB RSS passive sync scope (`docs/plans/phase-28-rule-search-scope-authority.md`).
 - Phase 26 is published as the `v1.1.4` patch slice: structured Jackett music/audiobook direct searches now respect explicit indexer scope before later cleanup considers larger search-form or metadata-field work.
 - Phase 27 is published as the `v1.1.5` structured-audio cleanup: expose the backend-supported music/audiobook metadata fields on the active search page so native Jackett audio params can be driven deliberately.
@@ -23,6 +24,7 @@
 
 ### Current phase track
 
+- Phase 29: rules operations workbench (implemented and locally validated; `docs/plans/phase-29-rules-operations-workbench.md`)
 - Phase 28: rule/search scope authority (published in `v1.1.6`; `docs/plans/phase-28-rule-search-scope-authority.md`)
 - Phase 27: structured audio search fields (published in `v1.1.5`; `docs/plans/phase-27-structured-audio-search-fields.md`)
 - Phase 26: structured Jackett audio search scope (published in `v1.1.4`; `docs/plans/phase-26-structured-jackett-audio-search.md`)

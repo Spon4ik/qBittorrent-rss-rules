@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import re
+import threading
+import time
+from datetime import timedelta
 
 from app.config import obfuscate_secret
 from app.models import AppSettings, MediaType, QualityProfile, Rule, RuleSearchSnapshot, utcnow
@@ -135,6 +138,140 @@ def test_rules_page_skips_poster_backfill_on_filtered_requests(
 
     assert response.status_code == 200
     assert called is False
+
+
+def test_rules_fetch_batch_fetches_missing_then_oldest_snapshots(
+    db_session,
+    monkeypatch,
+) -> None:
+    now = utcnow()
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+        rules_fetch_parallelism=1,
+    )
+    newest_rule = Rule(
+        rule_name="Alpha Newest Snapshot",
+        content_name="Alpha Newest Snapshot",
+        normalized_title="Alpha Newest Snapshot",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    oldest_rule = Rule(
+        rule_name="Middle Oldest Snapshot",
+        content_name="Middle Oldest Snapshot",
+        normalized_title="Middle Oldest Snapshot",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    missing_rule = Rule(
+        rule_name="Zulu Missing Snapshot",
+        content_name="Zulu Missing Snapshot",
+        normalized_title="Zulu Missing Snapshot",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add_all([settings, newest_rule, oldest_rule, missing_rule])
+    db_session.flush()
+    db_session.add_all(
+        [
+            RuleSearchSnapshot(
+                rule_id=newest_rule.id,
+                inline_search={},
+                fetched_at=now - timedelta(minutes=5),
+            ),
+            RuleSearchSnapshot(
+                rule_id=oldest_rule.id,
+                inline_search={},
+                fetched_at=now - timedelta(days=2),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    fetched_rule_names: list[str] = []
+
+    def fake_execute_rule_fetch(session, *, rule, feed_urls_override=None):
+        fetched_rule_names.append(rule.rule_name)
+        return {
+            "rule_id": rule.id,
+            "rule_name": rule.rule_name,
+            "success": True,
+            "state": "no_matches",
+            "rank": 3,
+            "filtered_count": 0,
+            "fetched_count": 0,
+            "warnings": [],
+            "notices": [],
+            "error": "",
+        }
+
+    monkeypatch.setattr(rule_fetch_ops, "execute_rule_fetch", fake_execute_rule_fetch)
+
+    result = rule_fetch_ops.run_rules_fetch_batch(db_session, run_all=True)
+
+    assert result["status"] == "ok"
+    assert fetched_rule_names == [
+        "Zulu Missing Snapshot",
+        "Middle Oldest Snapshot",
+        "Alpha Newest Snapshot",
+    ]
+
+
+def test_rules_fetch_batch_limits_parallel_workers(db_session, monkeypatch) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+        rules_fetch_parallelism=2,
+    )
+    rules = [
+        Rule(
+            rule_name=f"Parallel Rule {index}",
+            content_name=f"Parallel Rule {index}",
+            normalized_title=f"Parallel Rule {index}",
+            media_type=MediaType.SERIES,
+            quality_profile=QualityProfile.PLAIN,
+        )
+        for index in range(5)
+    ]
+    db_session.add(settings)
+    db_session.add_all(rules)
+    db_session.commit()
+
+    active_workers = 0
+    max_active_workers = 0
+    lock = threading.Lock()
+
+    def fake_execute_rule_fetch(session, *, rule, feed_urls_override=None):
+        nonlocal active_workers, max_active_workers
+        with lock:
+            active_workers += 1
+            max_active_workers = max(max_active_workers, active_workers)
+        time.sleep(0.05)
+        with lock:
+            active_workers -= 1
+        return {
+            "rule_id": rule.id,
+            "rule_name": rule.rule_name,
+            "success": True,
+            "state": "no_matches",
+            "rank": 3,
+            "filtered_count": 0,
+            "fetched_count": 0,
+            "warnings": [],
+            "notices": [],
+            "error": "",
+        }
+
+    monkeypatch.setattr(rule_fetch_ops, "execute_rule_fetch", fake_execute_rule_fetch)
+
+    result = rule_fetch_ops.run_rules_fetch_batch(db_session, run_all=True)
+
+    assert result["attempted"] == 5
+    assert result["succeeded"] == 5
+    assert max_active_workers == 2
 
 
 def test_rule_local_filter_excludes_zero_based_ranges_below_episode_floor() -> None:
@@ -278,4 +415,57 @@ def test_refresh_snapshot_release_cache_records_hidden_reason_counts(db_session)
         "Missing include keyword: wanted.": 1,
         "Matched excluded keyword: bad.": 1,
         "Release year does not match 2026.": 1,
+    }
+
+
+def test_refresh_snapshot_release_cache_requires_rule_title_identity(db_session) -> None:
+    rule = Rule(
+        rule_name="Rule Identity Count",
+        content_name="Rule Identity Count",
+        normalized_title="Rule Identity Count",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.CUSTOM,
+        quality_include_tokens=[],
+        quality_exclude_tokens=["1080p"],
+        feed_urls=[
+            "https://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api"
+        ],
+    )
+    db_session.add(rule)
+    db_session.flush()
+
+    snapshot = RuleSearchSnapshot(
+        rule_id=rule.id,
+        inline_search={
+            "combined_filtered_count": 2,
+            "combined_fetched_count": 2,
+            "unified_raw_results": [
+                {
+                    "title": "Broad Variant 2160p",
+                    "text_surface": "broad variant 2160p",
+                    "indexer": "RuTracker.org",
+                    "query_source_key": "fallback",
+                    "visible": False,
+                },
+                {
+                    "title": "Rule Identity Count 2160p",
+                    "text_surface": "rule identity count 2160p",
+                    "indexer": "RuTracker.org",
+                    "query_source_key": "fallback",
+                    "visible": False,
+                },
+            ],
+        },
+        fetched_at=utcnow(),
+    )
+    db_session.add(snapshot)
+    db_session.commit()
+
+    assert refresh_snapshot_release_cache(snapshot, rule=rule) is True
+    db_session.commit()
+
+    assert snapshot.release_filtered_count == 1
+    assert snapshot.release_fetched_count == 2
+    assert snapshot.inline_search["rule_local_hidden_reasons"] == {
+        'Title does not match query "Rule Identity Count".': 1
     }

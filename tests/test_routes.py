@@ -4,6 +4,7 @@ import json
 import re
 import shutil
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -235,7 +236,7 @@ def test_rules_page_renders_release_status_from_snapshots(app_client, db_session
 
     assert response.status_code == 200
     assert "data-rules-page" in response.text
-    assert "Matches found" in response.text
+    assert "Fallback" in response.text
     assert "No matches" in response.text
     assert "No snapshot" in response.text
     assert "1 / 1" in response.text
@@ -365,15 +366,16 @@ def test_rules_page_renders_exact_status_from_snapshots(app_client, db_session) 
     response = app_client.get("/")
 
     assert response.status_code == 200
-    assert "Exact found" in response.text
-    assert "Fallback only" in response.text
+    assert "Release signal" in response.text
+    assert 'data-release-signal="exact"' in response.text
+    assert 'data-release-signal="fallback"' in response.text
     assert "No exact" in response.text
     assert "3 / 5" in response.text
-    assert "0 / 4" in response.text
     assert "0 / 2" in response.text
 
 
-def test_rules_page_filters_by_exact_state(app_client, db_session) -> None:
+def test_rules_page_filters_by_release_signal(app_client, db_session) -> None:
+    snapshot_at = datetime(2026, 5, 8, tzinfo=UTC)
     exact_rule = Rule(
         rule_name="Exact Filter Rule",
         content_name="Exact Filter Rule",
@@ -381,6 +383,11 @@ def test_rules_page_filters_by_exact_state(app_client, db_session) -> None:
         media_type=MediaType.SERIES,
         quality_profile=QualityProfile.PLAIN,
         feed_urls=["https://jackett.test/api/v2.0/indexers/exact-filter/results/torznab/api"],
+        last_snapshot_at=snapshot_at,
+        last_release_filtered_count=1,
+        last_release_fetched_count=3,
+        last_exact_filtered_count=1,
+        last_exact_fetched_count=2,
     )
     fallback_rule = Rule(
         rule_name="Fallback Filter Rule",
@@ -389,6 +396,11 @@ def test_rules_page_filters_by_exact_state(app_client, db_session) -> None:
         media_type=MediaType.SERIES,
         quality_profile=QualityProfile.PLAIN,
         feed_urls=["https://jackett.test/api/v2.0/indexers/fallback-filter/results/torznab/api"],
+        last_snapshot_at=snapshot_at,
+        last_release_filtered_count=1,
+        last_release_fetched_count=5,
+        last_exact_filtered_count=0,
+        last_exact_fetched_count=2,
     )
     db_session.add_all([exact_rule, fallback_rule])
     db_session.flush()
@@ -402,6 +414,7 @@ def test_rules_page_filters_by_exact_state(app_client, db_session) -> None:
                 release_fetched_count=3,
                 exact_filtered_count=1,
                 exact_fetched_count=2,
+                fetched_at=snapshot_at,
             ),
             RuleSearchSnapshot(
                 rule_id=fallback_rule.id,
@@ -411,18 +424,123 @@ def test_rules_page_filters_by_exact_state(app_client, db_session) -> None:
                 release_fetched_count=5,
                 exact_filtered_count=0,
                 exact_fetched_count=2,
+                fetched_at=snapshot_at,
             ),
         ]
     )
     db_session.commit()
 
-    response = app_client.get("/?exact=exact")
+    response = app_client.get("/?release=exact")
 
     assert response.status_code == 200
     assert "Exact Filter Rule" in response.text
     assert "Fallback Filter Rule" not in response.text
-    assert 'name="exact"' in response.text
+    assert 'name="release"' in response.text
     assert 'value="exact" selected' in response.text
+
+
+def test_rules_page_filters_by_manual_custom_quality(app_client, db_session) -> None:
+    manual_rule = Rule(
+        rule_name="Manual Quality Rule",
+        content_name="Manual Quality Rule",
+        normalized_title="Manual Quality Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.CUSTOM,
+        quality_mode=QualityMode.MANUAL,
+        quality_include_tokens=["2160p"],
+        quality_exclude_tokens=["cam"],
+    )
+    managed_rule = Rule(
+        rule_name="Managed Quality Rule",
+        content_name="Managed Quality Rule",
+        normalized_title="Managed Quality Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.HD_1080P,
+        quality_mode=QualityMode.MANAGED,
+    )
+    db_session.add_all([manual_rule, managed_rule])
+    db_session.commit()
+
+    response = app_client.get("/?quality=manual_custom")
+
+    assert response.status_code == 200
+    assert "Manual Quality Rule" in response.text
+    assert "Managed Quality Rule" not in response.text
+    assert 'name="quality"' in response.text
+    assert 'value="manual_custom" selected' in response.text
+    assert "Clear filters" in response.text
+
+
+def test_rules_page_renders_backend_release_signal_column(app_client, db_session) -> None:
+    snapshot_at = datetime(2026, 5, 8, tzinfo=UTC)
+    exact_rule = Rule(
+        rule_name="Signal Exact Rule",
+        content_name="Signal Exact Rule",
+        normalized_title="Signal Exact Rule",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        last_snapshot_at=snapshot_at,
+        last_release_filtered_count=4,
+        last_release_fetched_count=7,
+        last_exact_filtered_count=2,
+        last_exact_fetched_count=3,
+    )
+    fallback_rule = Rule(
+        rule_name="Signal Fallback Rule",
+        content_name="Signal Fallback Rule",
+        normalized_title="Signal Fallback Rule",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        last_snapshot_at=snapshot_at,
+        last_release_filtered_count=3,
+        last_release_fetched_count=8,
+        last_exact_filtered_count=0,
+        last_exact_fetched_count=5,
+    )
+    no_snapshot_rule = Rule(
+        rule_name="Signal No Snapshot Rule",
+        content_name="Signal No Snapshot Rule",
+        normalized_title="Signal No Snapshot Rule",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add_all([exact_rule, fallback_rule, no_snapshot_rule])
+    db_session.flush()
+    db_session.add_all(
+        [
+            RuleSearchSnapshot(
+                rule_id=exact_rule.id,
+                payload={"query": "Signal Exact Rule", "imdb_id_only": True},
+                inline_search={},
+                release_filtered_count=4,
+                release_fetched_count=7,
+                exact_filtered_count=2,
+                exact_fetched_count=3,
+                fetched_at=snapshot_at,
+            ),
+            RuleSearchSnapshot(
+                rule_id=fallback_rule.id,
+                payload={"query": "Signal Fallback Rule", "imdb_id_only": True},
+                inline_search={},
+                release_filtered_count=3,
+                release_fetched_count=8,
+                exact_filtered_count=0,
+                exact_fetched_count=5,
+                fetched_at=snapshot_at,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = app_client.get("/")
+
+    assert response.status_code == 200
+    assert "Release signal" in response.text
+    assert 'data-release-signal="exact"' in response.text
+    assert 'data-release-signal="fallback"' in response.text
+    assert 'data-release-signal="no_snapshot"' in response.text
+    assert "2 / 3" in response.text
+    assert "3 / 8" in response.text
 
 
 def test_rules_page_does_not_trigger_automatic_poster_backfill(
@@ -918,10 +1036,11 @@ def test_rules_page_filter_state_persists_locally_in_app_js() -> None:
 
     assert 'const FILTER_STORAGE_KEY = "qb-rules-page-filters:v1";' in app_js_source
     assert (
-        'const FILTER_FIELD_NAMES = ["search", "media", "sync", "enabled", "release", "exact"];'
+        'const FILTER_FIELD_NAMES = ["search", "media", "quality", "sync", "enabled", "release", "exact"];'
         in app_js_source
     )
     assert "window.localStorage.setItem(" in app_js_source
+    assert "window.localStorage.removeItem(FILTER_STORAGE_KEY);" in app_js_source
     assert 'window.sessionStorage.setItem(FILTER_RESTORE_FLAG_KEY, "1");' in app_js_source
     assert "filterForm.requestSubmit();" in app_js_source
 
@@ -937,6 +1056,17 @@ def test_inline_local_filters_enforce_query_and_imdb_parity() -> None:
         "const imdbExactMatch = Boolean(payloadImdbId && resultImdbId && payloadImdbId === resultImdbId);"
         in app_js_source
     )
+    assert (
+        "if (!isPrecisePrimaryRow && !imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {"
+        in app_js_source
+    )
+
+
+def test_rule_snapshot_inline_filters_keep_literal_title_narrowing() -> None:
+    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+    app_js_source = app_js_path.read_text(encoding="utf-8")
+
+    assert "useRuleLocalSnapshotFilters" not in app_js_source
     assert (
         "if (!isPrecisePrimaryRow && !imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {"
         in app_js_source
@@ -2367,7 +2497,7 @@ def test_rule_pages_expose_run_search_actions(app_client, db_session) -> None:
 
     assert index_response.status_code == 200
     assert f"/rules/{rule.id}/search" in index_response.text
-    assert ">Run Search</a>" in index_response.text
+    assert 'title="Run search"' in index_response.text
     assert edit_response.status_code == 200
     assert f"/rules/{rule.id}/search" in edit_response.text
     assert ">Run Search Here</a>" in edit_response.text
@@ -2528,6 +2658,94 @@ def test_edit_rule_inline_search_replays_saved_snapshot_without_jackett_call(
     assert response.status_code == 200
     assert "Replay Snapshot S01E01" in response.text
     assert "Showing saved search snapshot from" in response.text
+
+
+def test_edit_rule_saved_snapshot_hides_rows_that_only_pass_quality_and_scope(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    feed_url = "http://jackett:9117/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc&t=movie"
+    rule = Rule(
+        rule_name="Rule Local Snapshot Visibility",
+        content_name="Rule Local Snapshot Visibility",
+        normalized_title="Rule Local Snapshot Visibility",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.CUSTOM,
+        quality_mode=QualityMode.MANUAL,
+        quality_include_tokens=[],
+        quality_exclude_tokens=["1080p"],
+        feed_urls=[feed_url],
+    )
+    db_session.add(rule)
+    db_session.flush()
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule.id,
+            payload={"query": "Rule Local Snapshot Visibility", "media_type": "movie"},
+            inline_search={
+                "query": "Rule Local Snapshot Visibility",
+                "primary_label": "Precise results",
+                "request_variants": [],
+                "raw_results": [],
+                "results": [],
+                "fallback_label": "Title fallback",
+                "fallback_request_variants": [
+                    't=movie q="Rule Local Snapshot"',
+                    't=movie q="Visibility"',
+                ],
+                "raw_fallback_results": [
+                    {
+                        "title": "Broad Variant 2160p",
+                        "text_surface": "broad variant 2160p",
+                        "link": "https://example.com/broad-2160p.torrent",
+                        "indexer": "RuTracker.org",
+                        "visible": False,
+                    },
+                    {
+                        "title": "Broad Variant 1080p",
+                        "text_surface": "broad variant 1080p",
+                        "link": "https://example.com/broad-1080p.torrent",
+                        "indexer": "RuTracker.org",
+                        "visible": False,
+                    },
+                    {
+                        "title": "Outside Scope 2160p",
+                        "text_surface": "outside scope 2160p",
+                        "link": "https://example.com/outside-scope.torrent",
+                        "indexer": "Other Indexer",
+                        "visible": False,
+                    },
+                ],
+                "fallback_results": [],
+                "warning_messages": [],
+                "ignored_full_regex": False,
+                "show_peers_column": False,
+                "show_leechers_column": False,
+                "show_grabs_column": False,
+            },
+        )
+    )
+    db_session.commit()
+
+    def fail_search(self, payload):
+        raise AssertionError("Jackett search should not run when replaying a saved snapshot.")
+
+    monkeypatch.setattr(JackettClient, "search", fail_search)
+
+    response = app_client.get(f"/rules/{rule.id}")
+
+    assert response.status_code == 200
+    assert '<span data-search-filtered-count="combined">0</span> filtered' in response.text
+    assert (
+        'Title fallback:\n          <span data-search-source-filtered-count>0</span> filtered'
+        in response.text
+    )
+    assert re.search(
+        r'<article[^>]+data-title="Broad Variant 2160p"(?=[^>]*hidden)',
+        response.text,
+        re.DOTALL,
+    )
 
 
 def test_edit_rule_page_loads_saved_snapshot_by_default_and_can_clear_results(
@@ -4555,6 +4773,72 @@ def test_legacy_managed_rule_post_without_quality_mode_keeps_managed_authority(
     assert rule.quality_profile == QualityProfile.HD_1080P
 
 
+def test_batch_quality_profile_assigns_managed_profile_without_rewriting_tokens(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    first_rule = Rule(
+        rule_name="Batch Profile One",
+        content_name="Batch Profile One",
+        normalized_title="Batch Profile One",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.CUSTOM,
+        quality_mode=QualityMode.MANUAL,
+        quality_include_tokens=["custom-hdr"],
+        quality_exclude_tokens=["custom-cam"],
+    )
+    second_rule = Rule(
+        rule_name="Batch Profile Two",
+        content_name="Batch Profile Two",
+        normalized_title="Batch Profile Two",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        quality_mode=QualityMode.MANUAL,
+        quality_include_tokens=["manual-1080p"],
+        quality_exclude_tokens=["manual-720p"],
+    )
+    db_session.add_all([first_rule, second_rule])
+    db_session.commit()
+
+    enqueued_rule_ids: list[str] = []
+    monkeypatch.setattr(
+        "app.routes.api.enqueue_rule_sync",
+        lambda rule_id: enqueued_rule_ids.append(rule_id),
+        raising=False,
+    )
+
+    response = app_client.post(
+        "/api/rules/batch-quality-profile",
+        json={
+            "rule_ids": [first_rule.id, second_rule.id],
+            "quality_profile": "1080p",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["changed_count"] == 2
+    assert payload["skipped_count"] == 0
+    assert payload["sync_enqueued_count"] == 2
+    assert set(enqueued_rule_ids) == {first_rule.id, second_rule.id}
+    db_session.expire_all()
+    refreshed_first = db_session.get(Rule, first_rule.id)
+    refreshed_second = db_session.get(Rule, second_rule.id)
+    assert refreshed_first is not None
+    assert refreshed_second is not None
+    assert refreshed_first.quality_profile == QualityProfile.HD_1080P
+    assert refreshed_first.quality_mode == QualityMode.MANAGED
+    assert refreshed_first.quality_include_tokens == ["custom-hdr"]
+    assert refreshed_first.quality_exclude_tokens == ["custom-cam"]
+    assert refreshed_first.last_sync_status == SyncStatus.PENDING
+    assert refreshed_second.quality_profile == QualityProfile.HD_1080P
+    assert refreshed_second.quality_mode == QualityMode.MANAGED
+    assert refreshed_second.quality_include_tokens == ["manual-1080p"]
+    assert refreshed_second.quality_exclude_tokens == ["manual-720p"]
+    assert refreshed_second.last_sync_status == SyncStatus.PENDING
+
+
 def test_metadata_lookup_accepts_legacy_imdb_payload(app_client, monkeypatch) -> None:
     captured: dict[str, str] = {}
 
@@ -4622,7 +4906,25 @@ def test_metadata_lookup_accepts_provider_and_title_payload(app_client, monkeypa
     assert response.json()["provider"] == "musicbrainz"
 
 
-def test_create_rule_persists_locally_even_without_qb_config(app_client, db_session) -> None:
+def test_create_rule_persists_locally_and_enqueues_qb_sync_without_inline_call(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    inline_sync_calls: list[str] = []
+    enqueued_rule_ids: list[str] = []
+
+    def fail_inline_sync(self, rule_id: str):
+        inline_sync_calls.append(rule_id)
+        raise AssertionError("create/update should enqueue qB sync instead of syncing inline")
+
+    monkeypatch.setattr(SyncService, "sync_rule", fail_inline_sync)
+    monkeypatch.setattr(
+        "app.routes.api.enqueue_rule_sync",
+        lambda rule_id: enqueued_rule_ids.append(rule_id),
+        raising=False,
+    )
+
     response = app_client.post(
         "/api/rules",
         data={
@@ -4656,7 +4958,9 @@ def test_create_rule_persists_locally_even_without_qb_config(app_client, db_sess
     assert rule.quality_exclude_tokens == ["1080p", "720p"]
     assert rule.start_season == 3
     assert rule.start_episode == 7
-    assert rule.last_sync_status == SyncStatus.ERROR
+    assert rule.last_sync_status == SyncStatus.PENDING
+    assert inline_sync_calls == []
+    assert enqueued_rule_ids == [rule.id]
 
 
 def test_create_rule_rejects_incomplete_episode_progress_floor(app_client) -> None:

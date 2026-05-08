@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from urllib.parse import unquote, urlsplit
@@ -11,6 +12,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db import get_session_factory
 from app.models import MediaType, Rule, RuleSearchSnapshot, utcnow
 from app.schemas import JackettSearchRequest
 from app.services.category_catalog import (
@@ -22,6 +24,8 @@ from app.services.jackett import (
     JackettClientError,
     _matches_excluded_keyword,
     _matches_included_keyword,
+    _matches_precise_title_identity,
+    _matches_query_text,
     _normalize_match_text,
     build_reduced_search_request_from_rule,
     build_search_request_from_rule,
@@ -46,7 +50,11 @@ from app.services.rule_search_snapshots import (
     inline_search_from_snapshot,
     save_rule_search_snapshot,
 )
-from app.services.settings_service import SettingsService
+from app.services.settings_service import (
+    DEFAULT_RULE_FETCH_PARALLELISM,
+    SettingsService,
+    normalize_rule_fetch_parallelism,
+)
 
 JACKETT_FEED_INDEXER_PATH_RE = re.compile(
     r"/api/v2\.0/indexers/(?P<indexer>[^/]+)/results/torznab(?:/api)?/?$",
@@ -263,6 +271,17 @@ def _build_indexer_key_variants(value: object | None) -> list[str]:
     return variants
 
 
+def _normalize_imdb_id(value: object | None) -> str:
+    cleaned = str(value or "").strip().casefold()
+    if not cleaned:
+        return ""
+    if cleaned.isdigit():
+        return f"tt{cleaned}"
+    if re.fullmatch(r"tt\d+", cleaned):
+        return cleaned
+    return ""
+
+
 def _compile_pattern(pattern: object | None, *, ignore_case: bool = True) -> re.Pattern[str] | None:
     cleaned = str(pattern or "").strip()
     if not cleaned:
@@ -417,6 +436,8 @@ def _rule_local_filter_state(rule: Rule) -> dict[str, Any]:
     }
 
     return {
+        "query": _rule_search_title(rule),
+        "imdb_id": _normalize_imdb_id(rule.imdb_id),
         "keywords_all": required_include_terms,
         "keywords_any_groups": any_include_groups,
         "keywords_not": excluded_terms,
@@ -435,6 +456,8 @@ def _rule_local_filter_cache_key(rule: Rule) -> str:
     return json.dumps(
         {
             "additional_includes": str(rule.additional_includes or "").strip(),
+            "query": _rule_search_title(rule),
+            "imdb_id": _normalize_imdb_id(rule.imdb_id),
             "must_not_contain": str(rule.must_not_contain or "").strip(),
             "quality_include_tokens": list(effective_rule_quality_tokens(rule)[0]),
             "quality_exclude_tokens": list(effective_rule_quality_tokens(rule)[1]),
@@ -458,6 +481,32 @@ def _rule_local_filter_cache_key(rule: Rule) -> str:
     )
 
 
+def _snapshot_row_matches_rule_identity(
+    row: dict[str, Any],
+    *,
+    state: dict[str, Any],
+    title_surface: str,
+) -> bool:
+    query = str(state.get("query") or "").strip()
+    if not query:
+        return True
+
+    expected_imdb_id = _normalize_imdb_id(state.get("imdb_id"))
+    result_imdb_id = _normalize_imdb_id(row.get("imdb_id"))
+    if expected_imdb_id and result_imdb_id and expected_imdb_id == result_imdb_id:
+        return True
+
+    source_keys = _snapshot_row_query_source_keys(row)
+    if (
+        expected_imdb_id
+        and "primary" in source_keys
+        and _matches_precise_title_identity(str(row.get("title") or ""), query)
+    ):
+        return True
+
+    return _matches_query_text(title_surface=title_surface, query=query)
+
+
 def _snapshot_row_filter_failure(row: dict[str, Any], state: dict[str, Any]) -> str | None:
     if bool(state.get("feed_scope_blocks_all")):
         return "No affected feeds are selected."
@@ -465,7 +514,14 @@ def _snapshot_row_filter_failure(row: dict[str, Any], state: dict[str, Any]) -> 
     text_surface = str(row.get("text_surface") or "").strip()
     if not text_surface:
         text_surface = _normalize_match_text(str(row.get("title") or ""))
+    title_surface = _normalize_match_text(str(row.get("title") or ""))
     regex_surface = str(row.get("title") or row.get("text_surface") or "").strip()
+
+    if not _snapshot_row_matches_rule_identity(row, state=state, title_surface=title_surface):
+        query = str(state.get("query") or "").strip()
+        if query:
+            return f'Title does not match query "{query}".'
+        return "Title does not match the rule."
 
     for keyword in state.get("keywords_all", []):
         if not _matches_included_keyword(text_surface, str(keyword)):
@@ -521,6 +577,65 @@ def _snapshot_unified_raw_rows(snapshot: RuleSearchSnapshot) -> list[dict[str, A
     if not isinstance(legacy_rows, list):
         return []
     return [item for item in legacy_rows if isinstance(item, dict)]
+
+
+def _snapshot_row_query_source_keys(row: dict[str, Any]) -> list[str]:
+    grouped_sources = row.get("grouped_query_sources")
+    if isinstance(grouped_sources, list):
+        keys = [
+            str(item or "").strip().casefold()
+            for item in grouped_sources
+            if str(item or "").strip()
+        ]
+    else:
+        source_key = str(row.get("query_source_key") or "").strip().casefold()
+        keys = [item.strip() for item in source_key.split("+") if item.strip()]
+    return [item for item in keys if item in {"primary", "fallback"}]
+
+
+def inline_search_from_rule_snapshot(
+    snapshot: RuleSearchSnapshot,
+    *,
+    rule: Rule,
+) -> dict[str, object]:
+    inline_search = dict(cast(dict[str, Any], inline_search_from_snapshot(snapshot)))
+    raw_rows = inline_search.get("unified_raw_results")
+    rows = [dict(item) for item in raw_rows or [] if isinstance(item, dict)]
+    filter_state = _rule_local_filter_state(rule)
+    filtered_count = 0
+    hidden_reasons: dict[str, int] = {}
+    visible_by_source: dict[str, int] = {}
+
+    for row in rows:
+        failure = _snapshot_row_filter_failure(row, filter_state)
+        row["visible"] = failure is None
+        if failure is None:
+            row.pop("rule_local_hidden_reason", None)
+            filtered_count += 1
+            for source_key in _snapshot_row_query_source_keys(row):
+                visible_by_source[source_key] = visible_by_source.get(source_key, 0) + 1
+            continue
+        row["rule_local_hidden_reason"] = failure
+        hidden_reasons[failure] = hidden_reasons.get(failure, 0) + 1
+
+    source_breakdown: list[dict[str, Any]] = []
+    for source in inline_search.get("source_breakdown") or []:
+        if not isinstance(source, dict):
+            continue
+        item = dict(source)
+        source_key = str(item.get("key") or "").strip().casefold()
+        if source_key in {"primary", "fallback"}:
+            item["filtered_count"] = visible_by_source.get(source_key, 0)
+        source_breakdown.append(item)
+
+    inline_search["unified_raw_results"] = rows
+    inline_search["combined_filtered_count"] = filtered_count
+    inline_search["combined_fetched_count"] = len(rows)
+    inline_search["source_breakdown"] = source_breakdown
+    inline_search["rule_local_filter_mode"] = True
+    inline_search["rule_local_filter_cache_key"] = _rule_local_filter_cache_key(rule)
+    inline_search["rule_local_hidden_reasons"] = hidden_reasons
+    return cast(dict[str, object], inline_search)
 
 
 def _rule_local_filtered_count_from_rows(
@@ -590,11 +705,19 @@ def refresh_snapshot_release_cache(snapshot: RuleSearchSnapshot, *, rule: Rule) 
         == hidden_reasons
     )
     fetched_count = len(typed_rows)
+    summary_matches = (
+        rule.last_snapshot_at == snapshot.fetched_at
+        and rule.last_release_filtered_count == filtered_count
+        and rule.last_release_fetched_count == fetched_count
+        and rule.last_exact_filtered_count == snapshot.exact_filtered_count
+        and rule.last_exact_fetched_count == snapshot.exact_fetched_count
+    )
     if (
         current_key == cache_key
         and count_matches
         and hidden_reasons_match
         and snapshot.release_fetched_count == fetched_count
+        and summary_matches
     ):
         return False
     inline_search["rule_local_filter_cache_key"] = cache_key
@@ -605,6 +728,11 @@ def refresh_snapshot_release_cache(snapshot: RuleSearchSnapshot, *, rule: Rule) 
     snapshot.release_filter_cache_key = cache_key
     snapshot.release_filtered_count = filtered_count
     snapshot.release_fetched_count = fetched_count
+    rule.last_snapshot_at = snapshot.fetched_at
+    rule.last_release_filtered_count = filtered_count
+    rule.last_release_fetched_count = fetched_count
+    rule.last_exact_filtered_count = snapshot.exact_filtered_count
+    rule.last_exact_fetched_count = snapshot.exact_fetched_count
     return True
 
 
@@ -727,6 +855,24 @@ def _exact_state_rank(state: str) -> int:
     return ranking.get(state, 4)
 
 
+def _release_signal_from_counts(
+    *,
+    filtered_count: int,
+    fetched_count: int,
+    exact_filtered_count: int,
+    exact_fetched_count: int,
+) -> tuple[str, str, int]:
+    if exact_filtered_count > 0:
+        return "exact", "Exact", 0
+    if filtered_count > 0:
+        return "fallback", "Fallback", 1
+    if exact_fetched_count > 0:
+        return "no_exact", "No exact", 2
+    if fetched_count > 0:
+        return "no_matches", "No matches", 3
+    return "no_matches", "No matches", 3
+
+
 def _coerce_int(value: object, *, default: int = 0) -> int:
     if value is None:
         return default
@@ -764,6 +910,9 @@ def release_state_from_snapshot(
             "state": "unknown",
             "rank": _release_state_rank("unknown"),
             "label": "No snapshot",
+            "signal_state": "no_snapshot",
+            "signal_rank": 4,
+            "signal_label": "No snapshot",
             "combined_filtered_count": 0,
             "combined_fetched_count": 0,
             "exact_state": "unknown",
@@ -778,17 +927,26 @@ def release_state_from_snapshot(
         expected_key = _rule_local_filter_cache_key(rule)
         if cache_key and cache_key == expected_key and snapshot.release_filtered_count is not None:
             filtered_count = int(snapshot.release_filtered_count)
+        elif not cache_key and snapshot.release_filtered_count is not None:
+            filtered_count = int(snapshot.release_filtered_count)
         else:
-            filtered_count = _rule_local_filtered_count_from_rows(
-                rule,
-                _snapshot_unified_raw_rows(snapshot),
-            )
+            raw_rows = _snapshot_unified_raw_rows(snapshot)
+            if snapshot.release_filtered_count is not None and not raw_rows:
+                filtered_count = int(snapshot.release_filtered_count)
+            else:
+                filtered_count = _rule_local_filtered_count_from_rows(rule, raw_rows)
     else:
         if snapshot.release_filtered_count is not None:
             filtered_count = int(snapshot.release_filtered_count)
         else:
             inline_search = cast(dict[str, Any], snapshot.inline_search or {})
             filtered_count = _coerce_int(inline_search.get("combined_filtered_count"), default=0)
+            if "combined_filtered_count" not in inline_search:
+                filtered_count = sum(
+                    1
+                    for row in _snapshot_unified_raw_rows(snapshot)
+                    if isinstance(row, dict) and row.get("visible") is not False
+                )
     if snapshot.release_fetched_count is not None:
         fetched_count = int(snapshot.release_fetched_count)
     else:
@@ -797,13 +955,28 @@ def release_state_from_snapshot(
     if fetched_count < 0:
         fetched_count = len(_snapshot_unified_raw_rows(snapshot))
     state = _release_state_from_counts(filtered_count, fetched_count)
-    exact_filtered_count, exact_fetched_count = _exact_counts_from_snapshot(snapshot)
+    if rule is None:
+        exact_filtered_count = int(snapshot.exact_filtered_count or 0)
+        if snapshot.exact_fetched_count is not None:
+            exact_fetched_count = int(snapshot.exact_fetched_count)
+        elif snapshot.release_fetched_count is not None:
+            exact_fetched_count = int(snapshot.release_fetched_count)
+        else:
+            exact_fetched_count = 0
+    else:
+        exact_filtered_count, exact_fetched_count = _exact_counts_from_snapshot(snapshot)
     if exact_filtered_count > 0:
         exact_state = "exact"
     elif filtered_count > 0:
         exact_state = "fallback_only"
     else:
         exact_state = "none"
+    signal_state, signal_label, signal_rank = _release_signal_from_counts(
+        filtered_count=filtered_count,
+        fetched_count=fetched_count,
+        exact_filtered_count=exact_filtered_count,
+        exact_fetched_count=exact_fetched_count,
+    )
     label = {
         "matches": "Matches found",
         "no_matches": "No matches",
@@ -819,6 +992,9 @@ def release_state_from_snapshot(
         "state": state,
         "rank": _release_state_rank(state),
         "label": label,
+        "signal_state": signal_state,
+        "signal_rank": signal_rank,
+        "signal_label": signal_label,
         "combined_filtered_count": filtered_count,
         "combined_fetched_count": fetched_count,
         "exact_state": exact_state,
@@ -827,6 +1003,62 @@ def release_state_from_snapshot(
         "exact_filtered_count": exact_filtered_count,
         "exact_fetched_count": exact_fetched_count,
         "snapshot_fetched_at": snapshot.fetched_at,
+    }
+
+
+def release_state_from_cached_counts(
+    *,
+    filtered_count: int | None,
+    fetched_count: int | None,
+    exact_filtered_count: int | None,
+    exact_fetched_count: int | None,
+    snapshot_fetched_at: datetime | None,
+) -> dict[str, Any]:
+    if snapshot_fetched_at is None:
+        return release_state_from_snapshot(None)
+
+    normalized_filtered_count = int(filtered_count or 0)
+    normalized_fetched_count = int(fetched_count or 0)
+    normalized_exact_filtered_count = int(exact_filtered_count or 0)
+    normalized_exact_fetched_count = int(exact_fetched_count or 0)
+    state = _release_state_from_counts(normalized_filtered_count, normalized_fetched_count)
+    exact_state = (
+        "exact"
+        if normalized_exact_filtered_count > 0
+        else "fallback_only"
+        if normalized_filtered_count > 0
+        else "none"
+    )
+    signal_state, signal_label, signal_rank = _release_signal_from_counts(
+        filtered_count=normalized_filtered_count,
+        fetched_count=normalized_fetched_count,
+        exact_filtered_count=normalized_exact_filtered_count,
+        exact_fetched_count=normalized_exact_fetched_count,
+    )
+    return {
+        "state": state,
+        "rank": _release_state_rank(state),
+        "label": {
+            "matches": "Matches found",
+            "no_matches": "No matches",
+            "empty": "No fetched rows",
+        }.get(state, "Unknown"),
+        "signal_state": signal_state,
+        "signal_rank": signal_rank,
+        "signal_label": signal_label,
+        "combined_filtered_count": normalized_filtered_count,
+        "combined_fetched_count": normalized_fetched_count,
+        "exact_state": exact_state,
+        "exact_rank": _exact_state_rank(exact_state),
+        "exact_label": {
+            "exact": "Exact found",
+            "fallback_only": "Fallback only",
+            "none": "No exact",
+            "unknown": "No snapshot",
+        }.get(exact_state, "Unknown"),
+        "exact_filtered_count": normalized_exact_filtered_count,
+        "exact_fetched_count": normalized_exact_fetched_count,
+        "snapshot_fetched_at": snapshot_fetched_at,
     }
 
 
@@ -970,6 +1202,55 @@ def execute_rule_fetch(
         }
 
 
+def _rule_snapshot_fetch_sort_value(
+    rule: Rule,
+    snapshot_by_rule_id: dict[str, RuleSearchSnapshot],
+) -> tuple[int, datetime, str]:
+    snapshot = snapshot_by_rule_id.get(rule.id)
+    if snapshot is None:
+        return (0, datetime.min.replace(tzinfo=UTC), rule.rule_name.casefold())
+    fetched_at = snapshot.fetched_at or datetime.min.replace(tzinfo=UTC)
+    return (1, fetched_at, rule.rule_name.casefold())
+
+
+def _prioritize_fetch_rules(session: Session, rules: list[Rule]) -> list[Rule]:
+    if not rules:
+        return []
+    snapshots = session.scalars(
+        select(RuleSearchSnapshot).where(
+            RuleSearchSnapshot.rule_id.in_([rule.id for rule in rules])
+        )
+    ).all()
+    snapshot_by_rule_id = {snapshot.rule_id: snapshot for snapshot in snapshots}
+    return sorted(
+        rules,
+        key=lambda rule: _rule_snapshot_fetch_sort_value(rule, snapshot_by_rule_id),
+    )
+
+
+def _execute_rule_fetch_for_rule_id(rule_id: str) -> dict[str, Any]:
+    session_factory = get_session_factory()
+    worker_session = session_factory()
+    try:
+        rule = worker_session.get(Rule, rule_id)
+        if rule is None:
+            return {
+                "rule_id": rule_id,
+                "rule_name": "",
+                "success": False,
+                "state": "error",
+                "rank": _release_state_rank("error"),
+                "filtered_count": 0,
+                "fetched_count": 0,
+                "warnings": [],
+                "notices": [],
+                "error": "Rule not found.",
+            }
+        return execute_rule_fetch(worker_session, rule=rule)
+    finally:
+        worker_session.close()
+
+
 def run_rules_fetch_batch(
     session: Session,
     *,
@@ -1042,12 +1323,23 @@ def run_rules_fetch_batch(
                 "results": [],
             }
 
+        rules = _prioritize_fetch_rules(session, list(rules))
+        parallelism = normalize_rule_fetch_parallelism(
+            getattr(settings, "rules_fetch_parallelism", DEFAULT_RULE_FETCH_PARALLELISM)
+        )
         results: list[dict[str, Any]] = []
         succeeded = 0
         failed = 0
-        for rule in rules:
-            run_result = execute_rule_fetch(session, rule=rule)
-            results.append(run_result)
+        if parallelism <= 1 or len(rules) <= 1:
+            for rule in rules:
+                run_result = execute_rule_fetch(session, rule=rule)
+                results.append(run_result)
+        else:
+            rule_ids = [rule.id for rule in rules]
+            with ThreadPoolExecutor(max_workers=parallelism) as executor:
+                results.extend(executor.map(_execute_rule_fetch_for_rule_id, rule_ids))
+
+        for run_result in results:
             if run_result.get("success"):
                 succeeded += 1
             else:

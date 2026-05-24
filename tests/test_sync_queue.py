@@ -93,6 +93,90 @@ def test_sync_queue_processor_records_unexpected_failure(
     assert refreshed_rule.last_sync_error == "worker exploded"
 
 
+def test_sync_queue_worker_skips_per_rule_feed_reconciliation(
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(id="default")
+    rule = Rule(
+        rule_name="Queued Batch Item",
+        content_name="Queued Batch Item",
+        normalized_title="Queued Batch Item",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        last_sync_status=SyncStatus.PENDING,
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+    reconcile_flags: list[bool] = []
+
+    def fake_sync_rule(self, rule_id: str, *, reconcile_feeds: bool = True) -> SyncResult:
+        reconcile_flags.append(reconcile_feeds)
+        queued_rule = self.session.get(Rule, rule_id)
+        assert queued_rule is not None
+        queued_rule.last_sync_status = SyncStatus.OK
+        self.session.commit()
+        return SyncResult(
+            success=True,
+            action="update",
+            rule_id=rule_id,
+            rule_name=queued_rule.rule_name,
+            message="ok",
+        )
+
+    monkeypatch.setattr(SyncService, "sync_rule", fake_sync_rule)
+
+    sync_queue._process_and_finalize(rule.id)
+
+    assert reconcile_flags == [False]
+
+
+def test_sync_queue_prepares_feed_reconciliation_once_for_batch(
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(id="default")
+    rules = [
+        Rule(
+            rule_name=f"Queued Prep {index}",
+            content_name=f"Queued Prep {index}",
+            normalized_title=f"Queued Prep {index}",
+            media_type=MediaType.SERIES,
+            quality_profile=QualityProfile.PLAIN,
+            last_sync_status=SyncStatus.PENDING,
+        )
+        for index in range(2)
+    ]
+    db_session.add(settings)
+    db_session.add_all(rules)
+    db_session.commit()
+    prepared_rule_names: list[list[str]] = []
+    reconcile_calls = 0
+
+    def fake_refresh_language_feeds_for_rules(self, queued_rules):
+        prepared_rule_names.append([rule.rule_name for rule in queued_rules])
+
+    def fake_reconcile_qb_jackett_feeds(self):
+        nonlocal reconcile_calls
+        reconcile_calls += 1
+
+    monkeypatch.setattr(
+        SyncService,
+        "_refresh_language_feeds_for_rules",
+        fake_refresh_language_feeds_for_rules,
+    )
+    monkeypatch.setattr(
+        SyncService,
+        "_reconcile_qb_jackett_feeds",
+        fake_reconcile_qb_jackett_feeds,
+    )
+
+    sync_queue._prepare_queued_rule_syncs([rule.id for rule in rules])
+
+    assert prepared_rule_names == [["Queued Prep 0", "Queued Prep 1"]]
+    assert reconcile_calls == 1
+
+
 def test_sync_queue_updates_progress_after_refilling_worker_slot(monkeypatch) -> None:
     operation_status.reset_operations_for_tests()
     executor = _RecordingExecutor()

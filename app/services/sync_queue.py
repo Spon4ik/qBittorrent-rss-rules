@@ -26,6 +26,9 @@ _ACTIVE_TASKS = 0
 _EXECUTOR: concurrent.futures.ThreadPoolExecutor | None = None
 _WORKER_THREAD: threading.Thread | None = None
 _QUEUE_OPERATION_ID: str | None = None
+_QUEUE_FEEDS_PREPARED = False
+_QUEUE_FEEDS_PREPARING = False
+_QUEUE_RECONCILE_PER_RULE = False
 
 _INITIAL_SYNC_WORKER_LIMIT = 3
 _MAX_SYNC_WORKER_LIMIT = 24
@@ -52,7 +55,9 @@ class RuleSyncOutcome:
 
 
 def enqueue_rule_sync(rule_id: str) -> dict[str, Any]:
-    global _QUEUE_OPERATION_ID, _TOTAL_ENQUEUED, _TOTAL_COMPLETED, _TOTAL_FAILED
+    global _QUEUE_FEEDS_PREPARED, _QUEUE_FEEDS_PREPARING, _QUEUE_OPERATION_ID
+    global _QUEUE_RECONCILE_PER_RULE
+    global _TOTAL_COMPLETED, _TOTAL_ENQUEUED, _TOTAL_FAILED
     normalized_rule_id = str(rule_id or "").strip()
     if not normalized_rule_id:
         return {"enqueued": False, "duplicate": False, "queue_depth": len(_QUEUED_RULE_IDS)}
@@ -62,6 +67,9 @@ def enqueue_rule_sync(rule_id: str) -> dict[str, Any]:
             _TOTAL_ENQUEUED = 0
             _TOTAL_COMPLETED = 0
             _TOTAL_FAILED = 0
+            _QUEUE_FEEDS_PREPARED = False
+            _QUEUE_FEEDS_PREPARING = False
+            _QUEUE_RECONCILE_PER_RULE = False
             _QUEUE_OPERATION_ID = start_operation(
                 operation_type="qb_sync",
                 label="Syncing qBittorrent rules",
@@ -119,6 +127,8 @@ def _update_queue_operation_locked() -> None:
             f"qB sync {_TOTAL_COMPLETED}/{_TOTAL_ENQUEUED} completed; "
             f"{_TOTAL_FAILED} failed."
         )
+    elif _QUEUE_FEEDS_PREPARING:
+        message = "Preparing qB RSS feeds before parallel rule sync."
     elif _ACTIVE_TASKS or _QUEUED_RULE_IDS:
         message = (
             f"qB sync {_TOTAL_COMPLETED}/{_TOTAL_ENQUEUED} completed; "
@@ -137,7 +147,8 @@ def _update_queue_operation_locked() -> None:
 
 
 def _sync_worker_loop() -> None:
-    global _WORKER_THREAD, _EXECUTOR
+    global _EXECUTOR, _QUEUE_FEEDS_PREPARED, _QUEUE_FEEDS_PREPARING
+    global _QUEUE_RECONCILE_PER_RULE, _WORKER_THREAD
 
     with _QUEUE_CONDITION:
         if _EXECUTOR is None:
@@ -147,15 +158,37 @@ def _sync_worker_loop() -> None:
             )
 
     while True:
+        prepare_rule_ids: list[str] | None = None
         with _QUEUE_CONDITION:
             if not _QUEUED_RULE_IDS and _ACTIVE_TASKS == 0:
                 _WORKER_THREAD = None
                 return
-            if not _QUEUED_RULE_IDS or _ACTIVE_TASKS >= _ADAPTIVE_WORKER_LIMIT:
+            if not _QUEUE_FEEDS_PREPARED and not _QUEUE_FEEDS_PREPARING:
+                _QUEUE_FEEDS_PREPARING = True
+                prepare_rule_ids = list(_QUEUED_RULE_IDS)
+                _update_queue_operation_locked()
+            elif _QUEUE_FEEDS_PREPARING:
                 _QUEUE_CONDITION.wait(timeout=1.0)
                 continue
-
-            _dispatch_next_rule_sync_locked()
+            elif not _QUEUED_RULE_IDS or _ACTIVE_TASKS >= _ADAPTIVE_WORKER_LIMIT:
+                _QUEUE_CONDITION.wait(timeout=1.0)
+                continue
+            else:
+                _dispatch_next_rule_sync_locked()
+        if prepare_rule_ids is not None:
+            preparation_failed = False
+            try:
+                _prepare_queued_rule_syncs(prepare_rule_ids)
+            except Exception:
+                preparation_failed = True
+                LOGGER.exception("Failed to prepare queued qB rule sync batch.")
+            finally:
+                with _QUEUE_CONDITION:
+                    _QUEUE_FEEDS_PREPARED = True
+                    _QUEUE_FEEDS_PREPARING = False
+                    _QUEUE_RECONCILE_PER_RULE = preparation_failed
+                    _update_queue_operation_locked()
+                    _QUEUE_CONDITION.notify_all()
 
 
 def _dispatch_next_rule_sync_locked() -> bool:
@@ -178,7 +211,9 @@ def _process_and_finalize(rule_id: str) -> None:
     global _ACTIVE_TASKS, _QUEUE_OPERATION_ID, _TOTAL_COMPLETED, _TOTAL_FAILED
     outcome = RuleSyncOutcome(success=False, should_backoff=True)
     try:
-        outcome = _process_rule_sync(rule_id)
+        with _QUEUE_CONDITION:
+            reconcile_feeds = _QUEUE_RECONCILE_PER_RULE
+        outcome = _process_rule_sync(rule_id, reconcile_feeds=reconcile_feeds)
     except Exception:
         LOGGER.exception("Unhandled error in rule sync worker for %s", rule_id)
     finally:
@@ -210,7 +245,7 @@ def _process_and_finalize(rule_id: str) -> None:
             _QUEUE_CONDITION.notify_all()
 
 
-def _process_rule_sync(rule_id: str) -> RuleSyncOutcome:
+def _process_rule_sync(rule_id: str, *, reconcile_feeds: bool = True) -> RuleSyncOutcome:
     direct_operation_id: str | None = None
     with _QUEUE_CONDITION:
         if _QUEUE_OPERATION_ID is None:
@@ -234,7 +269,7 @@ def _process_rule_sync(rule_id: str) -> RuleSyncOutcome:
         session.commit()
 
         settings = SettingsService.get_or_create(session)
-        SyncService(session, settings).sync_rule(rule_id)
+        SyncService(session, settings).sync_rule(rule_id, reconcile_feeds=reconcile_feeds)
         if direct_operation_id is not None:
             complete_operation(direct_operation_id, message="qB sync completed for 1 rule(s).")
         return RuleSyncOutcome(success=True)
@@ -283,3 +318,29 @@ def _record_sync_outcome_locked(outcome: RuleSyncOutcome) -> None:
 def _is_backoff_error(exc: Exception) -> bool:
     message = str(exc).casefold()
     return any(marker in message for marker in _BACKOFF_ERROR_MARKERS)
+
+
+def _prepare_queued_rule_syncs(rule_ids: list[str]) -> None:
+    cleaned_rule_ids = [str(rule_id or "").strip() for rule_id in rule_ids if str(rule_id or "").strip()]
+    if not cleaned_rule_ids:
+        return
+    session_factory = get_session_factory()
+    session = session_factory()
+    try:
+        rules = [
+            rule
+            for rule_id in cleaned_rule_ids
+            if (rule := session.get(Rule, rule_id)) is not None
+        ]
+        if not rules:
+            return
+        settings = SettingsService.get_or_create(session)
+        service = SyncService(session, settings)
+        service._refresh_language_feeds_for_rules(rules)
+        service._reconcile_qb_jackett_feeds()
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()

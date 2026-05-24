@@ -76,6 +76,33 @@ MIN_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 5
 MAX_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 10080
 _RULE_FETCH_RUN_LOCK = threading.Lock()
 INDEXER_KEY_STRIP_RE = re.compile(r"[^a-z0-9]+")
+VIDEO_MEDIA_TYPES = {MediaType.MOVIE.value, MediaType.SERIES.value}
+MEDIA_TYPE_LABEL = {
+    MediaType.MOVIE.value: "movie",
+    MediaType.SERIES.value: "series",
+}
+STANDARD_CATEGORY_ROOT_BY_MEDIA_TYPE = {
+    MediaType.MOVIE.value: {"2000"},
+    MediaType.SERIES.value: {"5000"},
+}
+STANDARD_VIDEO_CATEGORY_ROOTS = {"2000", "5000"}
+STANDARD_NON_VIDEO_CATEGORY_ROOTS = {"3000", "4000", "7000"}
+INCOMPATIBLE_VIDEO_CATEGORY_TERMS = {
+    "application",
+    "applications",
+    "app",
+    "apps",
+    "archive program",
+    "archives program",
+    "game",
+    "games",
+    "pc",
+    "program",
+    "program archive",
+    "programs",
+    "software",
+    "программ",
+}
 SEASON_PACK_COMPLETE_MARKER_RE = re.compile(
     r"\b(?:complete|full(?:\s+season)?|season\s+pack|полный)\b",
     re.IGNORECASE | re.UNICODE,
@@ -291,6 +318,42 @@ def _normalize_imdb_id(value: object | None) -> str:
     return ""
 
 
+def _category_root(category_id: object | None) -> str:
+    cleaned = str(category_id or "").strip()
+    if not cleaned.isdigit() or len(cleaned) < 4:
+        return ""
+    return f"{(int(cleaned[:4]) // 1000) * 1000}"
+
+
+def _normalized_category_text(values: list[object]) -> str:
+    normalized_parts = [_normalize_match_text(str(value or "")) for value in values]
+    return " ".join(part for part in normalized_parts if part)
+
+
+def _row_category_media_failure(row: dict[str, Any], state: dict[str, Any]) -> str | None:
+    media_type = str(state.get("media_type") or "").strip()
+    if media_type not in VIDEO_MEDIA_TYPES:
+        return None
+
+    category_ids = [str(item or "").strip() for item in row.get("category_ids") or []]
+    category_roots = {_category_root(item) for item in category_ids}
+    category_roots.discard("")
+    if category_roots.intersection(STANDARD_NON_VIDEO_CATEGORY_ROOTS):
+        return f"Category is incompatible with {MEDIA_TYPE_LABEL[media_type]} searches."
+
+    allowed_standard_roots = STANDARD_CATEGORY_ROOT_BY_MEDIA_TYPE.get(media_type, set())
+    explicit_video_roots = category_roots.intersection(STANDARD_VIDEO_CATEGORY_ROOTS)
+    if explicit_video_roots and not explicit_video_roots.intersection(allowed_standard_roots):
+        return f"Category is incompatible with {MEDIA_TYPE_LABEL[media_type]} searches."
+
+    category_labels = [str(item or "").strip() for item in row.get("category_labels") or []]
+    category_text = _normalized_category_text([*category_ids, *category_labels])
+    if category_text and any(term in category_text for term in INCOMPATIBLE_VIDEO_CATEGORY_TERMS):
+        return f"Category is incompatible with {MEDIA_TYPE_LABEL[media_type]} searches."
+
+    return None
+
+
 def _compile_pattern(pattern: object | None, *, ignore_case: bool = True) -> re.Pattern[str] | None:
     cleaned = str(pattern or "").strip()
     if not cleaned:
@@ -446,6 +509,7 @@ def _rule_local_filter_state(rule: Rule) -> dict[str, Any]:
 
     return {
         "query": _rule_search_title(rule),
+        "media_type": _rule_search_media_type(rule),
         "imdb_id": _normalize_imdb_id(rule.imdb_id),
         "keywords_all": required_include_terms,
         "keywords_any_groups": any_include_groups,
@@ -466,6 +530,7 @@ def _rule_local_filter_cache_key(rule: Rule) -> str:
         {
             "additional_includes": str(rule.additional_includes or "").strip(),
             "query": _rule_search_title(rule),
+            "media_type": _rule_search_media_type(rule),
             "imdb_id": _normalize_imdb_id(rule.imdb_id),
             "must_not_contain": str(rule.must_not_contain or "").strip(),
             "quality_include_tokens": list(effective_rule_quality_tokens(rule)[0]),
@@ -545,6 +610,10 @@ def _snapshot_row_filter_failure(row: dict[str, Any], state: dict[str, Any]) -> 
     )
     if identity_failure is not None:
         return identity_failure
+
+    category_failure = _row_category_media_failure(row, state)
+    if category_failure is not None:
+        return category_failure
 
     for keyword in state.get("keywords_all", []):
         if not _matches_included_keyword(text_surface, str(keyword)):

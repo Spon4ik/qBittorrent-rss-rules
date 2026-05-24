@@ -6,6 +6,14 @@ from app.services import operation_status, sync_queue
 from app.services.sync import SyncService
 
 
+class _RecordingExecutor:
+    def __init__(self) -> None:
+        self.submitted: list[tuple[object, str]] = []
+
+    def submit(self, fn, rule_id: str) -> None:
+        self.submitted.append((fn, rule_id))
+
+
 def test_sync_queue_processor_marks_successful_rule_ok(
     db_session,
     monkeypatch,
@@ -83,3 +91,35 @@ def test_sync_queue_processor_records_unexpected_failure(
     assert refreshed_rule is not None
     assert refreshed_rule.last_sync_status == SyncStatus.ERROR
     assert refreshed_rule.last_sync_error == "worker exploded"
+
+
+def test_sync_queue_updates_progress_after_refilling_worker_slot(monkeypatch) -> None:
+    operation_status.reset_operations_for_tests()
+    executor = _RecordingExecutor()
+    handle = operation_status.start_operation(
+        operation_type="qb_sync",
+        label="Syncing qBittorrent rules",
+        total=3,
+        current=1,
+        message="qB sync 1/3 completed; 2 active, 1 queued.",
+    )
+    monkeypatch.setattr(sync_queue, "_EXECUTOR", executor)
+    monkeypatch.setattr(sync_queue, "_QUEUE_OPERATION_ID", handle.operation_id)
+    monkeypatch.setattr(sync_queue, "_TOTAL_ENQUEUED", 3)
+    monkeypatch.setattr(sync_queue, "_TOTAL_COMPLETED", 1)
+    monkeypatch.setattr(sync_queue, "_TOTAL_FAILED", 0)
+    monkeypatch.setattr(sync_queue, "_ACTIVE_TASKS", 2)
+    sync_queue._QUEUED_RULE_IDS.clear()
+    sync_queue._QUEUED_RULE_ID_SET.clear()
+    sync_queue._QUEUED_RULE_IDS.append("third-rule")
+    sync_queue._QUEUED_RULE_ID_SET.add("third-rule")
+
+    with sync_queue._QUEUE_CONDITION:
+        assert sync_queue._dispatch_next_rule_sync_locked() is True
+
+    payload = operation_status.operations_status_payload()
+    assert executor.submitted == [(sync_queue._process_and_finalize, "third-rule")]
+    assert payload["operations"][0]["message"] == (
+        "qB sync 1/3 completed; 3 active, 0 queued."
+    )
+    operation_status.reset_operations_for_tests()

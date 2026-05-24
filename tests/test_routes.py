@@ -299,6 +299,111 @@ def test_rules_page_renders_sync_error_details(app_client, db_session) -> None:
     assert "qBittorrent rejected the RSS rule: invalid episode filter" in response.text
 
 
+def test_rule_sync_action_enqueues_background_sync_without_opening_rule_page(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    rule = Rule(
+        rule_name="Rule Row Sync",
+        content_name="Rule Row Sync",
+        normalized_title="Rule Row Sync",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        last_sync_status=SyncStatus.ERROR,
+        last_sync_error="previous failure",
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    inline_sync_calls: list[str] = []
+    enqueued_rule_ids: list[str] = []
+
+    def fail_inline_sync(self, rule_id: str, *, reconcile_feeds: bool = True):
+        inline_sync_calls.append(rule_id)
+        raise AssertionError("row sync should enqueue background qB sync")
+
+    monkeypatch.setattr(SyncService, "sync_rule", fail_inline_sync)
+    monkeypatch.setattr(
+        "app.routes.api.enqueue_rule_sync",
+        lambda rule_id: enqueued_rule_ids.append(rule_id)
+        or {"enqueued": True, "duplicate": False, "queue_depth": 1},
+    )
+
+    response = app_client.post(f"/api/rules/{rule.id}/sync", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/?")
+    assert inline_sync_calls == []
+    assert enqueued_rule_ids == [rule.id]
+    db_session.expire_all()
+    refreshed = db_session.get(Rule, rule.id)
+    assert refreshed is not None
+    assert refreshed.last_sync_status == SyncStatus.PENDING
+    assert refreshed.last_sync_error is None
+
+
+def test_sync_all_enqueues_rules_and_reports_qb_progress(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    from app.services import operation_status, sync_queue
+
+    operation_status.reset_operations_for_tests()
+    rules = [
+        Rule(
+            rule_name="Sync All One",
+            content_name="Sync All One",
+            normalized_title="Sync All One",
+            media_type=MediaType.SERIES,
+            quality_profile=QualityProfile.PLAIN,
+            last_sync_status=SyncStatus.ERROR,
+            last_sync_error="previous failure",
+        ),
+        Rule(
+            rule_name="Sync All Two",
+            content_name="Sync All Two",
+            normalized_title="Sync All Two",
+            media_type=MediaType.MOVIE,
+            quality_profile=QualityProfile.PLAIN,
+        ),
+    ]
+    db_session.add_all(rules)
+    db_session.commit()
+
+    inline_sync_all_calls = 0
+
+    def fail_sync_all(self):
+        nonlocal inline_sync_all_calls
+        inline_sync_all_calls += 1
+        raise AssertionError("sync all should enqueue background qB sync")
+
+    monkeypatch.setattr(SyncService, "sync_all", fail_sync_all)
+    monkeypatch.setattr("app.services.sync_queue._ensure_worker_locked", lambda: None)
+
+    response = app_client.post("/api/sync/all", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/?")
+    assert inline_sync_all_calls == 0
+    status_response = app_client.get("/api/operations/status")
+    payload = status_response.json()
+    assert payload["summary"]["is_running"] is True
+    assert payload["operations"][0]["type"] == "qb_sync"
+    assert payload["operations"][0]["total"] == 2
+    db_session.expire_all()
+    refreshed = {rule.rule_name: rule for rule in db_session.scalars(select(Rule)).all()}
+    assert refreshed["Sync All One"].last_sync_status == SyncStatus.PENDING
+    assert refreshed["Sync All One"].last_sync_error is None
+    assert refreshed["Sync All Two"].last_sync_status == SyncStatus.PENDING
+    operation_status.reset_operations_for_tests()
+    with sync_queue._QUEUE_CONDITION:
+        sync_queue._QUEUED_RULE_IDS.clear()
+        sync_queue._QUEUED_RULE_ID_SET.clear()
+        sync_queue._QUEUE_OPERATION_ID = None
+
+
 def test_edit_rule_page_renders_qb_enforcement_diagnostics(app_client, db_session) -> None:
     rule = Rule(
         rule_name="The Boys",

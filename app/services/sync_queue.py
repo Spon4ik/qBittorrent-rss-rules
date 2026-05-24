@@ -110,7 +110,7 @@ def _update_queue_operation_locked() -> None:
 
 
 def _sync_worker_loop() -> None:
-    global _WORKER_THREAD, _EXECUTOR, _ACTIVE_TASKS
+    global _WORKER_THREAD, _EXECUTOR
 
     with _QUEUE_CONDITION:
         if _EXECUTOR is None:
@@ -127,11 +127,19 @@ def _sync_worker_loop() -> None:
                 _QUEUE_CONDITION.wait(timeout=1.0)
                 continue
 
-            rule_id = _QUEUED_RULE_IDS.popleft()
-            _QUEUED_RULE_ID_SET.discard(rule_id)
-            _ACTIVE_TASKS += 1
+            _dispatch_next_rule_sync_locked()
 
-        _EXECUTOR.submit(_process_and_finalize, rule_id)
+
+def _dispatch_next_rule_sync_locked() -> bool:
+    global _ACTIVE_TASKS
+    if _EXECUTOR is None or not _QUEUED_RULE_IDS or _ACTIVE_TASKS >= 3:
+        return False
+    rule_id = _QUEUED_RULE_IDS.popleft()
+    _QUEUED_RULE_ID_SET.discard(rule_id)
+    _ACTIVE_TASKS += 1
+    _update_queue_operation_locked()
+    _EXECUTOR.submit(_process_and_finalize, rule_id)
+    return True
 
 
 def _process_and_finalize(rule_id: str) -> None:

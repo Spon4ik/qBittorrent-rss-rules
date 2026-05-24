@@ -534,6 +534,48 @@ def test_refresh_snapshot_release_cache_rejects_broad_imdb_backed_fallback_rows(
     }
 
 
+def test_refresh_snapshot_release_cache_hides_software_category_for_series_rule(
+    db_session,
+) -> None:
+    rule = Rule(
+        rule_name="Windows",
+        content_name="Windows",
+        normalized_title="Windows",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add(rule)
+    db_session.flush()
+
+    snapshot = RuleSearchSnapshot(
+        rule_id=rule.id,
+        payload={"query": "Windows"},
+        inline_search={
+            "unified_raw_results": [
+                {
+                    "title": "Windows 7 32BIT SP1 RU DVD (CIA Project)",
+                    "text_surface": "windows 7 32bit sp1 ru dvd cia project",
+                    "indexer": "NoNaMe Club",
+                    "category_ids": ["8000", "100095"],
+                    "category_labels": ["Other", "|- Архив Программ"],
+                    "query_source_key": "fallback",
+                    "visible": True,
+                }
+            ]
+        },
+        fetched_at=utcnow(),
+    )
+    db_session.add(snapshot)
+    db_session.commit()
+
+    assert refresh_snapshot_release_cache(snapshot, rule=rule) is True
+
+    assert snapshot.release_filtered_count == 0
+    assert snapshot.inline_search["rule_local_hidden_reasons"] == {
+        "Category is incompatible with series searches.": 1
+    }
+
+
 def test_refresh_snapshot_release_cache_keeps_multi_season_alias_pack_rows(
     db_session,
 ) -> None:

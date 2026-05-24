@@ -1495,14 +1495,17 @@ def sync_rule(
     rule_id: str,
     session: Session = Depends(get_db_session),
 ) -> RedirectResponse:
-    settings = SettingsService.get_or_create(session)
-    try:
-        result = SyncService(session, settings).sync_rule(rule_id)
-    except SyncServiceError as exc:
-        return RedirectResponse(url=f"/?message={exc}&level=error", status_code=303)
-    level = "success" if result.success else "warning"
+    rule = session.get(Rule, rule_id)
+    if rule is None:
+        return RedirectResponse(url="/?message=Rule%20not%20found.&level=error", status_code=303)
+    rule.last_sync_status = SyncStatus.PENDING
+    rule.last_sync_error = None
+    session.add(rule)
+    session.commit()
+    enqueue_rule_sync(rule.id)
     return RedirectResponse(
-        url=f"/rules/{rule_id}?message={result.message}&level={level}", status_code=303
+        url="/?message=qB%20sync%20queued%20for%201%20rule.&level=success",
+        status_code=303,
     )
 
 
@@ -1523,14 +1526,19 @@ def delete_rule(
 
 @router.post("/sync/all")
 def sync_all(session: Session = Depends(get_db_session)) -> RedirectResponse:
-    settings = SettingsService.get_or_create(session)
-    result = SyncService(session, settings).sync_all()
-    level = "success" if result.error_count == 0 else "warning"
-    message = (
-        f"Synced {result.success_count} rule(s), "
-        f"{result.error_count} failed, drift detected on {result.drift_detected}."
-    )
-    return RedirectResponse(url=f"/?message={message}&level={level}", status_code=303)
+    rules = list(session.scalars(select(Rule).order_by(Rule.rule_name.asc())).all())
+    for rule in rules:
+        rule.last_sync_status = SyncStatus.PENDING
+        rule.last_sync_error = None
+        session.add(rule)
+    if rules:
+        session.commit()
+    else:
+        session.rollback()
+    for rule in rules:
+        enqueue_rule_sync(rule.id)
+    message = f"qB sync queued for {len(rules)} rule(s)."
+    return RedirectResponse(url=f"/?message={message}&level=success", status_code=303)
 
 
 @router.post("/taxonomy/validate", response_class=HTMLResponse)

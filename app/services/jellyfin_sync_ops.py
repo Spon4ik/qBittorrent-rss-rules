@@ -7,6 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.models import AppSettings
 from app.services.jellyfin import JellyfinRuleSyncOutcome, JellyfinRuleSyncSummary, JellyfinService
+from app.services.operation_status import (
+    complete_operation,
+    fail_operation,
+    start_operation,
+    update_operation,
+)
 from app.services.settings_service import SettingsService
 from app.services.sync import SyncService, SyncServiceError
 
@@ -77,6 +83,11 @@ def execute_jellyfin_sync(
     if not _SYNC_LOCK.acquire(blocking=False):
         raise JellyfinSyncBusyError("Jellyfin sync is already in progress.")
 
+    operation = start_operation(
+        operation_type="jellyfin_sync",
+        label="Syncing Jellyfin progress",
+        message="Reading Jellyfin watch state.",
+    )
     try:
         summary = JellyfinService(
             settings,
@@ -104,11 +115,37 @@ def execute_jellyfin_sync(
             else:
                 qb_sync_skipped = True
 
-        return JellyfinSyncExecution(
+        execution = JellyfinSyncExecution(
             summary=summary,
             qb_sync_success_count=qb_sync_success_count,
             qb_sync_error_messages=qb_sync_error_messages,
             qb_sync_skipped=qb_sync_skipped,
         )
+        total = (
+            summary.synced_count
+            + summary.unchanged_count
+            + summary.skipped_count
+            + summary.error_count
+        )
+        if execution.message_level == "success":
+            complete_operation(
+                operation.operation_id,
+                message=execution.render_message(),
+            )
+        else:
+            complete_operation(
+                operation.operation_id,
+                status="warning",
+                message=execution.render_message(),
+            )
+        update_operation(operation.operation_id, current=total, total=total)
+        return execution
+    except Exception as exc:
+        fail_operation(
+            operation.operation_id,
+            message="Jellyfin sync failed.",
+            error=str(exc),
+        )
+        raise
     finally:
         _SYNC_LOCK.release()

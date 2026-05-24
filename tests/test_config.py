@@ -95,3 +95,22 @@ def test_sqlite_engine_uses_busy_timeout_and_wal(configured_app_env: Path) -> No
 
     assert busy_timeout == 30000
     assert journal_mode == "wal"
+
+
+def test_sqlite_engine_uses_rollback_journal_in_docker(
+    configured_app_env: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("QB_RULES_APP_ENV", "docker")
+    get_environment_settings.cache_clear()
+    reset_db_caches()
+
+    try:
+        with get_engine().connect() as connection:
+            busy_timeout = connection.exec_driver_sql("PRAGMA busy_timeout").scalar_one()
+            journal_mode = connection.exec_driver_sql("PRAGMA journal_mode").scalar_one()
+    finally:
+        get_environment_settings.cache_clear()
+        reset_db_caches()
+
+    assert busy_timeout == 30000
+    assert journal_mode == "delete"

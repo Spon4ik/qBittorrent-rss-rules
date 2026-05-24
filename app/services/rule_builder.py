@@ -227,14 +227,18 @@ def build_episode_progress_fragment(start_season: int | None, start_episode: int
     episode_any = r"0*\d{1,2}"
     episode_range_any = r"0*\d{1,2}"
     episode_ge = _build_min_numeric_pattern_0_to_99(episode_value)
+    season_ge = _build_min_numeric_pattern_1_to_99(season_value)
     separators = r"[\s._-]*"
     season_prefix = r"(?:s(?:eason)?[\s._:-]*)"
     episode_prefix = r"(?:e(?:p(?:isode)?)?[\s._:-]*)"
+    season_range_start = r"0*\d{1,2}"
 
     fragments = [
         rf"{season_prefix}{season_exact}(?!\d){separators}{episode_prefix}{episode_ge}",
         rf"{season_prefix}{season_exact}(?!\d){separators}{episode_prefix}{episode_range_any}{separators}-{separators}(?:{episode_prefix})?{episode_ge}",
         rf"{season_prefix}{season_exact}(?!\d)(?:\b|$)",
+        rf"{season_prefix}{season_range_start}{separators}-{separators}(?:{season_prefix})?{season_ge}(?!\d)",
+        rf"{season_prefix}0*\d{{1,2}}{separators}{episode_prefix}\d{{3,}}(?:\b|$).*?\bof\b{separators}\d{{3,}}",
     ]
     if season_value < 99:
         season_after = _build_min_numeric_pattern_1_to_99(season_value + 1)

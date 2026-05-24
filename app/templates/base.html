@@ -44,6 +44,21 @@
       </section>
       {% endif %}
 
+      <section
+        class="operation-progress-shell"
+        data-operation-progress-shell
+        aria-live="polite"
+      >
+        <div class="operation-progress-summary">
+          <strong data-operation-progress-title>Background work</strong>
+          <span data-operation-progress-summary>Checking progress...</span>
+        </div>
+        <div class="operation-progress-track" aria-hidden="true">
+          <div class="operation-progress-bar" data-operation-progress-bar></div>
+        </div>
+        <div class="operation-progress-list" data-operation-progress-list></div>
+      </section>
+
       <main class="content-card{% if content_layout == 'wide' %} content-card--wide{% endif %}">
         {% block content %}{% endblock %}
       </main>

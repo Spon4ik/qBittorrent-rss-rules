@@ -68,6 +68,7 @@ from app.services.metadata import (
     metadata_lookup_provider_catalog,
     metadata_lookup_provider_choices,
 )
+from app.services.operation_status import operations_status_payload
 from app.services.qbittorrent import QbittorrentClient, QbittorrentClientError
 from app.services.quality_filters import (
     add_quality_taxonomy_option,
@@ -991,6 +992,11 @@ def read_debug_hover_telemetry(
             "log_path": str(hover_debug_log_path()),
         }
     )
+
+
+@router.get("/operations/status")
+def read_operations_status() -> JSONResponse:
+    return JSONResponse(operations_status_payload())
 
 
 @router.post("/rules/page-preferences")

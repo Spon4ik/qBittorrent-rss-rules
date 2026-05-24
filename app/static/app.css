@@ -862,6 +862,73 @@ textarea {
   background: rgba(255, 255, 255, 0.38);
 }
 
+.operation-progress-shell {
+  display: grid;
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(19, 37, 40, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 252, 246, 0.92);
+  box-shadow: 0 10px 28px rgba(14, 43, 47, 0.08);
+}
+
+.operation-progress-shell[hidden] {
+  display: none;
+}
+
+.operation-progress-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  color: var(--ink);
+}
+
+.operation-progress-summary span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: right;
+}
+
+.operation-progress-track {
+  height: 0.55rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(19, 37, 40, 0.12);
+}
+
+.operation-progress-bar {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1f6d53, #2d7c9a);
+  transition: width 180ms ease;
+}
+
+.operation-progress-list {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.operation-progress-item {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.9rem;
+}
+
+.operation-progress-item strong,
+.operation-progress-item span {
+  overflow-wrap: anywhere;
+}
+
+.operation-progress-item span {
+  color: var(--muted);
+  text-align: right;
+}
+
 .settings-version-panel {
   display: grid;
   gap: 0.75rem;

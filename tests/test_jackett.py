@@ -6,11 +6,13 @@ import pytest
 from app.models import MediaType, QualityProfile, Rule
 from app.schemas import JackettSearchRequest, SearchSourceKind
 from app.services.jackett import (
+    IMDB_IDENTITY_TITLE_EXACT,
     JackettClient,
     JackettClientError,
     build_reduced_search_request_from_rule,
     build_search_request_from_rule,
     clamp_search_query_text,
+    classify_imdb_backed_result_identity,
 )
 
 
@@ -1549,6 +1551,79 @@ def test_configured_indexer_languages_apply_manual_overrides() -> None:
         {"value": "en", "label": "English", "indexer_count": "1"},
         {"value": "ru", "label": "Russian", "indexer_count": "1"},
     ]
+
+
+def test_configured_indexer_languages_keep_unknown_indexers_as_other() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = {key: value for key, value in request.url.params.multi_items()}
+        if params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="thepiratebay">
+    <title>The Pirate Bay</title>
+    <description>The galaxy's most resilient Public BitTorrent site</description>
+  </indexer>
+  <indexer id="private-unknown">
+    <title>Private Unknown</title>
+    <description>Invite tracker</description>
+  </indexer>
+</indexers>
+""",
+            )
+        raise AssertionError(f"Unexpected request params: {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.configured_indexer_languages() == {
+        "private-unknown": ["other"],
+        "thepiratebay": ["en"],
+    }
+    assert client.configured_indexer_options() == [
+        {
+            "url": (
+                "http://jackett:9117/api/v2.0/indexers/private-unknown/results/"
+                "torznab/api?apikey=secret&t=search"
+            ),
+            "label": "Jackett/private-unknown (Other)",
+            "indexer": "private-unknown",
+            "languages": "other",
+        },
+        {
+            "url": (
+                "http://jackett:9117/api/v2.0/indexers/thepiratebay/results/"
+                "torznab/api?apikey=secret&t=search"
+            ),
+            "label": "Jackett/thepiratebay (English)",
+            "indexer": "thepiratebay",
+            "languages": "en",
+        },
+    ]
+    assert client.configured_language_options() == [
+        {"value": "en", "label": "English", "indexer_count": "1"},
+        {"value": "other", "label": "Other", "indexer_count": "1"},
+    ]
+
+
+def test_imdb_backed_title_identity_accepts_connector_subtitle_alias() -> None:
+    assert (
+        classify_imdb_backed_result_identity(
+            query="Adventure Time",
+            expected_imdb_id="tt1305826",
+            result_imdb_id=None,
+            title="Adventure Time with Finn & Jake [S01-10] BDRip 1080p",
+        )
+        == IMDB_IDENTITY_TITLE_EXACT
+    )
 
 
 def test_jackett_client_drops_fallback_rows_with_conflicting_imdb_id() -> None:

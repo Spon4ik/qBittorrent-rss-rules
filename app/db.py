@@ -23,13 +23,16 @@ def _connect_args(database_url: str) -> dict[str, object]:
 def _configure_sqlite_engine(engine: Engine) -> None:
     if engine.dialect.name != "sqlite":
         return
+    journal_mode = (
+        "DELETE" if get_environment_settings().app_env.strip().casefold() == "docker" else "WAL"
+    )
 
     @event.listens_for(engine, "connect")
     def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:  # type: ignore[no-untyped-def]
         cursor = dbapi_connection.cursor()
         try:
             cursor.execute("PRAGMA busy_timeout = 30000")
-            cursor.execute("PRAGMA journal_mode = WAL")
+            cursor.execute(f"PRAGMA journal_mode = {journal_mode}")
         finally:
             cursor.close()
 

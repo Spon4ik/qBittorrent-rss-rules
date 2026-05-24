@@ -8,7 +8,7 @@ from datetime import timedelta
 from app.config import obfuscate_secret
 from app.models import AppSettings, MediaType, QualityProfile, Rule, RuleSearchSnapshot, utcnow
 from app.schemas import JackettSearchRun
-from app.services import rule_fetch_ops
+from app.services import operation_status, rule_fetch_ops
 from app.services.jackett import JackettClient
 from app.services.rule_fetch_ops import (
     _rule_local_filtered_count_from_rows,
@@ -144,6 +144,7 @@ def test_rules_fetch_batch_fetches_missing_then_oldest_snapshots(
     db_session,
     monkeypatch,
 ) -> None:
+    operation_status.reset_operations_for_tests()
     now = utcnow()
     settings = AppSettings(
         id="default",
@@ -217,6 +218,12 @@ def test_rules_fetch_batch_fetches_missing_then_oldest_snapshots(
         "Middle Oldest Snapshot",
         "Alpha Newest Snapshot",
     ]
+    payload = operation_status.operations_status_payload()
+    assert payload["operations"][0]["type"] == "jackett_fetch"
+    assert payload["operations"][0]["status"] == "success"
+    assert payload["operations"][0]["current"] == 3
+    assert payload["operations"][0]["total"] == 3
+    operation_status.reset_operations_for_tests()
 
 
 def test_rules_fetch_batch_limits_parallel_workers(db_session, monkeypatch) -> None:
@@ -524,4 +531,71 @@ def test_refresh_snapshot_release_cache_rejects_broad_imdb_backed_fallback_rows(
     assert snapshot.release_fetched_count == 2
     assert snapshot.inline_search["rule_local_hidden_reasons"] == {
         'Title does not match IMDb-backed exact identity for "You".': 1
+    }
+
+
+def test_refresh_snapshot_release_cache_keeps_multi_season_alias_pack_rows(
+    db_session,
+) -> None:
+    rule = Rule(
+        rule_name="Adventure Time",
+        content_name="Adventure Time",
+        normalized_title="Adventure Time",
+        imdb_id="tt1305826",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=10,
+        start_episode=14,
+        feed_urls=[],
+    )
+    db_session.add(rule)
+    db_session.flush()
+
+    snapshot = RuleSearchSnapshot(
+        rule_id=rule.id,
+        inline_search={
+            "combined_filtered_count": 3,
+            "combined_fetched_count": 3,
+            "unified_raw_results": [
+                {
+                    "title": (
+                        "Adventure Time with Finn & Jake [S01-10] "
+                        "(2010-2018) BDRip-HEVC 1080p"
+                    ),
+                    "text_surface": (
+                        "adventure time with finn jake s01 10 "
+                        "2010 2018 bdrip hevc 1080p"
+                    ),
+                    "indexer": "rutor",
+                    "query_source_key": "fallback",
+                    "visible": False,
+                },
+                {
+                    "title": "Adventure Time (S1-10E1-290 of 290) BDRip 1080p",
+                    "text_surface": "adventure time s1 10e1 290 of 290 bdrip 1080p",
+                    "indexer": "noname-clubl",
+                    "query_source_key": "fallback",
+                    "visible": False,
+                },
+                {
+                    "title": "Adventure Time [S01-09] BDRip 1080p",
+                    "text_surface": "adventure time s01 09 bdrip 1080p",
+                    "indexer": "noname-clubl",
+                    "query_source_key": "fallback",
+                    "visible": False,
+                },
+            ],
+        },
+        fetched_at=utcnow(),
+    )
+    db_session.add(snapshot)
+    db_session.commit()
+
+    assert refresh_snapshot_release_cache(snapshot, rule=rule) is True
+    db_session.commit()
+
+    assert snapshot.release_filtered_count == 2
+    assert snapshot.release_fetched_count == 3
+    assert snapshot.inline_search["rule_local_hidden_reasons"] == {
+        "Does not match the generated rule pattern.": 1
     }

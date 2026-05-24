@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.models import AppSettings, MediaType, QualityProfile, Rule, SyncStatus
 from app.schemas import SyncResult
-from app.services import sync_queue
+from app.services import operation_status, sync_queue
 from app.services.sync import SyncService
 
 
@@ -10,6 +10,7 @@ def test_sync_queue_processor_marks_successful_rule_ok(
     db_session,
     monkeypatch,
 ) -> None:
+    operation_status.reset_operations_for_tests()
     settings = AppSettings(id="default")
     rule = Rule(
         rule_name="Queued Success",
@@ -46,6 +47,12 @@ def test_sync_queue_processor_marks_successful_rule_ok(
     assert refreshed_rule is not None
     assert refreshed_rule.last_sync_status == SyncStatus.OK
     assert refreshed_rule.last_sync_error is None
+    payload = operation_status.operations_status_payload()
+    assert payload["operations"][0]["type"] == "qb_sync"
+    assert payload["operations"][0]["status"] == "success"
+    assert payload["operations"][0]["current"] == 1
+    assert payload["operations"][0]["total"] == 1
+    operation_status.reset_operations_for_tests()
 
 
 def test_sync_queue_processor_records_unexpected_failure(

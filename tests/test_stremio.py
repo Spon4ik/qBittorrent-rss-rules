@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from sqlalchemy import select
 
 from app.models import AppSettings, MediaType, QualityProfile, Rule
+from app.services import operation_status
 from app.services.stremio import StremioService, StremioSessionDoesNotExistError
 from app.services.stremio_sync_ops import execute_stremio_sync
 from tests.stremio_test_utils import create_stremio_local_storage, stremio_library_item
@@ -27,6 +28,42 @@ def _install_stremio_api(
         raise AssertionError(f"Unexpected endpoint: {endpoint}")
 
     monkeypatch.setattr(StremioService, "_post_api", fake_post_api)
+
+
+def test_execute_stremio_sync_records_operation_progress(db_session, monkeypatch) -> None:
+    operation_status.reset_operations_for_tests()
+    settings = AppSettings(id="default")
+    db_session.add(settings)
+    db_session.commit()
+
+    def fake_sync_rules(self, session):
+        return type(
+            "Summary",
+            (),
+            {
+                "active_item_count": 5,
+                "created_count": 1,
+                "linked_count": 1,
+                "updated_count": 1,
+                "disabled_count": 0,
+                "reenabled_count": 0,
+                "unchanged_count": 2,
+                "skipped_count": 0,
+                "error_count": 0,
+                "outcomes": [],
+            },
+        )()
+
+    monkeypatch.setattr(StremioService, "sync_rules", fake_sync_rules)
+
+    execute_stremio_sync(db_session, settings=settings)
+
+    payload = operation_status.operations_status_payload()
+    assert payload["operations"][0]["type"] == "stremio_sync"
+    assert payload["operations"][0]["status"] == "success"
+    assert payload["operations"][0]["current"] == 5
+    assert payload["operations"][0]["total"] == 5
+    operation_status.reset_operations_for_tests()
 
 
 def test_stremio_service_discovers_auth_from_local_storage(monkeypatch, tmp_path) -> None:

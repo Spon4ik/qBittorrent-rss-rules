@@ -68,6 +68,9 @@ Phase 30 hardens IMDb-backed Jackett result visibility for short and common titl
 
 - Status: implemented and locally validated on 2026-05-09.
 - Release target: post-Phase 29 precision hardening slice.
+- Follow-up cleanup note: on 2026-05-19, rule `9dfce6d6-f44d-4dc7-9634-32f942b43740` exposed that valid Adventure Time full-series packs were hidden because the episode-floor regex did not understand multi-season ranges ending at the floor season (`S01-10`, `S1-10E1-290`) or absolute full-pack labels (`S1E283 of 283`), and strict IMDb-backed title identity did not accept the known alias form `Adventure Time with Finn & Jake`. The shared builder, browser helper, and identity classifier were updated with focused regressions.
+- Follow-up cleanup note: on 2026-05-19, configured Jackett indexers without detected language were kept in discovery as `Other`, The Pirate Bay metadata gained English detection, and client-side title filtering was tightened from loose substring matching to whole-token/phrase matching for examples such as `Hacks` and `Ghosts`.
+- Post-phase runtime note: on 2026-05-13, a Docker-only SQLite bind-mount issue was fixed by using rollback journal mode when `QB_RULES_APP_ENV=docker`, because WAL sidecars on the Windows-mounted `/app/data/qb_rules.db` could become unreadable to fresh Docker SQLite connections and break Jellyfin auto-sync/settings reads. This does not change Phase 30 Jackett result semantics.
 
 ## Validation Evidence
 
@@ -79,3 +82,9 @@ Phase 30 hardens IMDb-backed Jackett result visibility for short and common titl
   `cmd.exe /c scripts\check.bat` (`392 passed`, `276 warnings`)
 - Shared Docker Compose rebuild passed on 2026-05-09.
 - Docker `/health` passed on 2026-05-09 with `status=ok`, `app_version=1.1.6`, and container status `healthy`.
+- Docker SQLite/Jellyfin runtime hotfix validation passed on 2026-05-13:
+  `cmd.exe /c scripts\test.bat tests\test_config.py -q` (`8 passed`), shared Docker Compose rebuild passed, Docker `/health` returned `status=ok` / `app_version=1.1.6`, Docker SQLite reported `journal=delete`, and inside-container saved-settings Jellyfin sync resolved `/host/C/ProgramData/Jellyfin/Server/data/jellyfin.db` for user `Spon4ik` with `0` errors.
+- Jackett language/manual-indexer cleanup validation passed on 2026-05-19:
+  focused regressions for The Pirate Bay English detection, unknown indexers as `Other`, and tokenized query filtering passed; `cmd.exe /c scripts\test.bat tests\test_jackett.py tests\test_routes.py -q` passed; `node --check app/static/app.js` passed; Ruff passed for touched Python service/test files; `cmd.exe /c scripts\check.bat` passed (`394 passed`, `276 warnings`); shared Docker Compose rebuild passed; and Docker `/health` returned `status=ok` / `app_version=1.1.6`.
+- Adventure Time pack-range cleanup validation passed on 2026-05-19:
+  focused regressions for generated episode-floor pack ranges, saved-snapshot release counts, and connector-title IMDb identity passed; focused rule-builder/rule-fetch/Jackett/routes tests passed; `node --check app/static/app.js` passed; Ruff passed for touched Python service/test files; `cmd.exe /c scripts\check.bat` passed (`397 passed`, `276 warnings`); shared Docker Compose rebuild passed; and Docker `/health` returned `status=ok` / `app_version=1.1.6`.

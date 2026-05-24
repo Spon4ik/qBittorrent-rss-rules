@@ -34,6 +34,12 @@ from app.services.jackett import (
     clamp_search_query_text,
     classify_imdb_backed_result_identity,
 )
+from app.services.operation_status import (
+    complete_operation,
+    fail_operation,
+    start_operation,
+    update_operation,
+)
 from app.services.quality_filters import (
     effective_rule_quality_tokens,
     grouped_tokens_to_regex,
@@ -1286,6 +1292,7 @@ def run_rules_fetch_batch(
         }
 
     started_at = utcnow()
+    operation_handle = None
     try:
         settings = SettingsService.get_or_create(session)
         jackett = SettingsService.resolve_jackett(settings)
@@ -1341,6 +1348,12 @@ def run_rules_fetch_batch(
             }
 
         rules = _prioritize_fetch_rules(session, list(rules))
+        operation_handle = start_operation(
+            operation_type="jackett_fetch",
+            label="Fetching Jackett releases",
+            total=len(rules),
+            message=f"Fetching releases for {len(rules)} rule(s).",
+        )
         parallelism = normalize_rule_fetch_parallelism(
             getattr(settings, "rules_fetch_parallelism", DEFAULT_RULE_FETCH_PARALLELISM)
         )
@@ -1361,6 +1374,11 @@ def run_rules_fetch_batch(
                 succeeded += 1
             else:
                 failed += 1
+            update_operation(
+                operation_handle.operation_id,
+                current=succeeded + failed,
+                message=f"Fetched {succeeded + failed}/{len(rules)} rule(s).",
+            )
 
         attempted = len(rules)
         if failed == 0:
@@ -1372,6 +1390,13 @@ def run_rules_fetch_batch(
         else:
             message = f"Completed with failures: {succeeded} succeeded, {failed} failed."
             status = "partial"
+
+        if failed == 0:
+            complete_operation(operation_handle.operation_id, message=message)
+        elif succeeded == 0:
+            fail_operation(operation_handle.operation_id, message=message, error=message)
+        else:
+            complete_operation(operation_handle.operation_id, status="partial", message=message)
 
         return {
             "status": status,

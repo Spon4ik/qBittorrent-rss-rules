@@ -2,6 +2,10 @@
 
 ## Current focus
 
+- Phase 31 is implemented and locally/Docker validated (`docs/plans/phase-31-shared-operation-progress-bar.md`): added a shared in-memory operation registry, `/api/operations/status`, producer instrumentation for qB sync, Jackett fetches, Jellyfin sync, and Stremio sync, plus a compact visible global progress bar in the base layout. The 2026-05-25 closeout bug where the progress shell existed but was hidden on idle/main-page loads is fixed and browser-verified. Watch-progress write-back between Jellyfin/Stremio/qB Rules remains explicitly deferred to a later dedicated phase.
+- Fixed an Adventure Time rule filtering cleanup on 2026-05-19 for rule `9dfce6d6-f44d-4dc7-9634-32f942b43740`: generated episode-floor regexes now recognize multi-season pack ranges such as `S01-10`, `S1-10`, `S1-10E1-290 of 290`, and absolute full-pack notation such as `S1E283 of 283`, while still rejecting ranges that end before the current floor such as `S01-09`; IMDb-backed exact-title identity now accepts connector aliases such as `Adventure Time with Finn & Jake` without reopening broad token-only matches.
+- Fixed the post-Phase 30 Jackett language/manual-indexer cleanup on 2026-05-19: configured Jackett indexers with no detected language now remain visible as `Other` instead of disappearing from manual affected-feed selection, The Pirate Bay metadata is recognized as English, the existing Settings override editor can still pin trackers such as `thepiratebay=en`, and local search title filtering now matches query words/phrases as tokens so examples such as `Hacks` / `Ghosts` no longer pass by loose substring alone.
+- Fixed a Docker runtime SQLite/Jellyfin auto-sync failure on 2026-05-13: the shared Windows bind-mounted app DB could leave WAL sidecars readable from Windows but not from fresh Docker SQLite connections, which made the Docker backend see stale settings or fail new DB opens and surfaced as `Configured file is not a readable Jellyfin library database.` / missing Jellyfin path symptoms. Docker now uses SQLite rollback journal mode while local/non-Docker runs keep WAL; the live settings row was restored from `data/backups/qb_rules-recovered-final-20260508-1720.db` after a diagnostic empty form POST cleared it, with a safety copy at `data/backups/qb_rules-before-settings-restore-20260513T212633.db`.
 - Phase 30 is implemented and locally/Docker validated as the post-Phase 29 IMDb-backed Jackett precision hardening slice (`docs/plans/phase-30-imdb-backed-jackett-precision.md`): IMDb-backed movie/series rows now use one shared identity classifier across Jackett filtering and saved snapshot replay, broad token-only fallback rows such as `They Will Kill You` for `You` stay hidden/debug-only, and generic capability warnings explain when selected Jackett indexers cannot remotely enforce IMDb.
 - Phase 29 is implemented and locally validated as the post-`v1.1.6` rules operations workbench (`docs/plans/phase-29-rules-operations-workbench.md`): fast local rule saves with background qB sync, batch quality assignment/filtering, backend release signal, missing/oldest-first bounded parallel snapshot fetch, compact data-grid UI, icon row actions, version visibility, and optimized snapshot-summary rendering.
 - Phase 28 is published as `v1.1.6`, the post-`v1.1.5` rule/search scope-authority stabilization slice.
@@ -27,6 +31,33 @@
 - The retained desktop direction remains the WinUI WebView-shell + companion-process lifecycle baseline introduced in `v0.6.0`.
 
 ## Implemented
+
+- Implemented the Phase 31 shared operation progress foundation:
+  - added `app.services.operation_status` as a process-local active/recent operation registry with aggregate progress payloads;
+  - exposed `GET /api/operations/status` for lightweight browser polling;
+  - instrumented qB queued rule sync, Jackett rule-fetch batches, Jellyfin sync, and Stremio sync with operation labels, counts, statuses, messages, and errors;
+  - added the global base-layout progress component and static polling/rendering code;
+  - fixed the closeout visibility gap so the shared progress shell renders visibly on the Docker-served main page even when no operation is running, with idle copy and a 0% bar instead of being hidden;
+  - validation evidence: operation registry/route/qB/Jackett/Jellyfin/Stremio/static tests passed, `node --check app/static/app.js` passed, touched-file Ruff checks passed through `.venv\Scripts\python.exe -m ruff`, `cmd.exe /c scripts\check.bat` passed (`405 passed`, `280 warnings`), shared Docker Compose rebuild passed, Docker `/health` returned `status=ok` / `app_version=1.1.6`, curl confirmed the main-page progress markup is served, and Playwright confirmed the progress shell is visible on `/` with screenshot evidence at `logs/qa/phase-31-progress-visible/main-page-progress.png`.
+
+- Implemented the 2026-05-19 Adventure Time pack-range filter cleanup:
+  - extended the shared episode progress fragment builder to treat multi-season packs ending at or after the rule floor season as matches;
+  - added support for absolute full-pack labels like `S1E283 of 283` so all-episode packs are not hidden only because the tracker encodes total episode count instead of season 10 episode numbers;
+  - mirrored the same regex behavior in the browser-side preview/local filter helper;
+  - allowed `with` as a strict IMDb-backed title-identity connector so `Adventure Time with Finn & Jake` stays exact while unrelated broad fallback rows remain hidden;
+  - validation evidence: focused rule-builder, rule-fetch, Jackett, routes, JS parse, and Ruff checks passed, `cmd.exe /c scripts\check.bat` passed (`397 passed`, `276 warnings`), shared Docker Compose rebuild passed, and Docker `/health` returned `status=ok` / `app_version=1.1.6`.
+
+- Implemented the 2026-05-19 Jackett language/manual-indexer cleanup:
+  - added an `Other` language bucket for configured Jackett indexers whose metadata is not classifiable, keeping them available in rule-form manual feed selection and language selection instead of dropping them from discovery;
+  - added English detection for The Pirate Bay metadata while preserving the existing Settings override path for manual corrections such as `thepiratebay=en`;
+  - tightened local search query matching in `app/static/app.js` to require whole normalized query tokens or exact query phrases instead of accepting arbitrary substrings;
+  - validation evidence: focused Jackett/routes regressions passed, `tests/test_jackett.py tests/test_routes.py -q` passed, `node --check app/static/app.js` passed, Ruff passed for touched Python tests/services, `cmd.exe /c scripts\check.bat` passed (`394 passed`, `276 warnings`), shared Docker Compose rebuild passed, and Docker `/health` returned `status=ok` / `app_version=1.1.6`.
+
+- Implemented the 2026-05-13 Docker SQLite/Jellyfin runtime hotfix:
+  - changed SQLite engine setup so `QB_RULES_APP_ENV=docker` uses rollback journal mode instead of WAL on the Windows bind-mounted `/app/data/qb_rules.db`;
+  - kept non-Docker/local runs on WAL and added config regression coverage for both modes;
+  - restored the live `app_settings` row from the May 8 recovered backup after the investigation's empty-form `sync-jellyfin` probe cleared connection settings;
+  - validation evidence: `cmd.exe /c scripts\test.bat tests\test_config.py -q` passed (`8 passed`), shared Docker Compose rebuild passed, Docker `/health` reports `status=ok` and `app_version=1.1.6`, Docker SQLite reports `journal=delete` and `busy_timeout=30000`, the repo `data` directory no longer has `qb_rules.db-wal` / `qb_rules.db-shm` sidecars after restart, and an inside-container saved-settings Jellyfin check resolved `/host/C/ProgramData/Jellyfin/Server/data/jellyfin.db` for user `Spon4ik` then synced with `0 updated`, `14 unchanged`, `199 skipped`, and `0 errors`.
 
 - Implemented Phase 30 IMDb-backed Jackett precision hardening on 2026-05-09:
   - persisted the phase plan at `docs/plans/phase-30-imdb-backed-jackett-precision.md` before code changes;
@@ -1256,6 +1287,7 @@
 
 ## In progress
 
+- Phase 31 closeout validation is complete locally and in Docker; next work should be a separate design phase if bidirectional Jellyfin/Stremio/qB Rules watch-progress write-back is pursued.
 - Implemented Phase 28 rule/search scope authority on 2026-05-07:
   - added persisted rule-level `search_indexers` with SQLite startup backfill and schema normalization;
   - language-managed rule create/update now saves both passive qB RSS feed URLs and active Jackett search indexers, while legacy/manual rules keep working through feed-derived fallback when the explicit field is empty;
@@ -1298,6 +1330,7 @@
 
 ## Next actions
 
+- Keep bidirectional Jellyfin/Stremio progress write-back as the next separate design phase rather than extending the completed Phase 31 UI-only progress slice.
 - Track Phase 30 exactness follow-ups separately from the immediate strict-filter fix: upstream/custom Jackett definition improvements where trackers expose IMDb links but do not advertise/return `imdbid`, plus a later disabled-by-default detail-page enrichment fallback with a per-indexer allowlist, bounded top-N candidates, short timeout/cache, and promotion only after confirming the requested IMDb ID.
 - Keep the new Phase 30 regressions in the focused Jackett/rule-fetch/routes slice whenever IMDb-backed fallback visibility, saved snapshot replay, or rules-grid release counts change.
 - Perform the next discovery review before selecting the next backlog phase. Phase 28 exposed and closed the second scope bridge in rule snapshot fetches; the remaining likely candidates are manual affected-feed UX cleanup, richer structured audio metadata population, or the planned large-file split queue.

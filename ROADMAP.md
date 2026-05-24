@@ -1,9 +1,10 @@
 # Roadmap
 
-## Current release target: Phase 30 IMDb-backed Jackett precision hardening
+## Current release target: Phase 31 shared operation progress bar
 
 ### Validated locally
 
+- Phase 31 is implemented and locally/Docker validated as the shared operation progress slice: a process-local operation registry, `/api/operations/status`, qB/Jackett/Jellyfin/Stremio producer instrumentation, and a global polling progress bar in the base layout (`docs/plans/phase-31-shared-operation-progress-bar.md`).
 - Phase 30 is implemented and locally/Docker validated as the post-Phase 29 precision hardening slice: IMDb-backed Jackett movie/series rows now share one strict identity classifier across live search filtering and saved snapshot replay, so broad token-only fallback rows for short/common titles such as `You` and `Ghosts` stay hidden/debug-only (`docs/plans/phase-30-imdb-backed-jackett-precision.md`).
 - Phase 29 is implemented and locally validated as the post-`v1.1.6` rules operations workbench: fast local rule saves with background qB sync, main-page batch quality assignment/filtering, backend-derived release signal, missing/oldest-first parallel snapshot fetching, compact data-grid UI, version visibility, compact icon row actions, and snapshot-summary render optimization (`docs/plans/phase-29-rules-operations-workbench.md`).
 - Phase 28 is published as the `v1.1.6` patch slice: persisted Jackett active-search indexers now own saved-rule search/snapshot scope while `feed_urls` remains qB RSS passive sync scope (`docs/plans/phase-28-rule-search-scope-authority.md`).
@@ -25,6 +26,7 @@
 
 ### Current phase track
 
+- Phase 31: shared operation progress bar (implemented and locally/Docker validated; `docs/plans/phase-31-shared-operation-progress-bar.md`)
 - Phase 30: IMDb-backed Jackett precision hardening (implemented and locally/Docker validated; `docs/plans/phase-30-imdb-backed-jackett-precision.md`)
 - Phase 29: rules operations workbench (implemented and locally validated; `docs/plans/phase-29-rules-operations-workbench.md`)
 - Phase 28: rule/search scope authority (published in `v1.1.6`; `docs/plans/phase-28-rule-search-scope-authority.md`)
@@ -109,6 +111,7 @@ Phase 6 detail pointer:
 
 ### Post-release focus
 
+- Keep bidirectional watch-progress write-back as a dedicated follow-up after Phase 31; it needs a canonical progress store, source timestamps, and opt-in safe write-back paths for Jellyfin/Stremio rather than a simple UI progress addition.
 - Track the Phase 30 long-term exactness path separately: upstream/custom Jackett definition improvements for trackers that expose IMDb links without Torznab `imdbid` support, and a later opt-in detail-page enrichment fallback that is disabled by default, allowlisted per indexer, bounded, cached, and never promotes a row without confirming the requested IMDb ID.
 - Decide whether the next catalog/search step should expand beyond OMDb-backed title search into richer provider support or more explicit release-calendar reasoning.
 - Decide whether the next Stremio follow-up should stay sync-focused or retire the remaining legacy addon-era schema fields.

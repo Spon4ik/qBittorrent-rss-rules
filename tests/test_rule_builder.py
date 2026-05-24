@@ -330,6 +330,27 @@ def test_build_generated_pattern_supports_episode_zero_floor() -> None:
     assert not compiled.search("Shrinking S01E99 1080p")
 
 
+def test_build_generated_pattern_supports_multi_season_pack_ranges_at_floor() -> None:
+    builder = RuleBuilder(settings=None)
+    pattern = builder.build_generated_pattern(
+        build_rule(
+            quality_profile=QualityProfile.PLAIN,
+            use_regex=True,
+            normalized_title="Adventure Time",
+            content_name="Adventure Time",
+            start_season=10,
+            start_episode=14,
+        )
+    )
+    compiled = re.compile(pattern)
+
+    assert compiled.search("Adventure Time [S01-10] BDRip 1080p")
+    assert compiled.search("Adventure Time [S1-10] BDRip 1080p")
+    assert compiled.search("Adventure Time (S1-10E1-290 of 290) BDRip 1080p")
+    assert compiled.search("Adventure Time S1E283 of 283 BDRip 1080p")
+    assert not compiled.search("Adventure Time [S01-09] BDRip 1080p")
+
+
 def test_build_generated_pattern_excludes_existing_unseen_jellyfin_episodes_by_default() -> None:
     builder = RuleBuilder(settings=None)
     pattern = builder.build_generated_pattern(

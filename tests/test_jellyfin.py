@@ -5,7 +5,9 @@ from pathlib import Path
 import pytest
 
 from app.models import AppSettings, MediaType, QualityProfile, Rule
+from app.services import operation_status
 from app.services.jellyfin import JellyfinError, JellyfinService
+from app.services.jellyfin_sync_ops import execute_jellyfin_sync
 from tests.jellyfin_test_utils import (
     add_jellyfin_episode,
     add_jellyfin_movie,
@@ -17,6 +19,38 @@ from tests.jellyfin_test_utils import (
 
 SENTINEL_ITEM_ID = "00000000-0000-0000-0000-000000000001"
 PRIMARY_USER_ID = "7144A9EC-B152-4999-8363-8953F3F709C8"
+
+
+def test_execute_jellyfin_sync_records_operation_progress(db_session, monkeypatch) -> None:
+    operation_status.reset_operations_for_tests()
+    settings = AppSettings(id="default")
+    db_session.add(settings)
+    db_session.commit()
+
+    def fake_sync_rules(self, session):
+        return type(
+            "Summary",
+            (),
+            {
+                "user_name": "Spon4ik",
+                "synced_count": 1,
+                "unchanged_count": 2,
+                "skipped_count": 3,
+                "error_count": 0,
+                "outcomes": [],
+            },
+        )()
+
+    monkeypatch.setattr(JellyfinService, "sync_rules", fake_sync_rules)
+
+    execute_jellyfin_sync(db_session, settings=settings)
+
+    payload = operation_status.operations_status_payload()
+    assert payload["operations"][0]["type"] == "jellyfin_sync"
+    assert payload["operations"][0]["status"] == "success"
+    assert payload["operations"][0]["current"] == 6
+    assert payload["operations"][0]["total"] == 6
+    operation_status.reset_operations_for_tests()
 
 
 def _build_basic_jellyfin_db(db_path: Path) -> Path:

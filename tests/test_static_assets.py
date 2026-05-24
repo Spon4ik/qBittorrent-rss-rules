@@ -6,6 +6,8 @@ from pathlib import Path
 from app.services.static_assets import compute_static_asset_version
 
 APP_CSS_PATH = Path(__file__).resolve().parents[1] / "app" / "static" / "app.css"
+BASE_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "app" / "templates" / "base.html"
+APP_JS_PATH = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
 
 
 def test_compute_static_asset_version_tracks_app_asset_mtime(tmp_path) -> None:
@@ -54,3 +56,20 @@ def test_app_css_declares_responsive_shell_contract() -> None:
         ".layout-density-compact",
     ):
         assert utility in css
+
+
+def test_global_operation_progress_shell_assets_are_present() -> None:
+    template = BASE_TEMPLATE_PATH.read_text(encoding="utf-8")
+    css = APP_CSS_PATH.read_text(encoding="utf-8")
+    js = APP_JS_PATH.read_text(encoding="utf-8")
+
+    assert 'data-operation-progress-shell' in template
+    assert 'data-operation-progress-bar' in template
+    assert 'data-operation-progress-summary>Checking progress...' in template
+    shell_open_tag = template.partition('data-operation-progress-shell')[0].rsplit("<section", 1)[-1]
+    assert " hidden" not in shell_open_tag
+    assert ".operation-progress-shell" in css
+    assert "function initOperationProgress" in js
+    assert 'fetch("/api/operations/status"' in js
+    assert 'titleElement.textContent = "Background work idle"' in js
+    assert 'summaryElement.textContent = "No active operations"' in js

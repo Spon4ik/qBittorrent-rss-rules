@@ -6,6 +6,12 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from app.models import AppSettings
+from app.services.operation_status import (
+    complete_operation,
+    fail_operation,
+    start_operation,
+    update_operation,
+)
 from app.services.settings_service import SettingsService
 from app.services.stremio import StremioRuleSyncOutcome, StremioRuleSyncSummary, StremioService
 from app.services.sync import SyncService, SyncServiceError
@@ -84,6 +90,11 @@ def execute_stremio_sync(
     if not _SYNC_LOCK.acquire(blocking=False):
         raise StremioSyncBusyError("Stremio sync is already in progress.")
 
+    operation = start_operation(
+        operation_type="stremio_sync",
+        label="Syncing Stremio library",
+        message="Reading Stremio library and watch state.",
+    )
     try:
         summary = StremioService(
             settings,
@@ -113,11 +124,29 @@ def execute_stremio_sync(
             else:
                 qb_sync_skipped = True
 
-        return StremioSyncExecution(
+        execution = StremioSyncExecution(
             summary=summary,
             qb_sync_success_count=qb_sync_success_count,
             qb_sync_error_messages=qb_sync_error_messages,
             qb_sync_skipped=qb_sync_skipped,
         )
+        total = int(summary.active_item_count or 0)
+        if execution.message_level == "success":
+            complete_operation(operation.operation_id, message=execution.render_message())
+        else:
+            complete_operation(
+                operation.operation_id,
+                status="warning",
+                message=execution.render_message(),
+            )
+        update_operation(operation.operation_id, current=total, total=total)
+        return execution
+    except Exception as exc:
+        fail_operation(
+            operation.operation_id,
+            message="Stremio sync failed.",
+            error=str(exc),
+        )
+        raise
     finally:
         _SYNC_LOCK.release()

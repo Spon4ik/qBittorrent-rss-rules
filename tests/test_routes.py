@@ -102,6 +102,41 @@ def test_health_endpoint(app_client) -> None:
     assert payload["static_asset_version"]
 
 
+def test_operations_status_endpoint_reports_registry_payload(app_client) -> None:
+    from app.services import operation_status
+
+    operation_status.reset_operations_for_tests()
+    operation_status.start_operation(
+        operation_type="jackett_fetch",
+        label="Fetching releases",
+        total=3,
+    )
+
+    response = app_client.get("/api/operations/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["is_running"] is True
+    assert payload["summary"]["total"] == 3
+    assert payload["operations"][0]["type"] == "jackett_fetch"
+    assert payload["operations"][0]["label"] == "Fetching releases"
+    operation_status.reset_operations_for_tests()
+
+
+def test_rules_page_renders_visible_global_operation_progress_shell(app_client) -> None:
+    response = app_client.get("/")
+
+    assert response.status_code == 200
+    html = response.text
+    shell_start = html.index('class="operation-progress-shell"')
+    shell_markup = html[shell_start:html.index("</section>", shell_start)]
+    shell_open_tag = shell_markup[:shell_markup.index(">")]
+    assert 'data-operation-progress-shell' in shell_markup
+    assert 'data-operation-progress-bar' in shell_markup
+    assert " hidden" not in shell_open_tag
+    assert "Checking progress..." in shell_markup
+
+
 def test_debug_hover_telemetry_api_records_filters_and_clears_events(app_client) -> None:
     clear_hover_events()
 
@@ -1060,6 +1095,9 @@ def test_inline_local_filters_enforce_query_and_imdb_parity() -> None:
         "if (!isPrecisePrimaryRow && !imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {"
         in app_js_source
     )
+    assert "const titleTerms = titleSurface.split(\" \").filter(Boolean);" in app_js_source
+    assert "return titleTerms.includes(queryTerms[0]);" in app_js_source
+    assert "if (candidate === normalizedQuery) {" in app_js_source
 
 
 def test_rule_snapshot_inline_filters_keep_literal_title_narrowing() -> None:

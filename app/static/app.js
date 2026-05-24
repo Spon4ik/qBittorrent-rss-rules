@@ -699,12 +699,16 @@ function buildEpisodeProgressRegexFragment(startSeasonValue, startEpisodeValue) 
   const episodeAny = "0*\\d{1,2}";
   const episodeRangeAny = "0*\\d{1,2}";
   const episodeGe = buildMinNumericPattern0To99(startEpisode);
+  const seasonGe = buildMinNumericPattern1To99(startSeason);
   const seasonPrefix = "(?:s(?:eason)?[\\s._:-]*)";
   const episodePrefix = "(?:e(?:p(?:isode)?)?[\\s._:-]*)";
+  const seasonRangeStart = "0*\\d{1,2}";
   const fragments = [
     `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeGe}`,
     `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeRangeAny}${separators}-${separators}(?:${episodePrefix})?${episodeGe}`,
     `${seasonPrefix}${seasonExact}(?!\\d)(?:\\b|$)`,
+    `${seasonPrefix}${seasonRangeStart}${separators}-${separators}(?:${seasonPrefix})?${seasonGe}(?!\\d)`,
+    `${seasonPrefix}0*\\d{1,2}${separators}${episodePrefix}\\d{3,}(?:\\b|$).*?\\bof\\b${separators}\\d{3,}`,
   ];
   if (startSeason < 99) {
     const seasonAfter = buildMinNumericPattern1To99(startSeason + 1);
@@ -2160,15 +2164,22 @@ function initSearchPage(container) {
     if (!normalizedQuery) {
       return true;
     }
-    if (titleSurface.includes(normalizedQuery)) {
-      return true;
-    }
     const queryTerms = normalizedQuery.split(" ").filter(Boolean);
     if (queryTerms.length === 0) {
       return true;
     }
-    const titleTerms = new Set(titleSurface.split(" ").filter(Boolean));
-    return queryTerms.every((item) => titleTerms.has(item));
+    const titleTerms = titleSurface.split(" ").filter(Boolean);
+    if (queryTerms.length === 1) {
+      return titleTerms.includes(queryTerms[0]);
+    }
+    for (let index = 0; index <= titleTerms.length - queryTerms.length; index += 1) {
+      const candidate = titleTerms.slice(index, index + queryTerms.length).join(" ");
+      if (candidate === normalizedQuery) {
+        return true;
+      }
+    }
+    const titleTermSet = new Set(titleTerms);
+    return queryTerms.every((item) => titleTermSet.has(item));
   };
   const PRECISE_TITLE_SEGMENT_SPLIT_RE = /[|/()[\]]+/u;
   const PRECISE_TITLE_ALLOWED_POSTFIX_TOKENS = new Set([
@@ -2225,6 +2236,7 @@ function initSearchPage(container) {
     "web",
     "webdl",
     "webrip",
+    "with",
     "x264",
     "x265",
     "xmas",
@@ -4259,6 +4271,109 @@ function initSettingsForm(form) {
   );
 }
 
+function initOperationProgress(root) {
+  const shell = root.querySelector("[data-operation-progress-shell]");
+  if (!shell) {
+    return;
+  }
+  const summaryElement = shell.querySelector("[data-operation-progress-summary]");
+  const titleElement = shell.querySelector("[data-operation-progress-title]");
+  const barElement = shell.querySelector("[data-operation-progress-bar]");
+  const listElement = shell.querySelector("[data-operation-progress-list]");
+  let pollTimer = 0;
+
+  const clearPollTimer = () => {
+    if (pollTimer) {
+      window.clearTimeout(pollTimer);
+      pollTimer = 0;
+    }
+  };
+
+  const formatOperationDetail = (operation) => {
+    const current = Number(operation?.current || 0);
+    const total = Number(operation?.total || 0);
+    const status = String(operation?.status || "running");
+    if (total > 0) {
+      return `${current}/${total} ${status}`;
+    }
+    return status;
+  };
+
+  const renderPayload = (payload) => {
+    const operations = Array.isArray(payload?.operations) ? payload.operations : [];
+    const summary = payload?.summary || {};
+    if (operations.length === 0) {
+      shell.hidden = false;
+      if (titleElement) {
+        titleElement.textContent = "Background work idle";
+      }
+      if (summaryElement) {
+        summaryElement.textContent = "No active operations";
+      }
+      if (barElement) {
+        barElement.style.width = "0%";
+      }
+      if (listElement) {
+        listElement.replaceChildren();
+      }
+      return false;
+    }
+    shell.hidden = false;
+
+    const activeCount = Number(summary.active_count || 0);
+    const total = Number(summary.total || 0);
+    const current = Number(summary.current || 0);
+    const percent = summary.percent === null || summary.percent === undefined
+      ? null
+      : Number(summary.percent);
+    if (titleElement) {
+      titleElement.textContent = activeCount > 0 ? "Background work running" : "Recent background work";
+    }
+    if (summaryElement) {
+      summaryElement.textContent = total > 0
+        ? `${current}/${total} complete`
+        : `${operations.length} operation(s)`;
+    }
+    if (barElement) {
+      barElement.style.width = `${percent === null ? (activeCount > 0 ? 35 : 100) : percent}%`;
+    }
+    if (listElement) {
+      listElement.replaceChildren();
+      for (const operation of operations) {
+        const item = document.createElement("div");
+        item.className = "operation-progress-item";
+        const label = document.createElement("strong");
+        label.textContent = String(operation?.label || "Operation");
+        const detail = document.createElement("span");
+        detail.textContent = String(operation?.message || formatOperationDetail(operation));
+        item.append(label, detail);
+        listElement.appendChild(item);
+      }
+    }
+    return Boolean(summary.is_running);
+  };
+
+  const poll = async () => {
+    clearPollTimer();
+    try {
+      const response = await fetch("/api/operations/status", {
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error("Could not read operation status.");
+      }
+      const keepPollingFast = renderPayload(await response.json());
+      pollTimer = window.setTimeout(poll, keepPollingFast ? 1200 : 5000);
+    } catch {
+      shell.hidden = true;
+      pollTimer = window.setTimeout(poll, 8000);
+    }
+  };
+
+  poll();
+  window.addEventListener("beforeunload", clearPollTimer);
+}
+
 function initRulesPage(container) {
   const FILTER_STORAGE_KEY = "qb-rules-page-filters:v1";
   const FILTER_RESTORE_FLAG_KEY = "qb-rules-page-filters:restoring";
@@ -5211,10 +5326,13 @@ function initRulesPage(container) {
   }
 
   selectAllToggle?.addEventListener("change", () => {
+    const isChecked = Boolean(selectAllToggle.checked);
     const visible = visibleCheckboxes();
     for (const checkbox of visible) {
-      checkbox.checked = Boolean(selectAllToggle.checked);
-      checkbox.dispatchEvent(new Event("change"));
+      checkbox.checked = isChecked;
+      if (checkbox.value) {
+        setSelectionForRule(checkbox.value, isChecked);
+      }
     }
     updateSelectionState();
   });
@@ -5292,6 +5410,7 @@ function initRulesPage(container) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  initOperationProgress(document);
   initResultQueueActions(document);
 
   const searchPage = document.querySelector("[data-search-page]");

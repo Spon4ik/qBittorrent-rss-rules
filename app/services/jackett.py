@@ -170,6 +170,7 @@ LANGUAGE_LABELS: dict[str, str] = {
     "ko": "Korean",
     "multi": "Multi-language",
     "nl": "Dutch",
+    "other": "Other",
     "pl": "Polish",
     "pt": "Portuguese",
     "ru": "Russian",
@@ -185,7 +186,7 @@ LANGUAGE_DETECTION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     )
     for code, pattern in (
         ("ru", r"\brussian\b|\brus\b|\bru\b"),
-        ("en", r"\benglish\b|\beng\b"),
+        ("en", r"\benglish\b|\beng\b|\bthe\s*pirate\s*bay\b|\bthepiratebay\b"),
         ("he", r"\bhebrew\b|\bisraeli\b|\bivrit\b"),
         ("uk", r"\bukrainian\b|\bukr\b"),
         ("pl", r"\bpolish\b"),
@@ -263,6 +264,7 @@ PRECISE_TITLE_ALLOWED_POSTFIX_TOKENS = frozenset(
         "web",
         "webdl",
         "webrip",
+        "with",
         "x264",
         "x265",
         "xmas",
@@ -2959,7 +2961,7 @@ class JackettClient:
             if override_languages:
                 languages = override_languages
             if not languages:
-                continue
+                languages = ["other"]
             discovered[indexer_id.casefold()] = languages
 
         self._indexer_language_map = discovered

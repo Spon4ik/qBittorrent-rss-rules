@@ -109,6 +109,7 @@ def test_sync_queue_updates_progress_after_refilling_worker_slot(monkeypatch) ->
     monkeypatch.setattr(sync_queue, "_TOTAL_COMPLETED", 1)
     monkeypatch.setattr(sync_queue, "_TOTAL_FAILED", 0)
     monkeypatch.setattr(sync_queue, "_ACTIVE_TASKS", 2)
+    monkeypatch.setattr(sync_queue, "_ADAPTIVE_WORKER_LIMIT", 3)
     sync_queue._QUEUED_RULE_IDS.clear()
     sync_queue._QUEUED_RULE_ID_SET.clear()
     sync_queue._QUEUED_RULE_IDS.append("third-rule")
@@ -120,6 +121,63 @@ def test_sync_queue_updates_progress_after_refilling_worker_slot(monkeypatch) ->
     payload = operation_status.operations_status_payload()
     assert executor.submitted == [(sync_queue._process_and_finalize, "third-rule")]
     assert payload["operations"][0]["message"] == (
-        "qB sync 1/3 completed; 3 active, 0 queued."
+        "qB sync 1/3 completed; 3 active (limit 3), 0 queued."
+    )
+    operation_status.reset_operations_for_tests()
+
+
+def test_sync_queue_adaptive_limit_ramps_up_after_successes(monkeypatch) -> None:
+    monkeypatch.setattr(sync_queue, "_ADAPTIVE_WORKER_LIMIT", 3)
+    monkeypatch.setattr(sync_queue, "_SYNC_SUCCESS_STREAK", 0)
+
+    for _ in range(sync_queue._SYNC_SUCCESS_STREAK_TO_INCREASE):
+        sync_queue._record_sync_outcome_locked(sync_queue.RuleSyncOutcome(success=True))
+
+    assert sync_queue._ADAPTIVE_WORKER_LIMIT == 4
+    assert sync_queue._SYNC_SUCCESS_STREAK == 0
+
+
+def test_sync_queue_adaptive_limit_backs_off_on_timeout_failure(monkeypatch) -> None:
+    monkeypatch.setattr(sync_queue, "_ADAPTIVE_WORKER_LIMIT", 12)
+    monkeypatch.setattr(sync_queue, "_SYNC_SUCCESS_STREAK", 5)
+
+    sync_queue._record_sync_outcome_locked(
+        sync_queue.RuleSyncOutcome(success=False, should_backoff=True)
+    )
+
+    assert sync_queue._ADAPTIVE_WORKER_LIMIT == 6
+    assert sync_queue._SYNC_SUCCESS_STREAK == 0
+
+
+def test_sync_queue_dispatch_uses_adaptive_limit(monkeypatch) -> None:
+    operation_status.reset_operations_for_tests()
+    executor = _RecordingExecutor()
+    handle = operation_status.start_operation(
+        operation_type="qb_sync",
+        label="Syncing qBittorrent rules",
+        total=6,
+        current=1,
+        message="qB sync 1/6 completed.",
+    )
+    monkeypatch.setattr(sync_queue, "_EXECUTOR", executor)
+    monkeypatch.setattr(sync_queue, "_QUEUE_OPERATION_ID", handle.operation_id)
+    monkeypatch.setattr(sync_queue, "_TOTAL_ENQUEUED", 6)
+    monkeypatch.setattr(sync_queue, "_TOTAL_COMPLETED", 1)
+    monkeypatch.setattr(sync_queue, "_TOTAL_FAILED", 0)
+    monkeypatch.setattr(sync_queue, "_ACTIVE_TASKS", 4)
+    monkeypatch.setattr(sync_queue, "_ADAPTIVE_WORKER_LIMIT", 5)
+    sync_queue._QUEUED_RULE_IDS.clear()
+    sync_queue._QUEUED_RULE_ID_SET.clear()
+    sync_queue._QUEUED_RULE_IDS.append("fifth-rule")
+    sync_queue._QUEUED_RULE_ID_SET.add("fifth-rule")
+
+    with sync_queue._QUEUE_CONDITION:
+        assert sync_queue._dispatch_next_rule_sync_locked() is True
+        assert sync_queue._dispatch_next_rule_sync_locked() is False
+
+    payload = operation_status.operations_status_payload()
+    assert executor.submitted == [(sync_queue._process_and_finalize, "fifth-rule")]
+    assert payload["operations"][0]["message"] == (
+        "qB sync 1/6 completed; 5 active (limit 5), 0 queued."
     )
     operation_status.reset_operations_for_tests()

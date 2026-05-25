@@ -86,6 +86,8 @@ class SyncService:
         rule.last_synced_rule_payload = qb_rule
         rule.last_sync_status = SyncStatus.OK
         rule.last_sync_error = None
+        rule.remote_rule_drift_message = ""
+        rule.remote_rule_drift_detected_at = None
         rule.last_synced_at = utcnow()
         self._record_event(rule, action=action, status="ok", error_message=None)
         self.session.commit()

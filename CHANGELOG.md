@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.1.7] - 2026-05-25
+
+- Fixed qB RSS drift diagnostics so a successful repair sync clears the active remote-drift banner and timestamp instead of leaving stale "next sync rewrites qB" copy after qB has already been rewritten from local rule semantics.
+- Preserved the last observed stale remote qB payload as diagnostics evidence while recording the repaired app-generated payload as the latest synced rule.
+
 ## [1.1.6] - 2026-05-07
 
 - Added persisted rule-level Jackett `search_indexers` so saved active search and rule snapshot fetches use explicit search scope instead of reparsing passive qB RSS `feed_urls`.

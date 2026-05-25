@@ -260,7 +260,52 @@ def test_sync_all_marks_remote_rule_drift_before_repair(monkeypatch, db_session)
     assert result.drift_detected == 1
     assert "400p" in sent_rule_defs[0]["mustContain"]
     assert rule.last_remote_rule_payload == stale_remote_rule
-    assert "Remote qB RSS rule differed" in rule.remote_rule_drift_message
+    assert rule.remote_rule_drift_message == ""
+    assert rule.remote_rule_drift_detected_at is None
+    assert rule.last_synced_rule_payload == sent_rule_defs[0]
+
+
+def test_sync_rule_success_clears_previous_active_drift(monkeypatch, db_session) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+    )
+    rule = Rule(
+        rule_name="Rick and Morty",
+        content_name="Rick and Morty",
+        normalized_title="Rick and Morty",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.UHD_2160P_HDR,
+        use_regex=False,
+        feed_urls=["http://localhost:9117/api/v2.0/indexers/rutor/results/torznab/api?apikey=abc&t=search"],
+        remote_rule_drift_message="Remote qB RSS rule differed from the app-generated payload for Rick and Morty.",
+        remote_rule_drift_detected_at=None,
+        last_remote_rule_payload={"mustContain": "Rick and Morty"},
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    sent_rule_defs: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        SyncService,
+        "_jackett_feed_sample_download_works",
+        lambda self, feed_url: True,
+    )
+    monkeypatch.setattr("app.services.sync.QbittorrentClient.create_category", lambda self, name: None)
+    monkeypatch.setattr(
+        "app.services.sync.QbittorrentClient.set_rule",
+        lambda self, rule_name, rule_def: sent_rule_defs.append(rule_def),
+    )
+
+    result = SyncService(db_session, settings).sync_rule(rule.id)
+
+    assert result.success is True
+    assert rule.remote_rule_drift_message == ""
+    assert rule.remote_rule_drift_detected_at is None
+    assert rule.last_remote_rule_payload == {"mustContain": "Rick and Morty"}
     assert rule.last_synced_rule_payload == sent_rule_defs[0]
 
 

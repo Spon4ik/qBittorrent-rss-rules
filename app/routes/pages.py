@@ -1949,6 +1949,7 @@ def edit_rule(
     inline_search: dict[str, object] | None = None
     inline_search_errors: list[str] = []
     inline_search_notices: list[str] = []
+    saved_inline_snapshot = get_rule_search_snapshot(session, rule_id=rule.id)
     run_inline_search_requested = request.query_params.get("run_search", "").strip().casefold() in {
         "1",
         "true",
@@ -1991,7 +1992,7 @@ def edit_rule(
     if run_inline_search_requested or auto_replay_inline_snapshot:
         replay_saved_snapshot = not refresh_inline_snapshot and not effective_feed_scope_override
         if replay_saved_snapshot:
-            snapshot = get_rule_search_snapshot(session, rule_id=rule.id)
+            snapshot = saved_inline_snapshot
             if snapshot is not None:
                 inline_search = inline_search_from_rule_snapshot(snapshot, rule=rule)
                 inline_search_notices.append(
@@ -2123,6 +2124,7 @@ def edit_rule(
             "quality_search_term_map": quality_search_term_map(),
             "quality_pattern_map": quality_pattern_map(),
             "inline_search_view_defaults": inline_search_view_defaults,
+            "has_search_snapshot": saved_inline_snapshot is not None,
             "inline_search": inline_search,
             "inline_search_errors": inline_search_errors,
             "inline_search_notices": inline_search_notices,

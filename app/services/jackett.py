@@ -32,7 +32,11 @@ from app.services.rule_builder import (
     parse_additional_include_groups,
     parse_manual_must_contain_additions,
 )
-from app.services.selective_queue import text_matches_episode
+from app.services.selective_queue import (
+    SelectiveQueueError,
+    build_magnet_link,
+    text_matches_episode,
+)
 from app.services.watch_state import latest_watch_state_episode_tuple
 
 
@@ -741,6 +745,91 @@ def _tracker_urls_from_link(link: str | None) -> list[str]:
     return _dedupe_strings(parse_qs(parsed.query).get("tr", []))
 
 
+def _merged_magnet_link_for_result(result: JackettSearchResult) -> str | None:
+    info_hash = _coerce_text(result.info_hash).casefold()
+    if not info_hash:
+        return None
+    try:
+        return build_magnet_link(
+            info_hash=info_hash,
+            tracker_urls=list(result.grouped_trackers or []),
+            display_name=result.title,
+        )
+    except SelectiveQueueError:
+        return None
+
+
+def _same_release_bridge_signature(result: JackettSearchResult) -> str | None:
+    if result.size_bytes is None:
+        return None
+    title = _normalize_match_text(result.title)
+    if not title:
+        return None
+
+    latin_candidates = re.findall(r"[a-z][a-z0-9]*(?:\s+[a-z][a-z0-9]*){1,8}", title)
+    release_noise = {
+        "bdrip",
+        "web",
+        "webrip",
+        "webdl",
+        "dl",
+        "hdrip",
+        "hdtv",
+        "bluray",
+        "blu",
+        "ray",
+        "remux",
+        "proper",
+        "repack",
+        "russian",
+        "rus",
+        "vo",
+        "sub",
+        "subs",
+    }
+    title_key = ""
+    for candidate in latin_candidates:
+        tokens = [
+            token
+            for token in candidate.split()
+            if token not in release_noise
+            and not token.isdigit()
+            and not re.fullmatch(r"s\d{1,2}", token)
+            and not re.fullmatch(r"e\d{1,3}", token)
+            and not re.fullmatch(r"\d{3,4}p", token)
+        ]
+        if len(tokens) >= 2 and len(" ".join(tokens)) > len(title_key):
+            title_key = " ".join(tokens[:6])
+    if not title_key:
+        return None
+
+    year_match = re.search(r"\b(19\d{2}|20\d{2})(?:\s*[-]\s*(19\d{2}|20\d{2}))?\b", title)
+    year_key = ""
+    if year_match:
+        year_key = "-".join(part for part in year_match.groups() if part)
+
+    quality_tokens = []
+    for pattern, label in (
+        (r"\b2160p\b", "2160p"),
+        (r"\b1080p\b", "1080p"),
+        (r"\b720p\b", "720p"),
+        (r"\bbd\s*rip\b|\bbdrip\b", "bdrip"),
+        (r"\bweb\s*dl\b|\bwebdl\b", "webdl"),
+    ):
+        if re.search(pattern, title):
+            quality_tokens.append(label)
+
+    size_bucket = int(result.size_bytes) // (64 * 1024 * 1024)
+    return "|".join(
+        [
+            title_key,
+            str(size_bucket),
+            year_key,
+            ",".join(quality_tokens),
+        ]
+    )
+
+
 def _structured_media_fields_for_payload(payload: JackettSearchRequest) -> dict[str, str]:
     structured_fields: dict[str, str] = {}
     if payload.media_type == MediaType.MUSIC:
@@ -855,6 +944,7 @@ def _merge_result_details(
         **dict(existing.torznab_attrs or {}),
         **dict(candidate.torznab_attrs or {}),
     }
+    merged.merged_magnet_link = _merged_magnet_link_for_result(merged)
     return merged
 
 
@@ -2005,8 +2095,39 @@ class JackettClient:
         merged: dict[str, tuple[datetime | None, JackettSearchResult]],
         variant_results: list[tuple[datetime | None, JackettSearchResult]],
     ) -> None:
+        bridge_signatures: dict[str, str] = {}
+        for merge_key, (_published_at, existing_result) in list(merged.items()):
+            signature = _same_release_bridge_signature(existing_result)
+            if signature and existing_result.info_hash:
+                bridge_signatures[signature] = merge_key
+
         for published_at, result in variant_results:
             merge_key = self._merge_key(result)
+            bridge_signature = _same_release_bridge_signature(result)
+            if bridge_signature and bridge_signature in bridge_signatures:
+                merge_key = bridge_signatures[bridge_signature]
+            elif bridge_signature and result.info_hash:
+                bridge_published = published_at
+                bridge_result = result
+                matched_existing = False
+                for existing_key, (existing_published_at, existing_result) in list(merged.items()):
+                    if _same_release_bridge_signature(existing_result) != bridge_signature:
+                        continue
+                    matched_existing = True
+                    existing_result.info_hash = result.info_hash
+                    existing_result.merge_key = merge_key
+                    bridge_result = _merge_result_details(existing_result, bridge_result)
+                    if bridge_published is None or (
+                        existing_published_at is not None and existing_published_at > bridge_published
+                    ):
+                        bridge_published = existing_published_at
+                    del merged[existing_key]
+                if matched_existing:
+                    merged[merge_key] = (bridge_published, bridge_result)
+                    bridge_signatures[bridge_signature] = merge_key
+                else:
+                    bridge_signatures[bridge_signature] = merge_key
+
             if merge_key in merged:
                 existing_published_at, existing_result = merged[merge_key]
                 merged_result = _merge_result_details(existing_result, result)
@@ -2021,8 +2142,11 @@ class JackettClient:
             initial_result.grouped_links = _dedupe_strings([result.link])
             initial_result.grouped_indexers = _dedupe_strings([str(result.indexer or "")])
             initial_result.grouped_trackers = _tracker_urls_from_link(result.link)
+            initial_result.merged_magnet_link = _merged_magnet_link_for_result(initial_result)
             initial_result.duplicate_count = 1
             merged[merge_key] = (published_at, initial_result)
+            if bridge_signature and initial_result.info_hash:
+                bridge_signatures[bridge_signature] = merge_key
 
     def _filter_results(
         self,

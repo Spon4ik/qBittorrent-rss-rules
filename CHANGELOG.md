@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.1.8] - 2026-05-25
+
+- Fixed same-release Jackett result grouping so obvious no-hash tracker rows are merged into a known-infohash sibling when release title, pack shape, quality, year, and size match closely, without fetching torrent files or spending tracker download quota.
+- Added a visible magnet-icon action for known-infohash search results that copies or opens one merged magnet link with all already-known grouped tracker hints.
+- Tightened the rule edit page inline results layout so wide screens wrap result content/actions instead of forcing horizontal table scrolling.
 ## [1.1.7] - 2026-05-25
 
 - Fixed qB RSS drift diagnostics so a successful repair sync clears the active remote-drift banner and timestamp instead of leaving stale "next sync rewrites qB" copy after qB has already been rewritten from local rule semantics.

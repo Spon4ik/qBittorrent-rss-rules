@@ -446,6 +446,24 @@
       >
         Queue
       </button>
+      {% if item.merged_magnet_link %}
+      <button
+        type="button"
+        class="button-link muted search-magnet-button"
+        data-result-magnet-button
+        data-result-magnet-link="{{ item.merged_magnet_link }}"
+        title="Copy merged magnet link"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+          <path d="M6 3v7a6 6 0 0 0 12 0V3" />
+          <path d="M6 7h4" />
+          <path d="M14 7h4" />
+          <path d="M6 3h4" />
+          <path d="M14 3h4" />
+        </svg>
+        <span>Magnet</span>
+      </button>
+      {% endif %}
       <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open Result</a>
       {% if item.details_url %}
       <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
@@ -594,6 +612,24 @@
             >
               Queue
             </button>
+            {% if item.merged_magnet_link %}
+            <button
+              type="button"
+              class="button-link muted search-magnet-button"
+              data-result-magnet-button
+              data-result-magnet-link="{{ item.merged_magnet_link }}"
+              title="Copy merged magnet link"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                <path d="M6 3v7a6 6 0 0 0 12 0V3" />
+                <path d="M6 7h4" />
+                <path d="M14 7h4" />
+                <path d="M6 3h4" />
+                <path d="M14 3h4" />
+              </svg>
+              <span>Magnet</span>
+            </button>
+            {% endif %}
             <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open</a>
             {% if item.details_url %}
             <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>

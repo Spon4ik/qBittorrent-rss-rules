@@ -367,6 +367,7 @@ class JackettSearchResult(BaseModel):
     grouped_links: list[str] = Field(default_factory=list)
     grouped_indexers: list[str] = Field(default_factory=list)
     grouped_trackers: list[str] = Field(default_factory=list)
+    merged_magnet_link: str | None = None
     duplicate_count: int = 1
 
 

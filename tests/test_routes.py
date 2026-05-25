@@ -94,7 +94,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.1.7"
+    assert payload["app_version"] == "1.1.8"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -341,6 +341,47 @@ def test_rule_sync_action_enqueues_background_sync_without_opening_rule_page(
     assert refreshed is not None
     assert refreshed.last_sync_status == SyncStatus.PENDING
     assert refreshed.last_sync_error is None
+
+
+def test_rule_page_sync_action_enqueues_single_rule_and_returns_to_rule_page(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    rule = Rule(
+        rule_name="Rule Page Sync Action",
+        content_name="Rule Page Sync Action",
+        normalized_title="Rule Page Sync Action",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        last_sync_status=SyncStatus.OK,
+        feed_urls=["http://feed.example/rule-page-sync-action"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    enqueued_rule_ids: list[str] = []
+    monkeypatch.setattr(
+        "app.routes.api.enqueue_rule_sync",
+        lambda rule_id: enqueued_rule_ids.append(rule_id),
+    )
+
+    response = app_client.post(
+        f"/api/rules/{rule.id}/sync",
+        params={"return_to": "rule"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        f"/rules/{rule.id}?message=qB%20sync%20queued%20for%201%20rule.&level=success"
+    )
+    assert enqueued_rule_ids == [rule.id]
+    db_session.expire_all()
+    synced_rule = db_session.get(Rule, rule.id)
+    assert synced_rule is not None
+    assert synced_rule.last_sync_status == SyncStatus.PENDING
+    assert synced_rule.last_sync_error is None
 
 
 def test_sync_all_enqueues_rules_and_reports_qb_progress(
@@ -1320,6 +1361,55 @@ def test_run_rule_search_route_preserves_refresh_snapshot_flag(app_client, db_se
     assert response.headers["location"] == (
         f"/rules/{rule.id}?run_search=1&refresh_snapshot=1#inline-search-results"
     )
+
+
+def test_rule_page_renders_single_snapshot_action_based_on_snapshot_state(
+    app_client, db_session
+) -> None:
+    rule_without_snapshot = Rule(
+        rule_name="Snapshot Action New",
+        content_name="Snapshot Action New",
+        normalized_title="Snapshot Action New",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/snapshot-action-new"],
+    )
+    rule_with_snapshot = Rule(
+        rule_name="Snapshot Action Existing",
+        content_name="Snapshot Action Existing",
+        normalized_title="Snapshot Action Existing",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/snapshot-action-existing"],
+    )
+    db_session.add_all([rule_without_snapshot, rule_with_snapshot])
+    db_session.flush()
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule_with_snapshot.id,
+            payload={"query": "Snapshot Action Existing", "media_type": "series"},
+            inline_search={"query": "Snapshot Action Existing"},
+            fetched_at=datetime(2026, 5, 25, tzinfo=UTC),
+        )
+    )
+    db_session.commit()
+
+    new_response = app_client.get(f"/rules/{rule_without_snapshot.id}")
+    existing_response = app_client.get(f"/rules/{rule_with_snapshot.id}")
+
+    assert new_response.status_code == 200
+    assert new_response.text.count('data-run-search-here') == 1
+    assert f'href="/rules/{rule_without_snapshot.id}/search"' in new_response.text
+    assert ">Run Search Snapshot</a>" in new_response.text
+    assert "Refresh Search Snapshot" not in new_response.text
+
+    assert existing_response.status_code == 200
+    assert existing_response.text.count('data-run-search-here') == 1
+    assert (
+        f'href="/rules/{rule_with_snapshot.id}/search?refresh_snapshot=1"'
+        in existing_response.text
+    )
+    assert ">Refresh Search Snapshot</a>" in existing_response.text
 
 
 def test_search_page_renders_jackett_as_separate_source(app_client) -> None:
@@ -2643,8 +2733,8 @@ def test_rule_pages_expose_run_search_actions(app_client, db_session) -> None:
     assert 'title="Run search"' in index_response.text
     assert edit_response.status_code == 200
     assert f"/rules/{rule.id}/search" in edit_response.text
-    assert ">Run Search Here</a>" in edit_response.text
-    assert ">Refresh Search Snapshot</a>" in edit_response.text
+    assert ">Run Search Snapshot</a>" in edit_response.text
+    assert "Refresh Search Snapshot" not in edit_response.text
     assert ">Advanced Search Workspace</a>" in edit_response.text
 
 

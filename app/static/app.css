@@ -1420,6 +1420,59 @@ td {
   font-size: 0.8rem;
 }
 
+.search-magnet-button {
+  gap: 0.35rem;
+}
+
+.search-magnet-button svg {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#inline-search-results {
+  min-width: 0;
+}
+
+#inline-search-results .search-table-wrap {
+  overflow-x: visible;
+}
+
+#inline-search-results .search-table {
+  table-layout: fixed;
+}
+
+#inline-search-results .search-table th,
+#inline-search-results .search-table td {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+#inline-search-results .search-table th:nth-child(1),
+#inline-search-results .search-table td:nth-child(1) {
+  width: 8rem;
+}
+
+#inline-search-results .search-table th:nth-child(2),
+#inline-search-results .search-table td:nth-child(2) {
+  width: 24%;
+}
+
+#inline-search-results .search-table th:nth-child(3),
+#inline-search-results .search-table td:nth-child(3) {
+  width: 7rem;
+}
+
+#inline-search-results .search-table th:nth-last-child(1),
+#inline-search-results .search-table td:nth-last-child(1) {
+  width: 15rem;
+}
+
 .search-filter-grid {
   margin-top: 1rem;
   display: grid;

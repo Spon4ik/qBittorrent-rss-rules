@@ -1493,6 +1493,7 @@ async def update_rule(
 @router.post("/rules/{rule_id}/sync")
 def sync_rule(
     rule_id: str,
+    return_to: str = "",
     session: Session = Depends(get_db_session),
 ) -> RedirectResponse:
     rule = session.get(Rule, rule_id)
@@ -1503,8 +1504,9 @@ def sync_rule(
     session.add(rule)
     session.commit()
     enqueue_rule_sync(rule.id)
+    target = f"/rules/{rule.id}" if return_to.strip().casefold() == "rule" else "/"
     return RedirectResponse(
-        url="/?message=qB%20sync%20queued%20for%201%20rule.&level=success",
+        url=f"{target}?message=qB%20sync%20queued%20for%201%20rule.&level=success",
         status_code=303,
     )
 

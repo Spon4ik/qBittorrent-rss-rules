@@ -2534,6 +2534,84 @@ def test_jackett_client_groups_same_hash_duplicates_in_one_result() -> None:
         "https://tracker.two/announce",
     ]
     assert len(merged.grouped_links) == 2
+    assert merged.merged_magnet_link == (
+        "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12"
+        "&dn=Dune%20Part%20Two%202160p%20HDR%20Proper"
+        "&tr=https%3A%2F%2Ftracker.one%2Fannounce"
+        "&tr=https%3A%2F%2Ftracker.two%2Fannounce"
+    )
+
+
+def test_jackett_client_bridges_obvious_same_release_rows_into_known_hash_group() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = {key: value for key, value in request.url.params.multi_items()}
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "search",
+            "q": "Rick and Morty",
+            "cat": "5000",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>Рик и Морти (S1-8E1-81 of 81) / Rick and Morty [2013-2025, BDRip 1080p, WEB-DL 1080p]</title>
+      <guid>https://riperam.example/download/1</guid>
+      <link>https://jackett.example/dl/riperam/1</link>
+      <torznab:attr name="size" value="83805552640" />
+      <torznab:attr name="jackettindexer" value="RiperAM" />
+      <torznab:attr name="seeders" value="53" />
+    </item>
+    <item>
+      <title>Rick and Morty - S1-8E1-81 - 2013-2025 VO BDRip 1080p, WEBDL 1080p</title>
+      <guid>https://kinozal.example/download/2</guid>
+      <link>https://jackett.example/dl/kinozal/2</link>
+      <torznab:attr name="size" value="83805552640" />
+      <torznab:attr name="jackettindexer" value="Kinozal" />
+      <torznab:attr name="seeders" value="50" />
+    </item>
+    <item>
+      <title>Рик и Морти / Rick and Morty [S01-08] (2013-2025) BDRip 1080p, WEB-DL 1080p-Сыендук</title>
+      <guid>https://rutor.example/download/3</guid>
+      <link>magnet:?xt=urn:btih:DDFE295B0E84D6A4D5CA34B6E14A119C16F9FD73&amp;tr=https://tracker.rutor/announce</link>
+      <torznab:attr name="size" value="83805552640" />
+      <torznab:attr name="infohash" value="DDFE295B0E84D6A4D5CA34B6E14A119C16F9FD73" />
+      <torznab:attr name="jackettindexer" value="RuTor" />
+      <torznab:attr name="seeders" value="49" />
+    </item>
+  </channel>
+</rss>
+""",
+            )
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="Rick and Morty",
+            media_type=MediaType.SERIES,
+        )
+    )
+
+    assert len(result.raw_results) == 1
+    merged = result.raw_results[0]
+    assert merged.info_hash == "DDFE295B0E84D6A4D5CA34B6E14A119C16F9FD73"
+    assert merged.duplicate_count == 3
+    assert set(merged.grouped_indexers) == {"RiperAM", "Kinozal", "RuTor"}
+    assert len(merged.grouped_links) == 3
+    assert merged.merged_magnet_link == (
+        "magnet:?xt=urn:btih:ddfe295b0e84d6a4d5ca34b6e14a119c16f9fd73"
+        "&dn=%D0%A0%D0%B8%D0%BA%20%D0%B8%20%D0%9C%D0%BE%D1%80%D1%82%D0%B8%20%28S1-8E1-81%20of%2081%29%20/%20Rick%20and%20Morty%20%5B2013-2025%2C%20BDRip%201080p%2C%20WEB-DL%201080p%5D"
+        "&tr=https%3A%2F%2Ftracker.rutor%2Fannounce"
+    )
 
 
 def test_jackett_client_prefers_structured_music_search_before_generic_query() -> None:

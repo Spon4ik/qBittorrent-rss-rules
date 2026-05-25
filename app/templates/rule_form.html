@@ -72,10 +72,13 @@
   </div>
   {% if mode == 'edit' %}
   <div class="card-actions">
-    <a class="button-link" href="/rules/{{ rule_id }}/search" data-run-search-here>Run Search Here</a>
-    <a class="button-link muted" href="/rules/{{ rule_id }}/search?refresh_snapshot=1">Refresh Search Snapshot</a>
+    <a
+      class="button-link"
+      href="/rules/{{ rule_id }}/search{% if has_search_snapshot %}?refresh_snapshot=1{% endif %}"
+      data-run-search-here
+    >{{ 'Refresh Search Snapshot' if has_search_snapshot else 'Run Search Snapshot' }}</a>
     <a class="button-link muted" href="/search?rule_id={{ rule_id }}">Advanced Search Workspace</a>
-    <form method="post" action="/api/rules/{{ rule_id }}/sync">
+    <form method="post" action="/api/rules/{{ rule_id }}/sync?return_to=rule">
       <button type="submit">Sync This Rule</button>
     </form>
     <form method="post" action="/api/rules/{{ rule_id }}/delete" onsubmit="return confirm('Delete this rule locally and remotely?');">
@@ -643,12 +646,30 @@
             data-result-tracker-urls='{{ (item.grouped_trackers or []) | tojson }}'
             data-result-queue-scope="{{ item.queue_scope or 'single' }}"
             data-result-rule-id="{{ rule_id }}"
-          >
-            Queue via Rule
-          </button>
-          <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open Result</a>
-          {% if item.details_url %}
-          <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
+            >
+              Queue via Rule
+            </button>
+            {% if item.merged_magnet_link %}
+            <button
+              type="button"
+              class="button-link muted search-magnet-button"
+              data-result-magnet-button
+              data-result-magnet-link="{{ item.merged_magnet_link }}"
+              title="Copy merged magnet link"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                <path d="M6 3v7a6 6 0 0 0 12 0V3" />
+                <path d="M6 7h4" />
+                <path d="M14 7h4" />
+                <path d="M6 3h4" />
+                <path d="M14 3h4" />
+              </svg>
+              <span>Magnet</span>
+            </button>
+            {% endif %}
+            <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open Result</a>
+            {% if item.details_url %}
+            <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
           {% endif %}
         </div>
       </article>
@@ -790,12 +811,30 @@
                   data-result-tracker-urls='{{ (item.grouped_trackers or []) | tojson }}'
                   data-result-queue-scope="{{ item.queue_scope or 'single' }}"
                   data-result-rule-id="{{ rule_id }}"
-                >
-                  Queue
-                </button>
-                <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open</a>
-                {% if item.details_url %}
-                <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
+                  >
+                    Queue
+                  </button>
+                  {% if item.merged_magnet_link %}
+                  <button
+                    type="button"
+                    class="button-link muted search-magnet-button"
+                    data-result-magnet-button
+                    data-result-magnet-link="{{ item.merged_magnet_link }}"
+                    title="Copy merged magnet link"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                      <path d="M6 3v7a6 6 0 0 0 12 0V3" />
+                      <path d="M6 7h4" />
+                      <path d="M14 7h4" />
+                      <path d="M6 3h4" />
+                      <path d="M14 3h4" />
+                    </svg>
+                    <span>Magnet</span>
+                  </button>
+                  {% endif %}
+                  <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open</a>
+                  {% if item.details_url %}
+                  <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
                 {% endif %}
               </div>
             </td>

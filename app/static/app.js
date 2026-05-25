@@ -3361,7 +3361,8 @@ function initSearchPage(container) {
 
 function initResultQueueActions(root = document) {
   const queueButtons = Array.from(root.querySelectorAll("[data-result-queue-button]"));
-  if (queueButtons.length === 0) {
+  const magnetButtons = Array.from(root.querySelectorAll("[data-result-magnet-button]"));
+  if (queueButtons.length === 0 && magnetButtons.length === 0) {
     return;
   }
 
@@ -3472,6 +3473,37 @@ function initResultQueueActions(root = document) {
       } finally {
         button.disabled = false;
         button.textContent = originalLabel;
+      }
+    });
+  }
+
+  for (const button of magnetButtons) {
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      const magnetLink = String(button.dataset.resultMagnetLink || "").trim();
+      if (!magnetLink) {
+        setQueueStatus(button, "Could not copy magnet: missing hash.", true);
+        return;
+      }
+      const originalLabel = button.textContent;
+      button.disabled = true;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(magnetLink);
+          button.textContent = "Copied";
+          setQueueStatus(button, "Merged magnet copied with all known trackers.");
+        } else {
+          window.open(magnetLink, "_blank", "noopener,noreferrer");
+          setQueueStatus(button, "Opened merged magnet with all known trackers.");
+        }
+      } catch {
+        window.location.href = magnetLink;
+        setQueueStatus(button, "Opening merged magnet with all known trackers.");
+      } finally {
+        window.setTimeout(() => {
+          button.disabled = false;
+          button.textContent = originalLabel;
+        }, 900);
       }
     });
   }

@@ -33,6 +33,7 @@ def stremio_library_item(
     removed: bool = False,
     temp: bool = False,
     completed: bool = False,
+    state_overrides: dict[str, object] | None = None,
 ) -> dict[str, object]:
     state: dict[str, object] = {
         "lastWatched": "",
@@ -61,6 +62,8 @@ def stremio_library_item(
                 "watched": "undefined:1:eJwDAAAAAAE=",
             }
         )
+    if state_overrides:
+        state.update(state_overrides)
     return {
         "_id": item_id,
         "name": title,

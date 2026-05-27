@@ -1,0 +1,39 @@
+# Phase 32 - Bidirectional Stremio/Jellyfin Watch Progress Sync
+
+## Summary
+
+Add a first bidirectional watch-progress sync between Stremio and Jellyfin. The slice synchronizes exact in-progress playback positions and completed state for matched movies and series episodes, using newest-progress-wins arbitration with a 30-second minimum position delta.
+
+## Scope
+
+- Add Jellyfin HTTP write-back settings: server URL plus API key, with environment override support.
+- Keep Jellyfin SQLite reads as the discovery/progress source, but write progress only through Jellyfin's HTTP API.
+- Extend Stremio sync with watch-progress extraction and `datastorePut` write-back while preserving existing library item state fields.
+- Add shared watch-progress records and newest-progress arbitration in `app.services.watch_state`.
+- Add `app.services.watch_progress_sync` as the provider orchestrator and expose `POST /api/settings/sync-watch-progress`.
+- Surface a manual `Sync Watch Progress` action from Settings, run watch-progress sync automatically from the existing Jellyfin/Stremio sync executions, and instrument the sync through the shared operation registry.
+
+## Acceptance Criteria
+
+- Stremio newer progress writes to Jellyfin.
+- Jellyfin newer progress writes to Stremio.
+- Position deltas under 30 seconds are skipped.
+- Missing progress on one side does not clear progress on the other.
+- Jellyfin write-back never mutates the SQLite DB directly.
+- Settings persist the new Jellyfin write-back values without exposing saved API keys.
+
+## Validation Checklist
+
+- [x] Focused watch-progress arbitration, provider, settings, and route tests pass.
+- [x] Full `cmd.exe /c scripts\check.bat` passes.
+- [x] Shared Docker backend rebuild passes.
+- [x] Docker `/health` returns `status=ok`.
+
+## Status
+
+- Status: implemented and locally/Docker validated as release target `v1.2.0` on 2026-05-27.
+- Implemented: shared `WatchProgressRecord`/selection helpers, provider progress collection/write hooks, settings and route/UI integration, operation-status instrumentation, and focused regressions.
+- Validation evidence: focused tests passed, Ruff/mypy passed, full `cmd.exe /c scripts\check.bat` passed (`439 passed`, `290 warnings`), shared Docker Compose rebuild passed, and Docker `/health` returned `status=ok` / `app_version=1.2.0`.
+- Follow-up fix on 2026-05-27: real provider data showed Jellyfin records for `The Boys` at `tt1190634:S05E01`..`S05E05` while Stremio exposed only the series-level latest state at `tt1190634:S04E08`, so exact episode-key matching produced `matched: 0`. The orchestrator now groups episode progress by series IMDb key, compares the latest provider records per series, and Stremio write-back synthesizes `video_id` from a Jellyfin winner such as `tt1190634:S05E05`. Live dry-run diagnostics now report `matched=2` and would update Stremio from Jellyfin for `tt1190634`; full `cmd.exe /c scripts\check.bat` passed with `431 passed` and `290 warnings`.
+- Follow-up fix on 2026-05-27: series writes no longer use whole-title Stremio watched flags. For episode records, Stremio write-back clears `flaggedWatched` / `timesWatched`, sets the current episode `video_id`, and updates the `state.watched` episode bitfield using the series video IDs. Stremio read-back now ignores stale whole-series watched flags for episode completion, uses per-episode `timeWatched` rather than series-level `overallTimeWatched`, and checks either the exact watched bitfield entry or the 95% duration threshold. The orchestrator also sends all completed episodes from the winning series group, not only the latest progress record, so watched Jellyfin episodes can become watched Stremio episodes while the in-progress episode keeps its position. A second same-day live fix handles Jellyfin's in-progress `PlayCount=1` / `Played=0` shape by treating only `Played` as completed, and Stremio explicitly clears the watched bit for in-progress episode writes. Validation evidence: focused regressions passed, full `cmd.exe /c scripts\check.bat` passed, Docker Jellyfin read reports `The Boys` S05E05 as `completed=False`, Docker sync is idempotent, and live Stremio bitfield verification shows S05E01-S05E04 true while in-progress S05E05 is false.
+- Automatic sync closeout on 2026-05-27: watch-progress sync now runs from existing Jellyfin/Stremio sync executions, so background auto-sync workers and `Save + Sync ... Now` actions no longer depend on the separate manual button. Jellyfin DB reads now fall back to a temporary read-only snapshot copy if the live DB is momentarily unreadable through Docker/host mounts. Validation evidence: focused automatic/snapshot regressions passed, full `cmd.exe /c scripts\check.bat` passed (`439 passed`, `290 warnings`), shared Docker Compose rebuild passed, Docker `/health` returned `status=ok` / `app_version=1.2.0`, and live Docker `execute_jellyfin_sync(..., allow_metadata_requests=False)` ran watch-progress sync automatically with `matched=3`, no watch-progress errors, and no Jellyfin DB readability failure.

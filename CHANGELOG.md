@@ -8,6 +8,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.2.0] - 2026-05-27
+
+- Added bidirectional Jellyfin/Stremio watch-progress sync for movies and series episodes, including exact in-progress positions, completed state, newest-progress-wins arbitration, Jellyfin HTTP API write-back, and Stremio datastore write-back.
+- Wired watch-progress sync into the existing Jellyfin and Stremio sync executions so automatic background syncs and `Save + Sync ... Now` actions no longer require the separate manual `Sync Watch Progress` button.
+- Fixed Stremio series watch-state handling so episode sync updates the episode watched bitfield, clears stale whole-series flags, preserves in-progress positions, and does not mark future or unfinished episodes watched.
+- Hardened Jellyfin SQLite reads for Docker/live-library timing by falling back to a read-only snapshot when the live database is momentarily unreadable.
+
 ## [1.1.8] - 2026-05-25
 
 - Fixed same-release Jackett result grouping so obvious no-hash tracker rows are merged into a known-infohash sibling when release title, pack shape, quality, year, and size match closely, without fetching torrent files or spending tracker download quota.

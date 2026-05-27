@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
 
+from app.config import obfuscate_secret
 from app.models import AppSettings, MediaType, QualityProfile, Rule
 from app.services import operation_status
 from app.services.jellyfin import JellyfinError, JellyfinService
 from app.services.jellyfin_sync_ops import execute_jellyfin_sync
+from app.services.watch_progress_sync import WatchProgressSyncSummary
+from app.services.watch_state import WatchProgressRecord
 from tests.jellyfin_test_utils import (
     add_jellyfin_episode,
     add_jellyfin_movie,
@@ -51,6 +55,206 @@ def test_execute_jellyfin_sync_records_operation_progress(db_session, monkeypatc
     assert payload["operations"][0]["current"] == 6
     assert payload["operations"][0]["total"] == 6
     operation_status.reset_operations_for_tests()
+
+
+def test_execute_jellyfin_sync_runs_watch_progress_when_configured(db_session, monkeypatch) -> None:
+    operation_status.reset_operations_for_tests()
+    settings = AppSettings(id="default")
+    db_session.add(settings)
+    db_session.commit()
+    calls: list[str] = []
+
+    def fake_sync_rules(self, session):
+        return type(
+            "Summary",
+            (),
+            {
+                "user_name": "Spon4ik",
+                "synced_count": 0,
+                "unchanged_count": 1,
+                "skipped_count": 0,
+                "error_count": 0,
+                "outcomes": [],
+            },
+        )()
+
+    def fake_sync_watch_progress(session, *, settings=None):
+        calls.append(settings.id)
+        return WatchProgressSyncSummary(
+            jellyfin_read_count=1,
+            stremio_read_count=1,
+            matched_count=1,
+            jellyfin_write_count=0,
+            stremio_write_count=1,
+            skipped_count=0,
+            error_count=0,
+            messages=[],
+        )
+
+    monkeypatch.setattr(JellyfinService, "sync_rules", fake_sync_rules)
+    monkeypatch.setattr("app.services.jellyfin_sync_ops.can_sync_watch_progress", lambda settings: True)
+    monkeypatch.setattr("app.services.jellyfin_sync_ops.sync_watch_progress", fake_sync_watch_progress)
+
+    execution = execute_jellyfin_sync(db_session, settings=settings)
+
+    assert calls == ["default"]
+    assert execution.watch_progress_summary is not None
+    assert "1 watch-progress writes" in execution.detail_fragments()
+    operation_status.reset_operations_for_tests()
+
+
+def test_jellyfin_collect_watch_progress_reads_positions(tmp_path: Path) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_series(db_path, series_id="series-1", title="Series", imdb_id="tt7654321")
+    add_jellyfin_episode(
+        db_path,
+        episode_id="episode-1",
+        series_id="series-1",
+        title="Episode 2",
+        season_number=1,
+        episode_number=2,
+    )
+    add_jellyfin_movie(db_path, movie_id="movie-1", title="Movie", imdb_id="tt1234567")
+    add_jellyfin_userdata(
+        db_path,
+        item_id="episode-1",
+        user_id=PRIMARY_USER_ID,
+        custom_data_key=None,
+        playback_position_ticks=4_200_000_000,
+        last_played_date="2026-05-26 10:10:00.0000000",
+    )
+    add_jellyfin_userdata(
+        db_path,
+        item_id="movie-1",
+        user_id=PRIMARY_USER_ID,
+        custom_data_key=None,
+        playback_position_ticks=1_800_000_000,
+        last_played_date="2026-05-26 10:05:00.0000000",
+    )
+    service = JellyfinService(
+        AppSettings(id="default", jellyfin_db_path=str(db_path), jellyfin_user_name="Spon4ik")
+    )
+
+    records = service.collect_watch_progress()
+
+    assert [record.item_key for record in records] == ["tt7654321:S01E02", "tt1234567"]
+    assert records[0].position_ms == 420_000
+    assert records[1].position_ms == 180_000
+
+
+def test_jellyfin_collect_watch_progress_does_not_complete_from_play_count_only(
+    tmp_path: Path,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_series(db_path, series_id="series-1", title="Series", imdb_id="tt7654321")
+    add_jellyfin_episode(
+        db_path,
+        episode_id="episode-1",
+        series_id="series-1",
+        title="Episode 5",
+        season_number=5,
+        episode_number=5,
+    )
+    add_jellyfin_userdata(
+        db_path,
+        item_id="episode-1",
+        user_id=PRIMARY_USER_ID,
+        custom_data_key=None,
+        played=0,
+        play_count=1,
+        playback_position_ticks=10_805_661_379,
+        last_played_date="2026-05-26 20:45:51.9284615",
+    )
+    service = JellyfinService(
+        AppSettings(id="default", jellyfin_db_path=str(db_path), jellyfin_user_name="Spon4ik")
+    )
+
+    records = service.collect_watch_progress()
+
+    assert len(records) == 1
+    assert records[0].item_key == "tt7654321:S05E05"
+    assert records[0].position_ms == 1_080_566
+    assert not records[0].completed
+
+
+def test_jellyfin_connect_falls_back_to_snapshot_when_live_db_open_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    service = JellyfinService(AppSettings(id="default", jellyfin_db_path=str(db_path)))
+    original_open = service._open_readonly_connection
+    opened_paths: list[Path] = []
+
+    def flaky_open(path: Path):
+        opened_paths.append(path)
+        if path == db_path:
+            raise sqlite3.OperationalError("unable to open database file")
+        return original_open(path)
+
+    monkeypatch.setattr(service, "_open_readonly_connection", flaky_open)
+
+    with service._connect(db_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM Users").fetchone()[0] == 1
+
+    assert opened_paths[0] == db_path
+    assert opened_paths[1].name == "jellyfin.db"
+    assert opened_paths[1] != db_path
+
+
+def test_jellyfin_write_watch_progress_uses_http_api(monkeypatch) -> None:
+    settings = AppSettings(
+        id="default",
+        jellyfin_server_url="http://jellyfin.local",
+        jellyfin_api_key_encrypted=obfuscate_secret("token"),
+    )
+    service = JellyfinService(settings)
+    calls: list[tuple[str, str, dict[str, object]]] = []
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, url, *, headers=None, json=None):
+            calls.append((url, headers["X-Emby-Token"], json))
+            return type("Response", (), {"raise_for_status": lambda self: None})()
+
+    monkeypatch.setattr("app.services.jellyfin.httpx.Client", FakeClient)
+
+    service.write_watch_progress(
+        WatchProgressRecord(
+            source="stremio",
+            media_type="episode",
+            item_key="tt7654321:S01E02",
+            provider_item_id="stremio-episode",
+            provider_parent_id="episode-1",
+            position_ms=420_000,
+            duration_ms=2_400_000,
+            completed=False,
+            updated_at=None,
+        )
+    )
+
+    assert calls == [
+        (
+            "http://jellyfin.local/Sessions/Playing/Progress",
+            "token",
+            {
+                "ItemId": "episode-1",
+                "PositionTicks": 4_200_000_000,
+                "IsPaused": True,
+            },
+        )
+    ]
 
 
 def _build_basic_jellyfin_db(db_path: Path) -> Path:

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from app.services.watch_state import (
+    WatchProgressRecord,
+    choose_newer_watch_progress,
     derive_watch_state_floor,
     format_watch_state_source_labels,
     latest_watch_state_episode_tuple,
@@ -122,3 +126,58 @@ def test_select_movie_watch_state_reenables_when_completion_clears() -> None:
     assert selection.detail == (
         "Re-enabled because no connected source currently reports this movie as completed."
     )
+
+
+def test_choose_newer_watch_progress_prefers_newest_meaningful_delta() -> None:
+    jellyfin = WatchProgressRecord(
+        source="jellyfin",
+        media_type="movie",
+        item_key="tt1234567",
+        provider_item_id="jf-movie",
+        position_ms=120_000,
+        duration_ms=3_600_000,
+        completed=False,
+        updated_at=datetime(2026, 5, 26, 10, 0, tzinfo=UTC),
+    )
+    stremio = WatchProgressRecord(
+        source="stremio",
+        media_type="movie",
+        item_key="tt1234567",
+        provider_item_id="tt1234567",
+        position_ms=180_000,
+        duration_ms=3_600_000,
+        completed=False,
+        updated_at=datetime(2026, 5, 26, 10, 5, tzinfo=UTC),
+    )
+
+    selection = choose_newer_watch_progress(jellyfin, stremio, min_delta_ms=30_000)
+
+    assert selection is not None
+    assert selection.winner is stremio
+    assert selection.loser is jellyfin
+    assert selection.delta_ms == 60_000
+
+
+def test_choose_newer_watch_progress_skips_small_position_delta() -> None:
+    jellyfin = WatchProgressRecord(
+        source="jellyfin",
+        media_type="movie",
+        item_key="tt1234567",
+        provider_item_id="jf-movie",
+        position_ms=120_000,
+        duration_ms=3_600_000,
+        completed=False,
+        updated_at=datetime(2026, 5, 26, 10, 0, tzinfo=UTC),
+    )
+    stremio = WatchProgressRecord(
+        source="stremio",
+        media_type="movie",
+        item_key="tt1234567",
+        provider_item_id="tt1234567",
+        position_ms=130_000,
+        duration_ms=3_600_000,
+        completed=False,
+        updated_at=datetime(2026, 5, 26, 10, 5, tzinfo=UTC),
+    )
+
+    assert choose_newer_watch_progress(jellyfin, stremio, min_delta_ms=30_000) is None

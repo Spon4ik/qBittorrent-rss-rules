@@ -311,6 +311,8 @@ def _format_jackett_language_overrides(overrides: object | None) -> str:
 class ResolvedJellyfinConfig:
     db_path: str | None
     user_name: str | None
+    server_url: str | None
+    api_key: str | None
     auto_sync_enabled: bool
     auto_sync_interval_seconds: int
 
@@ -428,6 +430,12 @@ class SettingsService:
         )
         if normalized_jellyfin_user_name != getattr(settings, "jellyfin_user_name", None):
             settings.jellyfin_user_name = normalized_jellyfin_user_name
+            changed = True
+        normalized_jellyfin_server_url = _normalize_optional_text(
+            getattr(settings, "jellyfin_server_url", None)
+        )
+        if normalized_jellyfin_server_url != getattr(settings, "jellyfin_server_url", None):
+            settings.jellyfin_server_url = normalized_jellyfin_server_url
             changed = True
         normalized_jellyfin_auto_sync_enabled = bool(
             getattr(settings, "jellyfin_auto_sync_enabled", DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED)
@@ -649,6 +657,7 @@ class SettingsService:
         )
         settings.jellyfin_db_path = payload.jellyfin_db_path or None
         settings.jellyfin_user_name = payload.jellyfin_user_name or None
+        settings.jellyfin_server_url = payload.jellyfin_server_url or None
         settings.jellyfin_auto_sync_enabled = payload.jellyfin_auto_sync_enabled
         settings.jellyfin_auto_sync_interval_seconds = payload.jellyfin_auto_sync_interval_seconds
         settings.stremio_local_storage_path = payload.stremio_local_storage_path or None
@@ -678,6 +687,8 @@ class SettingsService:
             settings.qb_password_encrypted = obfuscate_secret(payload.qb_password)
         if payload.jackett_api_key:
             settings.jackett_api_key_encrypted = obfuscate_secret(payload.jackett_api_key)
+        if payload.jellyfin_api_key:
+            settings.jellyfin_api_key_encrypted = obfuscate_secret(payload.jellyfin_api_key)
         if payload.omdb_api_key:
             normalized_omdb_api_key = normalize_omdb_api_key(payload.omdb_api_key)
             if normalized_omdb_api_key:
@@ -728,9 +739,15 @@ class SettingsService:
         env = get_environment_settings()
         db_path = env.jellyfin_db_path or (settings.jellyfin_db_path if settings else None)
         user_name = env.jellyfin_user_name or (settings.jellyfin_user_name if settings else None)
+        server_url = env.jellyfin_server_url or (
+            settings.jellyfin_server_url if settings else None
+        )
         return ResolvedJellyfinConfig(
             db_path=_normalize_optional_text(db_path),
             user_name=_normalize_optional_text(user_name),
+            server_url=_normalize_optional_text(server_url),
+            api_key=env.jellyfin_api_key
+            or reveal_secret(settings.jellyfin_api_key_encrypted if settings else None),
             auto_sync_enabled=bool(
                 getattr(settings, "jellyfin_auto_sync_enabled", DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED)
             )
@@ -792,6 +809,7 @@ class SettingsService:
             ),
             "jellyfin_db_path": getattr(settings, "jellyfin_db_path", None) or "",
             "jellyfin_user_name": getattr(settings, "jellyfin_user_name", None) or "",
+            "jellyfin_server_url": getattr(settings, "jellyfin_server_url", None) or "",
             "jellyfin_auto_sync_enabled": bool(
                 getattr(settings, "jellyfin_auto_sync_enabled", DEFAULT_JELLYFIN_AUTO_SYNC_ENABLED)
             ),
@@ -865,12 +883,17 @@ class SettingsService:
             "saved_quality_profile_count": len(saved_profiles),
             "has_saved_qb_password": bool(settings.qb_password_encrypted),
             "has_saved_jackett_key": bool(settings.jackett_api_key_encrypted),
+            "has_saved_jellyfin_key": bool(getattr(settings, "jellyfin_api_key_encrypted", None)),
             "has_saved_omdb_key": bool(settings.omdb_api_key_encrypted),
             "has_env_qb_password": bool(get_environment_settings().qb_password),
             "has_env_jackett_key": bool(get_environment_settings().jackett_api_key),
             "has_env_omdb_key": bool(get_environment_settings().omdb_api_key),
             "has_env_jellyfin_db_path": bool(get_environment_settings().jellyfin_db_path),
             "has_env_jellyfin_user_name": bool(get_environment_settings().jellyfin_user_name),
+            "has_env_jellyfin_server_url": bool(
+                get_environment_settings().jellyfin_server_url
+            ),
+            "has_env_jellyfin_api_key": bool(get_environment_settings().jellyfin_api_key),
             "has_env_stremio_local_storage_path": bool(
                 get_environment_settings().stremio_local_storage_path
             ),

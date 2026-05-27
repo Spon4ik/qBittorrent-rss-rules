@@ -111,6 +111,7 @@ from app.services.stremio import StremioError, StremioService
 from app.services.stremio_sync_ops import StremioSyncBusyError, execute_stremio_sync
 from app.services.sync import SyncService, SyncServiceError
 from app.services.sync_queue import enqueue_rule_sync
+from app.services.watch_progress_sync import sync_watch_progress
 
 router = APIRouter(prefix="/api")
 compat_router = APIRouter()
@@ -309,6 +310,8 @@ def _raw_settings_form_data(form: Any) -> dict[str, Any]:
         "jackett_language_overrides_text": form.get("jackett_language_overrides_text", ""),
         "jellyfin_db_path": form.get("jellyfin_db_path") or None,
         "jellyfin_user_name": form.get("jellyfin_user_name") or None,
+        "jellyfin_server_url": form.get("jellyfin_server_url") or None,
+        "jellyfin_api_key": form.get("jellyfin_api_key") or None,
         "jellyfin_auto_sync_enabled": _bool_from_form(form, "jellyfin_auto_sync_enabled"),
         "jellyfin_auto_sync_interval_seconds": form.get("jellyfin_auto_sync_interval_seconds", 30),
         "stremio_local_storage_path": form.get("stremio_local_storage_path") or None,
@@ -731,6 +734,8 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
         jackett_api_key_encrypted=settings.jackett_api_key_encrypted,
         jellyfin_db_path=getattr(settings, "jellyfin_db_path", None),
         jellyfin_user_name=getattr(settings, "jellyfin_user_name", None),
+        jellyfin_server_url=getattr(settings, "jellyfin_server_url", None),
+        jellyfin_api_key_encrypted=getattr(settings, "jellyfin_api_key_encrypted", None),
         jellyfin_auto_sync_enabled=bool(getattr(settings, "jellyfin_auto_sync_enabled", True)),
         jellyfin_auto_sync_interval_seconds=int(
             getattr(settings, "jellyfin_auto_sync_interval_seconds", 30)
@@ -2078,5 +2083,55 @@ async def sync_stremio_library_rules(
         errors=execution.top_errors(),
         message=execution.render_message(),
         message_level=execution.message_level,
+        status_code=200,
+    )
+
+
+@router.post("/settings/sync-watch-progress", response_class=HTMLResponse)
+async def sync_provider_watch_progress(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> HTMLResponse:
+    form = await request.form()
+    raw_form = _raw_settings_form_data(form)
+    try:
+        payload = SettingsFormPayload.model_validate(raw_form)
+    except ValidationError as exc:
+        return _render_settings_page(
+            request,
+            form_data=raw_form,
+            errors=[error["msg"] for error in exc.errors()],
+        )
+
+    settings = SettingsService.get_or_create(session)
+    SettingsService.apply_payload(settings, payload)
+    session.add(settings)
+    session.commit()
+
+    try:
+        summary = sync_watch_progress(session, settings=settings)
+    except (JellyfinError, StremioError) as exc:
+        return _render_settings_page(
+            request,
+            form_data=SettingsService.to_form_dict(settings),
+            errors=[str(exc)],
+        )
+
+    message = (
+        "Watch progress sync complete. "
+        f"Jellyfin read: {summary.jellyfin_read_count}; "
+        f"Stremio read: {summary.stremio_read_count}; "
+        f"matched: {summary.matched_count}; "
+        f"Jellyfin writes: {summary.jellyfin_write_count}; "
+        f"Stremio writes: {summary.stremio_write_count}; "
+        f"skipped: {summary.skipped_count}; "
+        f"errors: {summary.error_count}."
+    )
+    return _render_settings_page(
+        request,
+        form_data=SettingsService.to_form_dict(settings),
+        errors=summary.messages[-3:] if summary.error_count else [],
+        message=message,
+        message_level="warning" if summary.error_count else "success",
         status_code=200,
     )

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 import os
 import re
+import zlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -20,6 +22,7 @@ from app.services.rule_builder import RuleBuilder
 from app.services.settings_service import SettingsService
 from app.services.watch_state import (
     MovieWatchStateSelection,
+    WatchProgressRecord,
     WatchStateDerivedFloor,
     derive_watch_state_floor,
     normalize_watch_state_source_labels,
@@ -41,6 +44,10 @@ STREMIO_LIBRARY_COLLECTION = "libraryItem"
 SUPPORTED_STREMIO_ITEM_TYPES = frozenset({"movie", "series"})
 TITLE_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 IMDB_ID_RE = re.compile(r"(tt\d{5,12})", re.IGNORECASE)
+WATCH_PROGRESS_EPISODE_KEY_RE = re.compile(
+    r"^(?P<imdb>tt\d{5,12}):S(?P<season>\d{1,2})E(?P<episode>\d{1,2})$",
+    re.IGNORECASE,
+)
 STREMIO_AUTH_KEY_RE = re.compile(
     r'"auth"\s*:\s*\{.*?"key"\s*:\s*"([^"]+)"',
     re.IGNORECASE | re.DOTALL,
@@ -230,6 +237,60 @@ def _stremio_state_indicates_completion(value: object) -> bool:
     return watched_time >= int(duration * 0.95)
 
 
+def _stremio_state_position_is_complete(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    duration = _stremio_int(value.get("duration"))
+    if duration <= 0:
+        return False
+    watched_time = max(
+        _stremio_int(value.get("overallTimeWatched")),
+        _stremio_int(value.get("timeWatched")),
+    )
+    return watched_time >= int(duration * 0.95)
+
+
+def _parse_stremio_datetime(value: object | None) -> datetime | None:
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return None
+    try:
+        return datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _stremio_video_id_from_watch_record(record: WatchProgressRecord) -> str | None:
+    if record.provider_video_id:
+        return record.provider_video_id
+    match = WATCH_PROGRESS_EPISODE_KEY_RE.match(record.item_key)
+    if not match:
+        return None
+    return (
+        f"{match.group('imdb').lower()}:"
+        f"{int(match.group('season'))}:"
+        f"{int(match.group('episode'))}"
+    )
+
+
+def _pack_watched_bitfield(values: list[bool]) -> str:
+    packed = bytearray((len(values) + 7) // 8)
+    for index, enabled in enumerate(values):
+        if enabled:
+            packed[index // 8] |= 1 << (index % 8)
+    return base64.b64encode(zlib.compress(bytes(packed))).decode("ascii")
+
+
+def _unpack_watched_bitfield(serialized_payload: str, length: int) -> list[bool]:
+    raw = zlib.decompress(base64.b64decode(serialized_payload))
+    values: list[bool] = []
+    for index in range(length):
+        byte_index = index // 8
+        bit_index = index % 8
+        values.append(byte_index < len(raw) and bool(raw[byte_index] & (1 << bit_index)))
+    return values
+
+
 def _resolved_rule_title(rule: Rule) -> str:
     return (
         str(rule.normalized_title or "").strip()
@@ -248,6 +309,7 @@ class StremioService:
         self._metadata_client: MetadataClient | None = None
         self._catalog_imdb_id_cache: dict[str, str | None] = {}
         self._catalog_season_cache: dict[tuple[str, int], list[int] | None] = {}
+        self._series_video_ids_cache: dict[str, list[str]] = {}
 
     def can_resolve_auth(self) -> bool:
         if self.config.has_explicit_auth_key:
@@ -528,6 +590,15 @@ class StremioService:
         return storage_path
 
     def _fetch_library_items(self, auth_key: str) -> list[StremioLibraryItem]:
+        result = self._fetch_library_payloads(auth_key)
+        items: list[StremioLibraryItem] = []
+        for entry in result:
+            item = self._library_item_from_payload(entry)
+            if item is not None:
+                items.append(item)
+        return items
+
+    def _fetch_library_payloads(self, auth_key: str) -> list[dict[str, object]]:
         payload = {
             "authKey": auth_key,
             "collection": STREMIO_LIBRARY_COLLECTION,
@@ -537,13 +608,222 @@ class StremioService:
         result = self._post_api("datastoreGet", payload)
         if not isinstance(result, list):
             raise StremioError("Unexpected Stremio library response.")
+        return [entry for entry in result if isinstance(entry, dict)]
 
-        items: list[StremioLibraryItem] = []
-        for entry in result:
-            item = self._library_item_from_payload(entry)
-            if item is not None:
-                items.append(item)
-        return items
+    def collect_watch_progress(self) -> list[WatchProgressRecord]:
+        _auth_context, payloads = self._run_with_auth_fallback(self._fetch_library_payloads)
+        records: list[WatchProgressRecord] = []
+        for payload in payloads:
+            record = self._watch_progress_record_from_payload(payload)
+            if record is not None:
+                records.append(record)
+        return records
+
+    def _watch_progress_record_from_payload(
+        self, payload: Mapping[str, object]
+    ) -> WatchProgressRecord | None:
+        item_id = str(payload.get("_id") or "").strip()
+        item_type = _normalize_stremio_item_type(str(payload.get("type") or ""))
+        imdb_id = _stremio_item_imdb_id(item_id)
+        state = payload.get("state")
+        if not item_id or item_type is None or imdb_id is None or not isinstance(state, dict):
+            return None
+
+        duration_ms = _stremio_int(state.get("duration")) or None
+        updated_at = _parse_stremio_datetime(state.get("lastWatched"))
+
+        if item_type == "movie":
+            position_ms = max(
+                _stremio_int(state.get("overallTimeWatched")),
+                _stremio_int(state.get("timeWatched")),
+            )
+            item_key = imdb_id
+            media_type = "movie"
+            provider_video_id = str(state.get("video_id") or item_id).strip() or item_id
+            completed = _stremio_state_indicates_completion(state)
+        else:
+            position_ms = _stremio_int(state.get("timeWatched"))
+            video_id = str(state.get("video_id") or state.get("watched") or "").strip()
+            if not video_id or ":" not in video_id:
+                return None
+            parts = video_id.split(":")
+            if len(parts) < 3:
+                return None
+            try:
+                season_number = int(parts[1])
+                episode_number = int(parts[2])
+            except ValueError:
+                return None
+            item_key = f"{imdb_id}:S{season_number:02d}E{episode_number:02d}"
+            media_type = "episode"
+            provider_video_id = video_id
+            completed = _stremio_state_position_is_complete(state)
+            if not completed:
+                completed = self._watched_bitfield_get_video(
+                    str(state.get("watched") or ""),
+                    self._series_video_ids(imdb_id),
+                    video_id,
+                )
+
+        if position_ms <= 0 and not completed:
+            return None
+        return WatchProgressRecord(
+            source="stremio",
+            media_type=media_type,
+            item_key=item_key,
+            provider_item_id=item_id,
+            position_ms=position_ms,
+            duration_ms=duration_ms,
+            completed=completed,
+            updated_at=updated_at,
+            provider_video_id=provider_video_id,
+            raw_state=dict(state),
+        )
+
+    def write_watch_progress(self, record: WatchProgressRecord) -> None:
+        def _write(auth_key: str) -> None:
+            payloads = self._fetch_library_payloads(auth_key)
+            target = self._find_payload_for_watch_record(payloads, record)
+            if target is None:
+                raise StremioError(f"Could not find Stremio library item for {record.item_key}.")
+            updated_payload = dict(target)
+            existing_state = target.get("state")
+            state = dict(existing_state) if isinstance(existing_state, dict) else {}
+            state["timeWatched"] = int(record.position_ms)
+            state["overallTimeWatched"] = max(
+                _stremio_int(state.get("overallTimeWatched")),
+                int(record.position_ms),
+            )
+            if record.duration_ms:
+                state["duration"] = int(record.duration_ms)
+            video_id = _stremio_video_id_from_watch_record(record)
+            if video_id:
+                state["video_id"] = video_id
+            if record.media_type == "episode":
+                state["flaggedWatched"] = 0
+                state["timesWatched"] = 0
+                if video_id:
+                    state["watched"] = self._watched_bitfield_set_video(
+                        str(state.get("watched") or ""),
+                        record.item_key.split(":", 1)[0],
+                        video_id,
+                        record.completed,
+                    )
+            elif record.completed:
+                state["flaggedWatched"] = 1
+                state["timesWatched"] = max(1, _stremio_int(state.get("timesWatched")))
+            updated_payload["state"] = state
+            self._write_library_item_payload(auth_key, updated_payload)
+
+        self._run_with_auth_fallback(_write)
+
+    @staticmethod
+    def _find_payload_for_watch_record(
+        payloads: list[dict[str, object]],
+        record: WatchProgressRecord,
+    ) -> dict[str, object] | None:
+        for payload in payloads:
+            if str(payload.get("_id") or "").strip() == record.provider_item_id:
+                return payload
+        item_imdb = record.item_key.split(":", 1)[0]
+        for payload in payloads:
+            if _stremio_item_imdb_id(str(payload.get("_id") or "")) == item_imdb:
+                return payload
+        return None
+
+    def _write_library_item_payload(self, auth_key: str, item_payload: Mapping[str, object]) -> None:
+        payload = {
+            "authKey": auth_key,
+            "collection": STREMIO_LIBRARY_COLLECTION,
+            "changes": [dict(item_payload)],
+        }
+        self._post_api("datastorePut", payload)
+
+    def _series_video_ids(self, imdb_id: str) -> list[str]:
+        normalized_imdb_id = _stremio_item_imdb_id(imdb_id)
+        if not normalized_imdb_id:
+            return []
+        if normalized_imdb_id in self._series_video_ids_cache:
+            return self._series_video_ids_cache[normalized_imdb_id]
+        client = httpx.Client(timeout=self._request_timeout)
+        try:
+            with client:
+                response = client.get(
+                    f"https://v3-cinemeta.strem.io/meta/series/{normalized_imdb_id}.json"
+                )
+                response.raise_for_status()
+                payload = response.json()
+        except (httpx.RequestError, httpx.HTTPStatusError, ValueError):
+            self._series_video_ids_cache[normalized_imdb_id] = []
+            return []
+        meta = payload.get("meta")
+        videos = meta.get("videos") if isinstance(meta, dict) else None
+        if not isinstance(videos, list):
+            self._series_video_ids_cache[normalized_imdb_id] = []
+            return []
+        video_ids = [
+            str(video.get("id") or "").strip()
+            for video in videos
+            if isinstance(video, dict) and str(video.get("id") or "").strip()
+        ]
+        self._series_video_ids_cache[normalized_imdb_id] = video_ids
+        return video_ids
+
+    def _watched_bitfield_set_video(
+        self,
+        serialized: str,
+        imdb_id: str,
+        video_id: str | None,
+        watched: bool,
+    ) -> str:
+        if not video_id:
+            return serialized
+        video_ids = self._series_video_ids(imdb_id)
+        if video_id not in video_ids:
+            return serialized
+        values = self._watched_bitfield_values(serialized, video_ids)
+        values[video_ids.index(video_id)] = watched
+        return f"{video_ids[-1]}:{len(video_ids)}:{_pack_watched_bitfield(values)}"
+
+    @staticmethod
+    def _watched_bitfield_values(serialized: str, video_ids: list[str]) -> list[bool]:
+        blank = [False for _ in video_ids]
+        cleaned = str(serialized or "").strip()
+        if not cleaned:
+            return blank
+        components = cleaned.split(":")
+        if len(components) < 3:
+            return blank
+        serialized_payload = components[-1]
+        try:
+            previous_length = int(components[-2])
+        except ValueError:
+            return blank
+        previous_last_video_id = ":".join(components[:-2])
+        try:
+            previous_values = _unpack_watched_bitfield(serialized_payload, previous_length)
+        except (ValueError, zlib.error):
+            return blank
+        previous_last_index = video_ids.index(previous_last_video_id) if previous_last_video_id in video_ids else -1
+        offset = (previous_length - 1) - previous_last_index
+        if previous_last_index == -1 or offset < 0:
+            return blank
+        if offset > 0:
+            shifted = previous_values[offset:]
+        else:
+            shifted = previous_values
+        return (shifted + blank)[: len(video_ids)]
+
+    def _watched_bitfield_get_video(
+        self,
+        serialized: str,
+        video_ids: list[str],
+        video_id: str,
+    ) -> bool:
+        if video_id not in video_ids:
+            return False
+        values = self._watched_bitfield_values(serialized, video_ids)
+        return values[video_ids.index(video_id)]
 
     def _fetch_library_meta(self, auth_key: str) -> list[tuple[str, int]]:
         payload = {

@@ -96,6 +96,8 @@ class EnvironmentSettings:
     jackett_api_key: str | None
     jellyfin_db_path: str | None
     jellyfin_user_name: str | None
+    jellyfin_server_url: str | None
+    jellyfin_api_key: str | None
     enable_jellyfin_auto_sync_scheduler: bool
     stremio_local_storage_path: str | None
     stremio_auth_key: str | None
@@ -128,6 +130,8 @@ def get_environment_settings() -> EnvironmentSettings:
         jackett_api_key=os.getenv("QB_RULES_JACKETT_API_KEY") or None,
         jellyfin_db_path=os.getenv("QB_RULES_JELLYFIN_DB_PATH") or None,
         jellyfin_user_name=os.getenv("QB_RULES_JELLYFIN_USER_NAME") or None,
+        jellyfin_server_url=os.getenv("QB_RULES_JELLYFIN_SERVER_URL") or None,
+        jellyfin_api_key=os.getenv("QB_RULES_JELLYFIN_API_KEY") or None,
         enable_jellyfin_auto_sync_scheduler=_get_bool(
             os.getenv("QB_RULES_ENABLE_JELLYFIN_AUTO_SYNC_SCHEDULER"),
             True,

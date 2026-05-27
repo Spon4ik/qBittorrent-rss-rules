@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import app.config as app_config
-from app.config import get_environment_settings, obfuscate_secret
+from app.config import get_environment_settings, obfuscate_secret, reveal_secret
 from app.models import AppSettings
 from app.schemas import SettingsFormPayload
 from app.services.settings_service import (
@@ -186,6 +186,8 @@ def test_resolve_qb_connection_prefers_non_empty_env_over_saved_settings(
 def test_resolve_jellyfin_prefers_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QB_RULES_JELLYFIN_DB_PATH", r"D:\Env\jellyfin.db")
     monkeypatch.setenv("QB_RULES_JELLYFIN_USER_NAME", "EnvUser")
+    monkeypatch.setenv("QB_RULES_JELLYFIN_SERVER_URL", "http://env-jellyfin:8096")
+    monkeypatch.setenv("QB_RULES_JELLYFIN_API_KEY", "env-token")
     _clear_env_cache()
 
     settings = AppSettings(
@@ -200,8 +202,25 @@ def test_resolve_jellyfin_prefers_env_overrides(monkeypatch: pytest.MonkeyPatch)
 
     assert resolved.db_path == r"D:\Env\jellyfin.db"
     assert resolved.user_name == "EnvUser"
+    assert resolved.server_url == "http://env-jellyfin:8096"
+    assert resolved.api_key == "env-token"
     assert resolved.auto_sync_enabled is True
     assert resolved.auto_sync_interval_seconds == 30
+
+
+def test_settings_payload_persists_jellyfin_api_write_settings(db_session) -> None:
+    settings = SettingsService.get_or_create(db_session)
+
+    payload = SettingsFormPayload(
+        jellyfin_server_url=" http://127.0.0.1:8096 ",
+        jellyfin_api_key=" jellyfin-token ",
+    )
+    SettingsService.apply_payload(settings, payload)
+    db_session.add(settings)
+    db_session.commit()
+
+    assert settings.jellyfin_server_url == "http://127.0.0.1:8096"
+    assert reveal_secret(settings.jellyfin_api_key_encrypted) == "jellyfin-token"
 
 
 def test_get_or_create_normalizes_jellyfin_settings(db_session) -> None:

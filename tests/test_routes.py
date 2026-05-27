@@ -94,7 +94,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.1.8"
+    assert payload["app_version"] == "1.2.0"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -4933,12 +4933,16 @@ def test_settings_page_renders_jellyfin_controls(app_client) -> None:
     assert response.status_code == 200
     assert 'name="jellyfin_db_path"' in response.text
     assert 'name="jellyfin_user_name"' in response.text
+    assert 'name="jellyfin_server_url"' in response.text
+    assert 'name="jellyfin_api_key"' in response.text
     assert 'name="jellyfin_auto_sync_enabled"' in response.text
     assert 'name="jellyfin_auto_sync_interval_seconds"' in response.text
     assert 'formaction="/api/settings/test-jellyfin"' in response.text
     assert 'formaction="/api/settings/sync-jellyfin"' in response.text
+    assert 'formaction="/api/settings/sync-watch-progress"' in response.text
     assert "Automatic Jellyfin sync runs when the app starts" in response.text
     assert "Save + Sync Jellyfin Now" in response.text
+    assert "Sync Watch Progress" in response.text
     assert "Auto-sync status:" in response.text
 
 
@@ -5796,6 +5800,40 @@ def test_sync_stremio_settings_pushes_changed_rules_to_qb_when_configured(
     assert created_rule is not None
     assert "1 pushed to qB" in response.text
     assert pushed_rule_ids == [created_rule.id]
+
+
+def test_sync_watch_progress_route_reports_summary(app_client, monkeypatch) -> None:
+    class FakeSummary:
+        jellyfin_read_count = 2
+        stremio_read_count = 2
+        matched_count = 1
+        jellyfin_write_count = 1
+        stremio_write_count = 0
+        skipped_count = 0
+        error_count = 0
+        messages = ["Updated Jellyfin from Stremio for tt1234567."]
+
+    monkeypatch.setattr(
+        "app.routes.api.sync_watch_progress",
+        lambda session, settings=None: FakeSummary(),
+    )
+
+    response = app_client.post(
+        "/api/settings/sync-watch-progress",
+        data={
+            "jellyfin_db_path": r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db",
+            "jellyfin_server_url": "http://127.0.0.1:8096",
+            "jellyfin_api_key": "token",
+            "jellyfin_auto_sync_enabled": "on",
+            "jellyfin_auto_sync_interval_seconds": "30",
+            "stremio_auto_sync_enabled": "on",
+            "stremio_auto_sync_interval_seconds": "30",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Watch progress sync complete" in response.text
+    assert "Jellyfin writes: 1" in response.text
 
 
 def test_save_filter_profile_creates_custom_profile(app_client, db_session) -> None:

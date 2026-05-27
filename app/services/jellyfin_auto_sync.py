@@ -82,7 +82,12 @@ class JellyfinAutoSyncService:
                 self._last_seen_db_mtime_ns = None
                 return wait_seconds
             current_db_path = str(db_path)
-            current_mtime_ns = db_path.stat().st_mtime_ns
+            current_stat = db_path.stat()
+            current_mtime_ns = max(
+                current_stat.st_atime_ns,
+                current_stat.st_mtime_ns,
+                current_stat.st_ctime_ns,
+            )
 
             should_sync = (
                 force

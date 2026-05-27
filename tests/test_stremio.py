@@ -9,6 +9,8 @@ from app.models import AppSettings, MediaType, QualityProfile, Rule
 from app.services import operation_status
 from app.services.stremio import StremioService, StremioSessionDoesNotExistError
 from app.services.stremio_sync_ops import execute_stremio_sync
+from app.services.watch_progress_sync import WatchProgressSyncSummary
+from app.services.watch_state import WatchProgressRecord
 from tests.stremio_test_utils import create_stremio_local_storage, stremio_library_item
 
 
@@ -66,6 +68,56 @@ def test_execute_stremio_sync_records_operation_progress(db_session, monkeypatch
     operation_status.reset_operations_for_tests()
 
 
+def test_execute_stremio_sync_runs_watch_progress_when_configured(db_session, monkeypatch) -> None:
+    operation_status.reset_operations_for_tests()
+    settings = AppSettings(id="default")
+    db_session.add(settings)
+    db_session.commit()
+    calls: list[str] = []
+
+    def fake_sync_rules(self, session):
+        return type(
+            "Summary",
+            (),
+            {
+                "active_item_count": 5,
+                "created_count": 0,
+                "linked_count": 0,
+                "updated_count": 0,
+                "disabled_count": 0,
+                "reenabled_count": 0,
+                "unchanged_count": 5,
+                "skipped_count": 0,
+                "error_count": 0,
+                "outcomes": [],
+            },
+        )()
+
+    def fake_sync_watch_progress(session, *, settings=None):
+        calls.append(settings.id)
+        return WatchProgressSyncSummary(
+            jellyfin_read_count=1,
+            stremio_read_count=1,
+            matched_count=1,
+            jellyfin_write_count=1,
+            stremio_write_count=0,
+            skipped_count=0,
+            error_count=0,
+            messages=[],
+        )
+
+    monkeypatch.setattr(StremioService, "sync_rules", fake_sync_rules)
+    monkeypatch.setattr("app.services.stremio_sync_ops.can_sync_watch_progress", lambda settings: True)
+    monkeypatch.setattr("app.services.stremio_sync_ops.sync_watch_progress", fake_sync_watch_progress)
+
+    execution = execute_stremio_sync(db_session, settings=settings)
+
+    assert calls == ["default"]
+    assert execution.watch_progress_summary is not None
+    assert "1 watch-progress writes" in execution.detail_fragments()
+    operation_status.reset_operations_for_tests()
+
+
 def test_stremio_service_discovers_auth_from_local_storage(monkeypatch, tmp_path) -> None:
     storage_path = create_stremio_local_storage(
         tmp_path,
@@ -93,6 +145,261 @@ def test_stremio_service_discovers_auth_from_local_storage(monkeypatch, tmp_path
     assert summary.user_id == "fedcba9876543210"
     assert summary.total_item_count == 1
     assert summary.active_item_count == 1
+
+
+def test_stremio_collect_watch_progress_reads_movie_and_episode_positions(monkeypatch) -> None:
+    settings = AppSettings(id="default")
+    service = StremioService(settings)
+
+    def fake_fetch(_auth_key: str) -> list[dict[str, object]]:
+        return [
+            stremio_library_item(
+                "tt1234567",
+                "Movie",
+                item_type="movie",
+                state_overrides={
+                    "timeWatched": 180_000,
+                    "overallTimeWatched": 180_000,
+                    "duration": 3_600_000,
+                    "lastWatched": "2026-05-26T10:05:00.000Z",
+                },
+            ),
+            stremio_library_item(
+                "tt7654321",
+                "Series",
+                item_type="series",
+                state_overrides={
+                    "video_id": "tt7654321:1:2",
+                    "timeWatched": 420_000,
+                    "duration": 2_400_000,
+                    "lastWatched": "2026-05-26T10:10:00.000Z",
+                },
+            ),
+        ]
+
+    monkeypatch.setattr(service, "_run_with_auth_fallback", lambda operation: ("auth", operation("key")))
+    monkeypatch.setattr(service, "_fetch_library_payloads", fake_fetch)
+
+    records = service.collect_watch_progress()
+
+    assert [record.item_key for record in records] == ["tt1234567", "tt7654321:S01E02"]
+    assert records[0].position_ms == 180_000
+    assert records[0].duration_ms == 3_600_000
+    assert records[1].provider_video_id == "tt7654321:1:2"
+    assert records[1].updated_at is not None
+
+
+def test_stremio_write_watch_progress_preserves_existing_state(monkeypatch) -> None:
+    settings = AppSettings(id="default")
+    service = StremioService(settings)
+    writes: list[tuple[str, dict[str, object]]] = []
+
+    payload = stremio_library_item(
+        "tt1234567",
+        "Movie",
+        item_type="movie",
+        state_overrides={"custom": "keep-me", "duration": 3_600_000},
+    )
+
+    monkeypatch.setattr(service, "_run_with_auth_fallback", lambda operation: ("auth", operation("key")))
+    monkeypatch.setattr(service, "_fetch_library_payloads", lambda _auth_key: [payload])
+    monkeypatch.setattr(
+        service,
+        "_write_library_item_payload",
+        lambda auth_key, updated_payload: writes.append((auth_key, updated_payload)),
+    )
+
+    service.write_watch_progress(
+        WatchProgressRecord(
+            source="jellyfin",
+            media_type="movie",
+            item_key="tt1234567",
+            provider_item_id="jf-movie",
+            position_ms=240_000,
+            duration_ms=3_600_000,
+            completed=False,
+            updated_at=None,
+        )
+    )
+
+    assert writes[0][0] == "key"
+    assert writes[0][1]["state"]["custom"] == "keep-me"
+    assert writes[0][1]["state"]["timeWatched"] == 240_000
+    assert writes[0][1]["state"]["overallTimeWatched"] == 240_000
+
+
+def test_stremio_write_watch_progress_sets_episode_video_id_from_item_key(monkeypatch) -> None:
+    settings = AppSettings(id="default")
+    service = StremioService(settings)
+    writes: list[dict[str, object]] = []
+    payload = stremio_library_item(
+        "tt1190634",
+        "The Boys",
+        item_type="series",
+        state_overrides={"video_id": "tt1190634:4:8", "duration": 3_600_000},
+    )
+
+    monkeypatch.setattr(service, "_run_with_auth_fallback", lambda operation: ("auth", operation("key")))
+    monkeypatch.setattr(service, "_fetch_library_payloads", lambda _auth_key: [payload])
+    monkeypatch.setattr(
+        service,
+        "_write_library_item_payload",
+        lambda _auth_key, updated_payload: writes.append(updated_payload),
+    )
+
+    service.write_watch_progress(
+        WatchProgressRecord(
+            source="jellyfin",
+            media_type="episode",
+            item_key="tt1190634:S05E05",
+            provider_item_id="jf-boys-s05e05",
+            position_ms=1_080_000,
+            duration_ms=3_600_000,
+            completed=False,
+            updated_at=None,
+        )
+    )
+
+    assert writes[0]["state"]["video_id"] == "tt1190634:5:5"
+    assert writes[0]["state"]["timeWatched"] == 1_080_000
+
+
+def test_stremio_write_watch_progress_marks_series_episode_not_whole_series(monkeypatch) -> None:
+    settings = AppSettings(id="default")
+    service = StremioService(settings)
+    writes: list[dict[str, object]] = []
+    payload = stremio_library_item(
+        "tt1190634",
+        "The Boys",
+        item_type="series",
+        state_overrides={
+            "video_id": "tt1190634:4:8",
+            "watched": "",
+            "flaggedWatched": 1,
+            "timesWatched": 1,
+            "duration": 3_600_000,
+        },
+    )
+
+    monkeypatch.setattr(service, "_run_with_auth_fallback", lambda operation: ("auth", operation("key")))
+    monkeypatch.setattr(service, "_fetch_library_payloads", lambda _auth_key: [payload])
+    monkeypatch.setattr(
+        service,
+        "_write_library_item_payload",
+        lambda _auth_key, updated_payload: writes.append(updated_payload),
+    )
+    monkeypatch.setattr(
+        service,
+        "_series_video_ids",
+        lambda imdb_id: ["tt1190634:5:1", "tt1190634:5:2", "tt1190634:5:5"],
+    )
+
+    service.write_watch_progress(
+        WatchProgressRecord(
+            source="jellyfin",
+            media_type="episode",
+            item_key="tt1190634:S05E05",
+            provider_item_id="jf-boys-s05e05",
+            position_ms=3_600_000,
+            duration_ms=3_600_000,
+            completed=True,
+            updated_at=None,
+        )
+    )
+
+    state = writes[0]["state"]
+    assert state["flaggedWatched"] == 0
+    assert state["timesWatched"] == 0
+    assert state["watched"].startswith("tt1190634:5:5:3:")
+    assert service._watched_bitfield_get_video(state["watched"], ["tt1190634:5:1", "tt1190634:5:2", "tt1190634:5:5"], "tt1190634:5:5")
+
+
+def test_stremio_collect_watch_progress_ignores_whole_series_watched_flags_for_episode(monkeypatch) -> None:
+    settings = AppSettings(id="default")
+    service = StremioService(settings)
+    payload = stremio_library_item(
+        "tt1190634",
+        "The Boys",
+        item_type="series",
+        state_overrides={
+            "video_id": "tt1190634:5:5",
+            "watched": "tt1190634:4:8:95:eJxjYACDhv///9czAAAP/wP9",
+            "flaggedWatched": 1,
+            "timesWatched": 1,
+            "timeWatched": 1_080_000,
+            "overallTimeWatched": 1_080_000,
+            "duration": 0,
+        },
+    )
+
+    monkeypatch.setattr(
+        service,
+        "_series_video_ids",
+        lambda imdb_id: ["tt1190634:5:1", "tt1190634:5:2", "tt1190634:5:5"],
+    )
+
+    record = service._watch_progress_record_from_payload(payload)
+
+    assert record is not None
+    assert record.item_key == "tt1190634:S05E05"
+    assert not record.completed
+
+
+def test_stremio_write_watch_progress_clears_episode_bit_for_in_progress_record(
+    monkeypatch,
+) -> None:
+    settings = AppSettings(id="default")
+    service = StremioService(settings)
+    monkeypatch.setattr(
+        service,
+        "_series_video_ids",
+        lambda imdb_id: ["tt1190634:5:1", "tt1190634:5:2", "tt1190634:5:5"],
+    )
+    existing_watched = service._watched_bitfield_set_video(
+        "",
+        "tt1190634",
+        "tt1190634:5:5",
+        True,
+    )
+    payload = stremio_library_item(
+        "tt1190634",
+        "The Boys",
+        item_type="series",
+        state_overrides={
+            "video_id": "tt1190634:5:5",
+            "watched": existing_watched,
+            "flaggedWatched": 0,
+            "timesWatched": 0,
+        },
+    )
+    writes: list[dict[str, object]] = []
+
+    monkeypatch.setattr(service, "_run_with_auth_fallback", lambda operation: ("auth", operation("key")))
+    monkeypatch.setattr(service, "_fetch_library_payloads", lambda _auth_key: [payload])
+    monkeypatch.setattr(
+        service,
+        "_write_library_item_payload",
+        lambda _auth_key, updated_payload: writes.append(updated_payload),
+    )
+    service.write_watch_progress(
+        WatchProgressRecord(
+            source="jellyfin",
+            media_type="episode",
+            item_key="tt1190634:S05E05",
+            provider_item_id="jf-boys-s05e05",
+            position_ms=1_080_566,
+            duration_ms=None,
+            completed=False,
+            updated_at=None,
+        )
+    )
+
+    state = writes[0]["state"]
+    assert not service._watched_bitfield_get_video(
+        state["watched"],
+        ["tt1190634:5:1", "tt1190634:5:2", "tt1190634:5:5"],
+        "tt1190634:5:5",
+    )
 
 
 def test_stremio_service_retries_older_local_auth_when_newest_session_is_stale(

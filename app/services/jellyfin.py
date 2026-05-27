@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+import shutil
 import sqlite3
+import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -9,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,13 +21,14 @@ from app.services.metadata import MetadataClient, MetadataLookupError, MetadataL
 from app.services.rule_builder import normalize_release_year
 from app.services.settings_service import SettingsService
 from app.services.watch_state import (
-    WatchStateDerivedFloor as JellyfinDerivedFloor,
-)
-from app.services.watch_state import (
+    WatchProgressRecord,
     derive_watch_state_floor,
     normalize_watch_state_source_labels,
     select_movie_watch_state,
     select_watch_state_floor,
+)
+from app.services.watch_state import (
+    WatchStateDerivedFloor as JellyfinDerivedFloor,
 )
 from app.services.watch_state import (
     floor_tuple as _floor_tuple,
@@ -132,6 +136,34 @@ def _as_nonnegative_int(value: object | None) -> int | None:
     return numeric
 
 
+def _ticks_to_ms(value: object | None) -> int:
+    numeric = _as_nonnegative_int(value)
+    if numeric is None:
+        return 0
+    return numeric // 10_000
+
+
+def _ms_to_ticks(value: int) -> int:
+    return max(0, int(value)) * 10_000
+
+
+def _parse_jellyfin_datetime(value: object | None) -> datetime | None:
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return None
+    normalized = cleaned.replace("Z", "+00:00")
+    if "." in normalized and "+" not in normalized:
+        date_part, fractional = normalized.split(".", 1)
+        normalized = f"{date_part}.{fractional[:6]}"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed
+
+
 class JellyfinService:
     def __init__(self, settings: AppSettings | None, *, allow_metadata_requests: bool = True) -> None:
         self.config = SettingsService.resolve_jellyfin(settings)
@@ -219,6 +251,152 @@ class JellyfinService:
     # Compatibility shim while the rest of the codebase still uses the older name.
     def sync_series_rules(self, session: Session) -> JellyfinRuleSyncSummary:
         return self.sync_rules(session)
+
+    def collect_watch_progress(self) -> list[WatchProgressRecord]:
+        db_path = self._resolve_db_path()
+        with self._connect(db_path) as connection:
+            self._ensure_schema(connection)
+            users = self._list_users(connection)
+            selected_user = self._resolve_user(users)
+            return self._collect_watch_progress_records(connection, selected_user)
+
+    def write_watch_progress(self, record: WatchProgressRecord) -> None:
+        server_url = str(self.config.server_url or "").strip().rstrip("/")
+        api_key = str(self.config.api_key or "").strip()
+        if not server_url or not api_key:
+            raise JellyfinError(
+                "Jellyfin server URL and API key are required for watch-progress write-back."
+            )
+        item_id = str(record.provider_parent_id or record.provider_item_id or "").strip()
+        if not item_id:
+            raise JellyfinError(f"Cannot write Jellyfin progress without an item ID for {record.item_key}.")
+        payload = {
+            "ItemId": item_id,
+            "PositionTicks": _ms_to_ticks(record.position_ms),
+            "IsPaused": True,
+        }
+        with httpx.Client(timeout=10) as client:
+            response = client.post(
+                f"{server_url}/Sessions/Playing/Progress",
+                headers={"X-Emby-Token": api_key},
+                json=payload,
+            )
+            response.raise_for_status()
+
+    def _collect_watch_progress_records(
+        self,
+        connection: sqlite3.Connection,
+        user: JellyfinUser,
+    ) -> list[WatchProgressRecord]:
+        episode_rows = connection.execute(
+            """
+            SELECT
+                b.Id AS EpisodeId,
+                b.ParentIndexNumber AS SeasonNumber,
+                b.IndexNumber AS EpisodeNumber,
+                s.Id AS SeriesId,
+                MAX(CASE WHEN p.ProviderId = 'Imdb' THEN p.ProviderValue END) AS SeriesImdbId,
+                MAX(COALESCE(u.Played, 0)) AS Played,
+                MAX(COALESCE(u.PlayCount, 0)) AS PlayCount,
+                MAX(COALESCE(u.PlaybackPositionTicks, 0)) AS PlaybackPositionTicks,
+                MAX(u.LastPlayedDate) AS LastPlayedDate
+            FROM BaseItems b
+            JOIN BaseItems s ON s.Id = b.SeriesId
+            LEFT JOIN BaseItemProviders p ON p.ItemId = s.Id
+            LEFT JOIN UserData u
+              ON u.UserId = ?
+             AND (
+                u.ItemId = b.Id
+                OR lower(COALESCE(u.CustomDataKey, '')) = lower(b.Id)
+                OR EXISTS (
+                    SELECT 1
+                    FROM BaseItemProviders ep
+                    WHERE ep.ItemId = b.Id
+                      AND lower(COALESCE(ep.ProviderValue, '')) = lower(COALESCE(u.CustomDataKey, ''))
+                )
+             )
+            WHERE b.Type = ?
+              AND b.ParentIndexNumber IS NOT NULL
+              AND b.IndexNumber IS NOT NULL
+            GROUP BY b.Id, b.ParentIndexNumber, b.IndexNumber, s.Id
+            ORDER BY b.ParentIndexNumber ASC, b.IndexNumber ASC, b.Id ASC
+            """,
+            (user.user_id, JELLYFIN_EPISODE_TYPE),
+        ).fetchall()
+        movie_rows = connection.execute(
+            """
+            SELECT
+                b.Id AS MovieId,
+                MAX(CASE WHEN p.ProviderId = 'Imdb' THEN p.ProviderValue END) AS ImdbId,
+                MAX(COALESCE(u.Played, 0)) AS Played,
+                MAX(COALESCE(u.PlayCount, 0)) AS PlayCount,
+                MAX(COALESCE(u.PlaybackPositionTicks, 0)) AS PlaybackPositionTicks,
+                MAX(u.LastPlayedDate) AS LastPlayedDate
+            FROM BaseItems b
+            LEFT JOIN BaseItemProviders p ON p.ItemId = b.Id
+            LEFT JOIN UserData u
+              ON u.UserId = ?
+             AND (
+                u.ItemId = b.Id
+                OR lower(COALESCE(u.CustomDataKey, '')) = lower(b.Id)
+                OR EXISTS (
+                    SELECT 1
+                    FROM BaseItemProviders mp
+                    WHERE mp.ItemId = b.Id
+                      AND lower(COALESCE(mp.ProviderValue, '')) = lower(COALESCE(u.CustomDataKey, ''))
+                )
+             )
+            WHERE b.Type = ?
+            GROUP BY b.Id
+            ORDER BY b.Name COLLATE NOCASE, b.Id
+            """,
+            (user.user_id, JELLYFIN_MOVIE_TYPE),
+        ).fetchall()
+
+        records: list[WatchProgressRecord] = []
+        for row in episode_rows:
+            imdb_id = _normalize_imdb_id(row["SeriesImdbId"])
+            season_number = _as_nonnegative_int(row["SeasonNumber"])
+            episode_number = _as_nonnegative_int(row["EpisodeNumber"])
+            position_ms = _ticks_to_ms(row["PlaybackPositionTicks"])
+            completed = int(row["Played"] or 0) > 0
+            if not imdb_id or season_number is None or episode_number is None:
+                continue
+            if position_ms <= 0 and not completed:
+                continue
+            records.append(
+                WatchProgressRecord(
+                    source="jellyfin",
+                    media_type="episode",
+                    item_key=f"{imdb_id}:S{season_number:02d}E{episode_number:02d}",
+                    provider_item_id=str(row["EpisodeId"] or "").strip(),
+                    provider_parent_id=str(row["EpisodeId"] or "").strip(),
+                    position_ms=position_ms,
+                    duration_ms=None,
+                    completed=completed,
+                    updated_at=_parse_jellyfin_datetime(row["LastPlayedDate"]),
+                )
+            )
+        for row in movie_rows:
+            imdb_id = _normalize_imdb_id(row["ImdbId"])
+            position_ms = _ticks_to_ms(row["PlaybackPositionTicks"])
+            completed = int(row["Played"] or 0) > 0
+            if not imdb_id or (position_ms <= 0 and not completed):
+                continue
+            records.append(
+                WatchProgressRecord(
+                    source="jellyfin",
+                    media_type="movie",
+                    item_key=imdb_id,
+                    provider_item_id=str(row["MovieId"] or "").strip(),
+                    provider_parent_id=str(row["MovieId"] or "").strip(),
+                    position_ms=position_ms,
+                    duration_ms=None,
+                    completed=completed,
+                    updated_at=_parse_jellyfin_datetime(row["LastPlayedDate"]),
+                )
+            )
+        return records
 
     def _sync_rule(
         self,
@@ -656,15 +834,53 @@ class JellyfinService:
 
     @contextmanager
     def _connect(self, db_path: Path) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(f"{db_path.as_uri()}?mode=ro", uri=True)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA query_only = 1")
+        snapshot_dir: tempfile.TemporaryDirectory[str] | None = None
+        try:
+            connection = self._open_readonly_connection(db_path)
+            self._validate_connection(connection)
+        except sqlite3.DatabaseError:
+            if "connection" in locals():
+                connection.close()
+            snapshot_dir = tempfile.TemporaryDirectory(prefix="qb-rss-jellyfin-db-")
+            snapshot_path = self._copy_db_snapshot(db_path, Path(snapshot_dir.name))
+            connection = self._open_readonly_connection(snapshot_path)
+            try:
+                self._validate_connection(connection)
+            except sqlite3.DatabaseError as exc:
+                connection.close()
+                snapshot_dir.cleanup()
+                raise JellyfinError(
+                    "Configured file is not a readable Jellyfin library database."
+                ) from exc
         try:
             yield connection
         except sqlite3.DatabaseError as exc:
             raise JellyfinError(f"Jellyfin DB read failed: {exc}") from exc
         finally:
             connection.close()
+            if snapshot_dir is not None:
+                snapshot_dir.cleanup()
+
+    @staticmethod
+    def _open_readonly_connection(db_path: Path) -> sqlite3.Connection:
+        connection = sqlite3.connect(f"{db_path.as_uri()}?mode=ro", uri=True)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA query_only = 1")
+        return connection
+
+    @staticmethod
+    def _validate_connection(connection: sqlite3.Connection) -> None:
+        connection.execute("SELECT 1 FROM Users LIMIT 1").fetchone()
+
+    @staticmethod
+    def _copy_db_snapshot(db_path: Path, snapshot_dir: Path) -> Path:
+        snapshot_path = snapshot_dir / db_path.name
+        shutil.copy2(db_path, snapshot_path)
+        for suffix in ("-wal", "-shm"):
+            sidecar = Path(f"{db_path}{suffix}")
+            if sidecar.exists():
+                shutil.copy2(sidecar, snapshot_dir / sidecar.name)
+        return snapshot_path
 
     @staticmethod
     def _ensure_schema(connection: sqlite3.Connection) -> None:

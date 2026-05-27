@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 
 WATCH_STATE_EPISODE_KEY_RE = re.compile(
     r"^s(?P<season>\d{1,2})e(?P<episode>\d{1,2})$",
@@ -157,6 +158,69 @@ class MovieWatchStateSelection:
     @property
     def changed(self) -> bool:
         return self.completion_changed or self.enabled_changed or self.auto_disabled_changed
+
+
+@dataclass(frozen=True, slots=True)
+class WatchProgressRecord:
+    source: str
+    media_type: str
+    item_key: str
+    provider_item_id: str
+    position_ms: int
+    duration_ms: int | None
+    completed: bool
+    updated_at: datetime | None = None
+    provider_parent_id: str | None = None
+    provider_video_id: str | None = None
+    raw_state: dict[str, object] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class WatchProgressSelection:
+    winner: WatchProgressRecord
+    loser: WatchProgressRecord
+    delta_ms: int
+    reason: str
+
+
+def _record_updated_sort_key(record: WatchProgressRecord) -> datetime | None:
+    return record.updated_at
+
+
+def _record_has_meaningful_progress(record: WatchProgressRecord) -> bool:
+    return bool(record.completed or max(0, int(record.position_ms or 0)) > 0)
+
+
+def choose_newer_watch_progress(
+    left: WatchProgressRecord,
+    right: WatchProgressRecord,
+    *,
+    min_delta_ms: int = 30_000,
+) -> WatchProgressSelection | None:
+    if not _record_has_meaningful_progress(left) and not _record_has_meaningful_progress(right):
+        return None
+    delta_ms = abs(int(left.position_ms or 0) - int(right.position_ms or 0))
+    completion_changed = bool(left.completed) != bool(right.completed)
+    if not completion_changed and delta_ms < min_delta_ms:
+        return None
+
+    left_updated = _record_updated_sort_key(left)
+    right_updated = _record_updated_sort_key(right)
+    if left_updated is None and right_updated is None and completion_changed:
+        winner = left if left.completed else right
+        loser = right if winner is left else left
+    elif right_updated is None or (left_updated is not None and left_updated >= right_updated):
+        winner = left
+        loser = right
+    else:
+        winner = right
+        loser = left
+    return WatchProgressSelection(
+        winner=winner,
+        loser=loser,
+        delta_ms=delta_ms,
+        reason="completion changed" if completion_changed else "newer progress",
+    )
 
 
 def derive_watch_state_floor(

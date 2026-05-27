@@ -15,6 +15,11 @@ from app.services.operation_status import (
 from app.services.settings_service import SettingsService
 from app.services.stremio import StremioRuleSyncOutcome, StremioRuleSyncSummary, StremioService
 from app.services.sync import SyncService, SyncServiceError
+from app.services.watch_progress_sync import (
+    WatchProgressSyncSummary,
+    can_sync_watch_progress,
+    sync_watch_progress,
+)
 
 
 class StremioSyncBusyError(RuntimeError):
@@ -27,6 +32,8 @@ class StremioSyncExecution:
     qb_sync_success_count: int
     qb_sync_error_messages: list[str]
     qb_sync_skipped: bool
+    watch_progress_summary: WatchProgressSyncSummary | None = None
+    watch_progress_error: str = ""
 
     @property
     def synced_outcomes(self) -> list[StremioRuleSyncOutcome]:
@@ -38,6 +45,8 @@ class StremioSyncExecution:
             self.summary.error_count > 0
             or self.qb_sync_skipped
             or self.qb_sync_error_messages
+            or self.watch_progress_error
+            or (self.watch_progress_summary is not None and self.watch_progress_summary.error_count)
             or (not self.synced_outcomes and self.summary.skipped_count > 0)
         ):
             return "warning"
@@ -60,6 +69,20 @@ class StremioSyncExecution:
             fragments.append("qB push skipped (qBittorrent not configured)")
         if self.qb_sync_error_messages:
             fragments.append(f"{len(self.qb_sync_error_messages)} qB push errors")
+        if self.watch_progress_summary is not None:
+            progress_writes = (
+                self.watch_progress_summary.jellyfin_write_count
+                + self.watch_progress_summary.stremio_write_count
+            )
+            fragments.append(
+                f"{self.watch_progress_summary.matched_count} watch-progress matches"
+            )
+            if progress_writes:
+                fragments.append(f"{progress_writes} watch-progress writes")
+            if self.watch_progress_summary.error_count:
+                fragments.append(f"{self.watch_progress_summary.error_count} watch-progress errors")
+        if self.watch_progress_error:
+            fragments.append("watch-progress sync failed")
         return fragments
 
     def render_message(self, prefix: str = "Stremio sync completed") -> str:
@@ -75,6 +98,10 @@ class StremioSyncExecution:
             if outcome.status == "error"
         ]
         errors.extend(self.qb_sync_error_messages)
+        if self.watch_progress_summary is not None:
+            errors.extend(self.watch_progress_summary.messages[-limit:])
+        if self.watch_progress_error:
+            errors.append(self.watch_progress_error)
         return errors[:limit]
 
 
@@ -123,12 +150,21 @@ def execute_stremio_sync(
                         qb_sync_error_messages.append(f"{outcome.rule_name}: {sync_result.message}")
             else:
                 qb_sync_skipped = True
+        watch_progress_summary: WatchProgressSyncSummary | None = None
+        watch_progress_error = ""
+        if can_sync_watch_progress(settings):
+            try:
+                watch_progress_summary = sync_watch_progress(session, settings=settings)
+            except Exception as exc:  # Keep library sync successful while surfacing provider errors.
+                watch_progress_error = str(exc)
 
         execution = StremioSyncExecution(
             summary=summary,
             qb_sync_success_count=qb_sync_success_count,
             qb_sync_error_messages=qb_sync_error_messages,
             qb_sync_skipped=qb_sync_skipped,
+            watch_progress_summary=watch_progress_summary,
+            watch_progress_error=watch_progress_error,
         )
         total = int(summary.active_item_count or 0)
         if execution.message_level == "success":

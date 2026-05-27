@@ -241,6 +241,8 @@ class AppSettings(Base):
     )
     jellyfin_db_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     jellyfin_user_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    jellyfin_server_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    jellyfin_api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     jellyfin_auto_sync_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     jellyfin_auto_sync_interval_seconds: Mapped[int] = mapped_column(
         Integer,

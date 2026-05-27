@@ -640,6 +640,8 @@ class SettingsFormPayload(BaseModel):
     jackett_language_overrides_text: str | None = ""
     jellyfin_db_path: str | None = None
     jellyfin_user_name: str | None = None
+    jellyfin_server_url: str | None = None
+    jellyfin_api_key: str | None = None
     jellyfin_auto_sync_enabled: bool = True
     jellyfin_auto_sync_interval_seconds: int = Field(default=30, ge=5, le=3600)
     stremio_local_storage_path: str | None = None
@@ -670,6 +672,8 @@ class SettingsFormPayload(BaseModel):
         "jackett_language_overrides_text",
         "jellyfin_db_path",
         "jellyfin_user_name",
+        "jellyfin_server_url",
+        "jellyfin_api_key",
         "stremio_local_storage_path",
         "omdb_api_key",
         mode="before",

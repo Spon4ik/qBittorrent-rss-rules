@@ -122,6 +122,8 @@ def _ensure_rule_columns() -> None:
         "jackett_language_overrides": "JSON NOT NULL DEFAULT '{}'",
         "jellyfin_db_path": "VARCHAR(512)",
         "jellyfin_user_name": "VARCHAR(255)",
+        "jellyfin_server_url": "VARCHAR(255)",
+        "jellyfin_api_key_encrypted": "TEXT",
         "jellyfin_auto_sync_enabled": "BOOLEAN NOT NULL DEFAULT 1",
         "jellyfin_auto_sync_interval_seconds": "INTEGER NOT NULL DEFAULT 30",
         "jellyfin_auto_sync_last_run_at": "DATETIME",

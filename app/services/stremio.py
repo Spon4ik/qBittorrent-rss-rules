@@ -615,9 +615,42 @@ class StremioService:
         records: list[WatchProgressRecord] = []
         for payload in payloads:
             record = self._watch_progress_record_from_payload(payload)
+            if record is None:
+                record = self._empty_watch_progress_record_from_payload(payload)
             if record is not None:
                 records.append(record)
         return records
+
+    def _empty_watch_progress_record_from_payload(
+        self, payload: Mapping[str, object]
+    ) -> WatchProgressRecord | None:
+        item = self._library_item_from_payload(payload)
+        if item is None or item.removed or item.temp or not item.imdb_id:
+            return None
+        if item.media_type == MediaType.MOVIE:
+            return WatchProgressRecord(
+                source="stremio",
+                media_type="movie",
+                item_key=item.imdb_id,
+                provider_item_id=item.item_id,
+                position_ms=0,
+                duration_ms=None,
+                completed=False,
+                updated_at=None,
+                provider_video_id=item.item_id,
+            )
+        if item.media_type == MediaType.SERIES:
+            return WatchProgressRecord(
+                source="stremio",
+                media_type="episode",
+                item_key=f"{item.imdb_id}:S00E00",
+                provider_item_id=item.item_id,
+                position_ms=0,
+                duration_ms=None,
+                completed=False,
+                updated_at=None,
+            )
+        return None
 
     def _watch_progress_record_from_payload(
         self, payload: Mapping[str, object]

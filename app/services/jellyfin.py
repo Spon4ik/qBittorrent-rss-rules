@@ -53,6 +53,10 @@ class JellyfinError(RuntimeError):
     pass
 
 
+class JellyfinAmbiguousMatchError(JellyfinError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class JellyfinUser:
     user_id: str
@@ -214,6 +218,15 @@ class JellyfinService:
                         movie_catalog=movie_catalog,
                         session=session,
                         rule=rule,
+                    )
+                except JellyfinAmbiguousMatchError as exc:
+                    outcome = JellyfinRuleSyncOutcome(
+                        rule_id=rule.id,
+                        rule_name=rule.rule_name,
+                        status="skipped",
+                        message=str(exc),
+                        previous_start_season=rule.start_season,
+                        previous_start_episode=rule.start_episode,
                     )
                 except JellyfinError as exc:
                     outcome = JellyfinRuleSyncOutcome(
@@ -986,7 +999,7 @@ class JellyfinService:
             if len(imdb_matches) == 1:
                 return imdb_matches[0]
             if len(imdb_matches) > 1:
-                raise JellyfinError(
+                raise JellyfinAmbiguousMatchError(
                     f'Multiple Jellyfin {item_label} items matched IMDb ID "{rule.imdb_id}".'
                 )
 
@@ -1027,7 +1040,7 @@ class JellyfinService:
 
         if len(title_matches) == 1:
             return title_matches[0]
-        raise JellyfinError(
+        raise JellyfinAmbiguousMatchError(
             f'Multiple Jellyfin {item_label} items matched the title "{rule.content_name}".'
         )
 

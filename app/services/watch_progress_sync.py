@@ -57,6 +57,14 @@ class WatchProgressSyncSummary:
     error_count: int
     messages: list[str]
 
+    def top_error_messages(self, *, limit: int = 5) -> list[str]:
+        if self.error_count <= 0:
+            return []
+        failed_messages = [
+            message for message in self.messages if message.startswith("Failed to sync ")
+        ]
+        return (failed_messages or self.messages)[-limit:]
+
 
 class WatchProgressSyncService:
     def __init__(

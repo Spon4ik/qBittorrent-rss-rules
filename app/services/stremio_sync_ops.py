@@ -99,7 +99,7 @@ class StremioSyncExecution:
         ]
         errors.extend(self.qb_sync_error_messages)
         if self.watch_progress_summary is not None:
-            errors.extend(self.watch_progress_summary.messages[-limit:])
+            errors.extend(self.watch_progress_summary.top_error_messages(limit=limit))
         if self.watch_progress_error:
             errors.append(self.watch_progress_error)
         return errors[:limit]

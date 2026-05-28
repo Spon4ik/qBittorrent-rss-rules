@@ -189,6 +189,36 @@ def test_stremio_collect_watch_progress_reads_movie_and_episode_positions(monkey
     assert records[1].updated_at is not None
 
 
+def test_stremio_collect_watch_progress_includes_active_series_without_progress(
+    monkeypatch,
+) -> None:
+    settings = AppSettings(id="default")
+    service = StremioService(settings)
+
+    def fake_fetch(_auth_key: str) -> list[dict[str, object]]:
+        return [
+            stremio_library_item(
+                "tt11815682",
+                "Hacks",
+                item_type="series",
+                state_overrides={},
+            )
+        ]
+
+    monkeypatch.setattr(service, "_run_with_auth_fallback", lambda operation: ("auth", operation("key")))
+    monkeypatch.setattr(service, "_fetch_library_payloads", fake_fetch)
+
+    records = service.collect_watch_progress()
+
+    assert len(records) == 1
+    assert records[0].source == "stremio"
+    assert records[0].media_type == "episode"
+    assert records[0].item_key == "tt11815682:S00E00"
+    assert records[0].provider_item_id == "tt11815682"
+    assert records[0].position_ms == 0
+    assert records[0].completed is False
+
+
 def test_stremio_write_watch_progress_preserves_existing_state(monkeypatch) -> None:
     settings = AppSettings(id="default")
     service = StremioService(settings)

@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import resolve_runtime_path
 from app.models import AppSettings, utcnow
-from app.services.jellyfin_sync_ops import JellyfinSyncBusyError, execute_jellyfin_sync
+from app.services.jellyfin_sync_ops import (
+    JellyfinSyncBusyError,
+    JellyfinSyncExecution,
+    execute_jellyfin_sync,
+)
 from app.services.settings_service import (
     DEFAULT_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS,
     MIN_JELLYFIN_AUTO_SYNC_INTERVAL_SECONDS,
@@ -107,7 +111,7 @@ class JellyfinAutoSyncService:
             self._record_status(
                 session,
                 status=execution.message_level,
-                message=execution.render_message(prefix="Automatic Jellyfin sync completed for"),
+                message=self._render_status_message(execution),
             )
             return wait_seconds
         except JellyfinSyncBusyError:
@@ -124,6 +128,18 @@ class JellyfinAutoSyncService:
             return self._poll_interval_seconds
         finally:
             session.close()
+
+    @staticmethod
+    def _render_status_message(execution: JellyfinSyncExecution) -> str:
+        message = execution.render_message(prefix="Automatic Jellyfin sync completed for")
+        errors = [
+            str(error).strip()
+            for error in getattr(execution, "top_errors", lambda: [])()
+            if str(error).strip()
+        ]
+        if errors:
+            message = f"{message} Details: {'; '.join(errors)}"
+        return message
 
     @staticmethod
     def _record_status(session: Session, *, status: str, message: str) -> None:

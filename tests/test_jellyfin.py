@@ -103,6 +103,49 @@ def test_execute_jellyfin_sync_runs_watch_progress_when_configured(db_session, m
     operation_status.reset_operations_for_tests()
 
 
+def test_execute_jellyfin_sync_top_errors_ignores_successful_watch_progress_messages(
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(id="default")
+    db_session.add(settings)
+    db_session.commit()
+
+    def fake_sync_rules(self, session):
+        return type(
+            "Summary",
+            (),
+            {
+                "user_name": "Spon4ik",
+                "synced_count": 0,
+                "unchanged_count": 1,
+                "skipped_count": 0,
+                "error_count": 0,
+                "outcomes": [],
+            },
+        )()
+
+    def fake_sync_watch_progress(session, *, settings=None):
+        return WatchProgressSyncSummary(
+            jellyfin_read_count=1,
+            stremio_read_count=1,
+            matched_count=1,
+            jellyfin_write_count=0,
+            stremio_write_count=1,
+            skipped_count=0,
+            error_count=0,
+            messages=["Updated Stremio from Jellyfin for tt11815682."],
+        )
+
+    monkeypatch.setattr(JellyfinService, "sync_rules", fake_sync_rules)
+    monkeypatch.setattr("app.services.jellyfin_sync_ops.can_sync_watch_progress", lambda settings: True)
+    monkeypatch.setattr("app.services.jellyfin_sync_ops.sync_watch_progress", fake_sync_watch_progress)
+
+    execution = execute_jellyfin_sync(db_session, settings=settings)
+
+    assert execution.top_errors() == []
+
+
 def test_jellyfin_collect_watch_progress_reads_positions(tmp_path: Path) -> None:
     db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
     add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
@@ -898,3 +941,50 @@ def test_jellyfin_sync_rules_leaves_unfinished_movie_rule_enabled(
     assert rule.enabled is True
     assert rule.movie_completion_auto_disabled is False
     assert rule.movie_completion_sources == []
+
+
+def test_jellyfin_sync_rules_skips_duplicate_imdb_movie_matches(
+    tmp_path: Path,
+    db_session,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_movie(
+        db_path,
+        movie_id="MOVIE-INCREDIBLES",
+        title="The Incredibles",
+        clean_name="The Incredibles",
+        production_year=2004,
+        imdb_id="tt0317705",
+    )
+    add_jellyfin_movie(
+        db_path,
+        movie_id="MOVIE-INCREDIBLES-SEQUEL",
+        title="Incredibles 2",
+        clean_name="Incredibles 2",
+        production_year=2018,
+        imdb_id="tt0317705",
+    )
+
+    settings = AppSettings(id="default", jellyfin_db_path=str(db_path))
+    rule = Rule(
+        rule_name="The Incredibles Rule",
+        content_name="The Incredibles",
+        normalized_title="The Incredibles",
+        imdb_id="tt0317705",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=True,
+        feed_urls=["http://feed.example/the-incredibles"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    summary = JellyfinService(settings).sync_rules(db_session)
+
+    assert summary.error_count == 0
+    assert summary.skipped_count == 1
+    assert summary.outcomes[0].status == "skipped"
+    assert 'Multiple Jellyfin movie items matched IMDb ID "tt0317705".' in (
+        summary.outcomes[0].message
+    )

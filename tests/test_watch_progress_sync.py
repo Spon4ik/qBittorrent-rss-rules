@@ -213,3 +213,41 @@ def test_watch_progress_sync_writes_all_completed_jellyfin_series_episodes_to_st
 
     assert summary.stremio_write_count == 2
     assert [record.item_key for record in stremio_writes] == ["tt1190634:S05E01", "tt1190634:S05E05"]
+
+
+def test_watch_progress_sync_writes_jellyfin_progress_to_stremio_placeholder() -> None:
+    stremio_writes: list[WatchProgressRecord] = []
+    service = WatchProgressSyncService(
+        jellyfin_records=[
+            WatchProgressRecord(
+                source="jellyfin",
+                media_type="episode",
+                item_key="tt11815682:S05E09",
+                provider_item_id="jf-hacks-s05e09",
+                position_ms=0,
+                duration_ms=None,
+                completed=True,
+                updated_at=datetime(2026, 5, 28, 7, 24, tzinfo=UTC),
+            )
+        ],
+        stremio_records=[
+            WatchProgressRecord(
+                source="stremio",
+                media_type="episode",
+                item_key="tt11815682:S00E00",
+                provider_item_id="tt11815682",
+                position_ms=0,
+                duration_ms=None,
+                completed=False,
+                updated_at=None,
+            )
+        ],
+        jellyfin_writer=lambda record: None,
+        stremio_writer=stremio_writes.append,
+    )
+
+    summary = service.sync()
+
+    assert summary.matched_count == 1
+    assert summary.stremio_write_count == 1
+    assert stremio_writes[0].item_key == "tt11815682:S05E09"

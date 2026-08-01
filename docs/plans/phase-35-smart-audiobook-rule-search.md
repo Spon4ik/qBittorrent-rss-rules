@@ -44,5 +44,5 @@ Phase 35 adds smart audiobook metadata lookup and saved-rule search hints so an 
 ## Status
 
 - Status: implemented and locally/Docker validated on 2026-06-20.
-- Release target: smart audiobook lookup/search follow-up on top of `v1.2.17`.
+- Published in the consolidated `v1.3.0` release on 2026-08-01.
 - Follow-up: consider showing `lookup_warnings` in the UI as non-blocking provider warnings rather than only returning them in JSON.

@@ -1,6 +1,6 @@
 # Roadmap
 
-## Current release target: v1.3.0 consolidated feature release
+## Current release state: v1.3.0 published; next phase pending discovery review
 
 ### Validated locally
 

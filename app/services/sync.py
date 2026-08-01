@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import httpx
@@ -18,6 +19,10 @@ from app.services.settings_service import SettingsService
 
 class SyncServiceError(RuntimeError):
     pass
+
+
+MAX_JACKETT_FEED_HEALTH_WORKERS = 8
+JACKETT_FEED_HEALTH_TIMEOUT_SECONDS = 5.0
 
 
 def _remote_rule_drift_message(rule_name: str) -> str:
@@ -43,6 +48,9 @@ class SyncService:
         rule = self.session.get(Rule, rule_id)
         if rule is None:
             raise SyncServiceError("Rule not found.")
+
+        if not bool(rule.enabled):
+            return self._cleanup_disabled_rule(rule)
 
         action = "create" if not rule.remote_rule_name_last_synced else "update"
         if (
@@ -110,7 +118,7 @@ class SyncService:
         remote_rules = self._safe_remote_rules()
 
         for rule in rules:
-            if remote_rules is not None and rule.rule_name in remote_rules:
+            if bool(rule.enabled) and remote_rules is not None and rule.rule_name in remote_rules:
                 expected = RuleBuilder(self.app_settings).build_qb_rule(rule)
                 expected, _feed_warnings = self._filter_unhealthy_jackett_feeds(expected)
                 remote_rule = remote_rules[rule.rule_name]
@@ -134,6 +142,57 @@ class SyncService:
                 result.error_count += 1
                 result.messages.append(sync_result.message)
         return result
+
+    def _cleanup_disabled_rule(self, rule: Rule) -> SyncResult:
+        remote_names = [
+            str(rule.remote_rule_name_last_synced or "").strip(),
+        ]
+        action = "delete" if remote_names[0] else "skip"
+        try:
+            with self._qb_client() as client:
+                if not remote_names[0]:
+                    remote_rules = client.get_rules()
+                    if rule.rule_name in remote_rules:
+                        remote_names.append(rule.rule_name)
+                        action = "delete"
+                for remote_name in dict.fromkeys(name for name in remote_names if name):
+                    client.remove_rule(remote_name)
+                removed_categories = client.remove_unused_categories()
+        except (QbittorrentClientError, SyncServiceError) as exc:
+            rule.last_sync_status = SyncStatus.ERROR
+            rule.last_sync_error = str(exc)
+            self._record_event(rule, action=action, status="error", error_message=str(exc))
+            self.session.commit()
+            return SyncResult(
+                success=False,
+                action=action,
+                rule_id=rule.id,
+                rule_name=rule.rule_name,
+                message=str(exc),
+            )
+
+        rule.remote_rule_name_last_synced = None
+        rule.last_synced_rule_payload = {}
+        rule.last_remote_rule_payload = {}
+        rule.remote_rule_drift_message = ""
+        rule.remote_rule_drift_detected_at = None
+        rule.last_sync_status = SyncStatus.OK
+        rule.last_sync_error = None
+        rule.last_synced_at = utcnow()
+        self._record_event(rule, action=action, status="ok", error_message=None)
+        self.session.commit()
+        message = "Disabled rule removed from qBittorrent."
+        if action != "delete":
+            message = "Disabled rule has no synced qB RSS rule to remove."
+        if removed_categories:
+            message = f"{message} Removed {len(removed_categories)} unused qB category/categories."
+        return SyncResult(
+            success=True,
+            action=action,
+            rule_id=rule.id,
+            rule_name=rule.rule_name,
+            message=message,
+        )
 
     def delete_rule(self, rule_id: str) -> SyncResult:
         rule = self.session.get(Rule, rule_id)
@@ -331,10 +390,17 @@ class SyncService:
         if not feed_urls:
             return rule_def, []
 
+        max_workers = min(len(feed_urls), MAX_JACKETT_FEED_HEALTH_WORKERS)
+        with ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="jackett-feed-health",
+        ) as executor:
+            feed_health = list(executor.map(self._jackett_feed_sample_download_works, feed_urls))
+
         healthy_feed_urls: list[str] = []
         skipped_hosts: list[str] = []
-        for feed_url in feed_urls:
-            if self._jackett_feed_sample_download_works(feed_url):
+        for feed_url, is_healthy in zip(feed_urls, feed_health, strict=True):
+            if is_healthy:
                 healthy_feed_urls.append(feed_url)
                 continue
             skipped_hosts.append(self._feed_label(feed_url))
@@ -354,7 +420,10 @@ class SyncService:
         return rule_def, []
 
     def _jackett_feed_sample_download_works(self, feed_url: str) -> bool:
-        timeout = min(float(get_environment_settings().request_timeout), 15.0)
+        timeout = min(
+            float(get_environment_settings().request_timeout),
+            JACKETT_FEED_HEALTH_TIMEOUT_SECONDS,
+        )
         try:
             with httpx.Client(timeout=timeout, follow_redirects=False) as client:
                 response = client.get(feed_url)

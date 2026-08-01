@@ -498,6 +498,66 @@ def test_jackett_client_scoped_standard_search_continues_after_indexer_timeout()
     assert any('t=search q="American Classic"' in item for item in result.warning_messages)
 
 
+def test_jackett_client_scoped_search_keeps_working_tracker_after_mixed_failures() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v2.0/indexers/all/results/torznab/api":
+            raise httpx.ReadTimeout("timed out", request=request)
+        if path == "/api/v2.0/indexers/rutracker/results/torznab/api":
+            raise httpx.ConnectError("tracker unavailable", request=request)
+        if path == "/api/v2.0/indexers/kinozal/results/torznab/api":
+            return httpx.Response(503, text="unavailable")
+        if path == "/api/v2.0/indexers/booktracker/results/torznab/api":
+            return httpx.Response(
+                200,
+                text=(
+                    '<error code="201" description="booktracker does not support '
+                    'the requested query." />'
+                ),
+            )
+        if path == "/api/v2.0/indexers/rutor/results/torznab/api":
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>Silo S03E04 2160p HDR</title>
+      <guid>silo-working-tracker</guid>
+      <link>magnet:?xt=urn:btih:SILO444</link>
+      <torznab:attr name="jackettindexer" value="rutor" />
+      <torznab:attr name="category" value="5000" />
+    </item>
+  </channel>
+</rss>
+""",
+            )
+        raise AssertionError(f"Unexpected request path: {path}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+        timeout=0.01,
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="Silo",
+            media_type="series",
+            filter_indexers=["rutracker", "kinozal", "booktracker", "rutor"],
+        )
+    )
+
+    assert [item.indexer for item in result.results] == ["rutor"]
+    warnings = "\n".join(result.warning_messages)
+    assert "indexer=rutracker" in warnings
+    assert "indexer=kinozal" in warnings
+    assert "indexer=booktracker" in warnings
+    assert "apikey=" not in warnings
+    assert "secret" not in warnings
+
+
 def test_jackett_client_can_filter_by_category_label_across_indexers() -> None:
     seen_requests: list[tuple[str, dict[str, str]]] = []
 
@@ -2893,6 +2953,149 @@ def test_jackett_client_structured_book_search_respects_filter_indexer_scope() -
     ]
 
 
+def test_jackett_client_structured_book_search_sends_isbn_only_when_supported() -> None:
+    direct_requests: dict[str, dict[str, str]] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = {key: value for key, value in request.url.params.multi_items()}
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="booktracker">
+    <caps>
+      <searching>
+        <book-search available="yes" supportedParams="q,title,author,isbn" />
+      </searching>
+    </caps>
+  </indexer>
+  <indexer id="noisbntracker">
+    <caps>
+      <searching>
+        <book-search available="yes" supportedParams="q,title,author" />
+      </searching>
+    </caps>
+  </indexer>
+</indexers>
+""",
+            )
+
+        if path == "/api/v2.0/indexers/booktracker/results/torznab/api":
+            direct_requests["booktracker"] = params
+            return httpx.Response(200, text="<rss><channel /></rss>")
+
+        if path == "/api/v2.0/indexers/noisbntracker/results/torznab/api":
+            direct_requests["noisbntracker"] = params
+            return httpx.Response(200, text="<rss><channel /></rss>")
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params.get("t") == "book":
+            return httpx.Response(200, text="<rss><channel /></rss>")
+
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.search(
+        JackettSearchRequest(
+            query="The Last Question",
+            media_type=MediaType.AUDIOBOOK,
+            title="The Last Question",
+            author="Isaac Asimov",
+            isbn="9785961436891",
+        )
+    )
+
+    assert direct_requests["booktracker"] == {
+        "apikey": "secret",
+        "t": "book",
+        "cat": "3030",
+        "title": "The Last Question",
+        "author": "Isaac Asimov",
+        "isbn": "9785961436891",
+    }
+    assert direct_requests["noisbntracker"] == {
+        "apikey": "secret",
+        "t": "book",
+        "cat": "3030",
+        "title": "The Last Question",
+        "author": "Isaac Asimov",
+    }
+
+
+def test_jackett_client_audiobook_query_variants_try_title_author_then_title_then_isbn() -> None:
+    seen_queries: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = {key: value for key, value in request.url.params.multi_items()}
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret",
+            "t": "indexers",
+            "configured": "true",
+        }:
+            return httpx.Response(200, text="<indexers />")
+
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params.get("t") == "book":
+            seen_queries.append(params.get("q", ""))
+            if params.get("q") == "9785961436891":
+                return httpx.Response(
+                    200,
+                    text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <item>
+      <title>The Last Question 9785961436891 Audiobook</title>
+      <guid>book-isbn-guid</guid>
+      <link>magnet:?xt=urn:btih:BOOKISBN111</link>
+      <torznab:attr name="jackettindexer" value="booktracker" />
+    </item>
+  </channel>
+</rss>
+""",
+                )
+            return httpx.Response(200, text="<rss><channel /></rss>")
+
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.search(
+        JackettSearchRequest(
+            query="The Last Question",
+            media_type=MediaType.AUDIOBOOK,
+            title="The Last Question",
+            author="Isaac Asimov",
+            isbn="9785961436891",
+        )
+    )
+
+    assert result.query_variants == [
+        "The Last Question Isaac Asimov",
+        "The Last Question",
+        "9785961436891",
+    ]
+    assert seen_queries == result.query_variants
+    assert [item.title for item in result.results] == [
+        "The Last Question 9785961436891 Audiobook"
+    ]
+
+
 def test_jackett_client_precise_title_primary_hides_non_exact_imdb_fallback_rows() -> (
     None
 ):
@@ -3024,6 +3227,42 @@ def test_jackett_client_precise_title_primary_hides_non_exact_imdb_fallback_rows
         "Young Sherlock Test Cut 2160p HDR10 WEB-DL"
     ]
     assert result.fallback_results == []
+
+
+def test_jackett_client_keeps_exact_title_quality_mismatch_in_raw_results() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = dict(request.url.params.multi_items())
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and (
+            params.get("t") == "movie" and params.get("imdbid") == "tt0151804"
+        ):
+            return httpx.Response(200, text="<rss><channel /></rss>")
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params == {
+            "apikey": "secret", "t": "indexers", "configured": "true"
+        }:
+            return httpx.Response(200, text="<indexers />")
+        if path == "/api/v2.0/indexers/all/results/torznab/api" and params.get("q") == "Office Space":
+            return httpx.Response(200, text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel><item>
+  <title>Office Space 1999 4K HEVC SDR WEBDL 2160p</title>
+  <guid>kinozal-office-space-sdr</guid>
+  <link>http://jackett:9117/dl/kinozal/office-space</link>
+  <comments>https://kinozal.tv/details.php?id=1628537</comments>
+  <torznab:attr name="jackettindexer" value="Kinozal" />
+</item></channel></rss>
+""")
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient("http://jackett:9117", "secret", transport=httpx.MockTransport(handler))
+    result = client.search(JackettSearchRequest(
+        query="Office Space", media_type="movie", imdb_id="tt0151804", imdb_id_only=True,
+        keywords_any=["hdr", "dolby vision"], keywords_any_groups=[["hdr", "dolby vision"]],
+    ))
+
+    assert [item.details_url for item in result.raw_fallback_results] == [
+        "https://kinozal.tv/details.php?id=1628537"
+    ]
+    assert result.results == []
 
 
 def test_jackett_client_falls_back_to_broad_title_search_when_tv_indexers_do_not_support_input_imdb() -> (
@@ -3244,6 +3483,34 @@ def test_build_search_request_from_rule_uses_structured_terms_not_raw_regex() ->
     assert "flac" in payload.keywords_not
     assert payload.keywords_any_groups == [["mp3"]]
     assert ignored_full_regex is True
+
+
+def test_build_search_request_from_rule_uses_audiobook_search_metadata() -> None:
+    rule = Rule(
+        rule_name="Last Question Audio",
+        content_name="The Last Question",
+        normalized_title="The Last Question",
+        media_type=MediaType.AUDIOBOOK,
+        quality_profile=QualityProfile.CUSTOM,
+        search_metadata={
+            "title": "The Last Question",
+            "author": "Isaac Asimov",
+            "publisher": "Eksmo",
+            "genre": "Science Fiction",
+            "isbn": "9785961436891",
+        },
+    )
+
+    payload, ignored_full_regex = build_search_request_from_rule(rule)
+
+    assert payload.query == "The Last Question"
+    assert payload.media_type == MediaType.AUDIOBOOK
+    assert payload.title == "The Last Question"
+    assert payload.author == "Isaac Asimov"
+    assert payload.publisher == "Eksmo"
+    assert payload.genre == "Science Fiction"
+    assert payload.isbn == "9785961436891"
+    assert ignored_full_regex is False
 
 
 def test_build_search_request_from_rule_carries_series_episode_floor() -> None:

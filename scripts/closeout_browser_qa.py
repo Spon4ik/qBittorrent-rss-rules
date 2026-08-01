@@ -3402,6 +3402,143 @@ def main() -> int:
                 page=page,
             )
 
+            def check_phase33_hidden_rows_keep_table_usable() -> None:
+                inline_rule_url = phase7_context.get("inline_rule_url")
+                _expect(
+                    bool(inline_rule_url),
+                    "Missing inline rule URL context from P6-05 handoff check.",
+                )
+                layout_context = browser.new_context(viewport={"width": 1600, "height": 900})
+                layout_page = layout_context.new_page()
+                try:
+                    layout_page.goto(str(inline_rule_url), wait_until="networkidle", timeout=args.timeout_ms)
+                    layout_page.wait_for_selector(
+                        '#inline-search-results [data-search-table-wrap="combined"]',
+                        timeout=args.timeout_ms,
+                    )
+                    layout_page.evaluate(
+                        """
+                        () => {
+                          const inline = document.querySelector("#inline-search-results");
+                          if (!inline) {
+                            return;
+                          }
+                          let notices = inline.querySelector(".rule-search-notices");
+                          if (!notices) {
+                            notices = document.createElement("section");
+                            notices.className = "rule-search-notices";
+                            notices.setAttribute("aria-label", "Search notices");
+                            const controls = inline.querySelector(".result-view-panel");
+                            controls?.before(notices);
+                          }
+                          for (let index = 0; index < 6; index += 1) {
+                            const notice = document.createElement("section");
+                            notice.className = "flash flash-warning";
+                            notice.textContent = `Synthetic compact-layout notice ${index + 1}`;
+                            notices.appendChild(notice);
+                          }
+                        }
+                        """
+                    )
+                    query_input = layout_page.locator('#inline-search-results input[name="content_name"]').first
+                    _expect(query_input.count() == 1, "Expected one inline content-name filter input.")
+                    query_input.fill("__phase33_no_visible_results__")
+                    layout_page.wait_for_function(
+                        """
+                        () => (document.querySelector('[data-search-filtered-count="combined"]')?.textContent || "").trim() === "0"
+                        """,
+                        timeout=args.timeout_ms,
+                    )
+                    empty_state = layout_page.locator('#inline-search-results [data-search-empty="combined"]').first
+                    table_wrap = layout_page.locator(
+                        '#inline-search-results [data-search-table-wrap="combined"]'
+                    ).first
+                    hidden_toggle = layout_page.locator(
+                        '#inline-search-results [data-search-show-hidden-toggle]'
+                    ).first
+                    status = layout_page.locator(
+                        '#inline-search-results [data-search-display-status="combined"]'
+                    ).first
+                    _expect(empty_state.count() == 1, "Expected a filtered-empty state.")
+                    _expect(table_wrap.count() == 1, "Expected one inline result table wrapper.")
+                    _expect(hidden_toggle.count() == 1, "Expected one hidden-row toggle.")
+                    _expect(status.count() == 1, "Expected one compact hidden-row status.")
+                    _expect(
+                        not empty_state.evaluate("node => node.hidden"),
+                        "Filtered-empty state should remain visible while hidden rows are disabled.",
+                    )
+                    _expect(
+                        table_wrap.evaluate("node => node.hidden"),
+                        "Empty table wrapper should be hidden while no rows are displayed.",
+                    )
+
+                    hidden_toggle.check()
+                    layout_page.wait_for_function(
+                        """
+                        () => {
+                          const table = document.querySelector('[data-search-table-wrap="combined"]');
+                          const rows = Array.from(document.querySelectorAll('[data-search-row="combined"]'));
+                          return Boolean(table) && !table.hidden && rows.some((row) => !row.hidden);
+                        }
+                        """,
+                        timeout=args.timeout_ms,
+                    )
+                    metrics = layout_page.evaluate(
+                        """
+                        () => {
+                          const inline = document.querySelector("#inline-search-results");
+                          const empty = document.querySelector('[data-search-empty="combined"]');
+                          const table = document.querySelector('[data-search-table-wrap="combined"]');
+                          const status = document.querySelector('[data-search-display-status="combined"]');
+                          const firstRow = Array.from(document.querySelectorAll('[data-search-row="combined"]'))
+                            .find((row) => !row.hidden);
+                          if (!inline || !empty || !table || !firstRow || !status) {
+                            return null;
+                          }
+                          const tableRect = table.getBoundingClientRect();
+                          const rowRect = firstRow.getBoundingClientRect();
+                          return {
+                            emptyHidden: empty.hidden,
+                            tableHidden: table.hidden,
+                            tableClientHeight: table.clientHeight,
+                            inlineClientHeight: inline.clientHeight,
+                            inlineScrollHeight: inline.scrollHeight,
+                            rowIntersectsTable: rowRect.bottom > tableRect.top && rowRect.top < tableRect.bottom,
+                            status: (status.textContent || "").trim(),
+                          };
+                        }
+                        """
+                    )
+                    _expect(metrics is not None, "Missing hidden-row layout metrics.")
+                    _expect(bool(metrics["emptyHidden"]), f"Empty state stayed visible: {metrics}")
+                    _expect(not bool(metrics["tableHidden"]), f"Table stayed hidden: {metrics}")
+                    _expect(
+                        int(metrics["tableClientHeight"]) >= 160,
+                        f"Hidden-row table is not usable at 1600x900: {metrics}",
+                    )
+                    _expect(
+                        bool(metrics["rowIntersectsTable"]),
+                        f"First hidden row is outside the table viewport: {metrics}",
+                    )
+                    _expect(
+                        int(metrics["inlineScrollHeight"]) <= int(metrics["inlineClientHeight"]) + 1,
+                        f"Inline workspace overflowed instead of constraining notices/table: {metrics}",
+                    )
+                    _expect(
+                        "filtered-out rows shown" in str(metrics["status"]),
+                        f"Unexpected compact hidden-row status: {metrics}",
+                    )
+                finally:
+                    layout_context.close()
+
+            run_check(
+                "P33-01",
+                "Phase 33",
+                "Hidden fetched rows replace the empty state and keep the inline table usable",
+                check_phase33_hidden_rows_keep_table_usable,
+                page=page,
+            )
+
             def check_phase6_non_latin() -> None:
                 page.goto(
                     f"{app_base_url}/search?query=%D0%9F%D0%B5%D0%BB%D0%B5%D0%B2%D0%B8%D0%BD&media_type=audiobook&indexer=all",

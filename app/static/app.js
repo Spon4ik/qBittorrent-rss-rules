@@ -295,7 +295,10 @@ function buildQualityRegexGroups(tokens, patternMap, tokenGroupMap = {}) {
   const fallbackGroupKey = "__ungrouped__";
 
   for (const token of tokens || []) {
-    const pattern = patternMap[token];
+    const rawPattern = patternMap[token];
+    const pattern = rawPattern
+      ? `(?:^|[^A-Za-z0-9])(?:${rawPattern})(?![A-Za-z0-9])`
+      : "";
     if (!pattern) {
       continue;
     }
@@ -718,24 +721,16 @@ function buildEpisodeProgressRegexFragment(startSeasonValue, startEpisodeValue) 
   return `(?:${fragments.join("|")})`;
 }
 
-function buildSpecificEpisodeRegexFragment(seasonValue, episodeValue) {
+function buildStandaloneEpisodeRegexFragment(seasonValue, episodeValue) {
   const seasonNumber = normalizeBoundedPositiveInt(seasonValue, { min: 0, max: 99 });
   const episodeNumber = normalizeBoundedPositiveInt(episodeValue, { min: 0, max: 99 });
   if (seasonNumber === null || episodeNumber === null) {
     return "";
   }
   const separators = "[\\s._-]*";
-  const seasonExact = `0*${seasonNumber}`;
-  const episodeExact = `0*${episodeNumber}`;
-  const episodeRangeAny = "0*\\d{1,2}";
   const seasonPrefix = "(?:s(?:eason)?[\\s._:-]*)";
   const episodePrefix = "(?:e(?:p(?:isode)?)?[\\s._:-]*)";
-  const fragments = [
-    `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeExact}(?!\\d)`,
-    `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeRangeAny}${separators}-${separators}(?:${episodePrefix})?${episodeExact}(?!\\d)`,
-    `${seasonPrefix}${seasonExact}(?!\\d)${separators}${episodePrefix}${episodeExact}(?!\\d)${separators}-${separators}(?:${episodePrefix})?${episodeRangeAny}`,
-  ];
-  return `(?:${fragments.join("|")})`;
+  return `${seasonPrefix}0*${seasonNumber}(?!\\d)${separators}${episodePrefix}0*${episodeNumber}(?!\\d)(?!${separators}-)`;
 }
 
 function buildBelowFloorEpisodeRegexFragment(seasonValue, episodeValue) {
@@ -783,7 +778,7 @@ function buildExistingEpisodeExclusionRegexFragment(existingEpisodeKeys) {
     if (!match) {
       continue;
     }
-    const fragment = buildSpecificEpisodeRegexFragment(match[1], match[2]);
+    const fragment = buildStandaloneEpisodeRegexFragment(match[1], match[2]);
     if (fragment) {
       fragments.push(fragment);
     }
@@ -1730,10 +1725,12 @@ function initSearchPage(container) {
       qualityIncludeRegex: tokenState.includeKeywordRegex,
       qualityExcludeRegex: tokenState.excludeKeywordRegex,
       generatedPatternRegex: compileGeneratedPatternRegex(getLocalPatternForFilters()),
+      mediaType: mediaTypeInput?.value || "series",
       manualMustContain: String(mustContainOverrideInput?.value || "").trim(),
       startSeason: normalizeBoundedPositiveInt(startSeasonInput?.value || "", { min: 1, max: 99 }),
       startEpisode: normalizeBoundedPositiveInt(startEpisodeInput?.value || "", { min: 0, max: 99 }),
       keepSearchingExisting: getJellyfinSearchExistingUnseen(),
+      existingEpisodeNumbers: getJellyfinExistingEpisodeNumbers(),
       sizeMinMb: parseSearchMb(sizeMinInput?.value || ""),
       sizeMaxMb: parseSearchMb(sizeMaxInput?.value || ""),
       feedScopeBlocksAll,
@@ -2241,7 +2238,31 @@ function initSearchPage(container) {
     "x265",
     "xmas",
   ]);
-  const SEASON_PACK_COMPLETE_MARKER_RE = /\b(?:complete|full(?:\s+season)?|season\s+pack|полный)\b/iu;
+  const VIDEO_MEDIA_TYPES = new Set(["movie", "series"]);
+  const STANDARD_CATEGORY_ROOT_BY_MEDIA_TYPE = {
+    movie: new Set(["2000"]),
+    series: new Set(["5000"]),
+  };
+  const STANDARD_VIDEO_CATEGORY_ROOTS = new Set(["2000", "5000"]);
+  const STANDARD_NON_VIDEO_CATEGORY_ROOTS = new Set(["3000", "4000", "7000"]);
+  const INCOMPATIBLE_VIDEO_CATEGORY_TERMS = [
+    "application",
+    "applications",
+    "app",
+    "apps",
+    "archive program",
+    "archives program",
+    "book",
+    "books",
+    "game",
+    "games",
+    "pc",
+    "program",
+    "program archive",
+    "programs",
+    "software",
+    "программ",
+  ];
   const YEAR_TOKEN_RE = /^\d{4}$/u;
   const SEASON_TOKEN_RE = /^s0*\d{1,2}$/u;
   const EPISODE_TOKEN_RE = /^e0*\d{1,3}$/u;
@@ -2304,23 +2325,74 @@ function initSearchPage(container) {
       segmentMatchesPreciseTitleIdentity(segment, queryValue)
     ));
   };
-  const isSameSeasonCompletePackAllowed = (entry, filters) => {
-    if (!filters.keepSearchingExisting) {
-      return false;
+  const episodeRangesFromText = (value) => {
+    const matches = [];
+    const pattern = /s(\d{1,2})[\s._-]*e(\d{1,2})(?:[\s._-]*(?:-|to)[\s._-]*(?:e)?(\d{1,2}))?/giu;
+    for (const match of String(value || "").matchAll(pattern)) {
+      const seasonNumber = Number(match[1]);
+      const startEpisode = Number(match[2]);
+      const endEpisode = Number(match[3] || match[2]);
+      matches.push([
+        seasonNumber,
+        Math.min(startEpisode, endEpisode),
+        Math.max(startEpisode, endEpisode),
+      ]);
     }
-    const startSeason = Number(filters.startSeason);
-    if (!Number.isFinite(startSeason) || startSeason < 0) {
-      return false;
-    }
-    const regexSurface = String(entry.regexSurface || entry.title || entry.textSurface || "").trim();
-    if (!regexSurface || !SEASON_PACK_COMPLETE_MARKER_RE.test(regexSurface)) {
-      return false;
-    }
-    const seasonPattern = new RegExp(
-      `(?:s(?:eason)?[\\s._:-]*0*${startSeason}(?!\\d)|0*${startSeason}x0*\\d{1,3})`,
-      "iu"
+    return matches;
+  };
+  const packContainsOnlyExistingEpisodes = (entry, filters) => {
+    const existingEpisodeKeys = new Set(
+      normalizeJellyfinEpisodeKeys(filters.existingEpisodeNumbers || [])
     );
-    return seasonPattern.test(regexSurface);
+    for (const [seasonNumber, startEpisode, endEpisode] of episodeRangesFromText(
+      entry.regexSurface || entry.title || entry.textSurface
+    )) {
+      if (endEpisode <= startEpisode) {
+        continue;
+      }
+      let containsNewEpisode = false;
+      for (let episodeNumber = startEpisode; episodeNumber <= endEpisode; episodeNumber += 1) {
+        const episodeKey = `S${String(seasonNumber).padStart(2, "0")}E${String(episodeNumber).padStart(2, "0")}`;
+        if (!existingEpisodeKeys.has(episodeKey)) {
+          containsNewEpisode = true;
+          break;
+        }
+      }
+      if (!containsNewEpisode) {
+        return true;
+      }
+    }
+    return false;
+  };
+  const categoryRoot = (categoryId) => {
+    const cleaned = String(categoryId || "").trim();
+    if (!/^\d{4,}$/u.test(cleaned)) {
+      return "";
+    }
+    return String(Math.floor(Number(cleaned.slice(0, 4)) / 1000) * 1000);
+  };
+  const categoryMediaFailure = (entry, filters) => {
+    const mediaType = String(filters.mediaType || "").trim();
+    if (!VIDEO_MEDIA_TYPES.has(mediaType)) {
+      return null;
+    }
+    const roots = new Set((entry.categoryIds || []).map(categoryRoot).filter(Boolean));
+    if (Array.from(roots).some((item) => STANDARD_NON_VIDEO_CATEGORY_ROOTS.has(item))) {
+      return `Category is incompatible with ${mediaType} searches.`;
+    }
+    const allowedRoots = STANDARD_CATEGORY_ROOT_BY_MEDIA_TYPE[mediaType] || new Set();
+    const explicitVideoRoots = Array.from(roots).filter((item) => STANDARD_VIDEO_CATEGORY_ROOTS.has(item));
+    if (explicitVideoRoots.length > 0 && !explicitVideoRoots.some((item) => allowedRoots.has(item))) {
+      return `Category is incompatible with ${mediaType} searches.`;
+    }
+    const categoryText = normalizeSearchText([
+      ...(entry.categoryIds || []),
+      ...(entry.categoryLabels || []),
+    ].join(" "));
+    if (categoryText && INCOMPATIBLE_VIDEO_CATEGORY_TERMS.some((term) => categoryText.includes(term))) {
+      return `Category is incompatible with ${mediaType} searches.`;
+    }
+    return null;
   };
 
   const groupLabel = (group) => group.map((item) => String(item || "").trim()).filter(Boolean).join(" | ");
@@ -2359,6 +2431,10 @@ function initSearchPage(container) {
         ? `Title does not match query "${queryLabel}".`
         : "Title does not match the current query.";
     }
+    const categoryFailure = categoryMediaFailure(entry, filters);
+    if (categoryFailure) {
+      return categoryFailure;
+    }
     if (!isPrecisePrimaryRow) {
       for (const keyword of filters.keywordsAll) {
         if (!containsTerm(entry.textSurface, keyword)) {
@@ -2385,10 +2461,11 @@ function initSearchPage(container) {
     if (filters.qualityExcludeRegex && filters.qualityExcludeRegex.test(entry.regexSurface)) {
       return "Matched an excluded quality tag.";
     }
+    if (packContainsOnlyExistingEpisodes(entry, filters)) {
+      return "Every episode in this pack already exists in the library.";
+    }
     if (!isPrecisePrimaryRow && filters.generatedPatternRegex && !filters.generatedPatternRegex.test(entry.regexSurface)) {
-      if (!isSameSeasonCompletePackAllowed(entry, filters)) {
-        return "Does not match the generated rule pattern.";
-      }
+      return "Does not match the generated rule pattern.";
     }
 
     if (filters.releaseYear) {
@@ -2690,7 +2767,7 @@ function initSearchPage(container) {
         ),
         cardQuerySourceChipElement: card.querySelector(".rule-card-top .status-chip"),
         cardQuerySourceDetailElement: card.querySelector(".detail-list div:first-child dd"),
-        rowQuerySourceElement: rows[index]?.querySelector("td:first-child") || null,
+        rowQuerySourceElement: rows[index]?.querySelector('td[data-label="Title"] .helper-text') || null,
       }));
 
       return [
@@ -2704,6 +2781,7 @@ function initSearchPage(container) {
           fetchedCountElement: container.querySelector(`[data-search-fetched-count="${section}"]`),
           scopeSummaryElement: container.querySelector(`[data-search-scope-summary="${section}"]`),
           hiddenSummaryElement: container.querySelector(`[data-search-hidden-summary="${section}"]`),
+          displayStatusElement: container.querySelector(`[data-search-display-status="${section}"]`),
           emptyState: container.querySelector(`[data-search-empty="${section}"]`),
         },
       ];
@@ -3083,6 +3161,8 @@ function initSearchPage(container) {
     const visibleEntries = [];
     const hiddenEntries = [];
     const hiddenReasonCounts = new Map();
+    const tableMode = controlState.viewMode === "table";
+    const showHiddenInTable = tableMode && controlState.showHiddenRows;
     let visibleCount = 0;
     for (const entry of sortedEntries) {
       const failure = entryFilterFailure(entry, filters);
@@ -3105,7 +3185,7 @@ function initSearchPage(container) {
       }
       entry.card.hidden = !visible;
       if (entry.row) {
-        entry.row.hidden = !(visible || controlState.showHiddenRows);
+        entry.row.hidden = !(visible || showHiddenInTable);
         entry.row.classList.toggle("search-row-filter-blocked", !visible);
       }
       if (entry.visibilityStatusElement) {
@@ -3163,8 +3243,25 @@ function initSearchPage(container) {
         state.hiddenSummaryElement.hidden = true;
       }
     }
+    const displayedEntryCount = visibleCount + (showHiddenInTable ? hiddenEntries.length : 0);
+    if (state.displayStatusElement) {
+      if (hiddenEntries.length > 0) {
+        const matchLabel = `${visibleCount} ${visibleCount === 1 ? "match" : "matches"}`;
+        const filteredLabel = `${hiddenEntries.length} filtered-out row${hiddenEntries.length === 1 ? "" : "s"}`;
+        state.displayStatusElement.textContent = (
+          `${matchLabel} · ${filteredLabel}${showHiddenInTable ? " shown" : ""}.`
+        );
+        state.displayStatusElement.hidden = false;
+      } else {
+        state.displayStatusElement.textContent = "";
+        state.displayStatusElement.hidden = true;
+      }
+    }
     if (state.emptyState) {
-      state.emptyState.hidden = visibleCount > 0;
+      state.emptyState.hidden = displayedEntryCount > 0;
+    }
+    if (state.tableWrap) {
+      state.tableWrap.hidden = !tableMode || displayedEntryCount === 0;
     }
     return { visibleEntries, hiddenEntries };
   };
@@ -3536,6 +3633,7 @@ function initRuleForm(form) {
     const feedSelectAllButton = form.querySelector("#feed-select-all");
     const feedClearAllButton = form.querySelector("#feed-clear-all");
     const feedOptionsContainer = form.querySelector("#feed-options");
+    const feedSummary = form.querySelector("[data-feed-summary]");
     const languageSelect = form.querySelector("#rule-language-select");
     const languageSummary = form.querySelector("[data-language-summary]");
     const feedModeHelper = form.querySelector("[data-feed-mode-helper]");
@@ -3544,13 +3642,13 @@ function initRuleForm(form) {
   const qualityModeInput = form.querySelector('input[name="quality_mode"]');
   const qualityModePanel = form.querySelector("[data-quality-mode-panel]");
   const qualityModeLabel = form.querySelector("[data-quality-mode-label]");
-  const qualityModeDescription = form.querySelector("[data-quality-mode-description]");
   const qualityModeActionButtons = Array.from(form.querySelectorAll("[data-quality-mode-action]"));
   const filterProfileSelect = form.querySelector("#filter-profile-select");
   const saveNewProfileButton = form.querySelector("#filter-profile-save-new");
   const overwriteProfileButton = form.querySelector("#filter-profile-overwrite");
   const releaseYearInput = form.querySelector('input[name="release_year"]');
   const imdbFieldWrapper = form.querySelector("[data-imdb-field]");
+  const audiobookSearchFieldWrappers = Array.from(form.querySelectorAll("[data-audiobook-search-fields]"));
   const runSearchHereLink = document.querySelector("[data-run-search-here]");
 
   let categoryTouched = Boolean(categoryInput?.value.trim());
@@ -3582,6 +3680,29 @@ function initRuleForm(form) {
       .filter((checkbox) => checkbox.checked)
       .map((checkbox) => checkbox.value)
   );
+  const syncFeedSummary = () => {
+    if (!feedSummary) {
+      return;
+    }
+    const selected = selectedFeedUrls();
+    const languageManaged = selectedLanguageValues().length > 0;
+    if (languageManaged) {
+      feedSummary.textContent = selected.length > 0
+        ? `Language-managed (${selected.length} feed${selected.length === 1 ? "" : "s"})`
+        : "Language-managed feeds";
+      return;
+    }
+    if (selected.length === 0) {
+      feedSummary.textContent = "No feeds selected";
+      return;
+    }
+    if (selected.length === 1) {
+      const labels = buildFeedLabelMap();
+      feedSummary.textContent = labels.get(selected[0]) || "1 feed selected";
+      return;
+    }
+    feedSummary.textContent = `${selected.length} feeds selected`;
+  };
   const feedsDifferFromInitialSelection = () => {
     const initial = normalizeFeedUrlList(initialFeedUrls);
     const selected = normalizeFeedUrlList(selectedFeedUrls());
@@ -3679,8 +3800,8 @@ function initRuleForm(form) {
     }
     if (feedModeHelper) {
       feedModeHelper.textContent = languageManaged
-        ? "Feed selection is currently resolved automatically from the selected language. Clear Language to edit feeds manually."
-        : "Choose one or more RSS feeds for this rule. Active Jackett search stays separate and does not populate this list.";
+        ? "Language-managed feed scope."
+        : "Manual feed scope.";
     }
     for (const button of [feedRefreshButton, feedSelectAllButton, feedClearAllButton]) {
       if (button) {
@@ -3690,6 +3811,7 @@ function initRuleForm(form) {
     for (const checkbox of getFeedCheckboxes()) {
       checkbox.disabled = languageManaged;
     }
+    syncFeedSummary();
   };
 
   const normalizeTokenSelection = (includeTokens, excludeTokens) => {
@@ -3759,18 +3881,25 @@ function initRuleForm(form) {
     const selectedProfile = availableFilterProfileMap[
       filterProfileSelect?.value || detectMatchingFilterProfileKey(getCurrentMediaType())
     ];
+    const selectedModeHelp = mode === "managed"
+      ? "This rule follows preset changes until you make it manual."
+      : "This rule keeps its current include/exclude tokens until you choose a managed profile.";
     if (qualityModeLabel) {
       qualityModeLabel.textContent = mode === "managed"
         ? `Managed profile${selectedProfile?.label ? `: ${selectedProfile.label}` : ""}`
         : "Manual snapshot";
-    }
-    if (qualityModeDescription) {
-      qualityModeDescription.textContent = mode === "managed"
-        ? "This rule follows preset changes until you make it manual."
-        : "This rule keeps its current include/exclude tokens until you choose a managed profile.";
+      qualityModeLabel.setAttribute("title", selectedModeHelp);
+      qualityModeLabel.setAttribute("aria-label", `${qualityModeLabel.textContent}. ${selectedModeHelp}`);
     }
     for (const button of qualityModeActionButtons) {
+      const actionHelp = button.dataset.qualityModeAction === "managed"
+        ? button.dataset.qualityManagedHelp
+        : button.dataset.qualityManualHelp;
       button.dataset.active = button.dataset.qualityModeAction === mode ? "1" : "0";
+      if (actionHelp) {
+        button.setAttribute("title", actionHelp);
+        button.setAttribute("aria-label", `${button.textContent.trim()}. ${actionHelp}`);
+      }
     }
   };
 
@@ -3857,7 +3986,7 @@ function initRuleForm(form) {
       return;
     }
     if (mediaType === "audiobook") {
-      metadataLookupValueInput.placeholder = "Book title, ISBN, or OpenLibrary ID";
+      metadataLookupValueInput.placeholder = "Book title, author, ISBN, or source ID";
       return;
     }
     metadataLookupValueInput.placeholder = "Title or source ID";
@@ -3967,6 +4096,13 @@ function initRuleForm(form) {
     rebuildMetadataProviderSelect(currentMediaType);
     if (imdbFieldWrapper) {
       imdbFieldWrapper.hidden = currentMediaType === "music" || currentMediaType === "audiobook";
+    }
+    for (const wrapper of audiobookSearchFieldWrappers) {
+      const isVisible = currentMediaType === "audiobook";
+      wrapper.hidden = !isVisible;
+      wrapper.querySelectorAll("input, select, textarea").forEach((input) => {
+        input.disabled = !isVisible;
+      });
     }
   };
 
@@ -4161,6 +4297,12 @@ function initRuleForm(form) {
     const ruleNameField = form.querySelector('input[name="rule_name"]');
     const imdbField = form.querySelector('input[name="imdb_id"]');
     const posterField = form.querySelector('input[name="poster_url"]');
+    const setNamedInputValue = (name, value) => {
+      const input = form.querySelector(`[name="${name}"]`);
+      if (input) {
+        input.value = value || "";
+      }
+    };
 
     if (titleField) {
       titleField.value = payload.title || "";
@@ -4181,6 +4323,13 @@ function initRuleForm(form) {
     if (posterField) {
       posterField.value = payload.poster_url || "";
     }
+    if ((payload.media_type || getCurrentMediaType()) === "audiobook") {
+      const authors = Array.isArray(payload.authors) ? payload.authors.join(", ") : "";
+      setNamedInputValue("audiobook_title", payload.title || "");
+      setNamedInputValue("audiobook_author", authors);
+      setNamedInputValue("audiobook_publisher", payload.publisher || "");
+      setNamedInputValue("audiobook_isbn", payload.isbn || "");
+    }
     if (releaseYearInput && (!releaseYearTouched || !releaseYearInput.value.trim())) {
       releaseYearInput.value = normalizeReleaseYear(payload.year || "");
       releaseYearTouched = Boolean(releaseYearInput.value.trim());
@@ -4193,6 +4342,7 @@ function initRuleForm(form) {
 
 
   const notifyFeedSelectionChanged = () => {
+    syncFeedSummary();
     const firstCheckbox = getFeedCheckboxes()[0];
     if (!firstCheckbox) {
       return;
@@ -4251,6 +4401,7 @@ function initRuleForm(form) {
 
     renderFeedOptions(mergedFeeds, selectedUrls);
     syncFeedLanguageMode();
+    syncFeedSummary();
   });
 
   for (const languageInput of form.querySelectorAll('input[name="language"]')) {
@@ -4313,6 +4464,7 @@ function initOperationProgress(root) {
   const barElement = shell.querySelector("[data-operation-progress-bar]");
   const listElement = shell.querySelector("[data-operation-progress-list]");
   let pollTimer = 0;
+  let optimisticUntil = 0;
 
   const clearPollTimer = () => {
     if (pollTimer) {
@@ -4335,6 +4487,9 @@ function initOperationProgress(root) {
     const operations = Array.isArray(payload?.operations) ? payload.operations : [];
     const summary = payload?.summary || {};
     if (operations.length === 0) {
+      if (Date.now() < optimisticUntil) {
+        return true;
+      }
       shell.hidden = false;
       if (titleElement) {
         titleElement.textContent = "Background work idle";
@@ -4385,6 +4540,25 @@ function initOperationProgress(root) {
     return Boolean(summary.is_running);
   };
 
+  const renderStarting = (label) => {
+    optimisticUntil = Date.now() + 10000;
+    shell.hidden = false;
+    if (titleElement) {
+      titleElement.textContent = "Background work starting";
+    }
+    if (summaryElement) {
+      summaryElement.textContent = String(label || "Starting operation...");
+    }
+    if (barElement) {
+      barElement.style.width = "12%";
+    }
+    if (listElement) {
+      listElement.replaceChildren();
+    }
+    clearPollTimer();
+    pollTimer = window.setTimeout(poll, 200);
+  };
+
   const poll = async () => {
     clearPollTimer();
     try {
@@ -4401,6 +4575,16 @@ function initOperationProgress(root) {
       pollTimer = window.setTimeout(poll, 8000);
     }
   };
+
+  window.addEventListener("operation-progress-starting", (event) => {
+    renderStarting(event?.detail?.label);
+  });
+  root.addEventListener("click", (event) => {
+    const trigger = event.target?.closest?.("[data-operation-start-label]");
+    if (trigger) {
+      renderStarting(trigger.dataset.operationStartLabel);
+    }
+  });
 
   poll();
   window.addEventListener("beforeunload", clearPollTimer);
@@ -4840,12 +5024,15 @@ function initRulesPage(container) {
       setRunStatus("Select at least one rule first.", true);
       return;
     }
-    const includeDisabled = Boolean(includeDisabledToggle?.checked);
+    const includeDisabled = runAll ? Boolean(includeDisabledToggle?.checked) : true;
     const buttons = [runSelectedButton, runAllButton, applyQualityButton].filter(Boolean);
     for (const button of buttons) {
       button.disabled = true;
     }
     setRunStatus("Running Jackett fetch...");
+    window.dispatchEvent(new CustomEvent("operation-progress-starting", {
+      detail: { label: runAll ? "Fetching all rules" : `Fetching ${ruleIds.length} selected rule(s)` },
+    }));
     try {
       const response = await fetch("/api/rules/fetch", {
         method: "POST",

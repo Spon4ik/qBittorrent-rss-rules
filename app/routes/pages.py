@@ -137,8 +137,20 @@ def _sync_search_form_data_with_payload(
         "author",
         "publisher",
         "genre",
+        "isbn",
     ):
         form_data[field_name] = getattr(payload, field_name) or ""
+
+
+def _rule_search_metadata(rule: Rule) -> dict[str, object]:
+    metadata = getattr(rule, "search_metadata", {}) or {}
+    if not isinstance(metadata, dict):
+        return {}
+    return metadata
+
+
+def _search_metadata_text(metadata: dict[str, object], key: str) -> str:
+    return str(metadata.get(key, "") or "").strip()
 
 
 def _base_context(request: Request, page_title: str) -> dict[str, object]:
@@ -437,6 +449,7 @@ def _rule_to_form_data(rule: Rule) -> dict[str, object]:
             if rule.quality_profile in {QualityProfile.PLAIN, QualityProfile.CUSTOM}
             else QualityMode.MANAGED
         )
+    search_metadata = _rule_search_metadata(rule)
     return {
         "rule_name": rule.rule_name,
         "content_name": rule.content_name,
@@ -483,6 +496,11 @@ def _rule_to_form_data(rule: Rule) -> dict[str, object]:
         "save_path": rule.save_path,
         "feed_urls": rule.feed_urls,
         "search_indexers": list(getattr(rule, "search_indexers", []) or []),
+        "audiobook_title": _search_metadata_text(search_metadata, "title"),
+        "audiobook_author": _search_metadata_text(search_metadata, "author"),
+        "audiobook_publisher": _search_metadata_text(search_metadata, "publisher"),
+        "audiobook_genre": _search_metadata_text(search_metadata, "genre"),
+        "audiobook_isbn": _search_metadata_text(search_metadata, "isbn"),
         "notes": rule.notes,
         "remember_feed_defaults": True,
         "metadata_lookup_provider": default_metadata_lookup_provider(rule.media_type),
@@ -727,6 +745,13 @@ def _prefill_rule_search_form_data(form_data: dict[str, object], rule: Rule) -> 
     form_data["include_release_year"] = bool(rule.include_release_year)
     form_data["additional_includes"] = str(rule.additional_includes or "").strip()
     form_data["must_not_contain"] = str(rule.must_not_contain or "").strip()
+    search_metadata = _rule_search_metadata(rule)
+    if rule.media_type == MediaType.AUDIOBOOK:
+        form_data["title"] = _search_metadata_text(search_metadata, "title")
+        form_data["author"] = _search_metadata_text(search_metadata, "author")
+        form_data["publisher"] = _search_metadata_text(search_metadata, "publisher")
+        form_data["genre"] = _search_metadata_text(search_metadata, "genre")
+        form_data["isbn"] = _search_metadata_text(search_metadata, "isbn")
 
 
 def _unexpected_error_message(prefix: str, exc: Exception) -> str:
@@ -735,6 +760,50 @@ def _unexpected_error_message(prefix: str, exc: Exception) -> str:
     if detail:
         return f"{prefix} ({label}): {detail}"
     return f"{prefix} ({label})."
+
+
+def _apply_rule_summary_counts_to_inline_search(
+    inline_search: dict[str, object],
+    *,
+    rule: Rule,
+) -> None:
+    if (
+        rule.last_snapshot_at is None
+        or rule.last_release_filtered_count is None
+        or rule.last_release_fetched_count is None
+        or rule.last_exact_filtered_count is None
+        or rule.last_exact_fetched_count is None
+    ):
+        return
+    release = release_state_from_cached_counts(
+        filtered_count=rule.last_release_filtered_count,
+        fetched_count=rule.last_release_fetched_count,
+        exact_filtered_count=rule.last_exact_filtered_count,
+        exact_fetched_count=rule.last_exact_fetched_count,
+        snapshot_fetched_at=rule.last_snapshot_at,
+    )
+    exact_filtered = int(release["exact_filtered_count"])
+    exact_fetched = int(release["exact_fetched_count"])
+    combined_filtered = int(release["combined_filtered_count"])
+    combined_fetched = int(release["combined_fetched_count"])
+    inline_search["exact_filtered_count"] = exact_filtered
+    inline_search["exact_fetched_count"] = exact_fetched
+    inline_search["combined_filtered_count"] = combined_filtered
+    inline_search["combined_fetched_count"] = combined_fetched
+
+    source_breakdown = inline_search.get("source_breakdown")
+    if not isinstance(source_breakdown, list):
+        return
+    for source in source_breakdown:
+        if not isinstance(source, dict):
+            continue
+        source_key = str(source.get("key") or "").strip().casefold()
+        if source_key == "primary":
+            source["filtered_count"] = exact_filtered
+            source["fetched_count"] = exact_fetched
+        elif source_key == "fallback":
+            source["filtered_count"] = max(0, combined_filtered - exact_filtered)
+            source["fetched_count"] = max(0, combined_fetched - exact_fetched)
 
 
 def _format_snapshot_fetched_at(value: datetime | None) -> str:
@@ -1105,6 +1174,20 @@ def _sorted_rule_rows(
     return sorted_rows
 
 
+def _release_matches_rules_filter(release: dict[str, Any], release_filter: str) -> bool:
+    if not release_filter:
+        return True
+    if release_filter == "any_results":
+        return int(release.get("combined_fetched_count") or 0) > 0
+    if release_filter == "visible_results":
+        return int(release.get("combined_filtered_count") or 0) > 0
+    if release_filter == "exact_results":
+        return int(release.get("exact_filtered_count") or 0) > 0
+    if release_filter == "no_snapshot":
+        return str(release.get("signal_state")) == "no_snapshot"
+    return False
+
+
 @router.get("/", response_class=HTMLResponse)
 def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLResponse:
     settings = SettingsService.get_or_create(session)
@@ -1224,10 +1307,7 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
                 snapshot_fetched_at=rule.last_snapshot_at,
             )
         )
-        if release_filter and (
-            str(release.get("signal_state")) != release_filter
-            and str(release.get("state")) != release_filter
-        ):
+        if not _release_matches_rules_filter(release, release_filter):
             continue
         if exact_filter and str(release.get("exact_state")) != exact_filter:
             continue
@@ -1271,12 +1351,10 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
                 {"value": QualityProfile.UHD_2160P_HDR.value, "label": "Ultra HD HDR"},
             ],
             "release_choices": [
-                {"value": "exact", "label": "Exact"},
-                {"value": "fallback", "label": "Fallback"},
-                {"value": "no_exact", "label": "No exact"},
-                {"value": "no_matches", "label": "No matches"},
+                {"value": "any_results", "label": "Any results"},
+                {"value": "visible_results", "label": "Visible results"},
+                {"value": "exact_results", "label": "Exact results"},
                 {"value": "no_snapshot", "label": "No snapshot"},
-                {"value": "error", "label": "Error/unknown"},
             ],
             "exact_choices": [
                 {"value": "exact", "label": "Exact found"},
@@ -1295,6 +1373,11 @@ def index(request: Request, session: Session = Depends(get_db_session)) -> HTMLR
         }
     )
     return templates.TemplateResponse(request, "index.html", context)
+
+
+@router.get("/rules", response_class=HTMLResponse)
+def rules_index(request: Request, session: Session = Depends(get_db_session)) -> HTMLResponse:
+    return index(request, session)
 
 
 @router.get("/search", response_class=HTMLResponse)
@@ -1352,6 +1435,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
         "author": query_params.get("author", "").strip(),
         "publisher": query_params.get("publisher", "").strip(),
         "genre": query_params.get("genre", "").strip(),
+        "isbn": query_params.get("isbn", "").strip(),
     }
     errors: list[str] = []
     search_run: dict[str, object] | None = None
@@ -1501,6 +1585,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "author": payload_from_rule.author or "",
                         "publisher": payload_from_rule.publisher or "",
                         "genre": payload_from_rule.genre or "",
+                        "isbn": payload_from_rule.isbn or "",
                     }
                 )
 
@@ -1561,6 +1646,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         "author": form_data["author"],
                         "publisher": form_data["publisher"],
                         "genre": form_data["genre"],
+                        "isbn": form_data["isbn"],
                     }
                 )
             except ValidationError as exc:
@@ -1790,6 +1876,11 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
         "assigned_category": "",
         "save_path": "",
         "feed_urls": list(settings.default_feed_urls or []),
+        "audiobook_title": "",
+        "audiobook_author": "",
+        "audiobook_publisher": "",
+        "audiobook_genre": "",
+        "audiobook_isbn": "",
         "notes": "",
         "remember_feed_defaults": True,
         "metadata_lookup_provider": default_metadata_lookup_provider(requested_media_type),
@@ -2090,6 +2181,9 @@ def edit_rule(
                         inline_search_errors = [
                             _unexpected_error_message("Inline rule search failed unexpectedly", exc)
                         ]
+
+    if inline_search is not None and not effective_feed_scope_override:
+        _apply_rule_summary_counts_to_inline_search(inline_search, rule=rule)
 
     context = _base_context(request, f"Edit {rule.rule_name}")
     available_filter_profiles = available_filter_profile_choices(settings)

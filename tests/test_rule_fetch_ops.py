@@ -111,6 +111,162 @@ def test_rule_fetch_prefers_explicit_search_indexers_over_feed_urls(
     assert "Scoped to saved Jackett search indexer: kinozal." in result["notices"]
 
 
+def test_execute_rule_fetch_skips_completion_auto_disabled_rule(
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+    )
+    rule = Rule(
+        rule_name="Finished Movie",
+        content_name="Finished Movie",
+        normalized_title="Finished Movie",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=False,
+        movie_completion_auto_disabled=True,
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    def fail_search(self, payload):
+        raise AssertionError("completed disabled rules must not fetch from Jackett")
+
+    monkeypatch.setattr(JackettClient, "search", fail_search)
+
+    result = rule_fetch_ops.execute_rule_fetch(db_session, rule=rule)
+
+    assert result["success"] is True
+    assert result["state"] == "skipped"
+    assert result["fetched_count"] == 0
+
+
+def test_rules_fetch_batch_excludes_completion_auto_disabled_rules_when_including_disabled(
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+        rules_fetch_parallelism=1,
+    )
+    disabled_completion_rule = Rule(
+        rule_name="Finished Movie",
+        content_name="Finished Movie",
+        normalized_title="Finished Movie",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=False,
+        movie_completion_auto_disabled=True,
+    )
+    manually_disabled_rule = Rule(
+        rule_name="Manual Disabled",
+        content_name="Manual Disabled",
+        normalized_title="Manual Disabled",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=False,
+    )
+    enabled_rule = Rule(
+        rule_name="Enabled Movie",
+        content_name="Enabled Movie",
+        normalized_title="Enabled Movie",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add_all([settings, disabled_completion_rule, manually_disabled_rule, enabled_rule])
+    db_session.commit()
+
+    fetched_rule_names: list[str] = []
+
+    def fake_execute_rule_fetch(session, *, rule, feed_urls_override=None):
+        fetched_rule_names.append(rule.rule_name)
+        return {
+            "rule_id": rule.id,
+            "rule_name": rule.rule_name,
+            "success": True,
+            "state": "no_matches",
+            "rank": 3,
+            "filtered_count": 0,
+            "fetched_count": 0,
+            "warnings": [],
+            "notices": [],
+            "error": "",
+        }
+
+    monkeypatch.setattr(rule_fetch_ops, "execute_rule_fetch", fake_execute_rule_fetch)
+
+    result = rule_fetch_ops.run_rules_fetch_batch(
+        db_session,
+        run_all=True,
+        include_disabled=True,
+    )
+
+    assert result["status"] == "ok"
+    assert fetched_rule_names == ["Enabled Movie", "Manual Disabled"]
+
+
+def test_selected_fetch_allows_explicit_completion_disabled_snapshot_refresh(
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+        rules_fetch_parallelism=1,
+    )
+    rule = Rule(
+        rule_name="Explicit Finished Movie",
+        content_name="Explicit Finished Movie",
+        normalized_title="Explicit Finished Movie",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=False,
+        movie_completion_auto_disabled=True,
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+    seen: list[tuple[str, bool]] = []
+
+    def fake_execute_rule_fetch(
+        session,
+        *,
+        rule,
+        feed_urls_override=None,
+        allow_completion_disabled=False,
+    ):
+        seen.append((rule.id, allow_completion_disabled))
+        return {
+            "rule_id": rule.id,
+            "rule_name": rule.rule_name,
+            "success": True,
+            "state": "no_matches",
+            "rank": 3,
+            "filtered_count": 0,
+            "fetched_count": 0,
+            "warnings": [],
+            "notices": [],
+            "error": "",
+        }
+
+    monkeypatch.setattr(rule_fetch_ops, "execute_rule_fetch", fake_execute_rule_fetch)
+
+    result = rule_fetch_ops.run_rules_fetch_batch(
+        db_session,
+        run_all=False,
+        rule_ids=[rule.id],
+        include_disabled=True,
+    )
+
+    assert result["status"] == "ok"
+    assert seen == [(rule.id, True)]
+
+
 def test_rules_page_skips_poster_backfill_on_filtered_requests(
     app_client,
     db_session,
@@ -326,43 +482,33 @@ def test_rule_local_filter_excludes_zero_based_ranges_below_episode_floor() -> N
     )
 
 
-def test_rule_local_filter_keeps_same_season_complete_pack_when_keep_searching_enabled() -> None:
-    rule = Rule(
-        rule_name="The Miniature Wife",
-        content_name="The Miniature Wife",
-        normalized_title="The Miniature Wife",
-        media_type=MediaType.SERIES,
-        quality_profile=QualityProfile.PLAIN,
-        start_season=1,
-        start_episode=11,
-        jellyfin_search_existing_unseen=True,
-        jellyfin_existing_episode_numbers=[
-            "S01E03",
-            "S01E04",
-            "S01E05",
-            "S01E06",
-            "S01E07",
-            "S01E08",
-            "S01E09",
-            "S01E10",
-        ],
-    )
+def test_rule_local_filter_keeps_pack_with_new_episode_independent_of_keep_unseen() -> None:
+    new_episode_pack = "Silo S03E01-04 2160p HDR season pack"
+    existing_only_pack = "Silo S03E01-03 2160p HDR season pack"
 
-    complete_pack_title = (
-        "Миниатюрная жена (The Miniature Wife)S1E01-10 (HD 1080p WEBRip) Полный S1"
-    )
-    assert (
-        _rule_local_filtered_count_from_rows(
-            rule,
-            [
-                {
-                    "title": complete_pack_title,
-                    "text_surface": complete_pack_title.lower(),
-                }
-            ],
+    for keep_unseen in (False, True):
+        rule = Rule(
+            rule_name="Silo",
+            content_name="Silo",
+            normalized_title="Silo",
+            media_type=MediaType.SERIES,
+            quality_profile=QualityProfile.PLAIN,
+            start_season=3,
+            start_episode=4,
+            jellyfin_search_existing_unseen=keep_unseen,
+            jellyfin_existing_episode_numbers=["S03E01", "S03E02", "S03E03"],
         )
-        == 1
-    )
+
+        assert (
+            _rule_local_filtered_count_from_rows(
+                rule,
+                [
+                    {"title": new_episode_pack, "text_surface": new_episode_pack.lower()},
+                    {"title": existing_only_pack, "text_surface": existing_only_pack.lower()},
+                ],
+            )
+            == 1
+        )
 
 
 def test_refresh_snapshot_release_cache_records_hidden_reason_counts(db_session) -> None:
@@ -641,3 +787,49 @@ def test_refresh_snapshot_release_cache_keeps_multi_season_alias_pack_rows(
     assert snapshot.inline_search["rule_local_hidden_reasons"] == {
         "Does not match the generated rule pattern.": 1
     }
+
+
+def test_refresh_snapshot_release_cache_keeps_next_unseen_episode_pack(
+    db_session,
+) -> None:
+    rule = Rule(
+        rule_name="Hacks",
+        content_name="Hacks",
+        normalized_title="Hacks",
+        imdb_id="tt11815682",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.HD_1080P,
+        start_season=5,
+        start_episode=10,
+        language="ru",
+        feed_urls=[],
+    )
+    db_session.add(rule)
+    db_session.flush()
+
+    snapshot = RuleSearchSnapshot(
+        rule_id=rule.id,
+        inline_search={
+            "combined_filtered_count": 1,
+            "combined_fetched_count": 1,
+            "unified_raw_results": [
+                {
+                    "title": "Хитрости (Hacks)S5E01-10 (HD 1080p WEBRip) Полный S5",
+                    "text_surface": "хитрости hacks s5e01 10 hd 1080p webrip полный s5",
+                    "indexer": "RUDUB",
+                    "category_ids": ["5000", "100001"],
+                    "query_source_key": "fallback",
+                    "visible": False,
+                },
+            ],
+        },
+        fetched_at=utcnow(),
+    )
+    db_session.add(snapshot)
+    db_session.commit()
+
+    assert refresh_snapshot_release_cache(snapshot, rule=rule) is True
+    db_session.commit()
+
+    assert snapshot.release_filtered_count == 1
+    assert snapshot.inline_search["rule_local_hidden_reasons"] == {}

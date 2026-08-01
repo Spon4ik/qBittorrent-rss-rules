@@ -1,9 +1,10 @@
 # Roadmap
 
-## Current release target: Phase 31 shared operation progress bar
+## Current release target: v1.3.0 consolidated feature release
 
 ### Validated locally
 
+- Phase 35 is implemented and locally/Docker validated as the smart audiobook lookup/search slice: audiobook rules default to a provider-aware Google Books/OpenLibrary lookup chain, persist structured search hints, and use those hints for capability-aware Jackett `t=book` searches without changing qB RSS rule generation (`docs/plans/phase-35-smart-audiobook-rule-search.md`).
 - Phase 31 is implemented and locally/Docker validated as the shared operation progress slice: a process-local operation registry, `/api/operations/status`, qB/Jackett/Jellyfin/Stremio producer instrumentation, and a global polling progress bar in the base layout (`docs/plans/phase-31-shared-operation-progress-bar.md`).
 - Phase 30 is implemented and locally/Docker validated as the post-Phase 29 precision hardening slice: IMDb-backed Jackett movie/series rows now share one strict identity classifier across live search filtering and saved snapshot replay, so broad token-only fallback rows for short/common titles such as `You` and `Ghosts` stay hidden/debug-only (`docs/plans/phase-30-imdb-backed-jackett-precision.md`).
 - Phase 29 is implemented and locally validated as the post-`v1.1.6` rules operations workbench: fast local rule saves with background qB sync, main-page batch quality assignment/filtering, backend-derived release signal, missing/oldest-first parallel snapshot fetching, compact data-grid UI, version visibility, compact icon row actions, and snapshot-summary render optimization (`docs/plans/phase-29-rules-operations-workbench.md`).
@@ -26,6 +27,7 @@
 
 ### Current phase track
 
+- Phase 35: smart audiobook rule search (implemented and locally/Docker validated; `docs/plans/phase-35-smart-audiobook-rule-search.md`)
 - Phase 31: shared operation progress bar (implemented and locally/Docker validated; `docs/plans/phase-31-shared-operation-progress-bar.md`)
 - Phase 30: IMDb-backed Jackett precision hardening (implemented and locally/Docker validated; `docs/plans/phase-30-imdb-backed-jackett-precision.md`)
 - Phase 29: rules operations workbench (implemented and locally validated; `docs/plans/phase-29-rules-operations-workbench.md`)

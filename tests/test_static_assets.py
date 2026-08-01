@@ -7,6 +7,8 @@ from app.services.static_assets import compute_static_asset_version
 
 APP_CSS_PATH = Path(__file__).resolve().parents[1] / "app" / "static" / "app.css"
 BASE_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "app" / "templates" / "base.html"
+RULE_FORM_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "app" / "templates" / "rule_form.html"
+SEARCH_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "app" / "templates" / "search.html"
 APP_JS_PATH = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
 
 
@@ -60,6 +62,8 @@ def test_app_css_declares_responsive_shell_contract() -> None:
 
 def test_global_operation_progress_shell_assets_are_present() -> None:
     template = BASE_TEMPLATE_PATH.read_text(encoding="utf-8")
+    index_template = (BASE_TEMPLATE_PATH.parent / "index.html").read_text(encoding="utf-8")
+    rule_form_template = RULE_FORM_TEMPLATE_PATH.read_text(encoding="utf-8")
     css = APP_CSS_PATH.read_text(encoding="utf-8")
     js = APP_JS_PATH.read_text(encoding="utf-8")
 
@@ -73,3 +77,113 @@ def test_global_operation_progress_shell_assets_are_present() -> None:
     assert 'fetch("/api/operations/status"' in js
     assert 'titleElement.textContent = "Background work idle"' in js
     assert 'summaryElement.textContent = "No active operations"' in js
+    assert '"operation-progress-starting"' in js
+    assert 'data-operation-start-label' in index_template
+    assert 'data-operation-start-label' in rule_form_template
+
+
+def test_app_shell_declares_compact_operational_console_contract() -> None:
+    template = BASE_TEMPLATE_PATH.read_text(encoding="utf-8")
+    css = APP_CSS_PATH.read_text(encoding="utf-8")
+
+    assert 'class="site-header-brand"' in template
+    assert 'class="site-header-meta"' in template
+    assert 'class="site-nav site-nav--primary"' in template
+    assert 'aria-label="Primary navigation"' in template
+
+    for token in (
+        "--app-bg",
+        "--surface",
+        "--surface-raised",
+        "--chrome",
+        "--accent",
+        "--radius",
+    ):
+        assert token in css
+
+    assert ".site-header-brand" in css
+    assert ".site-header-meta" in css
+    assert ".site-nav--primary" in css
+    assert "font-family: var(--font-ui)" in css
+    assert "max-height: none" in css
+
+
+def test_console_surfaces_share_stronger_component_contract() -> None:
+    css = APP_CSS_PATH.read_text(encoding="utf-8")
+
+    for selector in (
+        ".rules-command-center",
+        ".rules-data-grid tbody tr",
+        ".rules-title-cell::before",
+        "input[type=\"file\"]::file-selector-button",
+        ".taxonomy-metric-list",
+        ".rule-card--console",
+    ):
+        assert selector in css
+
+    assert "grid-template-columns: 0.35rem minmax(0, 1fr)" in css
+    assert "border-left: 3px solid var(--accent)" in css
+
+
+def test_rule_edit_page_uses_full_width_console_results_contract() -> None:
+    template = RULE_FORM_TEMPLATE_PATH.read_text(encoding="utf-8")
+    search_template = SEARCH_TEMPLATE_PATH.read_text(encoding="utf-8")
+    css = APP_CSS_PATH.read_text(encoding="utf-8")
+
+    for section_class in (
+        "rule-criteria-section--identity",
+        "rule-criteria-section--quality",
+        "rule-criteria-section--scope",
+        "rule-criteria-section--advanced",
+    ):
+        assert section_class in template
+
+    assert ".rule-workspace-results" in css
+    assert "grid-template-columns: minmax(21rem, 27rem) minmax(0, 1fr)" in css
+    assert ".rule-workspace-rail" in css
+    assert "position: sticky" in css
+    assert "grid-template-columns: minmax(0, 1fr)" in css
+    assert "data-rule-edit-profile-summary" in template
+    assert "data-rule-edit-command-bar" in template
+    assert "data-rule-settings-panel" in template
+    assert "data-rule-settings-drawer" not in template
+    assert "episode-floor-field" in template
+    assert "data-quality-mode-description" not in template
+    assert "data-quality-managed-help" in template
+    assert "data-quality-manual-help" in template
+    assert 'id="metadata-lookup-value"' in template
+    assert 'id="metadata-lookup"' in template
+    assert "data-feed-summary" in template
+    assert "Quality pre-defined profile" in template
+    assert "rule-search-notices" in template
+    assert 'data-search-display-status="combined"' in template
+    assert 'data-search-display-status="combined"' in search_template
+    assert ".rule-edit-profile-strip" in css
+    assert ".rule-edit-command-bar" in css
+    assert ".rule-settings-panel" in css
+    assert ".rule-settings-drawer" not in css
+    assert ".rule-form--compact > .quality-mode-panel {\n  grid-column: 1 / -1;" in css
+    assert ".rule-form--compact > .rule-criteria-section--identity {\n  grid-column: 1 / -1;" in css
+    assert ".feed-dropdown" in css
+    assert ".search-multiselect:not([open]) .search-multiselect-panel" in css
+    assert "#inline-search-results .result-view-active-filters" in css
+    assert "#inline-search-results .search-table-wrap" in css
+    assert "#inline-search-results > .search-table-wrap" in css
+    assert "max-height: min(56vh, 38rem)" in css
+    assert "display: flex;\n    flex-direction: column;" in css
+    assert "#inline-search-results > .rule-search-notices" in css
+    assert "max-height: 8rem" in css
+    assert "flex: 1 1 0" in css
+    assert "flex-basis: 10rem" in css
+    assert "min-height: 10rem" in css
+    assert "grid-template-rows: auto auto auto auto auto auto minmax(0, 1fr)" not in css
+    assert "min-width: 0" in css
+    assert ".search-action-icon" in css
+    assert "#inline-search-results .search-table td::before" in css
+    js = APP_JS_PATH.read_text(encoding="utf-8")
+    assert 'td[data-label="Title"] .helper-text' in js
+    assert "categoryMediaFailure" in js
+    assert "STANDARD_NON_VIDEO_CATEGORY_ROOTS" in js
+    assert "displayStatusElement" in js
+    assert "const displayedEntryCount" in js
+    assert "state.tableWrap.hidden = !tableMode || displayedEntryCount === 0;" in js

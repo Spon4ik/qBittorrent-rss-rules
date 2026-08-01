@@ -368,6 +368,7 @@ def test_build_generated_pattern_excludes_existing_unseen_jellyfin_episodes_by_d
 
     assert not compiled.search("Shrinking S01E02 1080p")
     assert not compiled.search("Shrinking S01E03 1080p")
+    assert compiled.search("Shrinking S01E01-04 1080p season pack")
     assert compiled.search("Shrinking S01E04 1080p")
 
 

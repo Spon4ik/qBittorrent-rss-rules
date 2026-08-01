@@ -8,6 +8,82 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.3.0] - 2026-08-01
+
+- Added a compact rules operations workbench, shared background-operation progress feedback, and consistent rule/search workspace layouts with resilient inline result scrolling and filtering.
+- Added smart audiobook metadata lookup and persisted structured audiobook search hints, including capability-aware ISBN searches and deterministic provider/query fallbacks.
+- Added quota-safe continuing-series completion checks and shared Jellyfin/Stremio catalog handling so revived or still-airing series are not incorrectly disabled.
+- Improved bidirectional Jellyfin/Stremio watch-progress synchronization, transient database-lock handling, duplicate-match safety, and qBittorrent completion cleanup.
+- Fixed manual saved-snapshot refresh from every rule surface, including explicit refresh of completion-auto-disabled selections, immediate visible start feedback, and incremental batch progress.
+- Improved IMDb-backed Jackett precision and latency with concurrent capable-indexer probes, first-success query fallback, and consistent saved-snapshot identity filtering.
+- Kept successful multi-indexer results when sibling trackers fail, bounded feed-health probes, and removed API-key-bearing request URLs from persisted warnings.
+- Kept series packs when any episode in their explicit range is new, independently of `Keep unseen`, while continuing to hide packs containing only existing episodes.
+## [1.2.18] - 2026-07-14
+
+- Fixed inline search result lists disappearing behind the empty-state panel on rule edit and advanced search workspaces. Showing hidden fetched rows now replaces the empty state, reports the displayed/filtered counts, bounds verbose search notices, and always reserves a scrollable table area.
+## [1.2.17] - 2026-06-02
+
+- Fixed finished-series auto-disable for continuing shows: Cinemeta `status=Continuing`, scheduled videos, or open-ended release years now prevent and clear watch-state auto-disable even when the latest known episode has been watched and no next season is listed yet.
+- Death in Paradise-style rules can now be re-enabled by running Stremio or Jellyfin sync after the patch, without spending OMDb quota.
+## [1.2.16] - 2026-06-02
+
+- Added quota-safe finished-series completion proof that uses Stremio/Cinemeta IMDb-backed episode inventory before OMDb, keeps still-open series enabled when future episodes or seasons are known, and re-enables watch-state-disabled series when revived-season evidence appears.
+- Shared the series catalog path across Jellyfin and Stremio sync so background checks no longer need OMDb quota to avoid false finished-series disablement.
+## [1.2.15] - 2026-06-02
+
+- Release prep in progress.
+## [1.2.14] - 2026-06-02
+
+- Release prep in progress.
+## [1.2.13] - 2026-06-02
+
+- Release prep in progress.
+## [1.2.12] - 2026-06-02
+
+- Release prep in progress.
+## [1.2.11] - 2026-06-02
+
+- Release prep in progress.
+## [1.2.10] - 2026-06-02
+
+- Release prep in progress.
+## [1.2.9] - 2026-06-01
+
+- Release prep in progress.
+## [1.2.8] - 2026-06-01
+
+- Release prep in progress.
+## [1.2.7] - 2026-06-01
+
+- Further tightened inline result controls and queue options so short edit-page result sets keep the table inside the first desktop viewport.
+
+## [1.2.6] - 2026-06-01
+
+- Compressed closed inline-result multiselects, active-filter chips, and source summaries so short result sets can fit without document-level scrolling while preserving table-contained scrolling for longer sets.
+
+## [1.2.5] - 2026-06-01
+
+- Mirrored server-side media/category incompatibility checks in browser result filtering so Books/software rows containing words like "Hacks" stay hidden for series rules while valid TV rows remain visible.
+
+## [1.2.4] - 2026-06-01
+
+- Kept edit-page rule settings in a sticky desktop side rail so settings stay visible while inline result rows scroll.
+- Fixed watch-state floor derivation so a watched latest-known episode such as `S05E09` advances to `S05E10` instead of prematurely jumping to `S06E00`, and corrected prior next-season-zero over-advances on the next sync.
+- Preserved relevant previous-season packs such as `Хитрости (Hacks)S5E01-10 (HD 1080p WEBRip) Полный S5` when the next unseen episode is inside that pack.
+
+## [1.2.3] - 2026-06-01
+
+- Collapsed edit-page rule settings behind a compact drawer by default so inline results stay the primary first-viewport workspace while saved fields remain available without changing form contracts.
+
+## [1.2.2] - 2026-06-01
+
+- Added `/rules` as a canonical rules-workbench alias so the compact rules page is available at both `/` and `/rules`.
+
+## [1.2.1] - 2026-06-01
+
+- Tightened the rule edit workspace with a sticky compact command bar, compact affected-feeds dropdown, tooltip-style helper copy, and inline result controls that stay close to the result table.
+- Rebalanced inline search results so torrent titles remain the primary dynamic column while secondary metadata/actions stay narrow and large result sets scroll inside the table area.
+
 ## [1.2.0] - 2026-05-27
 
 - Added bidirectional Jellyfin/Stremio watch-progress sync for movies and series episodes, including exact in-progress positions, completed state, newest-progress-wins arbitration, Jellyfin HTTP API write-back, and Stremio datastore write-back.

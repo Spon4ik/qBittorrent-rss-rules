@@ -4,6 +4,9 @@ import os
 import time
 from types import SimpleNamespace
 
+import pytest
+from sqlalchemy.exc import OperationalError
+
 from app.db import get_session_factory, init_db
 from app.models import AppSettings
 from app.services.jellyfin_auto_sync import JellyfinAutoSyncService
@@ -114,3 +117,46 @@ def test_jellyfin_auto_sync_records_detailed_warning_errors(
     assert 'The Incredibles: Multiple Jellyfin movie items matched IMDb ID "tt0317705".' in (
         refreshed.jellyfin_auto_sync_last_message
     )
+
+
+def test_jellyfin_auto_sync_retries_transient_sqlite_locks_without_error_status(
+    configured_app_env,
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    init_db()
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    settings = AppSettings(
+        id="default",
+        jellyfin_db_path=str(db_path),
+        jellyfin_user_name="Spon4ik",
+        jellyfin_auto_sync_enabled=True,
+        jellyfin_auto_sync_interval_seconds=5,
+        jellyfin_auto_sync_last_status="idle",
+        jellyfin_auto_sync_last_message="",
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    def fake_execute(session, *, settings, allow_metadata_requests=True):
+        raise OperationalError(
+            statement="SELECT app_settings.id FROM app_settings WHERE app_settings.id = ?",
+            params=("default",),
+            orig=RuntimeError("database is locked"),
+        )
+
+    monkeypatch.setattr("app.services.jellyfin_auto_sync.execute_jellyfin_sync", fake_execute)
+
+    service = JellyfinAutoSyncService(
+        session_factory=get_session_factory(), poll_interval_seconds=5
+    )
+
+    wait_seconds = service._tick(force=True)
+
+    assert wait_seconds == pytest.approx(5.0)
+    db_session.expire_all()
+    refreshed = db_session.get(AppSettings, "default")
+    assert refreshed is not None
+    assert refreshed.jellyfin_auto_sync_last_status == "idle"
+    assert refreshed.jellyfin_auto_sync_last_message == ""

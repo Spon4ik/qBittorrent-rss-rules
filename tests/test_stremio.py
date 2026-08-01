@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.models import AppSettings, MediaType, QualityProfile, Rule
 from app.services import operation_status
+from app.services.series_catalog import SeriesSeasonEpisodeInventory
 from app.services.stremio import StremioService, StremioSessionDoesNotExistError
 from app.services.stremio_sync_ops import execute_stremio_sync
 from app.services.watch_progress_sync import WatchProgressSyncSummary
@@ -595,6 +596,310 @@ def test_stremio_sync_disables_completed_movie_rule_via_shared_watch_state(
     assert rule.enabled is False
     assert rule.movie_completion_auto_disabled is True
     assert rule.movie_completion_sources == ["stremio"]
+
+
+def test_stremio_sync_disables_finished_series_when_latest_known_episode_is_watched(
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    storage_path = create_stremio_local_storage(tmp_path)
+    settings = AppSettings(
+        id="default",
+        stremio_local_storage_path=str(storage_path),
+        stremio_auto_sync_enabled=True,
+        stremio_auto_sync_interval_seconds=30,
+    )
+    rule = Rule(
+        rule_name="Finished Show Rule",
+        content_name="Finished Show",
+        normalized_title="Finished Show",
+        imdb_id="tt1234500",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=True,
+        feed_urls=["http://feed.example/finished-show"],
+    )
+    db_session.add(settings)
+    db_session.add(rule)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        StremioService,
+        "_released_episode_numbers_for_season",
+        lambda self, **kwargs: [1, 2, 3] if kwargs["season_number"] == 1 else None,
+    )
+    monkeypatch.setattr(
+        StremioService,
+        "_known_episode_numbers_for_season",
+        lambda self, **kwargs: [1, 2, 3] if kwargs["season_number"] == 1 else None,
+    )
+    _install_stremio_api(
+        monkeypatch,
+        items=[
+            stremio_library_item(
+                "tt1234500",
+                "Finished Show",
+                item_type="series",
+                state_overrides={"video_id": "tt1234500:1:3"},
+            )
+        ],
+    )
+
+    summary = StremioService(settings).sync_rules(db_session)
+
+    db_session.refresh(rule)
+    assert summary.disabled_count == 1
+    assert rule.enabled is False
+    assert rule.movie_completion_auto_disabled is True
+    assert rule.movie_completion_sources == ["stremio"]
+
+
+def test_stremio_sync_keeps_series_enabled_when_later_episode_is_planned(
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    storage_path = create_stremio_local_storage(tmp_path)
+    settings = AppSettings(
+        id="default",
+        stremio_local_storage_path=str(storage_path),
+        stremio_auto_sync_enabled=True,
+        stremio_auto_sync_interval_seconds=30,
+    )
+    rule = Rule(
+        rule_name="Planned Episode Rule",
+        content_name="Planned Episode Show",
+        normalized_title="Planned Episode Show",
+        imdb_id="tt39378684",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=True,
+        feed_urls=["http://feed.example/planned-episode"],
+    )
+    db_session.add(settings)
+    db_session.add(rule)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        StremioService,
+        "_released_episode_numbers_for_season",
+        lambda self, **kwargs: list(range(1, 8)) if kwargs["season_number"] == 1 else None,
+    )
+    monkeypatch.setattr(
+        StremioService,
+        "_known_episode_numbers_for_season",
+        lambda self, **kwargs: list(range(1, 9)) if kwargs["season_number"] == 1 else None,
+    )
+    _install_stremio_api(
+        monkeypatch,
+        items=[
+            stremio_library_item(
+                "tt39378684",
+                "Planned Episode Show",
+                item_type="series",
+                state_overrides={"video_id": "tt39378684:1:7"},
+            )
+        ],
+    )
+
+    summary = StremioService(settings).sync_rules(db_session)
+
+    db_session.refresh(rule)
+    assert summary.linked_count == 1
+    assert rule.enabled is True
+    assert rule.movie_completion_auto_disabled is False
+    assert rule.movie_completion_sources == []
+
+
+def test_stremio_sync_keeps_series_enabled_when_catalog_evidence_is_missing(
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    storage_path = create_stremio_local_storage(tmp_path)
+    settings = AppSettings(
+        id="default",
+        stremio_local_storage_path=str(storage_path),
+        stremio_auto_sync_enabled=True,
+        stremio_auto_sync_interval_seconds=30,
+    )
+    rule = Rule(
+        rule_name="Still Open Show Rule",
+        content_name="Still Open Show",
+        normalized_title="Still Open Show",
+        imdb_id="tt7777000",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=True,
+        feed_urls=["http://feed.example/still-open-show"],
+    )
+    db_session.add(settings)
+    db_session.add(rule)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.series_catalog.SeriesCatalogClient.season_inventory",
+        lambda self, **kwargs: None,
+    )
+    _install_stremio_api(
+        monkeypatch,
+        items=[
+            stremio_library_item(
+                "tt7777000",
+                "Still Open Show",
+                item_type="series",
+                state_overrides={"video_id": "tt7777000:1:3"},
+            )
+        ],
+    )
+
+    summary = StremioService(settings, allow_metadata_requests=False).sync_rules(db_session)
+
+    db_session.refresh(rule)
+    assert summary.linked_count == 1
+    assert rule.enabled is True
+    assert rule.movie_completion_auto_disabled is False
+    assert rule.movie_completion_sources == []
+
+
+def test_stremio_sync_reenables_auto_disabled_series_when_next_season_is_known(
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    storage_path = create_stremio_local_storage(tmp_path)
+    settings = AppSettings(
+        id="default",
+        stremio_local_storage_path=str(storage_path),
+        stremio_auto_sync_enabled=True,
+        stremio_auto_sync_interval_seconds=30,
+    )
+    rule = Rule(
+        rule_name="Revived Show Rule",
+        content_name="Revived Show",
+        normalized_title="Revived Show",
+        imdb_id="tt7777001",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=False,
+        movie_completion_auto_disabled=True,
+        movie_completion_sources=["stremio"],
+        stremio_library_item_id="tt7777001",
+        stremio_library_item_type="series",
+        feed_urls=["http://feed.example/revived-show"],
+    )
+    db_session.add(settings)
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_inventory(self, *, imdb_id, season_number):
+        if season_number == 1:
+            return SeriesSeasonEpisodeInventory(
+                imdb_id=imdb_id,
+                season_number=1,
+                known_episode_numbers=[1, 2, 3],
+                released_episode_numbers=[1, 2, 3],
+                source="Cinemeta",
+            )
+        if season_number == 2:
+            return SeriesSeasonEpisodeInventory(
+                imdb_id=imdb_id,
+                season_number=2,
+                known_episode_numbers=[1],
+                released_episode_numbers=[],
+                source="Cinemeta",
+            )
+        return None
+
+    monkeypatch.setattr(
+        "app.services.series_catalog.SeriesCatalogClient.season_inventory",
+        fake_inventory,
+    )
+    _install_stremio_api(
+        monkeypatch,
+        items=[
+            stremio_library_item(
+                "tt7777001",
+                "Revived Show",
+                item_type="series",
+                state_overrides={"video_id": "tt7777001:1:3"},
+            )
+        ],
+    )
+
+    summary = StremioService(settings, allow_metadata_requests=False).sync_rules(db_session)
+
+    db_session.refresh(rule)
+    assert summary.reenabled_count == 1
+    assert rule.enabled is True
+    assert rule.movie_completion_auto_disabled is False
+    assert rule.movie_completion_sources == []
+
+
+def test_stremio_sync_reenables_auto_disabled_series_when_catalog_says_continuing(
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    storage_path = create_stremio_local_storage(tmp_path)
+    settings = AppSettings(
+        id="default",
+        stremio_local_storage_path=str(storage_path),
+        stremio_auto_sync_enabled=True,
+        stremio_auto_sync_interval_seconds=30,
+    )
+    rule = Rule(
+        rule_name="Continuing Show Rule",
+        content_name="Continuing Show",
+        normalized_title="Continuing Show",
+        imdb_id="tt7777002",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=False,
+        movie_completion_auto_disabled=True,
+        movie_completion_sources=["stremio"],
+        stremio_library_item_id="tt7777002",
+        stremio_library_item_type="series",
+        feed_urls=["http://feed.example/continuing-show"],
+    )
+    db_session.add(settings)
+    db_session.add(rule)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        StremioService,
+        "_released_episode_numbers_for_season",
+        lambda self, **kwargs: list(range(1, 9)) if kwargs["season_number"] == 15 else None,
+    )
+    monkeypatch.setattr(
+        StremioService,
+        "_known_episode_numbers_for_season",
+        lambda self, **kwargs: list(range(1, 9)) if kwargs["season_number"] == 15 else None,
+    )
+    monkeypatch.setattr(
+        "app.services.series_catalog.SeriesCatalogClient.series_is_known_ended",
+        lambda self, imdb_id: False,
+    )
+    _install_stremio_api(
+        monkeypatch,
+        items=[
+            stremio_library_item(
+                "tt7777002",
+                "Continuing Show",
+                item_type="series",
+                state_overrides={"video_id": "tt7777002:15:8"},
+            )
+        ],
+    )
+
+    summary = StremioService(settings, allow_metadata_requests=False).sync_rules(db_session)
+
+    db_session.refresh(rule)
+    assert summary.reenabled_count == 1
+    assert rule.enabled is True
+    assert rule.movie_completion_auto_disabled is False
+    assert rule.movie_completion_sources == []
 
 
 def test_stremio_sync_reenables_movie_rule_when_completion_clears(

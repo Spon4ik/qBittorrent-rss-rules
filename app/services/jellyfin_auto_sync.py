@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import resolve_runtime_path
@@ -118,6 +119,10 @@ class JellyfinAutoSyncService:
             return self._poll_interval_seconds
         except Exception as exc:
             session.rollback()
+            if _is_sqlite_database_locked(exc):
+                self._last_seen_db_path = None
+                self._last_seen_db_mtime_ns = None
+                return self._poll_interval_seconds
             self._last_seen_db_path = None
             self._last_seen_db_mtime_ns = None
             self._record_status(
@@ -181,3 +186,17 @@ def run_jellyfin_auto_sync_once(*, force: bool = False) -> None:
     if _service is None:
         return
     _service.run_once(force=force)
+
+
+def _is_sqlite_database_locked(exc: BaseException) -> bool:
+    if not isinstance(exc, OperationalError):
+        return False
+    text = " ".join(
+        str(part or "")
+        for part in (
+            exc,
+            getattr(exc, "orig", None),
+            getattr(exc, "statement", None),
+        )
+    ).casefold()
+    return "database is locked" in text

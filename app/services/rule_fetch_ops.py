@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from urllib.parse import unquote, urlsplit
@@ -59,6 +59,7 @@ from app.services.rule_search_snapshots import (
     inline_search_from_snapshot,
     save_rule_search_snapshot,
 )
+from app.services.selective_queue import episode_ranges_from_text
 from app.services.settings_service import (
     DEFAULT_RULE_FETCH_PARALLELISM,
     SettingsService,
@@ -103,15 +104,6 @@ INCOMPATIBLE_VIDEO_CATEGORY_TERMS = {
     "software",
     "программ",
 }
-SEASON_PACK_COMPLETE_MARKER_RE = re.compile(
-    r"\b(?:complete|full(?:\s+season)?|season\s+pack|полный)\b",
-    re.IGNORECASE | re.UNICODE,
-)
-SEASON_PACK_CURRENT_SEASON_RE_TEMPLATE = (
-    r"(?:s(?:eason)?[\s._:-]*0*{season}(?!\d)|0*{season}x0*\d{{1,3}})"
-)
-
-
 def normalize_schedule_scope(value: object | None) -> str:
     cleaned = str(value or "").strip().lower()
     if cleaned in RULE_FETCH_SCHEDULE_SCOPES:
@@ -400,28 +392,6 @@ def _dedupe_terms(terms: list[str]) -> list[str]:
     return deduped
 
 
-def _same_season_complete_pack_allowed(row: dict[str, Any], state: dict[str, Any]) -> bool:
-    if not bool(state.get("keep_searching_existing")):
-        return False
-    start_season = state.get("start_season")
-    if start_season is None:
-        return False
-    regex_surface = str(row.get("title") or row.get("text_surface") or "").strip()
-    if not regex_surface or not SEASON_PACK_COMPLETE_MARKER_RE.search(regex_surface):
-        return False
-    try:
-        season_number = int(str(start_season).strip())
-    except (TypeError, ValueError):
-        return False
-    if season_number < 0:
-        return False
-    season_pattern = re.compile(
-        SEASON_PACK_CURRENT_SEASON_RE_TEMPLATE.format(season=season_number),
-        re.IGNORECASE | re.UNICODE,
-    )
-    return season_pattern.search(regex_surface) is not None
-
-
 def _rule_local_generated_pattern(rule: Rule) -> str:
     manual_must_contain = str(rule.must_contain_override or "").strip()
     has_episode_floor = rule.start_season is not None and rule.start_episode is not None
@@ -522,6 +492,12 @@ def _rule_local_filter_state(rule: Rule) -> dict[str, Any]:
         "allowed_feed_indexer_keys": allowed_feed_indexer_keys,
         "keep_searching_existing": bool(getattr(rule, "jellyfin_search_existing_unseen", False)),
         "start_season": rule.start_season,
+        "existing_episode_keys": set(
+            normalize_jellyfin_episode_keys(
+                list(getattr(rule, "jellyfin_known_episode_numbers", []) or [])
+                + list(getattr(rule, "jellyfin_existing_episode_numbers", []) or [])
+            )
+        ),
     }
 
 
@@ -636,12 +612,20 @@ def _snapshot_row_filter_failure(row: dict[str, Any], state: dict[str, Any]) -> 
     if exclude_pattern is not None and exclude_pattern.search(regex_surface):
         return "Matched an excluded quality tag."
 
+    existing_episode_keys = set(state.get("existing_episode_keys", set()) or set())
+    for season_number, start_episode, end_episode in episode_ranges_from_text(regex_surface):
+        if end_episode <= start_episode:
+            continue
+        range_episode_keys = {
+            f"S{season_number:02d}E{episode_number:02d}"
+            for episode_number in range(start_episode, end_episode + 1)
+        }
+        if range_episode_keys and range_episode_keys.issubset(existing_episode_keys):
+            return "Every episode in this pack already exists in the library."
+
     generated_pattern = state.get("generated_pattern")
     if generated_pattern is not None and not generated_pattern.search(regex_surface):
-        if _same_season_complete_pack_allowed(row, state):
-            pass
-        else:
-            return "Does not match the generated rule pattern."
+        return "Does not match the generated rule pattern."
 
     release_year = str(state.get("release_year") or "").strip()
     if release_year:
@@ -1159,7 +1143,22 @@ def execute_rule_fetch(
     *,
     rule: Rule,
     feed_urls_override: list[str] | None = None,
+    allow_completion_disabled: bool = False,
 ) -> dict[str, Any]:
+    if _rule_completion_fetch_blocked(rule) and not allow_completion_disabled:
+        return {
+            "rule_id": rule.id,
+            "rule_name": rule.rule_name,
+            "success": True,
+            "state": "skipped",
+            "rank": _release_state_rank("unknown"),
+            "filtered_count": 0,
+            "fetched_count": 0,
+            "warnings": [],
+            "notices": ["Rule is auto-disabled because watched completion is satisfied."],
+            "error": "",
+        }
+
     settings = SettingsService.get_or_create(session)
     jackett = SettingsService.resolve_jackett(settings)
     if not jackett.app_ready:
@@ -1320,7 +1319,29 @@ def _prioritize_fetch_rules(session: Session, rules: list[Rule]) -> list[Rule]:
     )
 
 
-def _execute_rule_fetch_for_rule_id(rule_id: str) -> dict[str, Any]:
+def _rule_completion_fetch_blocked(rule: Rule) -> bool:
+    return bool(
+        getattr(rule, "movie_completion_auto_disabled", False)
+        or getattr(rule, "jellyfin_auto_disabled", False)
+    )
+
+
+def _rule_in_fetch_scope(
+    rule: Rule,
+    *,
+    include_disabled: bool,
+    allow_completion_disabled: bool = False,
+) -> bool:
+    if _rule_completion_fetch_blocked(rule) and not allow_completion_disabled:
+        return False
+    return include_disabled or bool(rule.enabled)
+
+
+def _execute_rule_fetch_for_rule_id(
+    rule_id: str,
+    *,
+    allow_completion_disabled: bool = False,
+) -> dict[str, Any]:
     session_factory = get_session_factory()
     worker_session = session_factory()
     try:
@@ -1338,6 +1359,12 @@ def _execute_rule_fetch_for_rule_id(rule_id: str) -> dict[str, Any]:
                 "notices": [],
                 "error": "Rule not found.",
             }
+        if allow_completion_disabled:
+            return execute_rule_fetch(
+                worker_session,
+                rule=rule,
+                allow_completion_disabled=True,
+            )
         return execute_rule_fetch(worker_session, rule=rule)
     finally:
         worker_session.close()
@@ -1380,6 +1407,9 @@ def run_rules_fetch_batch(
             if not include_disabled:
                 statement = statement.where(Rule.enabled.is_(True))
             rules = session.scalars(statement.order_by(Rule.rule_name.asc())).all()
+            rules = [
+                rule for rule in rules if _rule_in_fetch_scope(rule, include_disabled=include_disabled)
+            ]
         else:
             normalized_rule_ids: list[str] = []
             seen_rule_ids: set[str] = set()
@@ -1403,8 +1433,15 @@ def run_rules_fetch_batch(
             ).all()
             by_id = {rule.id: rule for rule in selected_rules}
             rules = [by_id[rule_id] for rule_id in normalized_rule_ids if rule_id in by_id]
-            if not include_disabled:
-                rules = [rule for rule in rules if rule.enabled]
+            rules = [
+                rule
+                for rule in rules
+                if _rule_in_fetch_scope(
+                    rule,
+                    include_disabled=include_disabled,
+                    allow_completion_disabled=include_disabled,
+                )
+            ]
 
         if not rules:
             return {
@@ -1431,23 +1468,49 @@ def run_rules_fetch_batch(
         failed = 0
         if parallelism <= 1 or len(rules) <= 1:
             for rule in rules:
-                run_result = execute_rule_fetch(session, rule=rule)
+                if not run_all and include_disabled:
+                    run_result = execute_rule_fetch(
+                        session,
+                        rule=rule,
+                        allow_completion_disabled=True,
+                    )
+                else:
+                    run_result = execute_rule_fetch(session, rule=rule)
                 results.append(run_result)
+                if run_result.get("success"):
+                    succeeded += 1
+                else:
+                    failed += 1
+                update_operation(
+                    operation_handle.operation_id,
+                    current=succeeded + failed,
+                    message=f"Fetched {succeeded + failed}/{len(rules)} rule(s).",
+                )
         else:
             rule_ids = [rule.id for rule in rules]
+            ordered_results: list[dict[str, Any] | None] = [None] * len(rule_ids)
             with ThreadPoolExecutor(max_workers=parallelism) as executor:
-                results.extend(executor.map(_execute_rule_fetch_for_rule_id, rule_ids))
-
-        for run_result in results:
-            if run_result.get("success"):
-                succeeded += 1
-            else:
-                failed += 1
-            update_operation(
-                operation_handle.operation_id,
-                current=succeeded + failed,
-                message=f"Fetched {succeeded + failed}/{len(rules)} rule(s).",
-            )
+                future_indexes = {
+                    executor.submit(
+                        _execute_rule_fetch_for_rule_id,
+                        rule_id,
+                        allow_completion_disabled=not run_all and include_disabled,
+                    ): index
+                    for index, rule_id in enumerate(rule_ids)
+                }
+                for future in as_completed(future_indexes):
+                    run_result = future.result()
+                    ordered_results[future_indexes[future]] = run_result
+                    if run_result.get("success"):
+                        succeeded += 1
+                    else:
+                        failed += 1
+                    update_operation(
+                        operation_handle.operation_id,
+                        current=succeeded + failed,
+                        message=f"Fetched {succeeded + failed}/{len(rules)} rule(s).",
+                    )
+            results = [result for result in ordered_results if result is not None]
 
         attempted = len(rules)
         if failed == 0:

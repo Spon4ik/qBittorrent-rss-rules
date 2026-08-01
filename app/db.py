@@ -103,6 +103,7 @@ def _ensure_rule_columns() -> None:
         "poster_url": "VARCHAR(512)",
         "language": "VARCHAR(32) NOT NULL DEFAULT ''",
         "search_indexers": "JSON NOT NULL DEFAULT '[]'",
+        "search_metadata": "JSON NOT NULL DEFAULT '{}'",
         "feed_resolution_status": "VARCHAR(32) NOT NULL DEFAULT ''",
         "feed_resolution_message": "TEXT NOT NULL DEFAULT ''",
         "last_synced_rule_payload": "JSON NOT NULL DEFAULT '{}'",

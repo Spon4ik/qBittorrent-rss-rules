@@ -62,6 +62,7 @@ class FeedOption(BaseModel):
 class MetadataLookupProvider(str, enum.Enum):
     OMDB = "omdb"
     MUSICBRAINZ = "musicbrainz"
+    SMART_AUDIOBOOK = "smart_audiobook"
     OPENLIBRARY = "openlibrary"
     GOOGLE_BOOKS = "google_books"
 
@@ -111,6 +112,10 @@ class MetadataResult(BaseModel):
     media_type: MediaType
     year: str | None = None
     poster_url: str | None = None
+    authors: list[str] = Field(default_factory=list)
+    publisher: str | None = None
+    isbn: str | None = None
+    lookup_warnings: list[str] = Field(default_factory=list)
 
 
 class JackettSearchRequest(BaseModel):
@@ -140,6 +145,7 @@ class JackettSearchRequest(BaseModel):
     author: str | None = Field(default=None, max_length=255)
     publisher: str | None = Field(default=None, max_length=255)
     genre: str | None = Field(default=None, max_length=255)
+    isbn: str | None = Field(default=None, max_length=32)
     size_min_mb: float | None = Field(default=None, ge=0)
     size_max_mb: float | None = Field(default=None, ge=0)
     filter_indexers: list[str] = Field(default_factory=list)
@@ -183,6 +189,7 @@ class JackettSearchRequest(BaseModel):
         "author",
         "publisher",
         "genre",
+        "isbn",
         mode="before",
     )
     @classmethod
@@ -513,6 +520,11 @@ class RuleFormPayload(BaseModel):
     save_path: str = ""
     feed_urls: list[str] = Field(default_factory=list)
     search_indexers: list[str] = Field(default_factory=list)
+    audiobook_title: str = Field(default="", max_length=255)
+    audiobook_author: str = Field(default="", max_length=255)
+    audiobook_publisher: str = Field(default="", max_length=255)
+    audiobook_genre: str = Field(default="", max_length=255)
+    audiobook_isbn: str = Field(default="", max_length=32)
     notes: str = ""
 
     @field_validator("imdb_id")
@@ -559,6 +571,20 @@ class RuleFormPayload(BaseModel):
             seen.add(candidate)
             cleaned.append(candidate)
         return ",".join(cleaned)
+
+    @field_validator(
+        "audiobook_title",
+        "audiobook_author",
+        "audiobook_publisher",
+        "audiobook_genre",
+        "audiobook_isbn",
+        mode="before",
+    )
+    @classmethod
+    def normalize_audiobook_search_fields(cls, value: object | None) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
 
     @field_validator("quality_include_tokens", "quality_exclude_tokens", mode="before")
     @classmethod

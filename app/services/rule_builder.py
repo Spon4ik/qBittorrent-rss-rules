@@ -270,6 +270,18 @@ def build_specific_episode_fragment(season_number: int, episode_number: int) -> 
     return f"(?:{'|'.join(fragments)})"
 
 
+def build_standalone_episode_fragment(season_number: int, episode_number: int) -> str:
+    season_value = _bounded_season_number(int(season_number), allow_zero=True)
+    episode_value = _bounded_episode_number(int(episode_number), allow_zero=True)
+    separators = r"[\s._-]*"
+    season_prefix = r"(?:s(?:eason)?[\s._:-]*)"
+    episode_prefix = r"(?:e(?:p(?:isode)?)?[\s._:-]*)"
+    return (
+        rf"{season_prefix}0*{season_value}(?!\d){separators}"
+        rf"{episode_prefix}0*{episode_value}(?!\d)(?!{separators}-)"
+    )
+
+
 def build_below_floor_episode_fragment(season_number: int, episode_number: int) -> str:
     season_value = _bounded_season_number(int(season_number))
     episode_value = _bounded_episode_number(int(episode_number), allow_zero=True)
@@ -309,12 +321,7 @@ def build_existing_episode_exclusion_fragment(existing_episode_keys: list[str]) 
         episode_tuple = watch_state_episode_key_tuple(episode_key)
         if episode_tuple is None:
             continue
-        fragments.append(
-            build_specific_episode_fragment(
-                int(episode_tuple[0]),
-                int(episode_tuple[1]),
-            )
-        )
+        fragments.append(build_standalone_episode_fragment(*episode_tuple))
     if not fragments:
         return ""
     return f"(?:{'|'.join(fragments)})"

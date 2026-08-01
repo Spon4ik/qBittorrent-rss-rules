@@ -10,16 +10,18 @@
 
 <section class="stack">
   <section class="form-grid">
-    <section class="rule-card">
+    <section class="rule-card rule-card--console">
       <p class="eyebrow">Live Schema</p>
       <h3>Current summary</h3>
       {% if taxonomy_snapshot %}
-      <p>Version {{ taxonomy_snapshot.version }}</p>
-      <p>Groups: {{ taxonomy_snapshot.groups | length }}</p>
-      <p>Options: {{ taxonomy_snapshot.options | length }}</p>
-      <p>Bundles: {{ taxonomy_snapshot.bundles | length }}</p>
-      <p>Aliases: {{ taxonomy_snapshot.aliases | length }}</p>
-      <p>Ranks: {{ taxonomy_snapshot.ranks | length }}</p>
+      <dl class="taxonomy-metric-list">
+        <div><dt>Version</dt><dd>{{ taxonomy_snapshot.version }}</dd></div>
+        <div><dt>Groups</dt><dd>{{ taxonomy_snapshot.groups | length }}</dd></div>
+        <div><dt>Options</dt><dd>{{ taxonomy_snapshot.options | length }}</dd></div>
+        <div><dt>Bundles</dt><dd>{{ taxonomy_snapshot.bundles | length }}</dd></div>
+        <div><dt>Aliases</dt><dd>{{ taxonomy_snapshot.aliases | length }}</dd></div>
+        <div><dt>Ranks</dt><dd>{{ taxonomy_snapshot.ranks | length }}</dd></div>
+      </dl>
       {% else %}
       <p>The live taxonomy could not be summarized.</p>
       {% endif %}
@@ -36,7 +38,7 @@
       {% endif %}
     </section>
 
-    <section class="rule-card">
+    <section class="rule-card rule-card--console">
       <p class="eyebrow">Audit Trail</p>
       <h3>Recent changes</h3>
       {% if taxonomy_audit_entries %}

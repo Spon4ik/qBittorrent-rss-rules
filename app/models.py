@@ -153,6 +153,11 @@ class Rule(Base):
     save_path: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     feed_urls: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     search_indexers: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    search_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
     feed_resolution_status: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     feed_resolution_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")

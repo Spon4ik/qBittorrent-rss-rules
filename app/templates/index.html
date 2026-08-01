@@ -24,7 +24,7 @@
     data-default-settings-sort-field="{{ rules_page_defaults.sort_field }}"
     data-default-settings-sort-direction="{{ rules_page_defaults.sort_direction }}"
   >
-    <form class="rules-filter-panel" method="get" action="/" data-rules-filter-form>
+    <form class="rules-filter-panel rules-command-center" method="get" action="/" data-rules-filter-form>
       <div class="rules-filter-row">
         <label class="rules-filter-search">
           Search
@@ -120,7 +120,6 @@
         <input type="checkbox" data-rules-include-disabled />
         <span>Include disabled</span>
       </label>
-      <p class="helper-text" data-rules-run-status aria-live="polite"></p>
     </section>
 
     <section class="rules-utility-strip">
@@ -129,6 +128,7 @@
         <span>Select visible</span>
       </label>
       <button type="button" data-rules-run-all>Fetch all</button>
+      <p class="helper-text" data-rules-run-status aria-live="polite"></p>
       <div class="rules-view-toggle" role="group" aria-label="Rule list view mode">
         <button type="button" class="button-link muted" data-rules-view-mode-button="table">Table</button>
         <button type="button" class="button-link muted" data-rules-view-mode-button="cards">Cards</button>
@@ -271,8 +271,12 @@
             <td>
               <div class="rules-signal-cell">
                 <span class="status-chip status-signal-{{ release.signal_state|replace('_', '-') }}">{{ release.signal_label }}</span>
-                <span class="rules-signal-count">{{ release.exact_filtered_count }} / {{ release.exact_fetched_count }}</span>
-                <span class="helper-text">visible {{ release.combined_filtered_count }} / {{ release.combined_fetched_count }}</span>
+                <span
+                  class="rules-signal-count"
+                  title="Exact visible / visible / results fetched"
+                  aria-label="{{ release.exact_filtered_count }} exact visible, {{ release.combined_filtered_count }} visible, {{ release.combined_fetched_count }} results fetched"
+                >{{ release.exact_filtered_count }}/{{ release.combined_filtered_count }}/{{ release.combined_fetched_count }}</span>
+                <span class="helper-text">exact / visible / results</span>
               </div>
             </td>
             <td>
@@ -300,7 +304,7 @@
                   </svg>
                   <span class="sr-only">Edit</span>
                 </a>
-                <a class="button-link rules-action-button" href="/rules/{{ rule.id }}/search" title="Run search" aria-label="Run search for {{ rule.rule_name }}">
+                <a class="button-link rules-action-button" href="/rules/{{ rule.id }}/search{% if release.snapshot_fetched_at %}?refresh_snapshot=1{% endif %}" title="{{ 'Refresh search snapshot' if release.snapshot_fetched_at else 'Run search' }}" aria-label="{{ 'Refresh search snapshot' if release.snapshot_fetched_at else 'Run search' }} for {{ rule.rule_name }}" data-operation-start-label="{{ 'Refreshing' if release.snapshot_fetched_at else 'Searching' }} {{ rule.rule_name }}">
                   <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
                     <circle cx="11" cy="11" r="6"></circle>
                     <path d="M16 16l4 4"></path>
@@ -387,7 +391,13 @@
         <dl class="detail-list">
           <div>
             <dt>Release signal</dt>
-            <dd>{{ release.signal_label }} ({{ release.exact_filtered_count }} / {{ release.exact_fetched_count }})</dd>
+            <dd>
+              {{ release.signal_label }}
+              <span
+                title="Exact visible / visible / results fetched"
+                aria-label="{{ release.exact_filtered_count }} exact visible, {{ release.combined_filtered_count }} visible, {{ release.combined_fetched_count }} results fetched"
+              >{{ release.exact_filtered_count }}/{{ release.combined_filtered_count }}/{{ release.combined_fetched_count }}</span>
+            </dd>
           </div>
           <div>
             <dt>Visible matches</dt>
@@ -408,7 +418,7 @@
             <span>Select</span>
           </label>
           <a class="button-link" href="/rules/{{ rule.id }}">Edit</a>
-          <a class="button-link" href="/rules/{{ rule.id }}/search">Search</a>
+          <a class="button-link" href="/rules/{{ rule.id }}/search{% if release.snapshot_fetched_at %}?refresh_snapshot=1{% endif %}" data-operation-start-label="{{ 'Refreshing' if release.snapshot_fetched_at else 'Searching' }} {{ rule.rule_name }}">{{ 'Refresh snapshot' if release.snapshot_fetched_at else 'Search' }}</a>
         </div>
       </article>
       {% endfor %}

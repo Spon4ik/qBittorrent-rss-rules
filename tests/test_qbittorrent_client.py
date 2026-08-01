@@ -125,6 +125,25 @@ def test_add_torrent_url_sends_paused_and_stopped_for_compatibility() -> None:
     assert captured_body["savepath"] == ["/data/shrinking"]
 
 
+def test_add_torrent_url_accepts_duplicate_conflict() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/auth/login":
+            return httpx.Response(200, text="Ok.")
+        if request.url.path == "/api/v2/torrents/add":
+            return httpx.Response(409, text="Torrent already exists")
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    client = QbittorrentClient(
+        "http://127.0.0.1:8080",
+        "admin",
+        "adminadmin",
+        transport=transport,
+    )
+
+    client.add_torrent_url(link="https://example.com/already-present.torrent")
+
+
 def test_add_torrent_file_posts_multipart_payload() -> None:
     captured_body = b""
 
@@ -161,6 +180,25 @@ def test_add_torrent_file_posts_multipart_payload() -> None:
     assert "Series/Shrinking [imdbid-tt15153834]" in body_text
     assert 'name="paused"' in body_text
     assert "false" in body_text
+
+
+def test_add_torrent_file_accepts_duplicate_conflict() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/auth/login":
+            return httpx.Response(200, text="Ok.")
+        if request.url.path == "/api/v2/torrents/add":
+            return httpx.Response(409, text="Torrent already exists")
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    client = QbittorrentClient(
+        "http://127.0.0.1:8080",
+        "admin",
+        "adminadmin",
+        transport=transport,
+    )
+
+    client.add_torrent_file(torrent_bytes=b"d4:infod4:name8:test.mkv6:lengthi1eee")
 
 
 def test_get_torrent_files_reads_files_endpoint() -> None:
@@ -336,3 +374,70 @@ def test_add_trackers_posts_newline_delimited_urls() -> None:
     assert captured_body["urls"] == [
         "https://tracker.one/announce\nudp://tracker.two:6969/announce"
     ]
+
+
+def test_remove_unused_categories_removes_all_empty_categories() -> None:
+    removed_payloads: list[dict[str, list[str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/auth/login":
+            return httpx.Response(200, text="Ok.")
+        if request.url.path == "/api/v2/torrents/categories":
+            return httpx.Response(
+                200,
+                json={
+                    "Movies/Hoppers": {"name": "Movies/Hoppers", "savePath": ""},
+                    "Series/Hacks": {"name": "Series/Hacks", "savePath": ""},
+                    "Manual/Keep": {"name": "Manual/Keep", "savePath": ""},
+                },
+            )
+        if request.url.path == "/api/v2/torrents/info":
+            category = request.url.params["category"]
+            if category == "Manual/Keep":
+                return httpx.Response(200, json=[{"hash": "abc123", "category": category}])
+            return httpx.Response(200, json=[])
+        if request.url.path == "/api/v2/torrents/removeCategories":
+            removed_payloads.append(parse_qs(request.content.decode()))
+            return httpx.Response(200, text="Ok.")
+        return httpx.Response(404)
+
+    client = QbittorrentClient(
+        "http://127.0.0.1:8080",
+        "admin",
+        "adminadmin",
+        transport=httpx.MockTransport(handler),
+    )
+
+    removed = client.remove_unused_categories()
+
+    assert removed == ["Movies/Hoppers", "Series/Hacks"]
+    assert removed_payloads == [
+        {"categories": ["Movies/Hoppers\nSeries/Hacks"]},
+    ]
+
+
+def test_remove_unused_categories_is_noop_when_all_categories_have_torrents() -> None:
+    remove_called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal remove_called
+        if request.url.path == "/api/v2/auth/login":
+            return httpx.Response(200, text="Ok.")
+        if request.url.path == "/api/v2/torrents/categories":
+            return httpx.Response(200, json={"Manual/Keep": {"name": "Manual/Keep"}})
+        if request.url.path == "/api/v2/torrents/info":
+            return httpx.Response(200, json=[{"hash": "abc123"}])
+        if request.url.path == "/api/v2/torrents/removeCategories":
+            remove_called = True
+            return httpx.Response(200, text="Ok.")
+        return httpx.Response(404)
+
+    client = QbittorrentClient(
+        "http://127.0.0.1:8080",
+        "admin",
+        "adminadmin",
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.remove_unused_categories() == []
+    assert remove_called is False

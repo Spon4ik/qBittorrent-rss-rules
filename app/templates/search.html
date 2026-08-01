@@ -17,10 +17,18 @@
   <div class="result-view-sort-help">
     <p class="helper-text">Click a column for asc/desc. Shift+click keeps multi-sort levels.</p>
   </div>
-  <label class="toggle search-hidden-toggle">
-    <input type="checkbox" data-search-show-hidden-toggle />
-    <span>Show hidden fetched rows</span>
-  </label>
+  <div class="search-hidden-control">
+    <label class="toggle search-hidden-toggle">
+      <input type="checkbox" data-search-show-hidden-toggle />
+      <span>Show hidden fetched rows</span>
+    </label>
+    <p
+      class="helper-text search-hidden-status"
+      data-search-display-status="combined"
+      aria-live="polite"
+      hidden
+    ></p>
+  </div>
   <div class="result-view-active-filters" data-search-active-filters hidden>
     <div class="result-view-active-filters-head">
       <p class="eyebrow">Active local filters</p>
@@ -175,6 +183,10 @@
         <label class="search-field">
           Genre
           <input type="text" name="genre" value="{{ form_data.genre }}" placeholder="Fantasy" />
+        </label>
+        <label class="search-field">
+          ISBN
+          <input type="text" name="isbn" value="{{ form_data.isbn }}" placeholder="9785961436891" />
         </label>
       </div>
     </details>

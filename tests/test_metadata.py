@@ -5,7 +5,21 @@ import pytest
 
 from app.models import MediaType, MetadataProvider
 from app.schemas import MetadataLookupProvider
-from app.services.metadata import MetadataClient, MetadataLookupError
+from app.services.metadata import (
+    MetadataClient,
+    MetadataLookupError,
+    default_metadata_lookup_provider,
+    metadata_lookup_provider_choices,
+)
+from app.services.series_catalog import SeriesCatalogClient
+
+
+def test_smart_audiobook_is_default_audiobook_lookup_provider() -> None:
+    choices = metadata_lookup_provider_choices(MediaType.AUDIOBOOK)
+
+    assert choices[0]["value"] == MetadataLookupProvider.SMART_AUDIOBOOK.value
+    assert choices[0]["label"] == "Smart audiobook"
+    assert default_metadata_lookup_provider(MediaType.AUDIOBOOK) == "smart_audiobook"
 
 
 def test_metadata_client_omdb_supports_season_lookup() -> None:
@@ -41,6 +55,59 @@ def test_metadata_client_omdb_supports_season_lookup() -> None:
     assert listing.total_seasons == 8
     assert [episode.episode_number for episode in listing.released_episodes] == [1, 2, 3]
     assert listing.released_episodes[0].released_at is not None
+
+
+def test_series_catalog_client_uses_cinemeta_episode_inventory_before_omdb() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "v3-cinemeta.strem.io"
+        return httpx.Response(
+            200,
+            json={
+                "meta": {
+                    "videos": [
+                        {
+                            "id": "tt1234500:1:1",
+                            "season": 1,
+                            "episode": 1,
+                            "released": "2026-01-01T00:00:00.000Z",
+                        },
+                        {
+                            "id": "tt1234500:1:2",
+                            "season": 1,
+                            "episode": 2,
+                            "released": "2099-01-01T00:00:00.000Z",
+                        },
+                        {
+                            "id": "tt1234500:2:1",
+                            "season": 2,
+                            "episode": 1,
+                            "released": "2099-02-01T00:00:00.000Z",
+                        },
+                    ],
+                    "status": "Continuing",
+                    "releaseInfo": "2024–",
+                },
+            },
+        )
+
+    client = SeriesCatalogClient(
+        None,
+        allow_metadata_requests=False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    inventory = client.season_inventory(imdb_id="tt1234500", season_number=1)
+
+    assert inventory is not None
+    assert inventory.source == "Cinemeta"
+    assert inventory.known_episode_numbers == [1, 2]
+    assert inventory.released_episode_numbers == [1]
+    assert client.series_video_ids("tt1234500") == [
+        "tt1234500:1:1",
+        "tt1234500:1:2",
+        "tt1234500:2:1",
+    ]
+    assert client.series_is_known_ended("tt1234500") is False
 
 
 def test_metadata_client_omdb_supports_title_lookup() -> None:
@@ -389,3 +456,81 @@ def test_metadata_client_google_books_supports_isbn_lookup() -> None:
     assert result.title == "Project Hail Mary"
     assert result.source_id == "book-9780593135204"
     assert result.year == "2021"
+
+
+def test_metadata_client_smart_audiobook_lookup_uses_google_books_first_for_isbn() -> None:
+    seen_requests: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append((request.url.host or "", request.url.params.get("q", "")))
+        if request.url.host == "www.googleapis.com":
+            assert request.url.params["q"] == "isbn:9785961436891"
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "id": "book-9785961436891",
+                            "volumeInfo": {
+                                "title": "The Last Question",
+                                "authors": ["Isaac Asimov"],
+                                "publisher": "Eksmo",
+                                "publishedDate": "2024",
+                                "industryIdentifiers": [
+                                    {
+                                        "type": "ISBN_13",
+                                        "identifier": "9785961436891",
+                                    }
+                                ],
+                            },
+                        }
+                    ]
+                },
+            )
+        raise AssertionError(f"Unexpected fallback request: {request.url}")
+
+    client = MetadataClient(
+        MetadataProvider.OMDB,
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.lookup(
+        MetadataLookupProvider.SMART_AUDIOBOOK, "9785961436891", MediaType.AUDIOBOOK
+    )
+
+    assert result.provider == MetadataLookupProvider.GOOGLE_BOOKS
+    assert result.title == "The Last Question"
+    assert result.authors == ["Isaac Asimov"]
+    assert result.publisher == "Eksmo"
+    assert result.isbn == "9785961436891"
+    assert result.source_id == "book-9785961436891"
+    assert seen_requests == [("www.googleapis.com", "isbn:9785961436891")]
+
+
+def test_metadata_client_smart_audiobook_lookup_reports_all_provider_failures() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "www.googleapis.com":
+            return httpx.Response(200, json={"items": []})
+        if request.url.host == "openlibrary.org":
+            assert request.url.path == "/isbn/9785961436891.json"
+            return httpx.Response(404, json={"error": "not found"})
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    client = MetadataClient(
+        MetadataProvider.OMDB,
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(MetadataLookupError) as exc_info:
+        client.lookup(
+            MetadataLookupProvider.SMART_AUDIOBOOK,
+            "9785961436891",
+            MediaType.AUDIOBOOK,
+        )
+
+    error_message = str(exc_info.value)
+    assert "Google Books returned no matches." in error_message
+    assert "OpenLibrary lookup failed" in error_message
+    assert "Try searching by book title and author." in error_message

@@ -130,6 +130,52 @@ class QbittorrentClient:
             allowed_status_codes={409},
         )
 
+    def get_categories(self) -> dict[str, dict[str, object]]:
+        payload = self._request("GET", "/api/v2/torrents/categories")
+        if not isinstance(payload, dict):
+            raise QbittorrentClientError("Unexpected qBittorrent categories payload.")
+        categories: dict[str, dict[str, object]] = {}
+        for key, value in payload.items():
+            if not isinstance(key, str):
+                continue
+            category_name = key.strip()
+            if not category_name:
+                continue
+            categories[category_name] = value if isinstance(value, dict) else {}
+        return categories
+
+    def remove_categories(self, names: list[str]) -> None:
+        cleaned_names: list[str] = []
+        seen: set[str] = set()
+        for raw_name in names:
+            candidate = str(raw_name or "").strip()
+            key = candidate.casefold()
+            if not candidate or key in seen:
+                continue
+            seen.add(key)
+            cleaned_names.append(candidate)
+        if not cleaned_names:
+            return
+        self._request(
+            "POST",
+            "/api/v2/torrents/removeCategories",
+            data={"categories": "\n".join(cleaned_names)},
+            expect_json=False,
+        )
+
+    def unused_categories(self) -> list[str]:
+        unused: list[str] = []
+        for category_name in self.get_categories():
+            torrents = self.get_torrents(category=category_name)
+            if not torrents:
+                unused.append(category_name)
+        return unused
+
+    def remove_unused_categories(self) -> list[str]:
+        unused = self.unused_categories()
+        self.remove_categories(unused)
+        return unused
+
     def set_rule(self, rule_name: str, rule_def: dict[str, object]) -> None:
         self._request(
             "POST",
@@ -174,6 +220,7 @@ class QbittorrentClient:
             "/api/v2/torrents/add",
             data=payload,
             expect_json=False,
+            allowed_status_codes={409},
         )
 
     def add_torrent_file(
@@ -203,6 +250,7 @@ class QbittorrentClient:
             data=payload,
             files={"torrents": (filename, torrent_bytes, "application/x-bittorrent")},
             expect_json=False,
+            allowed_status_codes={409},
         )
 
     def get_torrent_files(self, info_hash: str) -> list[dict[str, object]]:
@@ -233,11 +281,19 @@ class QbittorrentClient:
             raise QbittorrentClientError("Unexpected qBittorrent torrent trackers payload.")
         return [item for item in payload if isinstance(item, dict)]
 
-    def get_torrents(self, *, hashes: str | None = None) -> list[dict[str, object]]:
+    def get_torrents(
+        self,
+        *,
+        hashes: str | None = None,
+        category: str | None = None,
+    ) -> list[dict[str, object]]:
         params: dict[str, str] = {}
         cleaned_hashes = str(hashes or "").strip()
         if cleaned_hashes:
             params["hashes"] = cleaned_hashes
+        cleaned_category = str(category or "").strip()
+        if cleaned_category:
+            params["category"] = cleaned_category
         payload = self._request(
             "GET",
             "/api/v2/torrents/info",

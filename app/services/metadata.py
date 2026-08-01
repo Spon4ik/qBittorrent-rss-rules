@@ -17,6 +17,7 @@ UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 )
 ISBN_RE = re.compile(r"^(?:97[89])?\d{9}[\dXx]$")
+ISBN_SEPARATOR_RE = re.compile(r"[\s-]+")
 OPENLIBRARY_ID_RE = re.compile(r"^OL\d+[MW]$", re.IGNORECASE)
 YEAR_RE = re.compile(r"\b(\d{4})\b")
 
@@ -56,6 +57,11 @@ _LOOKUP_PROVIDER_CATALOG: tuple[ProviderCatalogEntry, ...] = (
         "value": MetadataLookupProvider.MUSICBRAINZ.value,
         "label": "MusicBrainz",
         "media_types": [MediaType.MUSIC.value],
+    },
+    {
+        "value": MetadataLookupProvider.SMART_AUDIOBOOK.value,
+        "label": "Smart audiobook",
+        "media_types": [MediaType.AUDIOBOOK.value],
     },
     {
         "value": MetadataLookupProvider.OPENLIBRARY.value,
@@ -136,6 +142,75 @@ def _extract_year(value: object) -> str | None:
     return match.group(1)
 
 
+def _clean_isbn(value: object) -> str:
+    return ISBN_SEPARATOR_RE.sub("", str(value or "").strip())
+
+
+def _normalize_lookup_isbn(value: str) -> str:
+    cleaned = _clean_isbn(value)
+    if ISBN_RE.match(cleaned):
+        return cleaned
+    return value.strip()
+
+
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        raw_values = value
+    elif value is None or value == "":
+        raw_values = []
+    else:
+        raw_values = [value]
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in raw_values:
+        candidate = str(item or "").strip()
+        if not candidate:
+            continue
+        key = candidate.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(candidate)
+    return cleaned
+
+
+def _first_string(value: object) -> str | None:
+    values = _string_list(value)
+    return values[0] if values else None
+
+
+def _preferred_isbn(value: object) -> str | None:
+    candidates = _string_list(value)
+    for candidate in candidates:
+        cleaned = _clean_isbn(candidate)
+        if len(cleaned) == 13 and ISBN_RE.match(cleaned):
+            return cleaned
+    for candidate in candidates:
+        cleaned = _clean_isbn(candidate)
+        if ISBN_RE.match(cleaned):
+            return cleaned
+    return None
+
+
+def _google_books_isbn(volume_info: dict[str, object]) -> str | None:
+    identifiers = volume_info.get("industryIdentifiers")
+    if not isinstance(identifiers, list):
+        return None
+
+    fallback: str | None = None
+    for raw_identifier in identifiers:
+        if not isinstance(raw_identifier, dict):
+            continue
+        identifier = _preferred_isbn(raw_identifier.get("identifier"))
+        if not identifier:
+            continue
+        identifier_type = str(raw_identifier.get("type", "")).strip().upper()
+        if identifier_type == "ISBN_13":
+            return identifier
+        fallback = fallback or identifier
+    return fallback
+
+
 def _parse_omdb_released_at(value: object) -> datetime | None:
     cleaned = str(value or "").strip()
     if not cleaned or cleaned.upper() == "N/A":
@@ -188,6 +263,8 @@ class MetadataClient:
             return self._lookup_omdb(cleaned_lookup_value, media_type)
         if lookup_provider == MetadataLookupProvider.MUSICBRAINZ:
             return self._lookup_musicbrainz(cleaned_lookup_value)
+        if lookup_provider == MetadataLookupProvider.SMART_AUDIOBOOK:
+            return self._lookup_smart_audiobook(cleaned_lookup_value)
         if lookup_provider == MetadataLookupProvider.OPENLIBRARY:
             return self._lookup_openlibrary(cleaned_lookup_value)
         return self._lookup_google_books(cleaned_lookup_value)
@@ -454,6 +531,10 @@ class MetadataClient:
         )
 
     def _lookup_openlibrary(self, lookup_value: str) -> MetadataResult:
+        lookup_value = _normalize_lookup_isbn(lookup_value)
+        authors: list[str] = []
+        publisher: str | None = None
+        isbn: str | None = None
         if ISBN_RE.match(lookup_value):
             payload = self._request_json(
                 f"https://openlibrary.org/isbn/{lookup_value}.json",
@@ -462,6 +543,12 @@ class MetadataClient:
             source_id = str(payload.get("key", lookup_value)).strip("/") or lookup_value
             title = str(payload.get("title", lookup_value)).strip()
             year = _extract_year(payload.get("publish_date"))
+            publisher = _first_string(payload.get("publishers"))
+            isbn = (
+                _preferred_isbn(payload.get("isbn_13"))
+                or _preferred_isbn(payload.get("isbn_10"))
+                or lookup_value
+            )
         elif OPENLIBRARY_ID_RE.match(lookup_value):
             resource = "works" if lookup_value.upper().endswith("W") else "books"
             payload = self._request_json(
@@ -471,6 +558,10 @@ class MetadataClient:
             source_id = str(payload.get("key", lookup_value)).strip("/") or lookup_value
             title = str(payload.get("title", lookup_value)).strip()
             year = _extract_year(payload.get("first_publish_date") or payload.get("publish_date"))
+            publisher = _first_string(payload.get("publishers"))
+            isbn = _preferred_isbn(payload.get("isbn_13")) or _preferred_isbn(
+                payload.get("isbn_10")
+            )
         else:
             payload = self._request_json(
                 "https://openlibrary.org/search.json",
@@ -486,6 +577,9 @@ class MetadataClient:
             source_id = str(first_match.get("key", lookup_value)).strip("/") or lookup_value
             title = str(first_match.get("title", lookup_value)).strip()
             year = _extract_year(first_match.get("first_publish_year"))
+            authors = _string_list(first_match.get("author_name"))
+            publisher = _first_string(first_match.get("publisher"))
+            isbn = _preferred_isbn(first_match.get("isbn"))
 
         return MetadataResult(
             title=title,
@@ -493,9 +587,13 @@ class MetadataClient:
             source_id=source_id,
             media_type=MediaType.AUDIOBOOK,
             year=year,
+            authors=authors,
+            publisher=publisher,
+            isbn=isbn,
         )
 
     def _lookup_google_books(self, lookup_value: str) -> MetadataResult:
+        lookup_value = _normalize_lookup_isbn(lookup_value)
         query = f"isbn:{lookup_value}" if ISBN_RE.match(lookup_value) else f"intitle:{lookup_value}"
         payload = self._request_json(
             "https://www.googleapis.com/books/v1/volumes",
@@ -518,4 +616,37 @@ class MetadataClient:
             source_id=str(first_match.get("id", lookup_value)).strip() or lookup_value,
             media_type=MediaType.AUDIOBOOK,
             year=_extract_year(volume_info.get("publishedDate")),
+            authors=_string_list(volume_info.get("authors")),
+            publisher=_first_string(volume_info.get("publisher")),
+            isbn=_google_books_isbn(volume_info)
+            or (lookup_value if ISBN_RE.match(lookup_value) else None),
+        )
+
+    def _lookup_smart_audiobook(self, lookup_value: str) -> MetadataResult:
+        cleaned_lookup_value = _normalize_lookup_isbn(lookup_value)
+        provider_attempts: tuple[
+            tuple[str, MetadataLookupProvider],
+            ...,
+        ] = (
+            ("Google Books", MetadataLookupProvider.GOOGLE_BOOKS),
+            ("OpenLibrary", MetadataLookupProvider.OPENLIBRARY),
+        )
+        failures: list[str] = []
+        for provider_label, provider in provider_attempts:
+            try:
+                if provider == MetadataLookupProvider.GOOGLE_BOOKS:
+                    result = self._lookup_google_books(cleaned_lookup_value)
+                else:
+                    result = self._lookup_openlibrary(cleaned_lookup_value)
+            except MetadataLookupError as exc:
+                failures.append(f"{provider_label}: {exc}")
+                continue
+            if failures:
+                return result.model_copy(update={"lookup_warnings": failures})
+            return result
+
+        detail = "; ".join(failures) if failures else "no provider was available"
+        raise MetadataLookupError(
+            "Smart audiobook lookup found no matches. "
+            f"Tried {detail}. Try searching by book title and author."
         )

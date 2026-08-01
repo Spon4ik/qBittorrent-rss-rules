@@ -10,17 +10,16 @@
   <body>
     <div class="page-shell{% if shell_layout == 'wide' %} page-shell--wide{% endif %}">
       <header class="site-header">
-        <div class="site-header-main">
-          <p class="eyebrow">Local control plane</p>
+        <div class="site-header-brand">
           <div class="site-title-row">
             <h1>qBittorrent RSS Rule Manager</h1>
             {% if app_version %}<span class="app-version-badge">v{{ app_version }}</span>{% endif %}
           </div>
-          <p class="lede">
-            Build and sync RSS rules from structured fields instead of editing raw exports.
+          <p class="site-header-meta">
+            Local control plane for structured RSS rule operations.
           </p>
         </div>
-        <nav class="site-nav">
+        <nav class="site-nav site-nav--primary" aria-label="Primary navigation">
           <a href="/">Rules</a>
           <a href="/search">Search</a>
           <a href="/rules/new">New Rule</a>

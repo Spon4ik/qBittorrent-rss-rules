@@ -7,20 +7,24 @@
     <div class="result-view-title">
       <p class="eyebrow">Result controls</p>
       <strong>{{ section_label }}</strong>
-      <p class="helper-text">Table-only view. Sort directly from column headers.</p>
     </div>
     <div class="search-controls-actions">
       <button type="button" class="button-link muted" data-search-save-defaults>Save sort as default</button>
       <p class="helper-text" data-search-default-status aria-live="polite"></p>
     </div>
   </div>
-  <div class="result-view-sort-help">
-    <p class="helper-text">Click a column for asc/desc. Shift+click keeps multi-sort levels.</p>
+  <div class="search-hidden-control">
+    <label class="toggle search-hidden-toggle">
+      <input type="checkbox" data-search-show-hidden-toggle />
+      <span>Show hidden fetched rows</span>
+    </label>
+    <p
+      class="helper-text search-hidden-status"
+      data-search-display-status="combined"
+      aria-live="polite"
+      hidden
+    ></p>
   </div>
-  <label class="toggle search-hidden-toggle">
-    <input type="checkbox" data-search-show-hidden-toggle />
-    <span>Show hidden fetched rows</span>
-  </label>
   <div class="result-view-local-grid">
     <label class="result-view-local-field">
       Indexer scope
@@ -35,7 +39,13 @@
           <div class="search-multiselect-options" data-search-multiselect-options="indexers"></div>
         </div>
       </details>
-      <span class="helper-text">Affected feeds also narrow visible indexers immediately.</span>
+      <span
+        class="field-help"
+        tabindex="0"
+        role="note"
+        aria-label="Affected feeds also narrow visible indexers immediately."
+        title="Affected feeds also narrow visible indexers immediately."
+      >?</span>
     </label>
     <label class="result-view-local-field">
       Media category
@@ -71,11 +81,13 @@
     <h2>{{ 'New Rule' if mode == 'create' else form_data.rule_name }}</h2>
   </div>
   {% if mode == 'edit' %}
-  <div class="card-actions">
+  <div class="card-actions rule-edit-command-bar" data-rule-edit-command-bar>
+    <button type="submit" form="rule-form">Save Changes</button>
     <a
       class="button-link"
       href="/rules/{{ rule_id }}/search{% if has_search_snapshot %}?refresh_snapshot=1{% endif %}"
       data-run-search-here
+      data-operation-start-label="{{ 'Refreshing' if has_search_snapshot else 'Searching' }} {{ form_data.rule_name }}"
     >{{ 'Refresh Search Snapshot' if has_search_snapshot else 'Run Search Snapshot' }}</a>
     <a class="button-link muted" href="/search?rule_id={{ rule_id }}">Advanced Search Workspace</a>
     <form method="post" action="/api/rules/{{ rule_id }}/sync?return_to=rule">
@@ -84,14 +96,13 @@
     <form method="post" action="/api/rules/{{ rule_id }}/delete" onsubmit="return confirm('Delete this rule locally and remotely?');">
       <button type="submit" class="danger">Delete</button>
     </form>
+    <a class="button-link muted" href="/">Back to Rules</a>
   </div>
   {% endif %}
-</section>
 
 {% if mode == 'edit' and rule_sync_diagnostics %}
-<section class="summary-strip">
-  <div>
-    <p class="eyebrow">qB enforcement diagnostics</p>
+  <details class="rule-diagnostics-disclosure" aria-label="qB enforcement diagnostics">
+    <summary>qB diagnostics</summary>
     {% if rule_sync_diagnostics.drift_message %}
     <p class="rules-sync-error"><strong>Remote drift detected:</strong> {{ rule_sync_diagnostics.drift_message }}</p>
     {% else %}
@@ -109,9 +120,9 @@
       <pre class="debug-json">{{ rule_sync_diagnostics.last_remote_must_contain }}</pre>
     </details>
     {% endif %}
-  </div>
-</section>
+  </details>
 {% endif %}
+</section>
 
 <div
   {% if mode == 'edit' and inline_search %}
@@ -127,8 +138,14 @@
 <section class="rule-workspace">
   <aside class="rule-workspace-rail">
     <div class="rule-workspace-rail-inner">
+      <section class="rule-settings-panel" data-rule-settings-panel>
+        <header class="rule-settings-heading">
+          <span class="eyebrow">Rule settings</span>
+          <span class="rule-criteria-title">Criteria, Destination And Feeds</span>
+        </header>
 {% endif %}
 <form
+  id="rule-form"
   class="stack rule-form{% if mode == 'edit' %} rule-form--compact{% endif %}"
   method="post"
   action="{% if mode == 'create' %}/api/rules{% else %}/api/rules/{{ rule_id }}{% endif %}"
@@ -157,20 +174,27 @@
         Manual snapshot
         {% endif %}
       </strong>
-      <p class="helper-text" data-quality-mode-description>
-        {% if form_data.quality_mode == "managed" %}
-        This rule follows the selected preset until you make it manual.
-        {% else %}
-        This rule keeps its saved include/exclude tokens until you choose a managed profile.
-        {% endif %}
-      </p>
     </div>
     <div class="button-row">
-      <button type="button" class="button-link muted" data-quality-mode-action="managed">Use managed profile</button>
-      <button type="button" class="button-link muted" data-quality-mode-action="manual">Make manual snapshot</button>
+      <button
+        type="button"
+        class="button-link muted"
+        data-quality-mode-action="managed"
+        data-quality-managed-help="This rule follows preset changes until you make it manual."
+        title="This rule follows preset changes until you make it manual."
+        aria-label="Use managed profile. This rule follows preset changes until you make it manual."
+      >Use managed profile</button>
+      <button
+        type="button"
+        class="button-link muted"
+        data-quality-mode-action="manual"
+        data-quality-manual-help="This rule keeps its current include/exclude tokens until you choose a managed profile."
+        title="This rule keeps its current include/exclude tokens until you choose a managed profile."
+        aria-label="Make manual snapshot. This rule keeps its current include/exclude tokens until you choose a managed profile."
+      >Make manual snapshot</button>
     </div>
   </section>
-  <details class="rule-criteria-section" open>
+  <details class="rule-criteria-section rule-criteria-section--identity" open>
     <summary class="rule-criteria-summary">
       <span class="eyebrow">Criteria</span>
       <span class="rule-criteria-title">Core Identity</span>
@@ -187,7 +211,11 @@
     <label class="full-span">
       Metadata lookup
       <div class="control-row">
-        <select id="metadata-lookup-provider" {% if metadata_lookup_disabled %}disabled{% endif %}>
+        <select
+          id="metadata-lookup-provider"
+          title="{% if metadata_lookup_disabled %}Metadata lookup is disabled in Settings.{% else %}Choose the metadata service to search for this media type.{% endif %}"
+          {% if metadata_lookup_disabled %}disabled{% endif %}
+        >
           {% for choice in visible_metadata_lookup_providers %}
           <option value="{{ choice.value }}" {% if form_data.metadata_lookup_provider == choice.value %}selected{% endif %}>{{ choice.label }}</option>
           {% endfor %}
@@ -196,17 +224,21 @@
           type="text"
           id="metadata-lookup-value"
           placeholder="Title or source ID"
+          title="{% if metadata_lookup_disabled %}Metadata lookup is disabled in Settings.{% else %}Search by title or provider-specific ID using services relevant to the selected media type.{% endif %}"
           {% if metadata_lookup_disabled %}disabled{% endif %}
         />
-        <button type="button" id="metadata-lookup" {% if metadata_lookup_disabled %}disabled{% endif %}>Lookup</button>
+        <button
+          type="button"
+          id="metadata-lookup"
+          title="{% if metadata_lookup_disabled %}Metadata lookup is disabled in Settings.{% else %}Search by title or provider-specific ID using services relevant to the selected media type.{% endif %}"
+          {% if metadata_lookup_disabled %}disabled{% endif %}
+        >Lookup</button>
       </div>
+      {% if metadata_lookup_disabled %}
       <span class="helper-text">
-        {% if metadata_lookup_disabled %}
         Metadata lookup is disabled in Settings.
-        {% else %}
-        Search by title or provider-specific ID using services relevant to the selected media type.
-        {% endif %}
       </span>
+      {% endif %}
     </label>
     <label data-imdb-field="true">
       IMDb ID
@@ -224,6 +256,26 @@
         {% endfor %}
       </select>
     </label>
+    <label data-audiobook-search-fields="true">
+      Book title
+      <input type="text" name="audiobook_title" value="{{ form_data.audiobook_title }}" placeholder="The Way of Kings" />
+    </label>
+    <label data-audiobook-search-fields="true">
+      Author
+      <input type="text" name="audiobook_author" value="{{ form_data.audiobook_author }}" placeholder="Brandon Sanderson" />
+    </label>
+    <label data-audiobook-search-fields="true">
+      Publisher
+      <input type="text" name="audiobook_publisher" value="{{ form_data.audiobook_publisher }}" placeholder="Macmillan Audio" />
+    </label>
+    <label data-audiobook-search-fields="true">
+      Genre
+      <input type="text" name="audiobook_genre" value="{{ form_data.audiobook_genre }}" placeholder="Fantasy" />
+    </label>
+    <label data-audiobook-search-fields="true">
+      ISBN
+      <input type="text" name="audiobook_isbn" value="{{ form_data.audiobook_isbn }}" placeholder="9785961436891" />
+    </label>
     <label>
       Filter profile
       <select name="filter_profile_key" id="filter-profile-select">
@@ -237,29 +289,39 @@
       Release year
       <input type="text" name="release_year" value="{{ form_data.release_year }}" placeholder="2024" />
     </label>
-    <label>
-      Start season
-      <input type="number" min="1" max="99" name="start_season" value="{{ form_data.start_season }}" placeholder="3" />
-      <span class="helper-text">Optional. Use with Start episode to keep only unseen episodes from this point.</span>
-    </label>
-    <label>
-      Start episode
-      <input type="number" min="0" max="99" name="start_episode" value="{{ form_data.start_episode }}" placeholder="7" />
-      <span class="helper-text">Example: season 3 + episode 7 keeps `S03E07` and later variants like `S03E01-07`; use `0` to catch `E00` specials when the next season begins.</span>
+    <label class="episode-floor-field">
+      <span class="field-label-row">
+        <span>Start season / episode</span>
+        <span
+          class="field-help"
+          tabindex="0"
+          role="note"
+          aria-label="Optional floor for unseen episode filtering. Example: season 3 plus episode 7 keeps S03E07 and later variants like S03E01-07; use episode 0 to catch E00 specials when the next season begins."
+          title="Optional floor for unseen episode filtering. Example: season 3 plus episode 7 keeps S03E07 and later variants like S03E01-07; use episode 0 to catch E00 specials when the next season begins."
+        >?</span>
+      </span>
+      <span class="paired-input-row">
+        <input type="number" min="1" max="99" name="start_season" value="{{ form_data.start_season }}" placeholder="3" aria-label="Start season" />
+        <input type="number" min="0" max="99" name="start_episode" value="{{ form_data.start_episode }}" placeholder="7" aria-label="Start episode" />
+      </span>
+      <span
+        class="helper-text"
+        aria-hidden="true"
+      >S / E</span>
     </label>
     <label class="toggle">
       <input type="checkbox" name="jellyfin_search_existing_unseen" {% if form_data.jellyfin_search_existing_unseen %}checked{% endif %} />
-      <span>{% if form_data.media_type == "movie" %}Keep searching this movie for better quality{% else %}Keep searching existing unseen episodes{% endif %}</span>
-      <span class="helper-text">
-        {% if form_data.media_type == "movie" %}
-        When off, centralized watch-state sync disables this rule after the movie is marked completed in any connected platform. Turn it on to keep searching for upgrades or better-quality copies.
-        {% else %}
-        Jellyfin sync stores the next missing season+episode floor on the rule itself. When off, it also excludes unseen episodes already present in the library.
-        {% if form_data.jellyfin_existing_episode_count %}
-        Current synced exclusions: {{ form_data.jellyfin_existing_episode_count }} episode(s).
-        {% endif %}
-        {% endif %}
-      </span>
+      <span>{% if form_data.media_type == "movie" %}Keep upgrading{% else %}Keep unseen{% endif %}</span>
+      <span
+        class="field-help"
+        tabindex="0"
+        role="note"
+        aria-label="{% if form_data.media_type == "movie" %}Keep searching this movie for better quality. When off, centralized watch-state sync disables this rule after the movie is marked completed in any connected platform. Turn it on to keep searching for upgrades or better-quality copies.{% else %}Jellyfin sync stores the next missing season and episode floor on this rule. When off, existing unseen library episodes are excluded.{% if form_data.jellyfin_existing_episode_count %} Current synced exclusions: {{ form_data.jellyfin_existing_episode_count }} episode(s).{% endif %}{% endif %}"
+        title="{% if form_data.media_type == "movie" %}Keep searching this movie for better quality. When off, centralized watch-state sync disables this rule after the movie is marked completed in any connected platform. Turn it on to keep searching for upgrades or better-quality copies.{% else %}Jellyfin sync stores the next missing season and episode floor on this rule. When off, existing unseen library episodes are excluded.{% if form_data.jellyfin_existing_episode_count %} Current synced exclusions: {{ form_data.jellyfin_existing_episode_count }} episode(s).{% endif %}{% endif %}"
+      >?</span>
+      {% if form_data.jellyfin_existing_episode_count and form_data.media_type != "movie" %}
+      <span class="inline-count">{{ form_data.jellyfin_existing_episode_count }} excluded</span>
+      {% endif %}
     </label>
     <label class="toggle">
       <input type="checkbox" name="enabled" {% if form_data.enabled %}checked{% endif %} />
@@ -288,12 +350,19 @@
     </label>
     <label class="toggle">
       <input type="checkbox" name="remember_feed_defaults" value="on" {% if form_data.remember_feed_defaults %}checked{% endif %} />
-      <span>Use selected feeds as defaults for future new rules</span>
+      <span>Remember feeds</span>
+      <span
+        class="field-help"
+        tabindex="0"
+        role="note"
+        aria-label="Use the selected feeds as defaults for new rules."
+        title="Use the selected feeds as defaults for new rules."
+      >?</span>
     </label>
   </section>
   </details>
 
-  <details class="rule-criteria-section">
+  <details class="rule-criteria-section rule-criteria-section--quality">
     <summary class="rule-criteria-summary">
       <span class="eyebrow">Criteria</span>
       <span class="rule-criteria-title">Matching And Quality</span>
@@ -330,7 +399,7 @@
   </section>
   </details>
 
-  <details class="rule-criteria-section" open>
+  <details class="rule-criteria-section rule-criteria-section--scope" open>
     <summary class="rule-criteria-summary">
       <span class="eyebrow">Scope</span>
       <span class="rule-criteria-title">Destination And Feeds</span>
@@ -356,7 +425,13 @@
           {% endfor %}
         </div>
       </details>
-      <span class="helper-text">When set, the app resolves matching Jackett-backed qB feeds under the hood so qB RSS auto-downloader really uses the chosen language.</span>
+      <span
+        class="field-help"
+        tabindex="0"
+        role="note"
+        aria-label="When set, the app resolves matching Jackett-backed qB feeds under the hood so qB RSS auto-downloader uses the chosen language."
+        title="When set, the app resolves matching Jackett-backed qB feeds under the hood so qB RSS auto-downloader uses the chosen language."
+      >?</span>
     </label>
     <label>
       Category
@@ -396,54 +471,66 @@
   </section>
   {% endif %}
 
-  <section class="stack">
+  <section class="stack affected-feeds-compact">
     <div class="panel-head panel-head-tight">
       <div>
         <p class="eyebrow">Passive qB RSS scope</p>
         <h3>Affected feeds</h3>
       </div>
-      <div class="button-row">
-        <button type="button" id="feed-select-all">Select all</button>
-        <button type="button" id="feed-clear-all">Clear all</button>
-        <button type="button" id="feed-refresh">Refresh Feeds</button>
-      </div>
+      <span
+        class="field-help"
+        tabindex="0"
+        role="note"
+        aria-label="{% if form_data.language %}Feed selection is resolved automatically from the selected language. Clear Language to edit feeds manually.{% else %}Choose one or more RSS feeds for this rule. Active Jackett search stays separate and does not populate this list.{% endif %}"
+        title="{% if form_data.language %}Feed selection is resolved automatically from the selected language. Clear Language to edit feeds manually.{% else %}Choose one or more RSS feeds for this rule. Active Jackett search stays separate and does not populate this list.{% endif %}"
+      >?</span>
     </div>
-    <p class="helper-text" data-feed-mode-helper>
+    <p class="helper-text compact-helper" data-feed-mode-helper>
       {% if form_data.language %}
-      Feed selection is currently resolved automatically from the selected language. Clear Language to edit feeds manually.
+      Language-managed feed scope.
       {% else %}
-      Choose one or more RSS feeds for this rule. Active Jackett search stays separate and does not populate this list.
+      Manual feed scope.
       {% endif %}
     </p>
     {% if language_resolution_notice %}
     <p class="helper-text" data-language-resolution-notice>{{ language_resolution_notice }}</p>
     {% endif %}
-    <div
-      class="feed-option-list"
-      id="feed-options"
-      data-empty-message="No feeds available yet. Configure qBittorrent and refresh feeds to load them."
-      data-language-managed="{{ 'true' if form_data.language else 'false' }}"
-    >
-      {% if feed_options %}
-      {% for feed in feed_options %}
-      <label
-        class="feed-option"
-        data-feed-option="true"
-        data-feed-url="{{ feed.url }}"
-        data-feed-label="{{ feed.label }}"
-      >
-        <input type="checkbox" name="feed_urls" value="{{ feed.url }}" {% if feed.url in form_data.feed_urls %}checked{% endif %} {% if form_data.language %}disabled{% endif %} />
-        <span class="feed-option-label">{{ feed.label }}</span>
-      </label>
-      {% endfor %}
-      {% else %}
-      <p class="feed-empty-state">No feeds available yet. Configure qBittorrent and refresh feeds to load them.</p>
-      {% endif %}
-    </div>
+    <details class="checkbox-dropdown feed-dropdown" id="feed-select-dropdown">
+      <summary data-feed-summary>Selected feeds</summary>
+      <div class="checkbox-dropdown-menu feed-dropdown-menu">
+        <div class="button-row feed-dropdown-actions">
+          <button type="button" id="feed-select-all">Select all</button>
+          <button type="button" id="feed-clear-all">Clear all</button>
+          <button type="button" id="feed-refresh">Refresh Feeds</button>
+        </div>
+        <div
+          class="feed-option-list"
+          id="feed-options"
+          data-empty-message="No feeds available yet. Configure qBittorrent and refresh feeds to load them."
+          data-language-managed="{{ 'true' if form_data.language else 'false' }}"
+        >
+          {% if feed_options %}
+          {% for feed in feed_options %}
+          <label
+            class="feed-option"
+            data-feed-option="true"
+            data-feed-url="{{ feed.url }}"
+            data-feed-label="{{ feed.label }}"
+          >
+            <input type="checkbox" name="feed_urls" value="{{ feed.url }}" {% if feed.url in form_data.feed_urls %}checked{% endif %} {% if form_data.language %}disabled{% endif %} />
+            <span class="feed-option-label">{{ feed.label }}</span>
+          </label>
+          {% endfor %}
+          {% else %}
+          <p class="feed-empty-state">No feeds available yet. Configure qBittorrent and refresh feeds to load them.</p>
+          {% endif %}
+        </div>
+      </div>
+    </details>
   </section>
   </details>
 
-  <details class="rule-criteria-section">
+  <details class="rule-criteria-section rule-criteria-section--advanced">
     <summary>Advanced</summary>
     <section class="form-grid">
       <label>
@@ -468,6 +555,7 @@
 </form>
 
 {% if mode == 'edit' %}
+      </section>
     </div>
   </aside>
   <section class="rule-workspace-results">
@@ -482,17 +570,50 @@
       <a class="button-link muted" href="/search?rule_id={{ rule_id }}">Open Advanced Search Workspace</a>
     </div>
   </div>
-  {% for notice in inline_search_notices %}
-  <section class="flash flash-warning">{{ notice }}</section>
-  {% endfor %}
-  {% for error in inline_search_errors %}
-  <section class="flash flash-error">{{ error }}</section>
-  {% endfor %}
-  {% if inline_search %}
-    {% for warning in inline_search.warning_messages %}
-    <section class="flash flash-warning">{{ warning }}</section>
+  {% set profile_summary = namespace(label="Current manual selection") %}
+  {% if form_data.filter_profile_key %}
+    {% for profile in visible_filter_profiles %}
+      {% if profile.key == form_data.filter_profile_key %}
+        {% set profile_summary.label = profile.label %}
+      {% endif %}
     {% endfor %}
-
+  {% else %}
+    {% for choice in quality_choices %}
+      {% if choice.value == form_data.quality_profile %}
+        {% set profile_summary.label = choice.label %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+  <section class="rule-edit-profile-strip" data-rule-edit-profile-summary>
+    <div>
+      <p class="eyebrow">Quality pre-defined profile</p>
+      <strong>{{ profile_summary.label }}</strong>
+      <p class="helper-text">
+        {% if form_data.quality_mode == "managed" %}
+        Managed profile applied to this rule.
+        {% else %}
+        Manual quality snapshot for this rule.
+        {% endif %}
+      </p>
+    </div>
+    <a class="button-link muted" href="#filter-profile-select">Edit profile</a>
+  </section>
+  {% if inline_search_notices or inline_search_errors or (inline_search and inline_search.warning_messages) %}
+  <section class="rule-search-notices" aria-label="Search notices">
+    {% for notice in inline_search_notices %}
+    <section class="flash flash-warning">{{ notice }}</section>
+    {% endfor %}
+    {% for error in inline_search_errors %}
+    <section class="flash flash-error">{{ error }}</section>
+    {% endfor %}
+    {% if inline_search %}
+      {% for warning in inline_search.warning_messages %}
+      <section class="flash flash-warning">{{ warning }}</section>
+      {% endfor %}
+    {% endif %}
+  </section>
+  {% endif %}
+  {% if inline_search %}
     <section class="summary-strip" data-result-queue-options>
       <div>
         <p class="eyebrow">Queue to qBittorrent</p>
@@ -535,11 +656,14 @@
       <div>
         <p class="eyebrow">Unified query results</p>
         <strong><span data-search-filtered-count="combined">{{ inline_search.combined_filtered_count }}</span> filtered / <span data-search-fetched-count="combined">{{ inline_search.combined_fetched_count }}</span> fetched</strong>
-        <p class="helper-text search-scope-summary" data-search-scope-summary="combined"></p>
         <p class="helper-text search-hidden-summary-text" data-search-hidden-summary="combined" hidden></p>
+        <details class="compact-details">
+          <summary>Scope details</summary>
+          <p class="helper-text search-scope-summary" data-search-scope-summary="combined"></p>
+        </details>
       </div>
-      <div>
-        <p class="eyebrow">Source requests</p>
+      <details class="compact-details search-source-details">
+        <summary>Source requests</summary>
         {% for source in inline_search.source_breakdown or [] %}
         <p
           class="helper-text"
@@ -554,7 +678,7 @@
         <p class="helper-text">{{ source.request_variants | join(' | ') }}</p>
         {% endif %}
         {% endfor %}
-      </div>
+      </details>
     </section>
 
     {% if not unified_rows %}
@@ -679,7 +803,6 @@
       <table class="search-table">
         <thead>
           <tr>
-            <th>Query source</th>
             <th>
               <button type="button" class="search-sort-header" data-search-table-sort-field="title">
                 <span>Title</span>
@@ -704,7 +827,7 @@
                 <span class="search-sort-glyph" data-search-sort-glyph="published_at">↕</span>
               </button>
             </th>
-            <th>
+            <th class="search-table-optional">
               <button type="button" class="search-sort-header" data-search-table-sort-field="year">
                 <span>Year</span>
                 <span class="search-sort-glyph" data-search-sort-glyph="year">↕</span>
@@ -712,12 +835,12 @@
             </th>
             <th>
               <button type="button" class="search-sort-header" data-search-table-sort-field="seeders">
-                <span>Seeders</span>
+                <span>Stats</span>
                 <span class="search-sort-glyph" data-search-sort-glyph="seeders">↕</span>
               </button>
             </th>
             {% if inline_search.show_peers_column %}
-            <th>
+            <th class="search-table-optional">
               <button type="button" class="search-sort-header" data-search-table-sort-field="peers">
                 <span>Peers (all)</span>
                 <span class="search-sort-glyph" data-search-sort-glyph="peers">↕</span>
@@ -725,7 +848,7 @@
             </th>
             {% endif %}
             {% if inline_search.show_leechers_column %}
-            <th>
+            <th class="search-table-optional">
               <button type="button" class="search-sort-header" data-search-table-sort-field="leechers">
                 <span>Leechers</span>
                 <span class="search-sort-glyph" data-search-sort-glyph="leechers">↕</span>
@@ -733,7 +856,7 @@
             </th>
             {% endif %}
             {% if inline_search.show_grabs_column %}
-            <th>
+            <th class="search-table-optional">
               <button type="button" class="search-sort-header" data-search-table-sort-field="grabs">
                 <span>Grabs</span>
                 <span class="search-sort-glyph" data-search-sort-glyph="grabs">↕</span>
@@ -767,23 +890,25 @@
             data-duplicate-count="{{ item.duplicate_count or 1 }}"
             {% if not item.visible %}hidden{% endif %}
           >
-            <td>{{ item.query_source_label or 'Primary query' }}</td>
-            <td>{{ item.title }}</td>
-            <td>{{ item.indexer or 'Unknown' }}</td>
-            <td>{{ item.size_label or 'Unknown' }}</td>
-            <td>{{ item.published_label or 'Unknown' }}</td>
-            <td>{{ item.year or 'Unknown' }}</td>
-            <td>{{ item.seeders if item.seeders is not none else 'Unknown' }}</td>
+            <td data-label="Title">
+              <strong class="search-result-title">{{ item.title }}</strong>
+              <span class="helper-text">{{ item.query_source_label or 'Primary query' }}{% if item.year %} · {{ item.year }}{% endif %}</span>
+            </td>
+            <td data-label="Indexer">{{ item.indexer or 'Unknown' }}</td>
+            <td data-label="Size">{{ item.size_label or 'Unknown' }}</td>
+            <td data-label="Published">{{ item.published_label or 'Unknown' }}</td>
+            <td class="search-table-optional" data-label="Year">{{ item.year or 'Unknown' }}</td>
+            <td data-label="Stats">{{ item.seeders if item.seeders is not none else 'Unknown' }}</td>
             {% if inline_search.show_peers_column %}
-            <td>{{ item.peers if item.peers is not none else 'Unknown' }}</td>
+            <td class="search-table-optional" data-label="Peers">{{ item.peers if item.peers is not none else 'Unknown' }}</td>
             {% endif %}
             {% if inline_search.show_leechers_column %}
-            <td>{{ item.leechers if item.leechers is not none else 'Unknown' }}</td>
+            <td class="search-table-optional" data-label="Leechers">{{ item.leechers if item.leechers is not none else 'Unknown' }}</td>
             {% endif %}
             {% if inline_search.show_grabs_column %}
-            <td>{{ item.grabs if item.grabs is not none else 'Unknown' }}</td>
+            <td class="search-table-optional" data-label="Grabs">{{ item.grabs if item.grabs is not none else 'Unknown' }}</td>
             {% endif %}
-            <td>
+            <td data-label="Categories">
               {% if item.category_labels %}
               {{ (item.category_labels or []) | join(', ') }}
               {% if item.category_ids %}
@@ -796,14 +921,16 @@
               Unknown
               {% endif %}
             </td>
-            <td>
+            <td data-label="Visibility">
               <span class="search-visibility-pill" data-search-visibility-status></span>
             </td>
-            <td>
+            <td data-label="Actions">
               <div class="search-row-actions">
                 <button
                   type="button"
-                  class="button-link"
+                  class="button-link search-action-icon"
+                  aria-label="Queue result"
+                  title="Queue result"
                   data-result-queue-button
                   data-result-link="{{ item.link }}"
                   data-result-links='{{ (item.grouped_links or [item.link]) | tojson }}'
@@ -817,7 +944,7 @@
                   {% if item.merged_magnet_link %}
                   <button
                     type="button"
-                    class="button-link muted search-magnet-button"
+                    class="button-link muted search-magnet-button search-action-icon"
                     data-result-magnet-button
                     data-result-magnet-link="{{ item.merged_magnet_link }}"
                     title="Copy merged magnet link"
@@ -832,9 +959,9 @@
                     <span>Magnet</span>
                   </button>
                   {% endif %}
-                  <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open</a>
+                  <a class="button-link muted search-action-icon" href="{{ item.link }}" target="_blank" rel="noreferrer" aria-label="Open result" title="Open result">Open</a>
                   {% if item.details_url %}
-                  <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
+                  <a class="button-link muted search-action-icon" href="{{ item.details_url }}" target="_blank" rel="noreferrer" aria-label="Open details" title="Open details">Details</a>
                 {% endif %}
               </div>
             </td>

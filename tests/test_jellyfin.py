@@ -10,6 +10,7 @@ from app.models import AppSettings, MediaType, QualityProfile, Rule
 from app.services import operation_status
 from app.services.jellyfin import JellyfinError, JellyfinService
 from app.services.jellyfin_sync_ops import execute_jellyfin_sync
+from app.services.series_catalog import SeriesSeasonEpisodeInventory
 from app.services.watch_progress_sync import WatchProgressSyncSummary
 from app.services.watch_state import WatchProgressRecord
 from tests.jellyfin_test_utils import (
@@ -689,7 +690,7 @@ def test_jellyfin_sync_series_rules_keeps_watched_floor_when_rule_allows_existin
     assert rule.jellyfin_existing_episode_numbers == ["S01E02", "S01E03"]
 
 
-def test_jellyfin_sync_series_rules_jump_to_next_season_episode_zero_when_catalog_marks_finale(
+def test_jellyfin_sync_series_rules_advance_to_next_episode_when_latest_release_is_watched(
     tmp_path: Path,
     db_session,
     monkeypatch,
@@ -743,12 +744,17 @@ def test_jellyfin_sync_series_rules_jump_to_next_season_episode_zero_when_catalo
         "_released_episode_numbers_for_season",
         lambda **kwargs: list(range(1, 11)) if kwargs["season_number"] == 1 else None,
     )
+    monkeypatch.setattr(
+        service,
+        "_known_episode_numbers_for_season",
+        lambda **kwargs: list(range(1, 11)) if kwargs["season_number"] == 1 else None,
+    )
 
     summary = service.sync_series_rules(db_session)
 
     assert summary.synced_count == 1
     db_session.refresh(rule)
-    assert (rule.start_season, rule.start_episode) == (2, 0)
+    assert (rule.start_season, rule.start_episode) == (1, 11)
     assert rule.jellyfin_known_episode_numbers[-1] == "S01E10"
     assert rule.jellyfin_watched_episode_numbers[-1] == "S01E10"
 
@@ -792,12 +798,17 @@ def test_jellyfin_sync_series_rules_preserve_remembered_history_after_episode_cl
         "_released_episode_numbers_for_season",
         lambda **kwargs: list(range(1, 11)) if kwargs["season_number"] == 1 else None,
     )
+    monkeypatch.setattr(
+        service,
+        "_known_episode_numbers_for_season",
+        lambda **kwargs: list(range(1, 11)) if kwargs["season_number"] == 1 else None,
+    )
 
     summary = service.sync_series_rules(db_session)
 
     assert summary.synced_count == 1
     db_session.refresh(rule)
-    assert (rule.start_season, rule.start_episode) == (2, 0)
+    assert (rule.start_season, rule.start_episode) == (1, 11)
     assert rule.jellyfin_existing_episode_numbers == []
     assert rule.jellyfin_known_episode_numbers == ["S01E10"]
     assert rule.jellyfin_watched_episode_numbers == ["S01E10"]
@@ -850,6 +861,490 @@ def test_jellyfin_sync_rules_disables_completed_movies_via_shared_watch_state(
     assert rule.jellyfin_auto_disabled is False
     assert rule.movie_completion_auto_disabled is True
     assert rule.movie_completion_sources == ["jellyfin"]
+
+
+def test_jellyfin_sync_rules_disables_finished_series_when_latest_known_episode_is_watched(
+    tmp_path: Path,
+    db_session,
+    monkeypatch,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_series(
+        db_path,
+        series_id="SERIES-FINISHED",
+        title="Finished Show",
+        clean_name="Finished Show",
+        production_year=2024,
+        imdb_id="tt1234500",
+    )
+    for episode_number in range(1, 4):
+        episode_id = f"FINISHED-EP-{episode_number}"
+        add_jellyfin_episode(
+            db_path,
+            episode_id=episode_id,
+            series_id="SERIES-FINISHED",
+            title=f"Episode {episode_number}",
+            season_number=1,
+            episode_number=episode_number,
+        )
+        add_jellyfin_userdata(
+            db_path,
+            item_id=episode_id,
+            user_id=PRIMARY_USER_ID,
+            custom_data_key=None,
+            played=1,
+            play_count=1,
+        )
+
+    settings = AppSettings(id="default", jellyfin_db_path=str(db_path))
+    rule = Rule(
+        rule_name="Finished Show Rule",
+        content_name="Finished Show",
+        normalized_title="Finished Show",
+        imdb_id="tt1234500",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=True,
+        feed_urls=["http://feed.example/finished-show"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    service = JellyfinService(settings)
+    monkeypatch.setattr(
+        service,
+        "_released_episode_numbers_for_season",
+        lambda **kwargs: [1, 2, 3] if kwargs["season_number"] == 1 else None,
+    )
+    monkeypatch.setattr(
+        service,
+        "_known_episode_numbers_for_season",
+        lambda **kwargs: [1, 2, 3] if kwargs["season_number"] == 1 else None,
+    )
+
+    summary = service.sync_rules(db_session)
+
+    assert summary.synced_count == 1
+    db_session.refresh(rule)
+    assert rule.enabled is False
+    assert rule.movie_completion_auto_disabled is True
+    assert rule.movie_completion_sources == ["jellyfin"]
+
+
+def test_execute_jellyfin_sync_pushes_completed_movie_cleanup_to_qb(
+    tmp_path: Path,
+    db_session,
+    monkeypatch,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_movie(
+        db_path,
+        movie_id="MOVIE-HOPPERS",
+        title="Hoppers",
+        clean_name="Hoppers",
+        production_year=2026,
+        imdb_id="tt26443616",
+    )
+    add_jellyfin_userdata(
+        db_path,
+        item_id="MOVIE-HOPPERS",
+        user_id=PRIMARY_USER_ID,
+        custom_data_key=None,
+        played=1,
+        play_count=1,
+    )
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://127.0.0.1:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+        jellyfin_db_path=str(db_path),
+    )
+    rule = Rule(
+        rule_name="Hoppers Rule",
+        content_name="Hoppers",
+        normalized_title="Hoppers",
+        imdb_id="tt26443616",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=True,
+        remote_rule_name_last_synced="Hoppers Rule",
+        feed_urls=["http://feed.example/hoppers"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    synced_rule_ids: list[str] = []
+
+    def fake_sync_rule(self, rule_id: str):
+        synced_rule_ids.append(rule_id)
+        refreshed_rule = db_session.get(Rule, rule_id)
+        assert refreshed_rule is not None
+        assert refreshed_rule.enabled is False
+        return type("SyncResult", (), {"success": True, "message": "Remote rule removed."})()
+
+    monkeypatch.setattr("app.services.jellyfin_sync_ops.SyncService.sync_rule", fake_sync_rule)
+
+    execution = execute_jellyfin_sync(db_session, settings=settings)
+
+    assert execution.qb_sync_success_count == 1
+    assert synced_rule_ids == [rule.id]
+
+
+def test_jellyfin_sync_rules_keeps_series_enabled_when_later_episode_is_planned(
+    tmp_path: Path,
+    db_session,
+    monkeypatch,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_series(
+        db_path,
+        series_id="SERIES-PLANNED",
+        title="Planned Episode Show",
+        clean_name="Planned Episode Show",
+        production_year=2026,
+        imdb_id="tt39378684",
+    )
+    for episode_number in range(1, 8):
+        episode_id = f"PLANNED-EP-{episode_number}"
+        add_jellyfin_episode(
+            db_path,
+            episode_id=episode_id,
+            series_id="SERIES-PLANNED",
+            title=f"Episode {episode_number}",
+            season_number=1,
+            episode_number=episode_number,
+        )
+    add_jellyfin_userdata(
+        db_path,
+        item_id="PLANNED-EP-7",
+        user_id=PRIMARY_USER_ID,
+        custom_data_key=None,
+        played=1,
+        play_count=1,
+    )
+
+    settings = AppSettings(id="default", jellyfin_db_path=str(db_path))
+    rule = Rule(
+        rule_name="Planned Episode Rule",
+        content_name="Planned Episode Show",
+        normalized_title="Planned Episode Show",
+        imdb_id="tt39378684",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=True,
+        feed_urls=["http://feed.example/planned-episode"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    service = JellyfinService(settings)
+    monkeypatch.setattr(
+        service,
+        "_released_episode_numbers_for_season",
+        lambda **kwargs: list(range(1, 8)) if kwargs["season_number"] == 1 else None,
+    )
+    monkeypatch.setattr(
+        service,
+        "_known_episode_numbers_for_season",
+        lambda **kwargs: list(range(1, 9)) if kwargs["season_number"] == 1 else None,
+    )
+
+    summary = service.sync_rules(db_session)
+
+    assert summary.synced_count == 1
+    db_session.refresh(rule)
+    assert rule.enabled is True
+    assert rule.movie_completion_auto_disabled is False
+    assert rule.movie_completion_sources == []
+
+
+def test_jellyfin_sync_rules_keeps_series_enabled_when_next_season_is_known(
+    tmp_path: Path,
+    db_session,
+    monkeypatch,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_series(
+        db_path,
+        series_id="SERIES-ONGOING",
+        title="Ongoing Show",
+        clean_name="Ongoing Show",
+        production_year=2024,
+        imdb_id="tt1234501",
+    )
+    add_jellyfin_episode(
+        db_path,
+        episode_id="ONGOING-EP-3",
+        series_id="SERIES-ONGOING",
+        title="Episode 3",
+        season_number=1,
+        episode_number=3,
+    )
+    add_jellyfin_userdata(
+        db_path,
+        item_id="ONGOING-EP-3",
+        user_id=PRIMARY_USER_ID,
+        custom_data_key=None,
+        played=1,
+        play_count=1,
+    )
+
+    settings = AppSettings(id="default", jellyfin_db_path=str(db_path))
+    rule = Rule(
+        rule_name="Ongoing Show Rule",
+        content_name="Ongoing Show",
+        normalized_title="Ongoing Show",
+        imdb_id="tt1234501",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=True,
+        feed_urls=["http://feed.example/ongoing-show"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    service = JellyfinService(settings)
+    monkeypatch.setattr(
+        service,
+        "_released_episode_numbers_for_season",
+        lambda **kwargs: [1, 2, 3] if kwargs["season_number"] == 1 else [1],
+    )
+    monkeypatch.setattr(
+        service,
+        "_known_episode_numbers_for_season",
+        lambda **kwargs: [1, 2, 3] if kwargs["season_number"] == 1 else [1],
+    )
+
+    summary = service.sync_rules(db_session)
+
+    assert summary.synced_count == 1
+    db_session.refresh(rule)
+    assert rule.enabled is True
+    assert rule.movie_completion_auto_disabled is False
+    assert rule.movie_completion_sources == []
+
+
+def test_jellyfin_sync_rules_keeps_series_enabled_when_catalog_evidence_is_missing(
+    tmp_path: Path,
+    db_session,
+    monkeypatch,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_series(
+        db_path,
+        series_id="SERIES-UNKNOWN-CATALOG",
+        title="Still Open Show",
+        clean_name="Still Open Show",
+        production_year=2026,
+        imdb_id="tt7777000",
+    )
+    for episode_number in range(1, 4):
+        episode_id = f"UNKNOWN-CATALOG-EP-{episode_number}"
+        add_jellyfin_episode(
+            db_path,
+            episode_id=episode_id,
+            series_id="SERIES-UNKNOWN-CATALOG",
+            title=f"Episode {episode_number}",
+            season_number=1,
+            episode_number=episode_number,
+        )
+        add_jellyfin_userdata(
+            db_path,
+            item_id=episode_id,
+            user_id=PRIMARY_USER_ID,
+            custom_data_key=None,
+            played=1,
+            play_count=1,
+        )
+
+    settings = AppSettings(id="default", jellyfin_db_path=str(db_path))
+    rule = Rule(
+        rule_name="Still Open Show Rule",
+        content_name="Still Open Show",
+        normalized_title="Still Open Show",
+        imdb_id="tt7777000",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=True,
+        feed_urls=["http://feed.example/still-open-show"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    service = JellyfinService(settings, allow_metadata_requests=False)
+    monkeypatch.setattr(
+        service._series_catalog,
+        "season_inventory",
+        lambda **kwargs: None,
+    )
+
+    summary = service.sync_rules(db_session)
+
+    assert summary.synced_count == 1
+    db_session.refresh(rule)
+    assert rule.enabled is True
+    assert rule.movie_completion_auto_disabled is False
+    assert rule.movie_completion_sources == []
+
+
+def test_jellyfin_sync_rules_reenables_auto_disabled_series_when_next_season_is_known(
+    tmp_path: Path,
+    db_session,
+    monkeypatch,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_series(
+        db_path,
+        series_id="SERIES-REVIVED",
+        title="Revived Show",
+        clean_name="Revived Show",
+        production_year=2020,
+        imdb_id="tt7777001",
+    )
+    for episode_number in range(1, 4):
+        episode_id = f"REVIVED-EP-{episode_number}"
+        add_jellyfin_episode(
+            db_path,
+            episode_id=episode_id,
+            series_id="SERIES-REVIVED",
+            title=f"Episode {episode_number}",
+            season_number=1,
+            episode_number=episode_number,
+        )
+        add_jellyfin_userdata(
+            db_path,
+            item_id=episode_id,
+            user_id=PRIMARY_USER_ID,
+            custom_data_key=None,
+            played=1,
+            play_count=1,
+        )
+
+    settings = AppSettings(id="default", jellyfin_db_path=str(db_path))
+    rule = Rule(
+        rule_name="Revived Show Rule",
+        content_name="Revived Show",
+        normalized_title="Revived Show",
+        imdb_id="tt7777001",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=False,
+        movie_completion_auto_disabled=True,
+        movie_completion_sources=["jellyfin"],
+        feed_urls=["http://feed.example/revived-show"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    service = JellyfinService(settings, allow_metadata_requests=False)
+
+    def fake_inventory(*, imdb_id, season_number):
+        if season_number == 1:
+            return SeriesSeasonEpisodeInventory(
+                imdb_id=imdb_id,
+                season_number=1,
+                known_episode_numbers=[1, 2, 3],
+                released_episode_numbers=[1, 2, 3],
+                source="Cinemeta",
+            )
+        if season_number == 2:
+            return SeriesSeasonEpisodeInventory(
+                imdb_id=imdb_id,
+                season_number=2,
+                known_episode_numbers=[1],
+                released_episode_numbers=[],
+                source="Cinemeta",
+            )
+        return None
+
+    monkeypatch.setattr(service._series_catalog, "season_inventory", fake_inventory)
+
+    summary = service.sync_rules(db_session)
+
+    assert summary.synced_count == 1
+    db_session.refresh(rule)
+    assert rule.enabled is True
+    assert rule.movie_completion_auto_disabled is False
+    assert rule.movie_completion_sources == []
+
+
+def test_jellyfin_sync_rules_reenables_auto_disabled_series_when_catalog_says_continuing(
+    tmp_path: Path,
+    db_session,
+    monkeypatch,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_series(
+        db_path,
+        series_id="SERIES-CONTINUING",
+        title="Continuing Show",
+        clean_name="Continuing Show",
+        production_year=2026,
+        imdb_id="tt7777002",
+    )
+    for episode_number in range(1, 9):
+        episode_id = f"CONTINUING-EP-{episode_number}"
+        add_jellyfin_episode(
+            db_path,
+            episode_id=episode_id,
+            series_id="SERIES-CONTINUING",
+            title=f"Episode {episode_number}",
+            season_number=15,
+            episode_number=episode_number,
+        )
+        add_jellyfin_userdata(
+            db_path,
+            item_id=episode_id,
+            user_id=PRIMARY_USER_ID,
+            custom_data_key=None,
+            played=1,
+            play_count=1,
+        )
+
+    settings = AppSettings(id="default", jellyfin_db_path=str(db_path))
+    rule = Rule(
+        rule_name="Continuing Show Rule",
+        content_name="Continuing Show",
+        normalized_title="Continuing Show",
+        imdb_id="tt7777002",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=False,
+        movie_completion_auto_disabled=True,
+        movie_completion_sources=["jellyfin"],
+        feed_urls=["http://feed.example/continuing-show"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    service = JellyfinService(settings, allow_metadata_requests=False)
+    monkeypatch.setattr(
+        service,
+        "_released_episode_numbers_for_season",
+        lambda **kwargs: list(range(1, 9)) if kwargs["season_number"] == 15 else None,
+    )
+    monkeypatch.setattr(
+        service,
+        "_known_episode_numbers_for_season",
+        lambda **kwargs: list(range(1, 9)) if kwargs["season_number"] == 15 else None,
+    )
+    monkeypatch.setattr(service._series_catalog, "series_is_known_ended", lambda imdb_id: False)
+
+    summary = service.sync_rules(db_session)
+
+    assert summary.synced_count == 1
+    db_session.refresh(rule)
+    assert rule.enabled is True
+    assert rule.movie_completion_auto_disabled is False
+    assert rule.movie_completion_sources == []
 
 
 def test_jellyfin_sync_rules_reenables_auto_disabled_movie_when_keep_search_is_enabled(

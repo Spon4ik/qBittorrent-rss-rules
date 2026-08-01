@@ -5,6 +5,7 @@ import logging
 import re
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -842,7 +843,7 @@ def _structured_media_fields_for_payload(payload: JackettSearchRequest) -> dict[
         title_value = _coerce_text(payload.title)
         if title_value:
             structured_fields["title"] = title_value
-        for field_name in ("author", "publisher", "genre"):
+        for field_name in ("author", "publisher", "genre", "isbn"):
             value = _coerce_text(getattr(payload, field_name, None))
             if value:
                 structured_fields[field_name] = value
@@ -1073,10 +1074,17 @@ def _request_variant_label(params: Mapping[str, Any]) -> str:
 
 
 def _request_error_context(url: str, params: Mapping[str, Any]) -> str:
+    indexer = ""
+    match = JACKETT_FEED_INDEXER_PATH_RE.search(urlsplit(url).path or "")
+    if match is not None:
+        indexer = _coerce_text(unquote(match.group("indexer"))).casefold()
     request_label = _request_variant_label(params)
+    context_parts = []
+    if indexer:
+        context_parts.append(f"indexer={indexer}")
     if request_label:
-        return request_label
-    return url
+        context_parts.append(request_label)
+    return " ".join(context_parts) or "Jackett endpoint"
 
 
 def _coerce_string_list(value: object | None) -> list[str]:
@@ -1519,6 +1527,25 @@ def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, Any], bool]:
         )
     query = clamp_search_query_text(query, fallback="Search")
 
+    audiobook_search_fields: dict[str, str] = {}
+    if media_type == MediaType.AUDIOBOOK:
+        search_metadata = getattr(rule, "search_metadata", {}) or {}
+        if not isinstance(search_metadata, dict):
+            search_metadata = {}
+        metadata_title = _coerce_text(search_metadata.get("title"))
+        if metadata_title:
+            query = clamp_search_query_text(metadata_title, fallback=query)
+        audiobook_title = metadata_title or query
+        if audiobook_title:
+            audiobook_search_fields["title"] = clamp_search_query_text(
+                audiobook_title,
+                fallback=query,
+            )
+        for field_name in ("author", "publisher", "genre", "isbn"):
+            value = _coerce_text(search_metadata.get(field_name))
+            if value:
+                audiobook_search_fields[field_name] = value
+
     return (
         {
             "query": query,
@@ -1559,6 +1586,7 @@ def _search_request_data_from_rule(rule: Rule) -> tuple[dict[str, Any], bool]:
                 for item in _dedupe_terms(primary_keywords_not)
                 if item not in primary_any_terms
             ],
+            **audiobook_search_fields,
         },
         ignored_full_regex,
     )
@@ -1622,6 +1650,15 @@ def build_reduced_search_request_from_rule(rule: Rule) -> tuple[JackettSearchReq
         primary_keywords_any=primary_flattened_any,
         primary_keywords_any_groups=primary_keywords_any_groups,
         primary_keywords_not=primary_keywords_not,
+        artist=_coerce_text(payload_data.get("artist")) or None,
+        album=_coerce_text(payload_data.get("album")) or None,
+        track=_coerce_text(payload_data.get("track")) or None,
+        label=_coerce_text(payload_data.get("label")) or None,
+        title=_coerce_text(payload_data.get("title")) or None,
+        author=_coerce_text(payload_data.get("author")) or None,
+        publisher=_coerce_text(payload_data.get("publisher")) or None,
+        genre=_coerce_text(payload_data.get("genre")) or None,
+        isbn=_coerce_text(payload_data.get("isbn")) or None,
     )
     return payload, ignored_full_regex
 
@@ -1669,6 +1706,7 @@ class JackettClient:
         merged: dict[str, tuple[datetime | None, JackettSearchResult]] = {}
         last_timeout_error: JackettTimeoutError | None = None
         last_http_error: JackettHTTPError | None = None
+        last_client_error: JackettClientError | None = None
         if _has_structured_media_search(payload):
             structured_results, structured_requests, structured_warnings = (
                 self._search_structured_media_first(payload)
@@ -1707,6 +1745,12 @@ class JackettClient:
                             last_http_error = exc
                             self._add_warning(warning_messages, seen_warning_messages, str(exc))
                             continue
+                        except JackettClientError as exc:
+                            if len(remote_indexer_groups) == 1 and len(indexer_group) == 1:
+                                raise
+                            last_client_error = exc
+                            self._add_warning(warning_messages, seen_warning_messages, str(exc))
+                            continue
                         group_had_success = True
                         self._add_request_label(
                             request_variants, seen_request_variants, successful_params
@@ -1721,6 +1765,8 @@ class JackettClient:
             raise last_timeout_error
         if not request_variants and last_http_error is not None:
             raise last_http_error
+        if not request_variants and last_client_error is not None:
+            raise last_client_error
         ordered_raw_results = self._ordered_results_from_merged(merged)
         self._apply_dynamic_category_labels_if_needed(
             payload,
@@ -1774,8 +1820,9 @@ class JackettClient:
                 warning_messages.append(str(exc))
                 continue
             except JackettHTTPError as exc:
-                if exc.status_code != 400:
-                    raise
+                warning_messages.append(str(exc))
+                continue
+            except JackettClientError as exc:
                 warning_messages.append(str(exc))
                 continue
             successful_requests.append(successful_params)
@@ -1917,6 +1964,27 @@ class JackettClient:
         query = payload.query.strip()
         if not query:
             return [clamp_search_query_text(payload.query, fallback="Search")]
+        if payload.media_type == MediaType.AUDIOBOOK:
+            title = _coerce_text(payload.title) or query
+            author = _coerce_text(payload.author)
+            isbn = _coerce_text(payload.isbn)
+            variants: list[str] = []
+            seen: set[str] = set()
+
+            def add_variant(value: str | None) -> None:
+                candidate = clamp_search_query_text(value or "", fallback="")
+                key = candidate.casefold()
+                if candidate and key not in seen:
+                    seen.add(key)
+                    variants.append(candidate)
+
+            if title and author:
+                add_variant(f"{title} {author}")
+            for title_variant in _query_surface_variants(title or query):
+                add_variant(title_variant)
+            if isbn:
+                add_variant(isbn)
+            return variants or [query]
         variants = _query_surface_variants(query)
         return variants or [query]
 
@@ -2001,7 +2069,12 @@ class JackettClient:
                 self._add_warning(warning_messages, seen_warning_messages, message)
             self._merge_results(primary_merged, variant_results)
 
-        precise_title_results, precise_title_requests, precise_title_warnings = (
+        (
+            precise_title_results,
+            precise_title_hidden_results,
+            precise_title_requests,
+            precise_title_warnings,
+        ) = (
             self._search_precise_title_primary(
                 payload,
                 existing_merge_keys=set(primary_merged),
@@ -2016,6 +2089,7 @@ class JackettClient:
         fallback_request_variants: list[str] = []
         seen_fallback_request_variants: set[str] = set()
         fallback_merged: dict[str, tuple[datetime | None, JackettSearchResult]] = {}
+        self._merge_results(fallback_merged, precise_title_hidden_results)
         if self._needs_broad_fallback(payload) or (payload.imdb_id_only and not primary_merged):
             fallback_results, fallback_requests, fallback_warnings = self._search_title_fallback(
                 payload,
@@ -2373,10 +2447,8 @@ class JackettClient:
             params["season"] = int(payload.season_number)
             if payload.episode_number is not None:
                 params["ep"] = int(payload.episode_number)
-        if search_mode in {"music", "book"}:
+        if search_mode == "music":
             params.update(_structured_media_fields_for_payload(payload))
-            if search_mode == "book" and "title" in params:
-                params.pop("q", None)
 
         return params
 
@@ -2391,6 +2463,9 @@ class JackettClient:
             tuple(sorted((str(key), _coerce_text(value)) for key, value in params.items()))
         }
         category_param = self._category_param_for_payload(payload)
+
+        if payload.media_type == MediaType.AUDIOBOOK and params.get("t") == "book":
+            return fallback_variants
 
         def add_candidate(candidate: dict[str, object]) -> None:
             candidate_key = tuple(
@@ -2475,8 +2550,21 @@ class JackettClient:
         parsed_results: list[tuple[datetime | None, JackettSearchResult]] = []
         last_bad_request_error: JackettHTTPError | None = None
         last_timeout_error: JackettTimeoutError | None = None
+        last_client_error: JackettClientError | None = None
 
-        for indexer in indexers:
+        def search_indexer(
+            indexer: JackettIndexerCapability,
+        ) -> tuple[
+            JackettIndexerCapability,
+            list[dict[str, object]],
+            tuple[
+                list[tuple[datetime | None, JackettSearchResult]],
+                dict[str, object],
+                list[dict[str, object]],
+                list[str],
+            ] | None,
+            JackettClientError | None,
+        ]:
             request_attempts = self._imdb_enforced_params_for_indexer(
                 payload,
                 search_mode,
@@ -2484,27 +2572,59 @@ class JackettClient:
                 supported_params=indexer.supported_params,
             )
             if not request_attempts:
-                continue
+                return indexer, [], None, None
             try:
-                indexer_results, successful_params, indexer_attempts, indexer_warnings = (
-                    self._search_variant(
-                        indexer.indexer_id,
-                        request_attempts[0],
-                        fallback_params=request_attempts[1:],
-                        continue_on_empty=True,
-                    )
+                result = self._search_variant(
+                    indexer.indexer_id,
+                    request_attempts[0],
+                    fallback_params=request_attempts[1:],
+                    continue_on_empty=True,
                 )
-            except JackettTimeoutError as exc:
+                return indexer, request_attempts, result, None
+            except JackettClientError as exc:
+                return indexer, request_attempts, None, exc
+
+        completed: dict[
+            int,
+            tuple[
+                JackettIndexerCapability,
+                list[dict[str, object]],
+                tuple[
+                    list[tuple[datetime | None, JackettSearchResult]],
+                    dict[str, object],
+                    list[dict[str, object]],
+                    list[str],
+                ] | None,
+                JackettClientError | None,
+            ],
+        ] = {}
+        with ThreadPoolExecutor(max_workers=max(1, min(len(indexers), 8))) as executor:
+            future_indexes = {
+                executor.submit(search_indexer, indexer): index
+                for index, indexer in enumerate(indexers)
+            }
+            for future in as_completed(future_indexes):
+                completed[future_indexes[future]] = future.result()
+
+        for index in sorted(completed):
+            _indexer, request_attempts, result, error = completed[index]
+            if isinstance(error, JackettTimeoutError):
                 attempted_requests.extend(request_attempts)
-                warning_messages.append(str(exc))
-                last_timeout_error = exc
+                warning_messages.append(str(error))
+                last_timeout_error = error
                 continue
-            except JackettHTTPError as exc:
+            if isinstance(error, JackettHTTPError):
                 attempted_requests.extend(request_attempts)
-                if exc.status_code != 400:
-                    raise
-                last_bad_request_error = exc
+                last_bad_request_error = error
                 continue
+            if isinstance(error, JackettClientError):
+                attempted_requests.extend(request_attempts)
+                warning_messages.append(str(error))
+                last_client_error = error
+                continue
+            if result is None:
+                continue
+            indexer_results, successful_params, indexer_attempts, indexer_warnings = result
             attempted_requests.extend(indexer_attempts)
             warning_messages.extend(indexer_warnings)
             parsed_results.extend(indexer_results)
@@ -2516,6 +2636,8 @@ class JackettClient:
             raise last_bad_request_error
         if last_timeout_error is not None:
             raise last_timeout_error
+        if last_client_error is not None:
+            raise last_client_error
         raise JackettClientError(IMDB_UNSUPPORTED_CAPABILITY_WARNING)
 
     @staticmethod
@@ -2629,7 +2751,9 @@ class JackettClient:
         *,
         existing_merge_keys: set[str] | None = None,
     ) -> tuple[
-        list[tuple[datetime | None, JackettSearchResult]], list[dict[str, object]], list[str]
+        list[tuple[datetime | None, JackettSearchResult]],
+        list[dict[str, object]],
+        list[str],
     ]:
         fallback_payload = payload.model_copy(
             update={
@@ -2674,6 +2798,7 @@ class JackettClient:
             )
 
             query_had_success = False
+            query_result_count = 0
             for indexer_group in remote_indexer_groups:
                 group_had_success = False
                 for indexer in indexer_group:
@@ -2690,14 +2815,16 @@ class JackettClient:
                         warning_messages.append(str(exc))
                         continue
                     except JackettHTTPError as exc:
-                        if exc.status_code != 400:
-                            raise
+                        warning_messages.append(str(exc))
+                        continue
+                    except JackettClientError as exc:
                         warning_messages.append(str(exc))
                         continue
                     group_had_success = True
                     query_had_success = True
                     request_variants.append(successful_params)
                     warning_messages.extend(timeout_messages)
+                    query_result_count += len(parsed_results)
                     fallback_results.extend(
                         item
                         for item in parsed_results
@@ -2708,6 +2835,8 @@ class JackettClient:
                     break
             if not query_had_success:
                 continue
+            if query_result_count > 0:
+                break
 
         return fallback_results, request_variants, warning_messages
 
@@ -2717,7 +2846,10 @@ class JackettClient:
         *,
         existing_merge_keys: set[str] | None = None,
     ) -> tuple[
-        list[tuple[datetime | None, JackettSearchResult]], list[dict[str, object]], list[str]
+        list[tuple[datetime | None, JackettSearchResult]],
+        list[tuple[datetime | None, JackettSearchResult]],
+        list[dict[str, object]],
+        list[str],
     ]:
         title_payload = payload.model_copy(
             update={
@@ -2734,12 +2866,27 @@ class JackettClient:
         )
         query_variants = self._build_fallback_query_variants(title_payload)
         if not query_variants:
-            return [], [], []
+            return [], [], [], []
 
         effective_payload = self._local_filter_payload(payload, section_label="primary")
+        identity_payload = effective_payload.model_copy(
+            update={
+                "release_year": None,
+                "season_number": None,
+                "episode_number": None,
+                "keywords_all": [],
+                "keywords_any": [],
+                "keywords_any_groups": [],
+                "keywords_not": [],
+                "size_min_mb": None,
+                "size_max_mb": None,
+                "filter_category_ids": [],
+            }
+        )
         seen_merge_keys = set(existing_merge_keys or ())
         request_variants: list[dict[str, object]] = []
         precise_results: list[tuple[datetime | None, JackettSearchResult]] = []
+        hidden_results: list[tuple[datetime | None, JackettSearchResult]] = []
         warning_messages: list[str] = []
         remote_indexer_groups = self._remote_indexer_groups_for_standard_search(title_payload)
 
@@ -2760,6 +2907,7 @@ class JackettClient:
             )
 
             query_had_success = False
+            query_result_count = 0
             for indexer_group in remote_indexer_groups:
                 group_had_success = False
                 for indexer in indexer_group:
@@ -2776,32 +2924,39 @@ class JackettClient:
                         warning_messages.append(str(exc))
                         continue
                     except JackettHTTPError as exc:
-                        if exc.status_code != 400:
-                            raise
+                        warning_messages.append(str(exc))
+                        continue
+                    except JackettClientError as exc:
                         warning_messages.append(str(exc))
                         continue
                     group_had_success = True
                     query_had_success = True
                     request_variants.append(successful_params)
                     warning_messages.extend(timeout_messages)
+                    query_result_count += len(parsed_results)
                     for item in parsed_results:
                         merge_key = self._merge_key(item[1])
                         if merge_key in seen_merge_keys:
                             continue
-                        matches, _drop_reason = self._matches_payload_terms_with_reason(
+                        identity_matches, _drop_reason = self._matches_payload_terms_with_reason(
                             item[1],
-                            effective_payload,
+                            identity_payload,
                         )
-                        if not matches:
+                        if not identity_matches:
                             continue
-                        precise_results.append(item)
+                        matches, _drop_reason = self._matches_payload_terms_with_reason(
+                            item[1], effective_payload
+                        )
+                        (precise_results if matches else hidden_results).append(item)
                         seen_merge_keys.add(merge_key)
                 if group_had_success:
                     break
             if not query_had_success:
                 continue
+            if query_result_count > 0:
+                break
 
-        return precise_results, request_variants, warning_messages
+        return precise_results, hidden_results, request_variants, warning_messages
 
     def _scoped_configured_indexers_for_mode(
         self,
@@ -3320,9 +3475,12 @@ class JackettClient:
                 timeout_error = exc
                 continue
             except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code
+                reason_phrase = str(exc.response.reason_phrase or "HTTP error").strip()
                 raise JackettHTTPError(
-                    f"Jackett request failed for {request_context}: {exc}",
-                    status_code=exc.response.status_code,
+                    f"Jackett request failed for {request_context}: "
+                    f"HTTP {status_code} {reason_phrase}.",
+                    status_code=status_code,
                 ) from exc
             except httpx.HTTPError as exc:
                 raise JackettClientError(

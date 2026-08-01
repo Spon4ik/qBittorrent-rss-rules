@@ -126,11 +126,15 @@ def text_matches_episode(
     season_number: int,
     episode_number: int,
 ) -> bool:
-    episode_matches = list(_episode_matches_for_path(text))
+    episode_matches = episode_ranges_from_text(text)
     return any(
         matched_season == season_number and start_episode <= episode_number <= end_episode
         for matched_season, start_episode, end_episode in episode_matches
     )
+
+
+def episode_ranges_from_text(text: str) -> list[tuple[int, int, int]]:
+    return list(_episode_matches_for_path(text))
 
 
 def build_episode_file_selection_plan(rule: Rule) -> EpisodeFileSelectionPlan | None:

@@ -290,6 +290,11 @@ def _raw_rule_form_data(form: Any) -> dict[str, Any]:
         "save_path": form.get("save_path", ""),
         "feed_urls": form.getlist("feed_urls"),
         "search_indexers": form.getlist("search_indexers"),
+        "audiobook_title": form.get("audiobook_title", ""),
+        "audiobook_author": form.get("audiobook_author", ""),
+        "audiobook_publisher": form.get("audiobook_publisher", ""),
+        "audiobook_genre": form.get("audiobook_genre", ""),
+        "audiobook_isbn": form.get("audiobook_isbn", ""),
         "notes": form.get("notes", ""),
         "remember_feed_defaults": _bool_from_form(form, "remember_feed_defaults"),
     }
@@ -368,6 +373,11 @@ def _render_rule_form(
         or bool(form_data.get("jellyfin_auto_disabled", False)),
     )
     form_data.setdefault("jellyfin_existing_episode_numbers", [])
+    form_data.setdefault("audiobook_title", "")
+    form_data.setdefault("audiobook_author", "")
+    form_data.setdefault("audiobook_publisher", "")
+    form_data.setdefault("audiobook_genre", "")
+    form_data.setdefault("audiobook_isbn", "")
     if "jellyfin_existing_episode_count" not in form_data:
         existing_episode_numbers = form_data.get("jellyfin_existing_episode_numbers", []) or []
         if isinstance(existing_episode_numbers, list):
@@ -589,6 +599,28 @@ def _resolve_rule_payload_search_indexers(
     return []
 
 
+def _normalize_search_metadata_value(value: object | None) -> str:
+    return str(value or "").strip()
+
+
+def _search_metadata_from_rule_payload(payload: RuleFormPayload) -> dict[str, object]:
+    if payload.media_type != MediaType.AUDIOBOOK:
+        return {}
+
+    fields = {
+        "title": payload.audiobook_title,
+        "author": payload.audiobook_author,
+        "publisher": payload.audiobook_publisher,
+        "genre": payload.audiobook_genre,
+        "isbn": payload.audiobook_isbn,
+    }
+    return {
+        key: cleaned
+        for key, value in fields.items()
+        if (cleaned := _normalize_search_metadata_value(value))
+    }
+
+
 def _render_taxonomy_page(
     request: Request,
     *,
@@ -706,6 +738,7 @@ def _apply_rule_payload_to_model(
     rule.search_indexers = _normalize_search_indexers(
         search_indexers if search_indexers is not None else payload.search_indexers
     )
+    rule.search_metadata = _search_metadata_from_rule_payload(payload)
     if _normalize_language_list(payload.language):
         rule.feed_resolution_status = "unavailable" if feed_resolution_notice else "resolved"
         rule.feed_resolution_message = feed_resolution_notice or ""

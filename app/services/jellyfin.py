@@ -17,13 +17,20 @@ from sqlalchemy.orm import Session
 
 from app.config import resolve_runtime_path
 from app.models import AppSettings, MediaType, Rule
-from app.services.metadata import MetadataClient, MetadataLookupError, MetadataLookupProvider
 from app.services.rule_builder import normalize_release_year
+from app.services.series_catalog import (
+    SeriesCatalogClient,
+    normalize_series_catalog_imdb_id,
+    resolve_catalog_imdb_id_by_title,
+)
 from app.services.settings_service import SettingsService
 from app.services.watch_state import (
+    MovieWatchStateSelection,
     WatchProgressRecord,
     derive_watch_state_floor,
+    latest_watch_state_episode_tuple,
     normalize_watch_state_source_labels,
+    select_finished_series_watch_state,
     select_movie_watch_state,
     select_watch_state_floor,
 )
@@ -170,12 +177,15 @@ def _parse_jellyfin_datetime(value: object | None) -> datetime | None:
 
 class JellyfinService:
     def __init__(self, settings: AppSettings | None, *, allow_metadata_requests: bool = True) -> None:
+        self.settings = settings
         self.config = SettingsService.resolve_jellyfin(settings)
         self.metadata_config = SettingsService.resolve_metadata(settings)
         self.allow_metadata_requests = allow_metadata_requests
-        self._metadata_client: MetadataClient | None = None
         self._catalog_imdb_id_cache: dict[str, str | None] = {}
-        self._catalog_season_cache: dict[tuple[str, int], list[int] | None] = {}
+        self._series_catalog = SeriesCatalogClient(
+            settings,
+            allow_metadata_requests=allow_metadata_requests,
+        )
 
     def test_connection(self) -> JellyfinConnectionSummary:
         db_path = self._resolve_db_path()
@@ -523,11 +533,23 @@ class JellyfinService:
         watched_episode_numbers_changed = (
             current_watched_episode_numbers != next_watched_episode_numbers
         )
+        series_completion = self._series_completion_selection(
+            matched_series=matched_series,
+            rule=rule,
+            derived_floor=derived_floor,
+            current_completed_sources=list(getattr(rule, "movie_completion_sources", []) or []),
+            current_enabled=bool(rule.enabled),
+            current_auto_disabled=bool(
+                getattr(rule, "movie_completion_auto_disabled", False)
+            ),
+            keep_searching_existing_unseen=keep_searching_existing_unseen,
+        )
         if (
             not floor_changed
             and not existing_episode_numbers_changed
             and not known_episode_numbers_changed
             and not watched_episode_numbers_changed
+            and not series_completion.changed
         ):
             return JellyfinRuleSyncOutcome(
                 rule_id=rule.id,
@@ -549,6 +571,9 @@ class JellyfinService:
         rule.jellyfin_existing_episode_numbers = next_existing_episode_numbers
         rule.jellyfin_known_episode_numbers = next_known_episode_numbers
         rule.jellyfin_watched_episode_numbers = next_watched_episode_numbers
+        rule.movie_completion_sources = series_completion.completed_sources
+        rule.movie_completion_auto_disabled = series_completion.effective_auto_disabled
+        rule.enabled = series_completion.effective_enabled
         session.add(rule)
         message_parts = [floor_detail]
         if existing_episode_numbers_changed:
@@ -571,6 +596,8 @@ class JellyfinService:
             message_parts.append(
                 f"Remembered watched progress across {len(next_watched_episode_numbers)} episode(s)."
             )
+        if series_completion.changed:
+            message_parts.append(series_completion.detail)
         return JellyfinRuleSyncOutcome(
             rule_id=rule.id,
             rule_name=rule.rule_name,
@@ -582,6 +609,77 @@ class JellyfinService:
             new_start_season=effective_floor[0] if effective_floor is not None else None,
             new_start_episode=effective_floor[1] if effective_floor is not None else None,
         )
+
+    def _series_completion_selection(
+        self,
+        *,
+        matched_series: JellyfinLibraryRecord,
+        rule: Rule,
+        derived_floor: JellyfinDerivedFloor,
+        current_completed_sources: list[str],
+        current_enabled: bool,
+        current_auto_disabled: bool,
+        keep_searching_existing_unseen: bool,
+    ) -> MovieWatchStateSelection:
+        source_completed = self._series_is_finished_and_watched(
+            matched_series=matched_series,
+            rule=rule,
+            derived_floor=derived_floor,
+        )
+        return select_finished_series_watch_state(
+            source_label="Jellyfin",
+            source_present=True,
+            source_completed=source_completed,
+            current_completed_sources=current_completed_sources,
+            current_enabled=current_enabled,
+            current_auto_disabled=current_auto_disabled,
+            keep_searching_existing_unseen=keep_searching_existing_unseen,
+            existing_unseen_episode_numbers=derived_floor.existing_unseen_episode_numbers,
+        )
+
+    def _series_is_finished_and_watched(
+        self,
+        *,
+        matched_series: JellyfinLibraryRecord,
+        rule: Rule,
+        derived_floor: JellyfinDerivedFloor,
+    ) -> bool:
+        latest_known = latest_watch_state_episode_tuple(derived_floor.known_episode_numbers)
+        latest_watched = latest_watch_state_episode_tuple(derived_floor.watched_episode_numbers)
+        if latest_known is None or latest_watched is None or latest_watched < latest_known:
+            return False
+        catalog_imdb_id = self._resolve_catalog_imdb_id(
+            matched_series=matched_series,
+            rule=rule,
+        )
+        if self._series_catalog.series_is_known_ended(catalog_imdb_id) is False:
+            return False
+        season_number, episode_number = latest_known
+        released_this_season = self._released_episode_numbers_for_season(
+            matched_series=matched_series,
+            rule=rule,
+            season_number=season_number,
+        )
+        if not released_this_season or max(released_this_season) != episode_number:
+            return False
+        known_this_season = self._known_episode_numbers_for_season(
+            matched_series=matched_series,
+            rule=rule,
+            season_number=season_number,
+        )
+        if not known_this_season or max(known_this_season) != episode_number:
+            return False
+        next_season_releases = self._released_episode_numbers_for_season(
+            matched_series=matched_series,
+            rule=rule,
+            season_number=season_number + 1,
+        )
+        next_season_known = self._known_episode_numbers_for_season(
+            matched_series=matched_series,
+            rule=rule,
+            season_number=season_number + 1,
+        )
+        return not next_season_releases and not next_season_known
 
     def _sync_movie_rule(
         self,
@@ -703,38 +801,19 @@ class JellyfinService:
             return False
         return int(row["Played"] or 0) > 0 or int(row["PlayCount"] or 0) > 0
 
-    def _metadata_client_for_catalog(self) -> MetadataClient | None:
-        if not self.allow_metadata_requests:
-            return None
-        if self.metadata_config.provider.value == "disabled":
-            return None
-        if not self.metadata_config.api_key:
-            return None
-        if self._metadata_client is None:
-            self._metadata_client = MetadataClient(
-                self.metadata_config.provider,
-                self.metadata_config.api_key,
-            )
-        return self._metadata_client
-
     def _resolve_catalog_imdb_id(
         self,
         *,
         matched_series: JellyfinLibraryRecord,
         rule: Rule,
     ) -> str | None:
-        existing_imdb_id = _normalize_imdb_id(matched_series.imdb_id or rule.imdb_id)
+        existing_imdb_id = normalize_series_catalog_imdb_id(matched_series.imdb_id or rule.imdb_id)
         if existing_imdb_id:
             return existing_imdb_id
 
         cache_key = matched_series.item_id
         if cache_key in self._catalog_imdb_id_cache:
             return self._catalog_imdb_id_cache[cache_key]
-
-        client = self._metadata_client_for_catalog()
-        if client is None:
-            self._catalog_imdb_id_cache[cache_key] = None
-            return None
 
         lookup_title = str(
             matched_series.title or rule.normalized_title or rule.content_name or ""
@@ -743,17 +822,11 @@ class JellyfinService:
             self._catalog_imdb_id_cache[cache_key] = None
             return None
 
-        try:
-            result = client.lookup(
-                MetadataLookupProvider.OMDB,
-                lookup_title,
-                MediaType.SERIES,
-            )
-        except MetadataLookupError:
-            self._catalog_imdb_id_cache[cache_key] = None
-            return None
-
-        normalized_imdb_id = _normalize_imdb_id(result.imdb_id)
+        normalized_imdb_id = resolve_catalog_imdb_id_by_title(
+            settings=self.settings,
+            allow_metadata_requests=self.allow_metadata_requests,
+            lookup_title=lookup_title,
+        )
         self._catalog_imdb_id_cache[cache_key] = normalized_imdb_id
         return normalized_imdb_id
 
@@ -764,41 +837,45 @@ class JellyfinService:
         rule: Rule,
         season_number: int,
     ) -> list[int] | None:
-        if season_number < 1 or season_number > 99:
-            return None
+        episode_numbers = self._catalog_episode_numbers_for_season(
+            matched_series=matched_series,
+            rule=rule,
+            season_number=season_number,
+        )
+        return None if episode_numbers is None else episode_numbers[1]
 
+    def _known_episode_numbers_for_season(
+        self,
+        *,
+        matched_series: JellyfinLibraryRecord,
+        rule: Rule,
+        season_number: int,
+    ) -> list[int] | None:
+        episode_numbers = self._catalog_episode_numbers_for_season(
+            matched_series=matched_series,
+            rule=rule,
+            season_number=season_number,
+        )
+        return None if episode_numbers is None else episode_numbers[0]
+
+    def _catalog_episode_numbers_for_season(
+        self,
+        *,
+        matched_series: JellyfinLibraryRecord,
+        rule: Rule,
+        season_number: int,
+    ) -> tuple[list[int], list[int]] | None:
         imdb_id = self._resolve_catalog_imdb_id(matched_series=matched_series, rule=rule)
         if not imdb_id:
             return None
 
-        cache_key = (imdb_id, season_number)
-        if cache_key in self._catalog_season_cache:
-            return self._catalog_season_cache[cache_key]
-
-        client = self._metadata_client_for_catalog()
-        if client is None:
-            self._catalog_season_cache[cache_key] = None
-            return None
-
-        try:
-            listing = client.lookup_omdb_season(imdb_id, season_number)
-        except MetadataLookupError:
-            self._catalog_season_cache[cache_key] = None
-            return None
-
-        now = datetime.now(UTC)
-        released_episode_numbers = sorted(
-            {
-                episode.episode_number
-                for episode in listing.released_episodes
-                if episode.released_at is not None and episode.released_at <= now
-            }
+        inventory = self._series_catalog.season_inventory(
+            imdb_id=imdb_id,
+            season_number=season_number,
         )
-        if not released_episode_numbers:
-            self._catalog_season_cache[cache_key] = None
+        if inventory is None:
             return None
-        self._catalog_season_cache[cache_key] = released_episode_numbers
-        return released_episode_numbers
+        return (inventory.known_episode_numbers, inventory.released_episode_numbers)
 
     def _next_floor_after_episode(
         self,
@@ -808,22 +885,6 @@ class JellyfinService:
         current_episode: tuple[int, int],
     ) -> tuple[tuple[int, int], str]:
         season_number, episode_number = current_episode
-        released_episode_numbers = self._released_episode_numbers_for_season(
-            matched_series=matched_series,
-            rule=rule,
-            season_number=season_number,
-        )
-        if released_episode_numbers:
-            latest_released_episode = max(released_episode_numbers)
-            if episode_number >= latest_released_episode and season_number < 99:
-                next_floor = (season_number + 1, 0)
-                return (
-                    next_floor,
-                    f"Advanced to S{next_floor[0]:02d}E{next_floor[1]:02d} because OMDb reports "
-                    f"S{season_number:02d}E{latest_released_episode:02d} as the latest released "
-                    f"episode in season {season_number}.",
-                )
-
         next_floor = _increment_floor(season_number, episode_number)
         return (
             next_floor,

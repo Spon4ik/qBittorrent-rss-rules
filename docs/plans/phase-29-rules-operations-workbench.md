@@ -58,6 +58,7 @@ Phase 29 turns the rules page into a compact operations workbench. Rule edits sa
 
 ## Current Evidence
 
+- Follow-up on 2026-06-04: the Release signal column now renders compact `e/v/r` counts (`exact visible / visible / results fetched`) and the Release signal dropdown filters by waterfall thresholds (`Any results`, `Visible results`, `Exact results`, `No snapshot`) instead of the older status-only values. Validation evidence: focused release-signal regressions failed red first and passed after implementation; `tests/test_routes.py` passed; `node --check app/static/app.js` passed; full `cmd.exe /c scripts\check.bat` passed (`473 passed`, `292 warnings`); shared Docker Compose rebuild passed; Docker `/health` returned `status=ok`, `app_version=1.2.17` via `curl.exe` after the known local PowerShell `Invoke-WebRequest` failure.
 - Added `SyncStatus.pending` / `SyncStatus.syncing` and a small background sync queue used by rule create/update and batch quality assignment.
 - Added `POST /api/rules/batch-quality-profile`.
 - Added `AppSettings.rules_fetch_parallelism` with SQLite backfill and clamped default `3`.

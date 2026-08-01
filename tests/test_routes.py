@@ -94,7 +94,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.2.0"
+    assert payload["app_version"] == "1.3.0"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -196,6 +196,14 @@ def test_rules_page_header_includes_create_rule_button(app_client) -> None:
     assert ">Create Rule</a>" in response.text
 
 
+def test_rules_alias_renders_rules_workbench(app_client) -> None:
+    response = app_client.get("/rules")
+
+    assert response.status_code == 200
+    assert "data-rules-page" in response.text
+    assert "data-rules-filter-form" in response.text
+
+
 def test_rules_page_renders_release_status_from_snapshots(app_client, db_session) -> None:
     rule_with_matches = Rule(
         rule_name="Rule With Matches",
@@ -274,8 +282,13 @@ def test_rules_page_renders_release_status_from_snapshots(app_client, db_session
     assert "Fallback" in response.text
     assert "No matches" in response.text
     assert "No snapshot" in response.text
-    assert "1 / 1" in response.text
-    assert "0 / 1" in response.text
+    assert "0/1/1" in response.text
+    assert "0/0/1" in response.text
+    assert (
+        f'href="/rules/{rule_with_matches.id}/search?refresh_snapshot=1"'
+        in response.text
+    )
+    assert f'href="/rules/{rule_without_snapshot.id}/search"' in response.text
 
 
 def test_rules_page_renders_sync_error_details(app_client, db_session) -> None:
@@ -551,11 +564,11 @@ def test_rules_page_renders_exact_status_from_snapshots(app_client, db_session) 
     assert 'data-release-signal="exact"' in response.text
     assert 'data-release-signal="fallback"' in response.text
     assert "No exact" in response.text
-    assert "3 / 5" in response.text
-    assert "0 / 2" in response.text
+    assert "3/4/9" in response.text
+    assert "0/0/6" in response.text
 
 
-def test_rules_page_filters_by_release_signal(app_client, db_session) -> None:
+def test_rules_page_filters_by_release_signal_waterfall(app_client, db_session) -> None:
     snapshot_at = datetime(2026, 5, 8, tzinfo=UTC)
     exact_rule = Rule(
         rule_name="Exact Filter Rule",
@@ -583,7 +596,28 @@ def test_rules_page_filters_by_release_signal(app_client, db_session) -> None:
         last_exact_filtered_count=0,
         last_exact_fetched_count=2,
     )
-    db_session.add_all([exact_rule, fallback_rule])
+    hidden_results_rule = Rule(
+        rule_name="Hidden Results Filter Rule",
+        content_name="Hidden Results Filter Rule",
+        normalized_title="Hidden Results Filter Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/hidden-results-filter/results/torznab/api"],
+        last_snapshot_at=snapshot_at,
+        last_release_filtered_count=0,
+        last_release_fetched_count=4,
+        last_exact_filtered_count=0,
+        last_exact_fetched_count=1,
+    )
+    no_snapshot_rule = Rule(
+        rule_name="No Snapshot Filter Rule",
+        content_name="No Snapshot Filter Rule",
+        normalized_title="No Snapshot Filter Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["https://jackett.test/api/v2.0/indexers/no-snapshot-filter/results/torznab/api"],
+    )
+    db_session.add_all([exact_rule, fallback_rule, hidden_results_rule, no_snapshot_rule])
     db_session.flush()
     db_session.add_all(
         [
@@ -607,17 +641,56 @@ def test_rules_page_filters_by_release_signal(app_client, db_session) -> None:
                 exact_fetched_count=2,
                 fetched_at=snapshot_at,
             ),
+            RuleSearchSnapshot(
+                rule_id=hidden_results_rule.id,
+                payload={"query": "Hidden Results Filter Rule", "imdb_id_only": True},
+                inline_search={},
+                release_filtered_count=0,
+                release_fetched_count=4,
+                exact_filtered_count=0,
+                exact_fetched_count=1,
+                fetched_at=snapshot_at,
+            ),
         ]
     )
     db_session.commit()
 
-    response = app_client.get("/?release=exact")
+    any_results_response = app_client.get("/?release=any_results")
 
-    assert response.status_code == 200
-    assert "Exact Filter Rule" in response.text
-    assert "Fallback Filter Rule" not in response.text
-    assert 'name="release"' in response.text
-    assert 'value="exact" selected' in response.text
+    assert any_results_response.status_code == 200
+    assert "Exact Filter Rule" in any_results_response.text
+    assert "Fallback Filter Rule" in any_results_response.text
+    assert "Hidden Results Filter Rule" in any_results_response.text
+    assert "No Snapshot Filter Rule" not in any_results_response.text
+    assert 'value="any_results" selected' in any_results_response.text
+    assert "Signal: Any results" in any_results_response.text
+
+    visible_results_response = app_client.get("/?release=visible_results")
+
+    assert visible_results_response.status_code == 200
+    assert "Exact Filter Rule" in visible_results_response.text
+    assert "Fallback Filter Rule" in visible_results_response.text
+    assert "Hidden Results Filter Rule" not in visible_results_response.text
+    assert "No Snapshot Filter Rule" not in visible_results_response.text
+    assert 'value="visible_results" selected' in visible_results_response.text
+
+    exact_results_response = app_client.get("/?release=exact_results")
+
+    assert exact_results_response.status_code == 200
+    assert "Exact Filter Rule" in exact_results_response.text
+    assert "Fallback Filter Rule" not in exact_results_response.text
+    assert "Hidden Results Filter Rule" not in exact_results_response.text
+    assert "No Snapshot Filter Rule" not in exact_results_response.text
+    assert 'value="exact_results" selected' in exact_results_response.text
+
+    no_snapshot_response = app_client.get("/?release=no_snapshot")
+
+    assert no_snapshot_response.status_code == 200
+    assert "Exact Filter Rule" not in no_snapshot_response.text
+    assert "Fallback Filter Rule" not in no_snapshot_response.text
+    assert "Hidden Results Filter Rule" not in no_snapshot_response.text
+    assert "No Snapshot Filter Rule" in no_snapshot_response.text
+    assert 'value="no_snapshot" selected' in no_snapshot_response.text
 
 
 def test_rules_page_filters_by_manual_custom_quality(app_client, db_session) -> None:
@@ -720,8 +793,9 @@ def test_rules_page_renders_backend_release_signal_column(app_client, db_session
     assert 'data-release-signal="exact"' in response.text
     assert 'data-release-signal="fallback"' in response.text
     assert 'data-release-signal="no_snapshot"' in response.text
-    assert "2 / 3" in response.text
-    assert "3 / 8" in response.text
+    assert "2/4/7" in response.text
+    assert "0/3/8" in response.text
+    assert "exact / visible / results" in response.text
 
 
 def test_rules_page_does_not_trigger_automatic_poster_backfill(
@@ -1125,6 +1199,11 @@ const patternMap = {{
 const camRegex = new RegExp(buildQualityRegex(["cam"], patternMap), "iu");
 const tsRegex = new RegExp(buildQualityRegex(["ts"], patternMap), "iu");
 const hdRegex = new RegExp(buildQualityRegex(["hd"], patternMap), "iu");
+const hdrGroupRegex = new RegExp(buildQualityIncludeRegex(
+  ["hdr", "dolby_vision"],
+  {{ hdr: "hdr10\\+?|hdr", dolby_vision: "dolby[\\s._-]*vision|dv" }},
+  {{ hdr: "definition", dolby_vision: "definition" }},
+), "iu");
 console.log(JSON.stringify({{
   camMatchesHdcam: camRegex.test("Film HDCAM 1080p"),
   camMatchesCamelot: camRegex.test("Camelot 1080p WEB-DL"),
@@ -1132,6 +1211,9 @@ console.log(JSON.stringify({{
   tsMatchesSecrets: tsRegex.test("The Secrets 1080p WEB-DL"),
   hdMatchesHd: hdRegex.test("Film HD WEB-DL"),
   hdMatchesHdcam: hdRegex.test("Film HDCAM 1080p"),
+  hdrGroupMatchesHdr: hdrGroupRegex.test("Film 2160p HDR WEB-DL"),
+  hdrGroupMatchesDvo: hdrGroupRegex.test("Film MVO DVO 2160p SDR WEB-DL"),
+  hdrGroupMatchesDvdrip: hdrGroupRegex.test("Film DVDRip"),
 }}));
 """
     completed = subprocess.run(
@@ -1150,17 +1232,72 @@ console.log(JSON.stringify({{
         "tsMatchesSecrets": False,
         "hdMatchesHd": True,
         "hdMatchesHdcam": False,
+        "hdrGroupMatchesHdr": True,
+        "hdrGroupMatchesDvo": False,
+        "hdrGroupMatchesDvdrip": False,
     }
 
 
-def test_inline_local_generated_pattern_keeps_same_season_complete_pack_when_keep_searching_enabled() -> None:
+def test_rule_and_rules_pages_share_saved_rule_summary_counts(app_client, db_session) -> None:
+    snapshot_at = datetime(2026, 6, 14, tzinfo=UTC)
+    rule = Rule(
+        rule_name="Shared Summary Rule",
+        content_name="Shared Summary Rule",
+        normalized_title="Shared Summary Rule",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        last_snapshot_at=snapshot_at,
+        last_release_filtered_count=0,
+        last_release_fetched_count=34,
+        last_exact_filtered_count=0,
+        last_exact_fetched_count=4,
+    )
+    db_session.add(rule)
+    db_session.flush()
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule.id,
+            payload={"query": "Shared Summary Rule", "imdb_id_only": True},
+            inline_search={
+                "combined_filtered_count": 6,
+                "combined_fetched_count": 34,
+                "exact_filtered_count": 2,
+                "exact_fetched_count": 4,
+                "unified_raw_results": [],
+                "source_breakdown": [
+                    {"key": "primary", "filtered_count": 2, "fetched_count": 4},
+                    {"key": "fallback", "filtered_count": 4, "fetched_count": 30},
+                ],
+            },
+            release_filtered_count=0,
+            release_fetched_count=34,
+            exact_filtered_count=0,
+            exact_fetched_count=4,
+            fetched_at=snapshot_at,
+        )
+    )
+    db_session.commit()
+
+    rules_response = app_client.get("/")
+    rule_response = app_client.get(f"/rules/{rule.id}")
+
+    assert rules_response.status_code == 200
+    assert rule_response.status_code == 200
+    assert "0/0/34" in rules_response.text
+    assert 'data-search-filtered-count="combined">0</span>' in rule_response.text
+    assert 'data-search-fetched-count="combined">34</span>' in rule_response.text
+    assert 'data-search-source-summary="primary"' in rule_response.text
+    assert "2 filtered /" not in rule_response.text
+
+
+def test_inline_local_filter_keeps_only_packs_that_contain_a_new_episode() -> None:
     app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
     app_js_source = app_js_path.read_text(encoding="utf-8")
 
-    assert "const isSameSeasonCompletePackAllowed = (entry, filters) => {" in app_js_source
-    assert "SEASON_PACK_COMPLETE_MARKER_RE" in app_js_source
-    assert "keepSearchingExisting: getJellyfinSearchExistingUnseen()," in app_js_source
-    assert "if (!isSameSeasonCompletePackAllowed(entry, filters)) {" in app_js_source
+    assert "const packContainsOnlyExistingEpisodes = (entry, filters) => {" in app_js_source
+    assert "existingEpisodeNumbers: getJellyfinExistingEpisodeNumbers()," in app_js_source
+    assert 'return "Every episode in this pack already exists in the library.";' in app_js_source
+    assert "isSameSeasonCompletePackAllowed" not in app_js_source
 
 
 def test_inline_clear_local_filters_resets_regex_and_episode_floor_inputs() -> None:
@@ -1704,6 +1841,7 @@ def test_search_page_passes_structured_audiobook_fields_to_jackett(
             "author": "Brandon Sanderson",
             "publisher": "Macmillan Audio",
             "genre": "Fantasy",
+            "isbn": "9781250901234",
         },
     )
 
@@ -1715,9 +1853,64 @@ def test_search_page_passes_structured_audiobook_fields_to_jackett(
     assert payload.author == "Brandon Sanderson"
     assert payload.publisher == "Macmillan Audio"
     assert payload.genre == "Fantasy"
+    assert payload.isbn == "9781250901234"
     assert 'name="title" value="The Way of Kings"' in response.text
     assert 'name="author" value="Brandon Sanderson"' in response.text
     assert 'name="publisher" value="Macmillan Audio"' in response.text
+    assert 'name="isbn" value="9781250901234"' in response.text
+
+
+def test_search_page_from_saved_audiobook_rule_uses_structured_hints(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    captured_payloads: list[JackettSearchRequest] = []
+    rule = Rule(
+        rule_name="Last Question Audio",
+        content_name="The Last Question",
+        normalized_title="The Last Question",
+        media_type=MediaType.AUDIOBOOK,
+        quality_profile=QualityProfile.CUSTOM,
+        search_metadata={
+            "title": "The Last Question",
+            "author": "Isaac Asimov",
+            "publisher": "Eksmo",
+            "genre": "Science Fiction",
+            "isbn": "9785961436891",
+        },
+        feed_urls=["http://feed.example/audiobooks"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    def fake_search(self, payload):
+        captured_payloads.append(payload)
+        return JackettSearchRun(
+            query_variants=["The Last Question Isaac Asimov", "The Last Question"],
+            results=[
+                JackettSearchResult(
+                    title="The Last Question Isaac Asimov Audiobook",
+                    link="magnet:?xt=urn:btih:BOOK222",
+                    indexer="booktracker",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(JackettClient, "search", fake_search)
+
+    response = app_client.get("/search", params={"rule_id": rule.id})
+
+    assert response.status_code == 200
+    assert len(captured_payloads) == 1
+    payload = captured_payloads[0]
+    assert payload.query == "The Last Question"
+    assert payload.media_type == MediaType.AUDIOBOOK
+    assert payload.title == "The Last Question"
+    assert payload.author == "Isaac Asimov"
+    assert payload.publisher == "Eksmo"
+    assert payload.genre == "Science Fiction"
+    assert payload.isbn == "9785961436891"
 
 
 def test_search_page_resolves_colliding_category_ids_per_indexer(
@@ -2733,6 +2926,8 @@ def test_rule_pages_expose_run_search_actions(app_client, db_session) -> None:
     assert 'title="Run search"' in index_response.text
     assert edit_response.status_code == 200
     assert f"/rules/{rule.id}/search" in edit_response.text
+    assert 'data-rule-edit-command-bar' in edit_response.text
+    assert 'form="rule-form">Save Changes</button>' in edit_response.text
     assert ">Run Search Snapshot</a>" in edit_response.text
     assert "Refresh Search Snapshot" not in edit_response.text
     assert ">Advanced Search Workspace</a>" in edit_response.text
@@ -2793,8 +2988,10 @@ def test_edit_rule_page_can_render_inline_search_results(
     assert 'data-search-table-sort-field="title"' in response.text
     assert "data-search-view-mode" not in response.text
     assert "data-search-show-hidden-toggle" in response.text
+    assert 'data-search-display-status="combined"' in response.text
     assert 'data-search-multiselect="indexers"' in response.text
     assert 'data-search-multiselect="categories"' in response.text
+    assert 'data-feed-summary' in response.text
     assert 'data-search-source-summary="primary"' in response.text
     assert "data-search-source-filtered-count" in response.text
     assert 'data-search-scope-summary="combined"' in response.text
@@ -2827,7 +3024,8 @@ def test_edit_rule_page_preserves_zero_episode_floor_in_form(app_client, db_sess
     assert response.status_code == 200
     assert 'name="start_season" value="2"' in response.text
     assert 'name="start_episode" value="0"' in response.text
-    assert "use `0` to catch `E00` specials when the next season begins." in response.text
+    assert "Start season / episode" in response.text
+    assert "use episode 0 to catch E00 specials when the next season begins." in response.text
 
 
 def test_edit_rule_inline_search_replays_saved_snapshot_without_jackett_call(
@@ -5002,9 +5200,16 @@ def test_new_rule_uses_ultra_hd_hdr_defaults(app_client) -> None:
     assert "Managed profile" in response.text
     assert 'data-quality-mode-action="manual"' in response.text
     assert 'data-quality-mode-action="managed"' in response.text
+    assert 'data-quality-mode-description' not in response.text
+    assert 'data-quality-managed-help="This rule follows preset changes until you make it manual."' in response.text
+    assert (
+        'data-quality-manual-help="This rule keeps its current include/exclude tokens until you choose a managed profile."'
+        in response.text
+    )
     assert 'option value="builtin-ultra-hd-hdr" selected' in response.text
     assert 'option value="builtin-music-lossless"' not in response.text
     assert 'id="metadata-lookup-provider"' in response.text
+    assert 'title="Search by title or provider-specific ID using services relevant to the selected media type."' in response.text
     assert ">OMDb (Video)</option>" in response.text
     assert 'data-quality-token="ultra_hd"' in response.text
     assert 'data-quality-token="hdr"' in response.text
@@ -5246,6 +5451,51 @@ def test_metadata_lookup_accepts_provider_and_title_payload(app_client, monkeypa
     assert response.json()["provider"] == "musicbrainz"
 
 
+def test_metadata_lookup_smart_audiobook_returns_enriched_fields(
+    app_client,
+    monkeypatch,
+) -> None:
+    captured: dict[str, str] = {}
+
+    def fake_lookup(self, provider, lookup_value, media_type):
+        captured["provider"] = str(provider)
+        captured["lookup_value"] = lookup_value
+        captured["media_type"] = media_type.value
+        return MetadataResult(
+            title="The Last Question",
+            provider=MetadataLookupProvider.GOOGLE_BOOKS,
+            source_id="book-9785961436891",
+            media_type=MediaType.AUDIOBOOK,
+            year="2024",
+            authors=["Isaac Asimov"],
+            publisher="Eksmo",
+            isbn="9785961436891",
+        )
+
+    monkeypatch.setattr(MetadataClient, "lookup", fake_lookup)
+
+    response = app_client.post(
+        "/api/metadata/lookup",
+        json={
+            "provider": "smart_audiobook",
+            "lookup_value": "9785961436891",
+            "media_type": "audiobook",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured == {
+        "provider": "MetadataLookupProvider.SMART_AUDIOBOOK",
+        "lookup_value": "9785961436891",
+        "media_type": "audiobook",
+    }
+    body = response.json()
+    assert body["provider"] == "google_books"
+    assert body["authors"] == ["Isaac Asimov"]
+    assert body["publisher"] == "Eksmo"
+    assert body["isbn"] == "9785961436891"
+
+
 def test_create_rule_persists_locally_and_enqueues_qb_sync_without_inline_call(
     app_client,
     db_session,
@@ -5301,6 +5551,80 @@ def test_create_rule_persists_locally_and_enqueues_qb_sync_without_inline_call(
     assert rule.last_sync_status == SyncStatus.PENDING
     assert inline_sync_calls == []
     assert enqueued_rule_ids == [rule.id]
+
+
+def test_create_rule_persists_audiobook_search_metadata(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    enqueued_rule_ids: list[str] = []
+    monkeypatch.setattr(
+        "app.routes.api.enqueue_rule_sync",
+        lambda rule_id: enqueued_rule_ids.append(rule_id),
+        raising=False,
+    )
+
+    response = app_client.post(
+        "/api/rules",
+        data={
+            "rule_name": "Last Question Audio",
+            "content_name": "The Last Question",
+            "normalized_title": "The Last Question",
+            "media_type": "audiobook",
+            "quality_profile": "custom",
+            "audiobook_title": "The Last Question",
+            "audiobook_author": "Isaac Asimov",
+            "audiobook_publisher": "Eksmo",
+            "audiobook_genre": "Science Fiction",
+            "audiobook_isbn": "9785961436891",
+            "enabled": "on",
+            "add_paused": "on",
+            "feed_urls": ["http://feed.example/audiobooks"],
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    rule = db_session.scalar(select(Rule).where(Rule.rule_name == "Last Question Audio"))
+    assert rule is not None
+    assert rule.search_metadata == {
+        "title": "The Last Question",
+        "author": "Isaac Asimov",
+        "publisher": "Eksmo",
+        "genre": "Science Fiction",
+        "isbn": "9785961436891",
+    }
+    assert enqueued_rule_ids == [rule.id]
+
+
+def test_edit_rule_renders_audiobook_search_metadata(app_client, db_session) -> None:
+    rule = Rule(
+        rule_name="Last Question Edit",
+        content_name="The Last Question",
+        normalized_title="The Last Question",
+        media_type=MediaType.AUDIOBOOK,
+        quality_profile=QualityProfile.CUSTOM,
+        search_metadata={
+            "title": "The Last Question",
+            "author": "Isaac Asimov",
+            "publisher": "Eksmo",
+            "genre": "Science Fiction",
+            "isbn": "9785961436891",
+        },
+        feed_urls=["http://feed.example/audiobooks"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    response = app_client.get(f"/rules/{rule.id}")
+
+    assert response.status_code == 200
+    assert 'name="audiobook_title" value="The Last Question"' in response.text
+    assert 'name="audiobook_author" value="Isaac Asimov"' in response.text
+    assert 'name="audiobook_publisher" value="Eksmo"' in response.text
+    assert 'name="audiobook_genre" value="Science Fiction"' in response.text
+    assert 'name="audiobook_isbn" value="9785961436891"' in response.text
 
 
 def test_create_rule_rejects_incomplete_episode_progress_floor(app_client) -> None:
@@ -6474,6 +6798,7 @@ def test_rule_form_includes_bulk_feed_selection_controls(app_client) -> None:
     assert 'id="feed-select-all"' in response.text
     assert 'id="feed-clear-all"' in response.text
     assert 'id="feed-options"' in response.text
+    assert 'class="checkbox-dropdown feed-dropdown"' in response.text
     assert 'id="feed-select"' not in response.text
 
 

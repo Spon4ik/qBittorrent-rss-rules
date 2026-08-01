@@ -83,6 +83,37 @@ def test_derive_and_select_watch_state_floor_preserves_source_label_and_current_
     )
 
 
+def test_select_watch_state_floor_corrects_next_season_zero_overadvance() -> None:
+    def next_floor_after_episode(current_episode: tuple[int, int]) -> tuple[tuple[int, int], str]:
+        season_number, episode_number = current_episode
+        next_episode = episode_number + 1
+        return (
+            (season_number, next_episode),
+            f"Advanced to S{season_number:02d}E{next_episode:02d} from S{season_number:02d}E{episode_number:02d}.",
+        )
+
+    derived_floor = derive_watch_state_floor(
+        source_label="Jellyfin",
+        current_episode_numbers=["S05E01", "S05E02", "S05E09"],
+        current_watched_episode_numbers=["S05E09"],
+        remembered_known_episode_numbers=[],
+        remembered_watched_episode_numbers=[],
+        next_floor_after_episode=next_floor_after_episode,
+    )
+
+    assert derived_floor is not None
+    selection = select_watch_state_floor(
+        derived_floor=derived_floor,
+        current_floor=(6, 0),
+        keep_searching_existing_unseen=True,
+        source_label="Jellyfin",
+    )
+
+    assert selection.effective_floor == (5, 10)
+    assert selection.floor_changed is True
+    assert selection.floor_detail == "Corrected previous next-season floor back to Jellyfin-derived progress."
+
+
 def test_normalize_watch_state_source_labels_canonicalizes_and_sorts() -> None:
     assert normalize_watch_state_source_labels(
         [" Stremio ", "jellyfin", "Jellyfin", "plex-watch", ""]

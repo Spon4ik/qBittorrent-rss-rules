@@ -339,13 +339,23 @@ def select_watch_state_floor(
         effective_floor = next_floor
         floor_changed = current_floor != next_floor
         if current_floor is not None and current_floor >= next_floor:
-            effective_floor = current_floor
-            floor_changed = False
-            floor_detail = f"Current rule floor already matches {source_label}-derived progress."
-            if current_floor > next_floor:
+            if (
+                next_floor[1] > 0
+                and current_floor[0] == next_floor[0] + 1
+                and current_floor[1] == 0
+            ):
                 floor_detail = (
-                    f"Current rule floor is already ahead of {source_label}-derived progress."
+                    f"Corrected previous next-season floor back to "
+                    f"{source_label}-derived progress."
                 )
+            else:
+                effective_floor = current_floor
+                floor_changed = False
+                floor_detail = f"Current rule floor already matches {source_label}-derived progress."
+                if current_floor > next_floor:
+                    floor_detail = (
+                        f"Current rule floor is already ahead of {source_label}-derived progress."
+                    )
 
     return WatchStateFloorSelection(
         effective_floor=effective_floor,
@@ -417,6 +427,81 @@ def select_movie_watch_state(
         else:
             effective_enabled = current_enabled
             detail = "No connected source currently reports this movie as completed."
+
+    return MovieWatchStateSelection(
+        completed_sources=next_completed_sources,
+        completion_changed=completion_changed,
+        effective_enabled=effective_enabled,
+        enabled_changed=effective_enabled != current_enabled,
+        effective_auto_disabled=effective_auto_disabled,
+        auto_disabled_changed=effective_auto_disabled != current_auto_disabled,
+        detail=detail,
+    )
+
+
+def select_finished_series_watch_state(
+    *,
+    source_label: str,
+    source_present: bool,
+    source_completed: bool,
+    current_completed_sources: list[str],
+    current_enabled: bool,
+    current_auto_disabled: bool,
+    keep_searching_existing_unseen: bool,
+    existing_unseen_episode_numbers: list[str],
+) -> MovieWatchStateSelection:
+    normalized_source_label = _normalize_watch_state_source_label(source_label)
+    previous_completed_sources = normalize_watch_state_source_labels(current_completed_sources)
+    next_completed_sources = [
+        label for label in previous_completed_sources if label != normalized_source_label
+    ]
+    if normalized_source_label and source_present and source_completed:
+        next_completed_sources.append(normalized_source_label)
+    next_completed_sources = normalize_watch_state_source_labels(next_completed_sources)
+    completion_changed = next_completed_sources != previous_completed_sources
+    completion_sources_display = format_watch_state_source_labels(next_completed_sources)
+    has_existing_unseen = bool(normalize_watch_state_episode_keys(existing_unseen_episode_numbers))
+
+    if keep_searching_existing_unseen and has_existing_unseen:
+        effective_enabled = True if current_auto_disabled else current_enabled
+        effective_auto_disabled = False
+        detail = (
+            "Finished-series watch state is not applied because keep-search existing unseen "
+            "episodes still has remaining episode inventory."
+        )
+    elif next_completed_sources:
+        if current_enabled:
+            effective_enabled = False
+            effective_auto_disabled = True
+            detail = (
+                f"Disabled because finished-series watch state is reported by "
+                f"{completion_sources_display}."
+            )
+        elif current_auto_disabled:
+            effective_enabled = current_enabled
+            effective_auto_disabled = True
+            detail = (
+                f"Series remains auto-disabled because finished-series watch state is reported by "
+                f"{completion_sources_display}."
+            )
+        else:
+            effective_enabled = current_enabled
+            effective_auto_disabled = False
+            detail = (
+                f"Finished-series watch state is reported by {completion_sources_display}, "
+                "but the current disabled state was not set by watch-state sync."
+            )
+    else:
+        effective_auto_disabled = False
+        if current_auto_disabled:
+            effective_enabled = True
+            detail = (
+                "Re-enabled because no connected source currently proves this series is finished "
+                "and fully watched."
+            )
+        else:
+            effective_enabled = current_enabled
+            detail = "No connected source currently proves this series is finished and fully watched."
 
     return MovieWatchStateSelection(
         completed_sources=next_completed_sources,

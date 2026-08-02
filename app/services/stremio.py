@@ -752,6 +752,10 @@ class StremioService:
             elif record.completed:
                 state["flaggedWatched"] = 1
                 state["timesWatched"] = max(1, _stremio_int(state.get("timesWatched")))
+            else:
+                state["flaggedWatched"] = 0
+                state["timesWatched"] = 0
+                state["watched"] = ""
             updated_payload["state"] = state
             self._write_library_item_payload(auth_key, updated_payload)
 

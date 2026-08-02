@@ -259,6 +259,56 @@ def test_stremio_write_watch_progress_preserves_existing_state(monkeypatch) -> N
     assert writes[0][1]["state"]["overallTimeWatched"] == 240_000
 
 
+def test_stremio_write_unwatched_movie_clears_stale_completion_markers(monkeypatch) -> None:
+    settings = AppSettings(id="default")
+    service = StremioService(settings)
+    writes: list[dict[str, object]] = []
+    payload = stremio_library_item(
+        "tt30825738",
+        "Star Wars: The Mandalorian and Grogu",
+        item_type="movie",
+        state_overrides={
+            "flaggedWatched": 1,
+            "timesWatched": 1,
+            "watched": "undefined:1:eJwDAAAAAAE=",
+            "timeWatched": 72_000,
+            "overallTimeWatched": 72_000,
+            "duration": 7_915_520,
+        },
+    )
+
+    monkeypatch.setattr(
+        service,
+        "_run_with_auth_fallback",
+        lambda operation: ("auth", operation("key")),
+    )
+    monkeypatch.setattr(service, "_fetch_library_payloads", lambda _auth_key: [payload])
+    monkeypatch.setattr(
+        service,
+        "_write_library_item_payload",
+        lambda _auth_key, updated_payload: writes.append(updated_payload),
+    )
+
+    service.write_watch_progress(
+        WatchProgressRecord(
+            source="jellyfin",
+            media_type="movie",
+            item_key="tt30825738",
+            provider_item_id="jf-grogu",
+            position_ms=72_000,
+            duration_ms=7_915_520,
+            completed=False,
+            updated_at=None,
+        )
+    )
+
+    state = writes[0]["state"]
+    assert state["flaggedWatched"] == 0
+    assert state["timesWatched"] == 0
+    assert state["watched"] == ""
+    assert not service._watch_progress_record_from_payload(writes[0]).completed
+
+
 def test_stremio_write_watch_progress_sets_episode_video_id_from_item_key(monkeypatch) -> None:
     settings = AppSettings(id="default")
     service = StremioService(settings)

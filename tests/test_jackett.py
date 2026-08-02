@@ -134,7 +134,7 @@ def test_jackett_client_connection_test_calls_caps_endpoint() -> None:
     client.test_connection()
 
 
-def test_jackett_client_retries_timeout_before_success() -> None:
+def test_jackett_client_does_not_retry_timed_out_request_surface() -> None:
     attempts = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -142,9 +142,7 @@ def test_jackett_client_retries_timeout_before_success() -> None:
         attempts += 1
         assert request.url.params["t"] == "search"
         assert request.url.params["q"] == "Example"
-        if attempts < 3:
-            raise httpx.ReadTimeout("timed out", request=request)
-        return httpx.Response(200, text="<rss><channel /></rss>")
+        raise httpx.ReadTimeout("timed out", request=request)
 
     client = JackettClient(
         "http://jackett:9117",
@@ -152,11 +150,11 @@ def test_jackett_client_retries_timeout_before_success() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    result = client.search(JackettSearchRequest(query="Example"))
+    with pytest.raises(JackettClientError):
+        client.search(JackettSearchRequest(query="Example"))
 
-    assert attempts == 4
-    assert result.query_variants == ["Example"]
-    assert result.results == []
+    # The standard and compatibility request surfaces are each attempted once.
+    assert attempts == 2
 
 
 def test_jackett_client_timeout_error_includes_request_context() -> None:
@@ -181,7 +179,7 @@ def test_jackett_client_timeout_error_includes_request_context() -> None:
         )
 
     message = str(exc_info.value)
-    assert "Jackett request failed after 3 timeout attempts for" in message
+    assert "Jackett request failed after 1 timeout attempt for" in message
     assert "t=tvsearch imdbid=tt17676654" in message
 
 
@@ -207,7 +205,7 @@ def test_jackett_client_reports_timeout_for_single_broad_variant() -> None:
         )
 
     message = str(exc_info.value)
-    assert "Jackett request failed after 3 timeout attempts for" in message
+    assert "Jackett request failed after 1 timeout attempt for" in message
     assert 't=search q="American Classic"' in message
 
 
@@ -491,8 +489,8 @@ def test_jackett_client_scoped_standard_search_continues_after_indexer_timeout()
         )
     )
 
-    assert seen_paths.count("/api/v2.0/indexers/all/results/torznab/api") == 3
-    assert seen_paths.count("/api/v2.0/indexers/rutracker/results/torznab/api") == 3
+    assert seen_paths.count("/api/v2.0/indexers/all/results/torznab/api") == 1
+    assert seen_paths.count("/api/v2.0/indexers/rutracker/results/torznab/api") == 1
     assert seen_paths.count("/api/v2.0/indexers/kinozal/results/torznab/api") == 1
     assert [item.title for item in result.results] == ["American Classic S01E01 WEB"]
     assert any('t=search q="American Classic"' in item for item in result.warning_messages)

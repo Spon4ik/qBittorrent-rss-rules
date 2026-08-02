@@ -51,6 +51,7 @@ from app.services.metadata import (
     metadata_lookup_provider_catalog,
     metadata_lookup_provider_choices,
 )
+from app.services.operation_status import complete_operation, fail_operation, start_operation
 from app.services.quality_filters import (
     available_filter_profile_choices,
     available_filter_profile_choices_for_media_type,
@@ -2139,6 +2140,12 @@ def edit_rule(
                 if not jackett.app_ready:
                     inline_search_errors = ["Jackett app search is not configured in Settings."]
                 else:
+                    operation = start_operation(
+                        operation_type="jackett_fetch",
+                        label=f"Refreshing {rule.rule_name}",
+                        total=1,
+                        message="Fetching a fresh snapshot from Jackett.",
+                    )
                     try:
                         payload_from_rule = _auto_imdb_first_payload(payload_from_rule)
                         client = JackettClient(
@@ -2171,16 +2178,31 @@ def edit_rule(
                             refresh_snapshot_release_cache(snapshot, rule=rule)
                         inline_search = inline_search_from_rule_snapshot(snapshot, rule=rule)
                         session.commit()
+                        complete_operation(
+                            operation.operation_id,
+                            message=f"Fresh snapshot saved for {rule.rule_name}.",
+                        )
                         if refresh_inline_snapshot:
                             inline_search_notices.append(
                                 "Search snapshot refreshed from Jackett and saved for future runs."
                             )
                     except JackettClientError as exc:
                         inline_search_errors = [str(exc)]
+                        fail_operation(
+                            operation.operation_id,
+                            message=f"Snapshot refresh failed for {rule.rule_name}.",
+                            error=str(exc),
+                        )
                     except Exception as exc:
-                        inline_search_errors = [
-                            _unexpected_error_message("Inline rule search failed unexpectedly", exc)
-                        ]
+                        error = _unexpected_error_message(
+                            "Inline rule search failed unexpectedly", exc
+                        )
+                        inline_search_errors = [error]
+                        fail_operation(
+                            operation.operation_id,
+                            message=f"Snapshot refresh failed for {rule.rule_name}.",
+                            error=error,
+                        )
 
     if inline_search is not None and not effective_feed_scope_override:
         _apply_rule_summary_counts_to_inline_search(inline_search, rule=rule)

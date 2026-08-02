@@ -95,7 +95,12 @@ MAX_OPTIONAL_KEYWORDS_TOTAL = 64
 MAX_EXCLUDED_KEYWORDS = 48
 MAX_QUERY_VARIANTS = 32
 MAX_SEARCH_QUERY_LENGTH = 255
-TIMEOUT_RETRY_ATTEMPTS = 3
+# A refresh fans out across aggregate, direct-indexer, precise-title, and
+# fallback request surfaces. Retrying every timed-out surface multiplies a
+# single 10-second provider timeout into minutes while healthy indexers have
+# already returned useful rows. Keep active search fail-soft and move on after
+# the first timeout; the next explicit or scheduled refresh is the retry.
+TIMEOUT_RETRY_ATTEMPTS = 1
 TORZNAB_MEDIA_CATEGORIES: dict[MediaType, tuple[str, ...]] = {
     MediaType.MOVIE: ("2000",),
     MediaType.SERIES: ("5000",),
@@ -3600,9 +3605,11 @@ class JackettClient:
                     f"Jackett request failed for {request_context}: {exc}"
                 ) from exc
         else:
+            attempt_label = "attempt" if TIMEOUT_RETRY_ATTEMPTS == 1 else "attempts"
             raise JackettTimeoutError(
                 "Jackett request failed after "
-                f"{TIMEOUT_RETRY_ATTEMPTS} timeout attempts for {request_context}: {timeout_error}"
+                f"{TIMEOUT_RETRY_ATTEMPTS} timeout {attempt_label} for "
+                f"{request_context}: {timeout_error}"
             ) from timeout_error
 
         try:

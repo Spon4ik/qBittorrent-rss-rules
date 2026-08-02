@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.3.2] - 2026-08-03
+
+- Fixed per-rule snapshot refreshes reporting background work as idle by registering the real Jackett fetch in the shared operation-progress service.
+- Stopped retrying each timed-out Jackett request surface three times; refreshes now keep healthy-indexer results and move on after one bounded timeout, avoiding multi-minute retry cascades.
 ## [1.3.1] - 2026-08-02
 
 - Fixed IMDb-backed searches silently missing selected trackers when Jackett's aggregate endpoint returned results from only part of the configured scope.

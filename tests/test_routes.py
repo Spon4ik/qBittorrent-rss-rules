@@ -94,7 +94,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.3.1"
+    assert payload["app_version"] == "1.3.2"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -2373,7 +2373,7 @@ def test_search_page_renders_search_warnings(app_client, monkeypatch) -> None:
             query_variants=["American Classic uhd"],
             request_variants=['t=tvsearch q="American Classic uhd" cat=5000'],
             warning_messages=[
-                'Jackett request failed after 3 timeout attempts for t=tvsearch q="American Classic uhd" year=2025 cat=5000: timed out'
+                'Jackett request failed after 1 timeout attempt for t=tvsearch q="American Classic uhd" year=2025 cat=5000: timed out'
             ],
             results=[],
         )
@@ -2391,7 +2391,7 @@ def test_search_page_renders_search_warnings(app_client, monkeypatch) -> None:
     )
 
     assert response.status_code == 200
-    assert "Jackett request failed after 3 timeout attempts for" in response.text
+    assert "Jackett request failed after 1 timeout attempt for" in response.text
     assert "American Classic uhd" in response.text
     assert "No IMDb-first matches" not in response.text
 
@@ -3429,6 +3429,9 @@ def test_edit_rule_inline_search_refreshes_and_persists_snapshot(
     db_session,
     monkeypatch,
 ) -> None:
+    from app.services import operation_status
+
+    operation_status.reset_operations_for_tests()
     settings = AppSettings(
         id="default",
         jackett_api_url="http://jackett:9117",
@@ -3515,6 +3518,14 @@ def test_edit_rule_inline_search_refreshes_and_persists_snapshot(
     snapshot = db_session.get(RuleSearchSnapshot, rule.id)
     assert snapshot is not None
     assert snapshot.inline_search["raw_results"][0]["title"] == "New Snapshot Result"
+    operations = operation_status.operations_status_payload()["operations"]
+    assert len(operations) == 1
+    assert operations[0]["type"] == "jackett_fetch"
+    assert operations[0]["label"] == "Refreshing Refresh Snapshot Rule"
+    assert operations[0]["status"] == "success"
+    assert operations[0]["current"] == 1
+    assert operations[0]["total"] == 1
+    operation_status.reset_operations_for_tests()
 
 
 def test_edit_rule_inline_search_scopes_single_jackett_feed_indexer(

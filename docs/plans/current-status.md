@@ -1371,6 +1371,8 @@
 
 ## Next actions
 
+- Snapshot-refresh enforcement is implemented and live-validated for `v1.3.2`: selected fetch and the direct per-rule refresh both forced Grogu timestamp advancement, both exposed active backend operation state, and the one-timeout fail-soft policy reduced the reproduced selected refresh from 131.8 to 54.6 seconds while preserving 44 fetched rows.
+
 - Preserve the 2026-06-14 `Office Space` hidden-row regression: exact-title rows recovered through precise title search must enter persisted `raw_results` even when quality/year/episode filters reject them from visible results. Details ID `1628537` is the live Kinozal proof case.
 
 - Keep the 2026-05-28 live-provider Phase 32 regression shape in future watch-progress checks: ambiguous duplicate Jellyfin IMDb matches should remain skipped/non-error, Stremio active no-progress titles should remain eligible for Jellyfin write-back, and scheduled sync messages should include detailed top-error text when warnings/errors remain.

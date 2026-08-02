@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.3.1] - 2026-08-02
+
+- Fixed IMDb-backed searches silently missing selected trackers when Jackett's aggregate endpoint returned results from only part of the configured scope.
+- Added a bounded parallel direct-indexer completeness pass while preserving successful aggregate and sibling-indexer results.
+- Normalized Jackett indexer display names during scope filtering so labels such as `RuTracker.org` match the saved `rutracker` indexer slug.
 ## [1.3.0] - 2026-08-01
 
 - Added a compact rules operations workbench, shared background-operation progress feedback, and consistent rule/search workspace layouts with resilient inline result scrolling and filtering.

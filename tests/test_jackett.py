@@ -3229,6 +3229,62 @@ def test_jackett_client_precise_title_primary_hides_non_exact_imdb_fallback_rows
     assert result.fallback_results == []
 
 
+def test_precise_title_recovery_completes_selected_indexers_after_partial_aggregate() -> None:
+    seen_paths: list[str] = []
+
+    def rss(title: str, guid: str, indexer: str) -> str:
+        return f"""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel><item>
+  <title>{title}</title><guid>{guid}</guid>
+  <link>https://example.test/{guid}.torrent</link>
+  <torznab:attr name="jackettindexer" value="{indexer}" />
+</item></channel></rss>
+"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_paths.append(request.url.path)
+        if request.url.path.endswith("/all/results/torznab/api"):
+            return httpx.Response(
+                200,
+                text=rss(
+                    "Stuart Fails to Save the Universe S01E02 2160p HDR",
+                    "aggregate-kinozal",
+                    "kinozal",
+                ),
+            )
+        if request.url.path.endswith("/rutracker/results/torznab/api"):
+            return httpx.Response(
+                200,
+                text=rss(
+                    "Stuart Fails to Save the Universe S1E1-2 of 10 HDR10 Dolby Vision",
+                    "rutracker-6887212",
+                    "RuTracker.org",
+                ),
+            )
+        if request.url.path.endswith("/kinozal/results/torznab/api"):
+            return httpx.Response(200, text="<rss><channel /></rss>")
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+    payload = JackettSearchRequest(
+        query="Stuart Fails to Save the Universe",
+        media_type="series",
+        imdb_id="tt27497393",
+        filter_indexers=["rutracker", "kinozal"],
+    )
+
+    precise, hidden, _requests, warnings = client._search_precise_title_primary(payload)
+
+    assert hidden == []
+    assert warnings == []
+    assert {item.indexer for _, item in precise} == {"kinozal", "RuTracker.org"}
+    assert any("/rutracker/results/torznab/api" in path for path in seen_paths)
+
+
 def test_jackett_client_keeps_exact_title_quality_mismatch_in_raw_results() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path

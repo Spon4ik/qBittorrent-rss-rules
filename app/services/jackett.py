@@ -2801,25 +2801,80 @@ class JackettClient:
             query_result_count = 0
             for indexer_group in remote_indexer_groups:
                 group_had_success = False
-                for indexer in indexer_group:
+                group_results: dict[
+                    int,
+                    tuple[
+                        str,
+                        tuple[
+                            list[tuple[datetime | None, JackettSearchResult]],
+                            dict[str, object],
+                            list[dict[str, object]],
+                            list[str],
+                        ]
+                        | None,
+                        JackettClientError | None,
+                    ],
+                ] = {}
+
+                def search_indexer(
+                    indexer: str,
+                    request_params: dict[str, object],
+                    request_fallbacks: list[dict[str, object]],
+                    should_continue: bool,
+                ) -> tuple[
+                    str,
+                    tuple[
+                        list[tuple[datetime | None, JackettSearchResult]],
+                        dict[str, object],
+                        list[dict[str, object]],
+                        list[str],
+                    ]
+                    | None,
+                    JackettClientError | None,
+                ]:
                     try:
-                        parsed_results, successful_params, _, timeout_messages = (
+                        return (
+                            indexer,
                             self._search_variant(
                                 indexer,
-                                params,
-                                fallback_params=fallback_params,
-                                continue_on_empty=continue_on_empty or bool(fallback_params),
-                            )
+                                request_params,
+                                fallback_params=request_fallbacks,
+                                continue_on_empty=should_continue,
+                            ),
+                            None,
                         )
-                    except JackettTimeoutError as exc:
-                        warning_messages.append(str(exc))
-                        continue
-                    except JackettHTTPError as exc:
-                        warning_messages.append(str(exc))
-                        continue
                     except JackettClientError as exc:
-                        warning_messages.append(str(exc))
+                        return indexer, None, exc
+
+                if len(indexer_group) == 1:
+                    group_results[0] = search_indexer(
+                        indexer_group[0],
+                        params,
+                        fallback_params,
+                        continue_on_empty or bool(fallback_params),
+                    )
+                else:
+                    with ThreadPoolExecutor(max_workers=min(len(indexer_group), 8)) as executor:
+                        future_indexes = {
+                            executor.submit(
+                                search_indexer,
+                                indexer,
+                                params,
+                                fallback_params,
+                                continue_on_empty or bool(fallback_params),
+                            ): index
+                            for index, indexer in enumerate(indexer_group)
+                        }
+                        for future in as_completed(future_indexes):
+                            group_results[future_indexes[future]] = future.result()
+
+                for result_index in sorted(group_results):
+                    _indexer, search_result, error = group_results[result_index]
+                    if error is not None:
+                        warning_messages.append(str(error))
                         continue
+                    assert search_result is not None
+                    parsed_results, successful_params, _, timeout_messages = search_result
                     group_had_success = True
                     query_had_success = True
                     request_variants.append(successful_params)
@@ -2910,25 +2965,77 @@ class JackettClient:
             query_result_count = 0
             for indexer_group in remote_indexer_groups:
                 group_had_success = False
-                for indexer in indexer_group:
+                group_results: dict[
+                    int,
+                    tuple[
+                        tuple[
+                            list[tuple[datetime | None, JackettSearchResult]],
+                            dict[str, object],
+                            list[dict[str, object]],
+                            list[str],
+                        ]
+                        | None,
+                        JackettClientError | None,
+                    ],
+                ] = {}
+
+                def search_indexer(
+                    indexer: str,
+                    request_params: dict[str, object],
+                    request_fallbacks: list[dict[str, object]],
+                    should_continue: bool,
+                ) -> tuple[
+                    tuple[
+                        list[tuple[datetime | None, JackettSearchResult]],
+                        dict[str, object],
+                        list[dict[str, object]],
+                        list[str],
+                    ]
+                    | None,
+                    JackettClientError | None,
+                ]:
                     try:
-                        parsed_results, successful_params, _, timeout_messages = (
+                        return (
                             self._search_variant(
                                 indexer,
-                                params,
-                                fallback_params=fallback_params,
-                                continue_on_empty=continue_on_empty or bool(fallback_params),
-                            )
+                                request_params,
+                                fallback_params=request_fallbacks,
+                                continue_on_empty=should_continue,
+                            ),
+                            None,
                         )
-                    except JackettTimeoutError as exc:
-                        warning_messages.append(str(exc))
-                        continue
-                    except JackettHTTPError as exc:
-                        warning_messages.append(str(exc))
-                        continue
                     except JackettClientError as exc:
-                        warning_messages.append(str(exc))
+                        return None, exc
+
+                if len(indexer_group) == 1:
+                    group_results[0] = search_indexer(
+                        indexer_group[0],
+                        params,
+                        fallback_params,
+                        continue_on_empty or bool(fallback_params),
+                    )
+                else:
+                    with ThreadPoolExecutor(max_workers=min(len(indexer_group), 8)) as executor:
+                        future_indexes = {
+                            executor.submit(
+                                search_indexer,
+                                indexer,
+                                params,
+                                fallback_params,
+                                continue_on_empty or bool(fallback_params),
+                            ): index
+                            for index, indexer in enumerate(indexer_group)
+                        }
+                        for future in as_completed(future_indexes):
+                            group_results[future_indexes[future]] = future.result()
+
+                for result_index in sorted(group_results):
+                    search_result, error = group_results[result_index]
+                    if error is not None:
+                        warning_messages.append(str(error))
                         continue
+                    assert search_result is not None
+                    parsed_results, successful_params, _, timeout_messages = search_result
                     group_had_success = True
                     query_had_success = True
                     request_variants.append(successful_params)
@@ -2949,7 +3056,13 @@ class JackettClient:
                         )
                         (precise_results if matches else hidden_results).append(item)
                         seen_merge_keys.add(merge_key)
-                if group_had_success:
+                # Jackett's aggregate endpoint can return rows from some selected
+                # trackers while silently omitting another tracker whose direct
+                # title query succeeds (notably when that tracker mishandles IMDb
+                # parameters). For explicit saved-rule scope, a non-empty aggregate
+                # response is therefore not proof that the selected scope is
+                # complete; run the direct group as the completeness pass.
+                if group_had_success and indexer_group != ["all"]:
                     break
             if not query_had_success:
                 continue
@@ -3583,8 +3696,12 @@ class JackettClient:
         if payload.filter_indexers:
             if not result.indexer:
                 return False, "filter_indexers_missing"
-            allowed_indexers = {item.casefold() for item in payload.filter_indexers}
-            if result.indexer.casefold() not in allowed_indexers:
+            allowed_indexers = {
+                variant
+                for item in payload.filter_indexers
+                for variant in _indexer_key_variants(item)
+            }
+            if not (_indexer_key_variants(result.indexer) & allowed_indexers):
                 return False, "filter_indexers"
         if payload.filter_category_ids:
             item_categories = {

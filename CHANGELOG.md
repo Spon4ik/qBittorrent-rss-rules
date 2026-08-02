@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.3.3] - 2026-08-03
+
+- Fixed movie watch-progress write-back to clear stale Stremio completion markers when the newer connected-provider state is unwatched or in progress.
+
 ## [1.3.2] - 2026-08-03
 
 - Fixed per-rule snapshot refreshes reporting background work as idle by registering the real Jackett fetch in the shared operation-progress service.

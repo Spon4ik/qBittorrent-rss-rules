@@ -94,7 +94,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.1"
+    assert payload["app_version"] == "1.4.2"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -3177,6 +3177,69 @@ def test_edit_rule_saved_snapshot_hides_rows_that_only_pass_quality_and_scope(
         response.text,
         re.DOTALL,
     )
+
+
+def test_edit_rule_managed_profile_repairs_empty_settings_and_keeps_quality_failures_hidden(
+    app_client,
+    db_session,
+) -> None:
+    settings = SettingsService.get_or_create(db_session)
+    settings.quality_profile_rules = {
+        QualityProfile.HD_1080P.value: {"include_tokens": [], "exclude_tokens": []},
+        QualityProfile.UHD_2160P_HDR.value: {"include_tokens": [], "exclude_tokens": []},
+    }
+    rule = Rule(
+        rule_name="The Mandalorian and Grogu",
+        content_name="The Mandalorian and Grogu",
+        normalized_title="The Mandalorian and Grogu",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.UHD_2160P_HDR,
+        quality_mode=QualityMode.MANAGED,
+        quality_include_tokens=["hdr", "dolby_vision"],
+        quality_exclude_tokens=["720p", "1080p"],
+    )
+    db_session.add(rule)
+    db_session.flush()
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule.id,
+            payload={"query": "The Mandalorian and Grogu", "media_type": "movie"},
+            inline_search={
+                "query": "The Mandalorian and Grogu",
+                "unified_raw_results": [
+                    {
+                        "title": "The Mandalorian & Grogu (2026) WEB-DL 720p",
+                        "text_surface": "the mandalorian grogu 2026 web dl 720p",
+                        "link": "https://example.com/grogu-720p.torrent",
+                        "indexer": "seleZen",
+                        "query_source_key": "primary",
+                        "query_source_label": "Precise results",
+                    }
+                ],
+                "source_breakdown": [],
+                "warning_messages": [],
+            },
+        )
+    )
+    db_session.commit()
+
+    response = app_client.get(f"/rules/{rule.id}")
+
+    assert response.status_code == 200
+    assert '<span data-search-filtered-count="combined">0</span> filtered' in response.text
+    assert re.search(
+        r'<article[^>]+data-title="The Mandalorian &amp; Grogu \(2026\) WEB-DL 720p"(?=[^>]*hidden)',
+        response.text,
+        re.DOTALL,
+    )
+    assert re.search(
+        r'name="quality_include_tokens"\s+value="hdr"[\s\S]{0,160}?checked',
+        response.text,
+    )
+    db_session.refresh(settings)
+    assert settings.quality_profile_rules[QualityProfile.UHD_2160P_HDR.value][
+        "include_tokens"
+    ]
 
 
 def test_edit_rule_saved_snapshot_hides_broad_imdb_title_fallback_rows(

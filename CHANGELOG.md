@@ -8,6 +8,9 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.2] - 2026-08-04
+
+- Restore taxonomy defaults when a saved managed HD/UHD quality preset is empty, preventing the edit-page browser filter from promoting backend-hidden quality failures to visible, queueable results.
 ## [1.4.1] - 2026-08-03
 
 - Preserve manually edited rule titles during automatic Stremio library sync; provider titles now refresh only when the user explicitly presses Metadata Lookup.

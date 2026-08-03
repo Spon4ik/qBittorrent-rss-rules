@@ -1434,6 +1434,12 @@ def normalize_profile_rules(raw_value: Any) -> dict[str, dict[str, list[str]]]:
             for token in normalize_quality_tokens(candidate.get("exclude_tokens"))
             if token not in include_set
         ]
+        # Empty managed presets are indistinguishable from the explicit Plain
+        # profile and can silently remove every quality constraint from rules
+        # that still advertise a managed HD/UHD profile. Treat this legacy or
+        # partially submitted state as missing and retain the taxonomy defaults.
+        if not include_tokens and not exclude_tokens:
+            continue
         normalized[profile] = {
             "include_tokens": include_tokens,
             "exclude_tokens": exclude_tokens,

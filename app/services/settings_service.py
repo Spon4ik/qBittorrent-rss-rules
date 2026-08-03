@@ -442,6 +442,9 @@ class SettingsService:
                 changed = True
         else:
             normalized_profile_rules = resolve_quality_profile_rules(settings)
+            if normalized_profile_rules != settings.quality_profile_rules:
+                settings.quality_profile_rules = normalized_profile_rules
+                changed = True
             dynamic_defaults = dynamic_default_quality_profile_rules()
             for profile_key in (QualityProfile.HD_1080P.value, QualityProfile.UHD_2160P_HDR.value):
                 profile_tokens = normalized_profile_rules[profile_key]

@@ -290,7 +290,10 @@ def test_jackett_client_scopes_standard_remote_fetch_to_filter_indexers() -> Non
         params = {key: value for key, value in request.url.params.multi_items()}
         seen_requests.append((path, params))
 
-        if path == "/api/v2.0/indexers/all/results/torznab/api":
+        if path in {
+            "/api/v2.0/indexers/rutracker/results/torznab/api",
+            "/api/v2.0/indexers/kinozal/results/torznab/api",
+        }:
             assert params == {
                 "apikey": "secret",
                 "t": "search",
@@ -342,16 +345,10 @@ def test_jackett_client_scopes_standard_remote_fetch_to_filter_indexers() -> Non
         )
     )
 
-    assert seen_requests == [
-        (
-            "/api/v2.0/indexers/all/results/torznab/api",
-            {
-                "apikey": "secret",
-                "t": "search",
-                "q": "American Classic",
-            },
-        ),
-    ]
+    assert {path for path, _ in seen_requests} == {
+        "/api/v2.0/indexers/rutracker/results/torznab/api",
+        "/api/v2.0/indexers/kinozal/results/torznab/api",
+    }
     assert {item.title for item in result.raw_results} == {
         "American Classic S01E01 1080p",
         "American Classic S01E01 WEB",
@@ -369,7 +366,7 @@ def test_jackett_client_omits_default_media_cat_for_scoped_movie_indexers_withou
         path = request.url.path
         params = {key: value for key, value in request.url.params.multi_items()}
         seen_requests.append((path, params))
-        if path == "/api/v2.0/indexers/all/results/torznab/api":
+        if path == "/api/v2.0/indexers/rutracker/results/torznab/api":
             assert params == {
                 "apikey": "secret",
                 "t": "search",
@@ -394,7 +391,7 @@ def test_jackett_client_omits_default_media_cat_for_scoped_movie_indexers_withou
 
     assert seen_requests == [
         (
-            "/api/v2.0/indexers/all/results/torznab/api",
+            "/api/v2.0/indexers/rutracker/results/torznab/api",
             {
                 "apikey": "secret",
                 "t": "search",
@@ -489,7 +486,7 @@ def test_jackett_client_scoped_standard_search_continues_after_indexer_timeout()
         )
     )
 
-    assert seen_paths.count("/api/v2.0/indexers/all/results/torznab/api") == 1
+    assert seen_paths.count("/api/v2.0/indexers/all/results/torznab/api") == 0
     assert seen_paths.count("/api/v2.0/indexers/rutracker/results/torznab/api") == 1
     assert seen_paths.count("/api/v2.0/indexers/kinozal/results/torznab/api") == 1
     assert [item.title for item in result.results] == ["American Classic S01E01 WEB"]
@@ -2091,7 +2088,7 @@ def test_jackett_client_imdb_title_fallback_uses_scoped_indexers_after_all_timeo
         )
     )
 
-    assert any(
+    assert not any(
         path == "/api/v2.0/indexers/all/results/torznab/api"
         and params.get("t") == "tvsearch"
         and params.get("q") == "American Classic"
@@ -3227,7 +3224,7 @@ def test_jackett_client_precise_title_primary_hides_non_exact_imdb_fallback_rows
     assert result.fallback_results == []
 
 
-def test_precise_title_recovery_completes_selected_indexers_after_partial_aggregate() -> None:
+def test_precise_title_recovery_searches_selected_indexers_directly() -> None:
     seen_paths: list[str] = []
 
     def rss(title: str, guid: str, indexer: str) -> str:
@@ -3279,8 +3276,78 @@ def test_precise_title_recovery_completes_selected_indexers_after_partial_aggreg
 
     assert hidden == []
     assert warnings == []
-    assert {item.indexer for _, item in precise} == {"kinozal", "RuTracker.org"}
+    assert {item.indexer for _, item in precise} == {"RuTracker.org"}
+    assert not any("/all/results/torznab/api" in path for path in seen_paths)
     assert any("/rutracker/results/torznab/api" in path for path in seen_paths)
+
+
+def test_saved_indexer_scope_never_searches_aggregate_all_endpoint() -> None:
+    seen_requests: list[tuple[str, dict[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = dict(request.url.params.multi_items())
+        seen_requests.append((path, params))
+        if path.endswith("/all/results/torznab/api") and params.get("t") == "indexers":
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="kinozal"><caps><searching>
+    <movie-search available="yes" supportedParams="q,imdbid" />
+  </searching></caps></indexer>
+  <indexer id="rutracker"><caps><searching>
+    <movie-search available="yes" supportedParams="q,imdbid" />
+  </searching></caps></indexer>
+</indexers>
+""",
+            )
+        if path.endswith("/kinozal/results/torznab/api"):
+            return httpx.Response(
+                200,
+                text='<error code="100" description="Invalid API Key" />',
+            )
+        if path.endswith("/rutracker/results/torznab/api"):
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel><item>
+  <title>Star Wars The Mandalorian and Grogu 2026 2160p</title>
+  <guid>grogu-rutracker</guid>
+  <link>magnet:?xt=urn:btih:GROGU123</link>
+  <torznab:attr name="jackettindexer" value="RuTracker.org" />
+  <torznab:attr name="imdbid" value="tt30825738" />
+</item></channel></rss>
+""",
+            )
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+    result = client.search(
+        JackettSearchRequest(
+            query="Star Wars: The Mandalorian and Grogu",
+            media_type="movie",
+            imdb_id="tt30825738",
+            imdb_id_only=True,
+            filter_indexers=["kinozal", "rutracker"],
+        )
+    )
+
+    aggregate_searches = [
+        (path, params)
+        for path, params in seen_requests
+        if path.endswith("/all/results/torznab/api") and params.get("t") != "indexers"
+    ]
+    assert aggregate_searches == []
+    assert any(path.endswith("/kinozal/results/torznab/api") for path, _ in seen_requests)
+    assert any(path.endswith("/rutracker/results/torznab/api") for path, _ in seen_requests)
+    assert [item.indexer for item in result.results] == ["RuTracker.org"]
+    assert any("indexer=kinozal" in warning for warning in result.warning_messages)
+    assert any("[100] Invalid API Key" in warning for warning in result.warning_messages)
 
 
 def test_jackett_client_keeps_exact_title_quality_mismatch_in_raw_results() -> None:

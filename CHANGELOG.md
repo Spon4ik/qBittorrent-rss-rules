@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.3.4] - 2026-08-03
+
+- Made saved Jackett search indexers remotely authoritative: scoped searches now call only the selected direct indexer endpoints instead of querying the aggregate `all` endpoint first.
+- Kept results from working saved indexers when another selected direct endpoint returns a Torznab provider error such as `[100] Invalid API Key`.
+
 ## [1.3.3] - 2026-08-03
 
 - Fixed movie watch-progress write-back to clear stale Stremio completion markers when the newer connected-provider state is unwatched or in progress.

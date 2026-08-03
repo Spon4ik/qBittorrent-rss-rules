@@ -1963,7 +1963,7 @@ class JackettClient:
         if scoped_indexers == ["all"]:
             return [["all"]]
 
-        return [["all"], scoped_indexers]
+        return [scoped_indexers]
 
     def _build_query_variants(self, payload: JackettSearchRequest) -> list[str]:
         query = payload.query.strip()
@@ -2012,13 +2012,25 @@ class JackettClient:
         )
         aggregate_attempts = [request_params, *fallback_params]
 
+        scoped_indexers = self._remote_indexers_for_standard_search(payload)
+        use_scoped_direct_primary = payload.indexer == "all" and scoped_indexers != ["all"]
+
         try:
-            variant_results, _, attempted_requests, timeout_messages = self._search_variant(
-                payload.indexer,
-                request_params,
-                fallback_params=fallback_params,
-                continue_on_empty=bool(fallback_params),
-            )
+            if use_scoped_direct_primary:
+                direct_probe_attempted = True
+                variant_results, _, attempted_requests, timeout_messages = (
+                    self._search_variant_across_capable_indexers(
+                        payload,
+                        primary_query,
+                    )
+                )
+            else:
+                variant_results, _, attempted_requests, timeout_messages = self._search_variant(
+                    payload.indexer,
+                    request_params,
+                    fallback_params=fallback_params,
+                    continue_on_empty=bool(fallback_params),
+                )
             for attempted_request in attempted_requests:
                 self._add_request_label(request_variants, seen_request_variants, attempted_request)
             for message in timeout_messages:
@@ -2029,7 +2041,7 @@ class JackettClient:
                 raise
             for attempted_request in aggregate_attempts:
                 self._add_request_label(request_variants, seen_request_variants, attempted_request)
-            if payload.indexer == "all":
+            if payload.indexer == "all" and not direct_probe_attempted:
                 try:
                     direct_probe_attempted = True
                     variant_results, _, attempted_requests, timeout_messages = (
@@ -3061,13 +3073,7 @@ class JackettClient:
                         )
                         (precise_results if matches else hidden_results).append(item)
                         seen_merge_keys.add(merge_key)
-                # Jackett's aggregate endpoint can return rows from some selected
-                # trackers while silently omitting another tracker whose direct
-                # title query succeeds (notably when that tracker mishandles IMDb
-                # parameters). For explicit saved-rule scope, a non-empty aggregate
-                # response is therefore not proof that the selected scope is
-                # complete; run the direct group as the completeness pass.
-                if group_had_success and indexer_group != ["all"]:
+                if group_had_success:
                     break
             if not query_had_success:
                 continue

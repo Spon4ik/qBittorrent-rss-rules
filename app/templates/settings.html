@@ -120,6 +120,93 @@
         </label>
       </fieldset>
     </div>
+    <div class="full-span stack">
+      <fieldset class="stack">
+        <legend>Real-Debrid acceleration</legend>
+        <p class="helper-text">Real-Debrid searches only your authenticated torrent cloud and download history. qBittorrent remains the primary downloader and receives raw HTTP content through an app-managed web seed after torrent metadata is available.</p>
+        <div class="form-grid">
+          <label class="toggle">
+            <input type="checkbox" name="real_debrid_enabled" {% if form_data.real_debrid_enabled %}checked{% endif %} />
+            <span>Enable Real-Debrid search and acceleration</span>
+          </label>
+          <label>
+            qBittorrent-reachable web-seed URL
+            <input type="url" name="real_debrid_webseed_base_url" value="{{ form_data.real_debrid_webseed_base_url }}" placeholder="http://127.0.0.1:8000" />
+            <span class="helper-text">qBittorrent must be able to reach this app URL. Keep the loopback default when both run on this Windows host.</span>
+          </label>
+          <label>
+            Magnet metadata wait (seconds)
+            <input type="number" name="real_debrid_metadata_wait_seconds" min="30" max="900" step="1" value="{{ form_data.real_debrid_metadata_wait_seconds }}" />
+          </label>
+          <div>
+            <strong>Connection</strong>
+            <p class="helper-text">{{ form_data.real_debrid_connection_status or "disconnected" }}{% if form_data.real_debrid_account_username %} as {{ form_data.real_debrid_account_username }}{% endif %}</p>
+            {% if form_data.real_debrid_account_premium_until %}<p class="helper-text">Premium until {{ form_data.real_debrid_account_premium_until }}</p>{% endif %}
+            {% if form_data.real_debrid_connection_message %}<p class="helper-text">{{ form_data.real_debrid_connection_message }}</p>{% endif %}
+          </div>
+        </div>
+        <div class="card-actions">
+          <button type="submit" formaction="/api/settings/real-debrid/connect">Connect Real-Debrid</button>
+          {% if form_data.has_saved_real_debrid_connection %}<button type="submit" formaction="/api/settings/real-debrid/disconnect">Disconnect</button>{% endif %}
+        </div>
+        {% if form_data.real_debrid_device_flow %}
+        <div
+          class="status-panel"
+          data-real-debrid-device-flow
+          data-poll-url="{{ form_data.real_debrid_device_flow.poll_url }}"
+          data-poll-interval="{{ form_data.real_debrid_device_flow.interval_seconds }}"
+        >
+          <div>
+            <strong>Authorization code</strong>
+            <p><code>{{ form_data.real_debrid_device_flow.user_code }}</code></p>
+          </div>
+          <div>
+            <a class="button-link" href="{{ form_data.real_debrid_device_flow.direct_verification_url }}" target="_blank" rel="noopener noreferrer">Open Real-Debrid authorization</a>
+            <p class="helper-text" data-real-debrid-device-status>Waiting for authorization...</p>
+          </div>
+        </div>
+        {% endif %}
+      </fieldset>
+    </div>
+    <div class="full-span stack">
+      <fieldset class="stack">
+        <legend>JDownloader fallback</legend>
+        <p class="helper-text">Used only when qBittorrent cannot obtain magnet metadata. The selected MyJDownloader device downloads Real-Debrid files to qBittorrent's reported save path.</p>
+        <div class="form-grid">
+          <label class="toggle">
+            <input type="checkbox" name="myjd_enabled" {% if form_data.myjd_enabled %}checked{% endif %} />
+            <span>Enable no-metadata fallback</span>
+          </label>
+          <label>
+            MyJDownloader email
+            <input type="email" name="myjd_email" value="{{ form_data.myjd_email }}" autocomplete="username" />
+          </label>
+          <label>
+            MyJDownloader password
+            <input type="password" name="myjd_password" value="" autocomplete="current-password" placeholder="{% if form_data.has_saved_myjd_password %}Saved encrypted password{% else %}Not set{% endif %}" />
+          </label>
+          <label>
+            Device ID
+            {% if form_data.myjd_devices %}
+            <select name="myjd_device_id">
+              {% for device in form_data.myjd_devices %}
+              <option value="{{ device.id }}" {% if device.id == form_data.myjd_device_id %}selected{% endif %}>{{ device.name }} ({{ device.type }})</option>
+              {% endfor %}
+            </select>
+            <input type="hidden" name="myjd_device_name" value="{{ form_data.myjd_device_name }}" />
+            {% else %}
+            <input type="text" name="myjd_device_id" value="{{ form_data.myjd_device_id }}" placeholder="Connect to discover devices" />
+            <input type="hidden" name="myjd_device_name" value="{{ form_data.myjd_device_name }}" />
+            {% endif %}
+            {% if form_data.myjd_device_name %}<span class="helper-text">Selected device: {{ form_data.myjd_device_name }}</span>{% endif %}
+          </label>
+        </div>
+        <div class="card-actions">
+          <button type="submit" formaction="/api/settings/test-myjdownloader">Test MyJDownloader</button>
+        </div>
+        <p class="helper-text">Status: {{ form_data.myjd_connection_status or "disconnected" }}{% if form_data.myjd_connection_message %} — {{ form_data.myjd_connection_message }}{% endif %}</p>
+      </fieldset>
+    </div>
     <label>
       Jellyfin DB path
       <input type="text" name="jellyfin_db_path" value="{{ form_data.jellyfin_db_path }}" placeholder="C:\ProgramData\Jellyfin\Server\data\jellyfin.db" />

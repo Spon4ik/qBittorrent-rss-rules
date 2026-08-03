@@ -9,6 +9,9 @@ import httpx
 from app.config import get_environment_settings
 from app.schemas import FeedOption
 
+MANAGED_TORRENT_TAG = "qb-rss-rules"
+JDOWNLOADER_FALLBACK_TAG = "qb-rss-rules-jd-fallback"
+
 
 class QbittorrentClientError(RuntimeError):
     pass
@@ -201,6 +204,7 @@ class QbittorrentClient:
         paused: bool = True,
         sequential_download: bool = False,
         first_last_piece_prio: bool = False,
+        tags: str = MANAGED_TORRENT_TAG,
     ) -> None:
         payload: dict[str, str] = {
             "urls": link,
@@ -215,6 +219,8 @@ class QbittorrentClient:
             payload["category"] = category.strip()
         if save_path.strip():
             payload["savepath"] = save_path.strip()
+        if tags.strip():
+            payload["tags"] = tags.strip()
         self._request(
             "POST",
             "/api/v2/torrents/add",
@@ -233,6 +239,7 @@ class QbittorrentClient:
         paused: bool = True,
         sequential_download: bool = False,
         first_last_piece_prio: bool = False,
+        tags: str = MANAGED_TORRENT_TAG,
     ) -> None:
         payload: dict[str, str] = {
             "paused": "true" if paused else "false",
@@ -244,6 +251,8 @@ class QbittorrentClient:
             payload["category"] = category.strip()
         if save_path.strip():
             payload["savepath"] = save_path.strip()
+        if tags.strip():
+            payload["tags"] = tags.strip()
         self._request(
             "POST",
             "/api/v2/torrents/add",
@@ -286,6 +295,7 @@ class QbittorrentClient:
         *,
         hashes: str | None = None,
         category: str | None = None,
+        tag: str | None = None,
     ) -> list[dict[str, object]]:
         params: dict[str, str] = {}
         cleaned_hashes = str(hashes or "").strip()
@@ -294,6 +304,9 @@ class QbittorrentClient:
         cleaned_category = str(category or "").strip()
         if cleaned_category:
             params["category"] = cleaned_category
+        cleaned_tag = str(tag or "").strip()
+        if cleaned_tag:
+            params["tag"] = cleaned_tag
         payload = self._request(
             "GET",
             "/api/v2/torrents/info",
@@ -302,6 +315,92 @@ class QbittorrentClient:
         if not isinstance(payload, list):
             raise QbittorrentClientError("Unexpected qBittorrent torrents info payload.")
         return [item for item in payload if isinstance(item, dict)]
+
+    def export_torrent(self, info_hash: str) -> bytes:
+        return self._request_bytes(
+            "GET", "/api/v2/torrents/export", params={"hash": info_hash}
+        )
+
+    def get_webseeds(self, info_hash: str) -> list[str]:
+        payload = self._request(
+            "GET", "/api/v2/torrents/webseeds", params={"hash": info_hash}
+        )
+        if not isinstance(payload, list):
+            raise QbittorrentClientError("Unexpected qBittorrent web-seed payload.")
+        urls: list[str] = []
+        for item in payload:
+            if isinstance(item, str):
+                candidate = item.strip()
+            elif isinstance(item, dict):
+                candidate = str(item.get("url") or "").strip()
+            else:
+                candidate = ""
+            if candidate:
+                urls.append(candidate)
+        return urls
+
+    def add_webseeds(self, info_hash: str, urls: list[str]) -> None:
+        cleaned = _clean_string_list(urls)
+        if not cleaned:
+            return
+        self._request(
+            "POST",
+            "/api/v2/torrents/addWebSeeds",
+            data={"hash": info_hash, "urls": "|".join(cleaned)},
+            expect_json=False,
+        )
+
+    def remove_webseeds(self, info_hash: str, urls: list[str]) -> None:
+        cleaned = _clean_string_list(urls)
+        if not cleaned:
+            return
+        self._request(
+            "POST",
+            "/api/v2/torrents/removeWebSeeds",
+            data={"hash": info_hash, "urls": "|".join(cleaned)},
+            expect_json=False,
+        )
+
+    def add_tags(self, info_hashes: str, tags: list[str]) -> None:
+        cleaned = _clean_string_list(tags)
+        if not cleaned:
+            return
+        self._request(
+            "POST",
+            "/api/v2/torrents/addTags",
+            data={"hashes": info_hashes, "tags": ",".join(cleaned)},
+            expect_json=False,
+        )
+
+    def remove_tags(self, info_hashes: str, tags: list[str]) -> None:
+        cleaned = _clean_string_list(tags)
+        if not cleaned:
+            return
+        self._request(
+            "POST",
+            "/api/v2/torrents/removeTags",
+            data={"hashes": info_hashes, "tags": ",".join(cleaned)},
+            expect_json=False,
+        )
+
+    def stop_torrents(self, info_hashes: str) -> None:
+        self._request(
+            "POST",
+            "/api/v2/torrents/stop",
+            data={"hashes": info_hashes},
+            expect_json=False,
+        )
+
+    def delete_torrents(self, info_hashes: str, *, delete_files: bool = False) -> None:
+        self._request(
+            "POST",
+            "/api/v2/torrents/delete",
+            data={
+                "hashes": info_hashes,
+                "deleteFiles": "true" if delete_files else "false",
+            },
+            expect_json=False,
+        )
 
     def set_file_priority(self, info_hash: str, file_ids: list[int], priority: int) -> None:
         if not file_ids:
@@ -374,6 +473,16 @@ class QbittorrentClient:
             return None
         return cast(object, response.json())
 
+    def _request_bytes(self, method: str, path: str, **kwargs: Any) -> bytes:
+        if not self._authenticated:
+            self.login()
+        try:
+            response = self._client.request(method, path, **kwargs)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise QbittorrentClientError(f"qBittorrent request failed: {exc}") from exc
+        return response.content
+
     def _set_file_priority_legacy(self, *, info_hash: str, file_ids: list[int], priority: int) -> None:
         for file_id in file_ids:
             self._request(
@@ -421,3 +530,16 @@ class QbittorrentClient:
         walk(payload)
         entries.sort(key=lambda item: item.label.lower())
         return entries
+
+
+def _clean_string_list(values: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw_value in values:
+        candidate = str(raw_value or "").strip()
+        key = candidate.casefold()
+        if not candidate or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(candidate)
+    return cleaned

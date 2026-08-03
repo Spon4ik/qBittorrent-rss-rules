@@ -244,6 +244,39 @@ class AppSettings(Base):
         nullable=False,
         default=dict,
     )
+    real_debrid_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    real_debrid_client_id_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    real_debrid_client_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    real_debrid_access_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    real_debrid_refresh_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    real_debrid_token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    real_debrid_account_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    real_debrid_account_premium_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    real_debrid_connection_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="disconnected"
+    )
+    real_debrid_connection_message: Mapped[str] = mapped_column(
+        Text, nullable=False, default=""
+    )
+    real_debrid_webseed_base_url: Mapped[str] = mapped_column(
+        String(512), nullable=False, default="http://127.0.0.1:8000"
+    )
+    real_debrid_metadata_wait_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=120
+    )
+    myjd_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    myjd_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    myjd_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    myjd_device_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    myjd_device_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    myjd_connection_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="disconnected"
+    )
+    myjd_connection_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
     jellyfin_db_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     jellyfin_user_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     jellyfin_server_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -417,3 +450,38 @@ class IndexerCategoryCatalog(Base):
         default=utcnow,
         onupdate=utcnow,
     )
+
+
+class DownloadAccelerationJob(Base):
+    __tablename__ = "download_acceleration_jobs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    identity_key: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="qbittorrent")
+    info_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    rule_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    provider_torrent_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    provider_download_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    selected_files: Mapped[list[dict[str, object]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    webseed_token: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
+    webseed_files: Mapped[list[dict[str, object]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    app_webseed_urls: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    myjd_job_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    state: Mapped[str] = mapped_column(String(48), nullable=False, default="discovered")
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_deadline_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

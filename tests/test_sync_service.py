@@ -401,7 +401,7 @@ def test_sync_all_ignores_qb_owned_remote_rule_metadata(monkeypatch, db_session)
         "lastMatch": "",
         "previouslyMatchedEpisodes": [],
         "priority": 0,
-        "torrentParams": {"category": app_payload["assignedCategory"], "stopped": True},
+        "torrentParams": app_payload["torrentParams"],
     }
     monkeypatch.setattr(SyncService, "_safe_remote_rules", lambda self: {"The Boys": remote_payload})
 

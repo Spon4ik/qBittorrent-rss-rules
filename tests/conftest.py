@@ -5,6 +5,18 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+TEST_FERNET_KEY = "fn-lMUENe1LpVWmq1cTkZSIQshpSWnwYjvAnHo55JlQ="
+
+
+@pytest.fixture(autouse=True)
+def configured_secret_store(monkeypatch: pytest.MonkeyPatch):
+    from app.services.secret_store import reset_secret_store_cache
+
+    monkeypatch.setenv("QB_RULES_SECRET_KEY", TEST_FERNET_KEY)
+    reset_secret_store_cache()
+    yield
+    reset_secret_store_cache()
+
 
 @pytest.fixture()
 def configured_app_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

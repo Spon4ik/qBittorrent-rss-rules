@@ -75,6 +75,8 @@ def test_global_operation_progress_shell_assets_are_present() -> None:
     assert ".operation-progress-shell" in css
     assert "function initOperationProgress" in js
     assert 'fetch("/api/operations/status"' in js
+    assert "/api/acceleration/jobs/" in js
+    assert "Downloaded files will be kept" in js
     assert 'titleElement.textContent = "Background work idle"' in js
     assert 'summaryElement.textContent = "No active operations"' in js
     assert '"operation-progress-starting"' in js

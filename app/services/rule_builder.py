@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 from app.models import AppSettings, MediaType, Rule
+from app.services.qbittorrent import MANAGED_TORRENT_TAG
 from app.services.quality_filters import (
     effective_rule_quality_tokens,
     grouped_tokens_to_regex,
@@ -435,6 +436,8 @@ class RuleBuilder:
             or (rule.must_contain_override and rule.must_contain_override.strip())
             or self._has_generated_regex_conditions(rule)
         )
+        category = self.render_category(rule)
+        save_path = self.render_save_path(rule)
         return {
             "enabled": rule.enabled,
             "mustContain": generated_pattern,
@@ -445,8 +448,14 @@ class RuleBuilder:
             "affectedFeeds": self._render_qb_feed_urls(rule.feed_urls),
             "ignoreDays": rule.ignore_days,
             "addPaused": rule.add_paused,
-            "assignedCategory": self.render_category(rule),
-            "savePath": self.render_save_path(rule),
+            "assignedCategory": category,
+            "savePath": save_path,
+            "torrentParams": {
+                "category": category,
+                "save_path": save_path,
+                "stopped": bool(rule.add_paused),
+                "tags": [MANAGED_TORRENT_TAG],
+            },
         }
 
     @staticmethod

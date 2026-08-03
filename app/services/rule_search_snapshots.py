@@ -114,6 +114,10 @@ def _merge_grouped_row(
         int(row.get("duplicate_count") or 1),
         len(list(existing.get("grouped_links") or [])) or 1,
     )
+    if bool(row.get("in_real_debrid")):
+        existing["in_real_debrid"] = True
+        existing["real_debrid_provider_id"] = row.get("provider_id")
+        existing["real_debrid_provider_status"] = row.get("provider_status")
 
 
 def _build_unified_raw_results_from_models(

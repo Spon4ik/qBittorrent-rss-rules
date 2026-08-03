@@ -285,3 +285,43 @@ def test_settings_persist_jackett_language_overrides(db_session) -> None:
     assert SettingsService.to_form_dict(settings)["jackett_language_overrides_text"] == (
         "noname-clubl=ru\nthepiratebay=en,multi"
     )
+
+
+def test_settings_persist_phase36_integration_defaults_and_encrypted_myjd_password(
+    db_session,
+) -> None:
+    settings = SettingsService.get_or_create(db_session)
+    payload = SettingsFormPayload(
+        real_debrid_enabled=True,
+        real_debrid_webseed_base_url="http://127.0.0.1:8000/",
+        real_debrid_metadata_wait_seconds=240,
+        myjd_enabled=True,
+        myjd_email="user@example.com",
+        myjd_password="myjd-secret",
+        myjd_device_id="device-1",
+    )
+
+    SettingsService.apply_payload(settings, payload)
+    db_session.add(settings)
+    db_session.commit()
+
+    assert settings.real_debrid_enabled is True
+    assert settings.real_debrid_webseed_base_url == "http://127.0.0.1:8000"
+    assert settings.real_debrid_metadata_wait_seconds == 240
+    assert settings.myjd_password_encrypted.startswith("enc:v1:")
+    assert SettingsService.resolve_myjd(settings).password == "myjd-secret"
+    assert SettingsService.resolve_myjd(settings).is_configured is True
+
+
+def test_get_or_create_migrates_legacy_secret_envelopes(db_session) -> None:
+    import base64
+
+    legacy = base64.urlsafe_b64encode(b"legacy-password").decode("ascii")
+    settings = AppSettings(id="default", qb_password_encrypted=legacy)
+    db_session.add(settings)
+    db_session.commit()
+
+    migrated = SettingsService.get_or_create(db_session)
+
+    assert migrated.qb_password_encrypted.startswith("enc:v1:")
+    assert reveal_secret(migrated.qb_password_encrypted) == "legacy-password"

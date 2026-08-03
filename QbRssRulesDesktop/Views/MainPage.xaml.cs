@@ -22,11 +22,13 @@ namespace QbRssRulesDesktop.Views
             "search_hidden_result_diagnostics",
             "jellyfin_auto_sync",
             "stremio_library_sync",
+            "real_debrid_acceleration",
+            "myjdownloader_fallback",
         };
 
         private const string DefaultBackendUrl = "http://127.0.0.1:8000";
-        private const string RequiredDesktopBackendContract = "2026-04-18";
-        private const string RequiredDesktopBackendAppVersion = "1.3.4";
+        private const string RequiredDesktopBackendContract = "2026-08-03";
+        private const string RequiredDesktopBackendAppVersion = "1.4.0";
         private const string ManagedBackendStateFileName = "desktop-managed-backend.json";
         private const int ManagedBackendPortSearchLimit = 32;
         private const int ReconnectAttemptLimit = 30;

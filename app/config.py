@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json
 import os
 import re
@@ -8,6 +7,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import unquote
+
+from app.services.secret_store import decrypt_secret, encrypt_secret
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / "data"
@@ -209,14 +210,8 @@ def resolve_runtime_path(
 
 
 def obfuscate_secret(value: str) -> str:
-    raw = value.encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("ascii")
+    return encrypt_secret(value)
 
 
 def reveal_secret(value: str | None) -> str | None:
-    if not value:
-        return None
-    try:
-        return base64.urlsafe_b64decode(value.encode("ascii")).decode("utf-8")
-    except Exception:
-        return None
+    return decrypt_secret(value)

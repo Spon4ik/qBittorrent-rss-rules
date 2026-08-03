@@ -71,6 +71,8 @@ class SearchSourceKind(str, enum.Enum):
     RSS_FEED = "rss_feed"
     JACKETT_ACTIVE_SEARCH = "jackett_active_search"
     JACKETT_RULE_SOURCE = "jackett_rule_source"
+    REAL_DEBRID_TORRENT = "real_debrid_torrent"
+    REAL_DEBRID_DOWNLOAD = "real_debrid_download"
 
 
 class MetadataLookupRequest(BaseModel):
@@ -376,6 +378,10 @@ class JackettSearchResult(BaseModel):
     grouped_trackers: list[str] = Field(default_factory=list)
     merged_magnet_link: str | None = None
     duplicate_count: int = 1
+    provider_id: str | None = None
+    provider_status: str | None = None
+    queue_capability: str = "qbittorrent"
+    in_real_debrid: bool = False
 
 
 class JackettSearchRun(BaseModel):
@@ -458,6 +464,9 @@ class SearchQueueRequest(BaseModel):
     add_paused: bool | None = None
     sequential_download: bool = False
     first_last_piece_prio: bool = False
+    source_kind: SearchSourceKind = SearchSourceKind.JACKETT_ACTIVE_SEARCH
+    provider_id: str | None = None
+    queue_capability: str = "qbittorrent"
 
     @field_validator("links", "tracker_urls", mode="before")
     @classmethod
@@ -664,6 +673,14 @@ class SettingsFormPayload(BaseModel):
     jackett_qb_url: str | None = None
     jackett_api_key: str | None = None
     jackett_language_overrides_text: str | None = ""
+    real_debrid_enabled: bool = False
+    real_debrid_webseed_base_url: str = "http://127.0.0.1:8000"
+    real_debrid_metadata_wait_seconds: int = Field(default=120, ge=30, le=900)
+    myjd_enabled: bool = False
+    myjd_email: str | None = None
+    myjd_password: str | None = None
+    myjd_device_id: str | None = None
+    myjd_device_name: str | None = None
     jellyfin_db_path: str | None = None
     jellyfin_user_name: str | None = None
     jellyfin_server_url: str | None = None
@@ -696,6 +713,11 @@ class SettingsFormPayload(BaseModel):
         "jackett_qb_url",
         "jackett_api_key",
         "jackett_language_overrides_text",
+        "real_debrid_webseed_base_url",
+        "myjd_email",
+        "myjd_password",
+        "myjd_device_id",
+        "myjd_device_name",
         "jellyfin_db_path",
         "jellyfin_user_name",
         "jellyfin_server_url",

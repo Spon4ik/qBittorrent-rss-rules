@@ -28,6 +28,7 @@ from app.services.quality_filters import (
     normalize_saved_quality_profiles,
     resolve_quality_profile_rules,
 )
+from app.services.secret_store import is_encrypted_secret, migrate_secret_envelope
 
 SEARCH_RESULT_VIEW_MODES = frozenset({"cards", "table"})
 SEARCH_SORT_FIELDS = frozenset(
@@ -81,6 +82,10 @@ DEFAULT_STREMIO_AUTO_SYNC_ENABLED = True
 DEFAULT_STREMIO_AUTO_SYNC_INTERVAL_SECONDS = 30
 MIN_STREMIO_AUTO_SYNC_INTERVAL_SECONDS = 5
 MAX_STREMIO_AUTO_SYNC_INTERVAL_SECONDS = 3600
+DEFAULT_REAL_DEBRID_WEBSEED_BASE_URL = "http://127.0.0.1:8000"
+DEFAULT_REAL_DEBRID_METADATA_WAIT_SECONDS = 120
+MIN_REAL_DEBRID_METADATA_WAIT_SECONDS = 30
+MAX_REAL_DEBRID_METADATA_WAIT_SECONDS = 900
 NULLISH_TEXT_VALUES = frozenset({"none", "null", "undefined"})
 
 
@@ -251,6 +256,19 @@ def normalize_stremio_auto_sync_interval_seconds(value: object | None) -> int:
     )
 
 
+def normalize_real_debrid_metadata_wait_seconds(value: object | None) -> int:
+    if value is None:
+        return DEFAULT_REAL_DEBRID_METADATA_WAIT_SECONDS
+    try:
+        numeric = int(str(value).strip())
+    except (TypeError, ValueError):
+        return DEFAULT_REAL_DEBRID_METADATA_WAIT_SECONDS
+    return max(
+        MIN_REAL_DEBRID_METADATA_WAIT_SECONDS,
+        min(MAX_REAL_DEBRID_METADATA_WAIT_SECONDS, numeric),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedQbConnection:
     base_url: str | None
@@ -286,6 +304,34 @@ class ResolvedJackettConfig:
     @property
     def rule_ready(self) -> bool:
         return bool((self.qb_url or self.api_url) and self.api_key)
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedRealDebridConfig:
+    enabled: bool
+    client_id: str | None
+    client_secret: str | None
+    access_token: str | None
+    refresh_token: str | None
+    webseed_base_url: str
+    metadata_wait_seconds: int
+
+    @property
+    def is_connected(self) -> bool:
+        return bool(self.client_id and self.client_secret and self.refresh_token)
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedMyJDownloaderConfig:
+    enabled: bool
+    email: str | None
+    password: str | None
+    device_id: str | None
+    device_name: str | None
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.email and self.password and self.device_id)
 
 
 def _format_jackett_language_overrides(overrides: object | None) -> str:
@@ -356,6 +402,14 @@ class SettingsService:
                 stremio_auto_sync_interval_seconds=DEFAULT_STREMIO_AUTO_SYNC_INTERVAL_SECONDS,
                 stremio_auto_sync_last_status="idle",
                 stremio_auto_sync_last_message="",
+                real_debrid_enabled=False,
+                real_debrid_connection_status="disconnected",
+                real_debrid_connection_message="",
+                real_debrid_webseed_base_url=DEFAULT_REAL_DEBRID_WEBSEED_BASE_URL,
+                real_debrid_metadata_wait_seconds=DEFAULT_REAL_DEBRID_METADATA_WAIT_SECONDS,
+                myjd_enabled=False,
+                myjd_connection_status="disconnected",
+                myjd_connection_message="",
                 default_sequential_download=True,
                 default_first_last_piece_prio=True,
                 search_result_view_mode=DEFAULT_SEARCH_RESULT_VIEW_MODE,
@@ -489,14 +543,13 @@ class SettingsService:
         if normalized_stremio_storage_path != getattr(settings, "stremio_local_storage_path", None):
             settings.stremio_local_storage_path = normalized_stremio_storage_path
             changed = True
-        normalized_saved_omdb_key = normalize_omdb_api_key(
-            reveal_secret(getattr(settings, "omdb_api_key_encrypted", None))
-        )
-        normalized_saved_omdb_key_encrypted = (
-            obfuscate_secret(normalized_saved_omdb_key) if normalized_saved_omdb_key else None
-        )
-        if normalized_saved_omdb_key_encrypted != getattr(settings, "omdb_api_key_encrypted", None):
-            settings.omdb_api_key_encrypted = normalized_saved_omdb_key_encrypted
+        stored_omdb_secret = getattr(settings, "omdb_api_key_encrypted", None)
+        revealed_omdb_key = reveal_secret(stored_omdb_secret)
+        normalized_saved_omdb_key = normalize_omdb_api_key(revealed_omdb_key)
+        if normalized_saved_omdb_key != revealed_omdb_key:
+            settings.omdb_api_key_encrypted = (
+                obfuscate_secret(normalized_saved_omdb_key) if normalized_saved_omdb_key else None
+            )
             changed = True
         normalized_stremio_auto_sync_enabled = bool(
             getattr(settings, "stremio_auto_sync_enabled", DEFAULT_STREMIO_AUTO_SYNC_ENABLED)
@@ -546,6 +599,37 @@ class SettingsService:
         ):
             settings.stremio_auto_sync_last_message = normalized_stremio_auto_sync_message
             changed = True
+        normalized_real_debrid_webseed_base_url = (
+            _normalize_optional_text(getattr(settings, "real_debrid_webseed_base_url", None))
+            or DEFAULT_REAL_DEBRID_WEBSEED_BASE_URL
+        ).rstrip("/")
+        if normalized_real_debrid_webseed_base_url != getattr(
+            settings, "real_debrid_webseed_base_url", None
+        ):
+            settings.real_debrid_webseed_base_url = normalized_real_debrid_webseed_base_url
+            changed = True
+        normalized_real_debrid_wait = normalize_real_debrid_metadata_wait_seconds(
+            getattr(settings, "real_debrid_metadata_wait_seconds", None)
+        )
+        if normalized_real_debrid_wait != getattr(
+            settings, "real_debrid_metadata_wait_seconds", None
+        ):
+            settings.real_debrid_metadata_wait_seconds = normalized_real_debrid_wait
+            changed = True
+        for attribute, default_value in (
+            ("real_debrid_connection_status", "disconnected"),
+            ("myjd_connection_status", "disconnected"),
+        ):
+            normalized_status = str(getattr(settings, attribute, "") or "").strip().lower()
+            normalized_status = normalized_status or default_value
+            if normalized_status != getattr(settings, attribute, None):
+                setattr(settings, attribute, normalized_status)
+                changed = True
+        for attribute in ("real_debrid_connection_message", "myjd_connection_message"):
+            normalized_message = str(getattr(settings, attribute, "") or "")
+            if normalized_message != getattr(settings, attribute, None):
+                setattr(settings, attribute, normalized_message)
+                changed = True
         default_sequential_value = getattr(settings, "default_sequential_download", True)
         normalized_default_sequential = (
             True if default_sequential_value is None else bool(default_sequential_value)
@@ -640,6 +724,23 @@ class SettingsService:
         if normalized_fetch_parallelism != getattr(settings, "rules_fetch_parallelism", None):
             settings.rules_fetch_parallelism = normalized_fetch_parallelism
             changed = True
+        for attribute in (
+            "qb_password_encrypted",
+            "jackett_api_key_encrypted",
+            "jellyfin_api_key_encrypted",
+            "omdb_api_key_encrypted",
+            "real_debrid_client_id_encrypted",
+            "real_debrid_client_secret_encrypted",
+            "real_debrid_access_token_encrypted",
+            "real_debrid_refresh_token_encrypted",
+            "myjd_password_encrypted",
+        ):
+            stored_secret = getattr(settings, attribute, None)
+            if stored_secret and not is_encrypted_secret(stored_secret):
+                migrated_secret = migrate_secret_envelope(stored_secret)
+                if migrated_secret != stored_secret:
+                    setattr(settings, attribute, migrated_secret)
+                    changed = True
         if changed:
             session.add(settings)
             session.commit()
@@ -655,6 +756,17 @@ class SettingsService:
         settings.jackett_language_overrides = _parse_jackett_language_overrides(
             payload.jackett_language_overrides_text
         )
+        settings.real_debrid_enabled = bool(payload.real_debrid_enabled)
+        settings.real_debrid_webseed_base_url = (
+            payload.real_debrid_webseed_base_url or DEFAULT_REAL_DEBRID_WEBSEED_BASE_URL
+        ).rstrip("/")
+        settings.real_debrid_metadata_wait_seconds = (
+            normalize_real_debrid_metadata_wait_seconds(payload.real_debrid_metadata_wait_seconds)
+        )
+        settings.myjd_enabled = bool(payload.myjd_enabled)
+        settings.myjd_email = payload.myjd_email or None
+        settings.myjd_device_id = payload.myjd_device_id or None
+        settings.myjd_device_name = payload.myjd_device_name or None
         settings.jellyfin_db_path = payload.jellyfin_db_path or None
         settings.jellyfin_user_name = payload.jellyfin_user_name or None
         settings.jellyfin_server_url = payload.jellyfin_server_url or None
@@ -689,6 +801,8 @@ class SettingsService:
             settings.jackett_api_key_encrypted = obfuscate_secret(payload.jackett_api_key)
         if payload.jellyfin_api_key:
             settings.jellyfin_api_key_encrypted = obfuscate_secret(payload.jellyfin_api_key)
+        if payload.myjd_password:
+            settings.myjd_password_encrypted = obfuscate_secret(payload.myjd_password)
         if payload.omdb_api_key:
             normalized_omdb_api_key = normalize_omdb_api_key(payload.omdb_api_key)
             if normalized_omdb_api_key:
@@ -765,6 +879,53 @@ class SettingsService:
         )
 
     @staticmethod
+    def resolve_real_debrid(settings: AppSettings | None) -> ResolvedRealDebridConfig:
+        return ResolvedRealDebridConfig(
+            enabled=bool(getattr(settings, "real_debrid_enabled", False)),
+            client_id=reveal_secret(
+                getattr(settings, "real_debrid_client_id_encrypted", None)
+                if settings is not None
+                else None
+            ),
+            client_secret=reveal_secret(
+                getattr(settings, "real_debrid_client_secret_encrypted", None)
+                if settings is not None
+                else None
+            ),
+            access_token=reveal_secret(
+                getattr(settings, "real_debrid_access_token_encrypted", None)
+                if settings is not None
+                else None
+            ),
+            refresh_token=reveal_secret(
+                getattr(settings, "real_debrid_refresh_token_encrypted", None)
+                if settings is not None
+                else None
+            ),
+            webseed_base_url=(
+                str(getattr(settings, "real_debrid_webseed_base_url", "") or "").rstrip("/")
+                or DEFAULT_REAL_DEBRID_WEBSEED_BASE_URL
+            ),
+            metadata_wait_seconds=normalize_real_debrid_metadata_wait_seconds(
+                getattr(settings, "real_debrid_metadata_wait_seconds", None)
+            ),
+        )
+
+    @staticmethod
+    def resolve_myjd(settings: AppSettings | None) -> ResolvedMyJDownloaderConfig:
+        return ResolvedMyJDownloaderConfig(
+            enabled=bool(getattr(settings, "myjd_enabled", False)),
+            email=_normalize_optional_text(getattr(settings, "myjd_email", None)),
+            password=reveal_secret(
+                getattr(settings, "myjd_password_encrypted", None)
+                if settings is not None
+                else None
+            ),
+            device_id=_normalize_optional_text(getattr(settings, "myjd_device_id", None)),
+            device_name=_normalize_optional_text(getattr(settings, "myjd_device_name", None)),
+        )
+
+    @staticmethod
     def resolve_stremio(settings: AppSettings | None) -> ResolvedStremioConfig:
         env = get_environment_settings()
         local_storage_path = env.stremio_local_storage_path or (
@@ -806,6 +967,37 @@ class SettingsService:
             "jackett_qb_url": settings.jackett_qb_url or "",
             "jackett_language_overrides_text": _format_jackett_language_overrides(
                 settings.jackett_language_overrides
+            ),
+            "real_debrid_enabled": bool(getattr(settings, "real_debrid_enabled", False)),
+            "real_debrid_webseed_base_url": str(
+                getattr(settings, "real_debrid_webseed_base_url", "")
+                or DEFAULT_REAL_DEBRID_WEBSEED_BASE_URL
+            ),
+            "real_debrid_metadata_wait_seconds": normalize_real_debrid_metadata_wait_seconds(
+                getattr(settings, "real_debrid_metadata_wait_seconds", None)
+            ),
+            "real_debrid_connection_status": str(
+                getattr(settings, "real_debrid_connection_status", "disconnected")
+                or "disconnected"
+            ),
+            "real_debrid_connection_message": str(
+                getattr(settings, "real_debrid_connection_message", "") or ""
+            ),
+            "real_debrid_account_username": str(
+                getattr(settings, "real_debrid_account_username", "") or ""
+            ),
+            "real_debrid_account_premium_until": getattr(
+                settings, "real_debrid_account_premium_until", None
+            ),
+            "myjd_enabled": bool(getattr(settings, "myjd_enabled", False)),
+            "myjd_email": str(getattr(settings, "myjd_email", "") or ""),
+            "myjd_device_id": str(getattr(settings, "myjd_device_id", "") or ""),
+            "myjd_device_name": str(getattr(settings, "myjd_device_name", "") or ""),
+            "myjd_connection_status": str(
+                getattr(settings, "myjd_connection_status", "disconnected") or "disconnected"
+            ),
+            "myjd_connection_message": str(
+                getattr(settings, "myjd_connection_message", "") or ""
             ),
             "jellyfin_db_path": getattr(settings, "jellyfin_db_path", None) or "",
             "jellyfin_user_name": getattr(settings, "jellyfin_user_name", None) or "",
@@ -883,6 +1075,10 @@ class SettingsService:
             "saved_quality_profile_count": len(saved_profiles),
             "has_saved_qb_password": bool(settings.qb_password_encrypted),
             "has_saved_jackett_key": bool(settings.jackett_api_key_encrypted),
+            "has_saved_real_debrid_connection": bool(
+                getattr(settings, "real_debrid_refresh_token_encrypted", None)
+            ),
+            "has_saved_myjd_password": bool(getattr(settings, "myjd_password_encrypted", None)),
             "has_saved_jellyfin_key": bool(getattr(settings, "jellyfin_api_key_encrypted", None)),
             "has_saved_omdb_key": bool(settings.omdb_api_key_encrypted),
             "has_env_qb_password": bool(get_environment_settings().qb_password),

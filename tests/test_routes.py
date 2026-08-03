@@ -94,7 +94,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.3.4"
+    assert payload["app_version"] == "1.4.0"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -6927,3 +6927,93 @@ def test_edit_rule_keeps_saved_feed_list_visible_when_qb_feeds_are_unavailable(
         'value="http://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api?apikey=abc" checked'
         in response.text
     )
+
+
+def test_real_debrid_device_flow_connects_and_persists_encrypted_tokens(
+    app_client, db_session, monkeypatch
+) -> None:
+    from datetime import timedelta
+
+    from app.services.real_debrid import (
+        DEVICE_FLOW_REGISTRY,
+        RealDebridAccount,
+        RealDebridDeviceCode,
+        RealDebridDeviceCredentials,
+        RealDebridToken,
+    )
+
+    flow = RealDebridDeviceCode(
+        flow_id="flow-1",
+        client_id="public-client",
+        device_code="device-code",
+        user_code="ABCD",
+        verification_url="https://real-debrid.com/device",
+        direct_verification_url="https://real-debrid.com/device?code=ABCD",
+        interval_seconds=1,
+        expires_at=datetime.now(UTC) + timedelta(minutes=10),
+    )
+
+    class FakeRealDebridClient:
+        def __init__(self, access_token=None):
+            self.access_token = access_token
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def start_device_flow(self):
+            DEVICE_FLOW_REGISTRY.create(flow)
+            return flow
+
+        def poll_device_credentials(self, _flow):
+            return RealDebridDeviceCredentials("client-id", "client-secret")
+
+        def exchange_device_code(self, _flow, _credentials):
+            return RealDebridToken(
+                "access-token", "refresh-token", datetime.now(UTC) + timedelta(hours=1)
+            )
+
+        def get_account(self):
+            return RealDebridAccount(
+                "premium-user", "premium", datetime.now(UTC) + timedelta(days=30)
+            )
+
+    monkeypatch.setattr("app.routes.api.RealDebridClient", FakeRealDebridClient)
+
+    connect_response = app_client.post(
+        "/api/settings/real-debrid/connect",
+        data={
+            "real_debrid_enabled": "on",
+            "real_debrid_webseed_base_url": "http://127.0.0.1:8000",
+            "real_debrid_metadata_wait_seconds": "120",
+        },
+    )
+
+    assert connect_response.status_code == 200
+    assert "ABCD" in connect_response.text
+    assert 'data-poll-url="/api/settings/real-debrid/device/flow-1"' in connect_response.text
+
+    poll_response = app_client.get("/api/settings/real-debrid/device/flow-1")
+
+    assert poll_response.status_code == 200
+    assert poll_response.json()["status"] == "connected"
+    db_session.expire_all()
+    settings = db_session.get(AppSettings, "default")
+    assert settings is not None
+    assert settings.real_debrid_enabled is True
+    assert settings.real_debrid_access_token_encrypted.startswith("enc:v1:")
+    assert reveal_secret(settings.real_debrid_access_token_encrypted) == "access-token"
+    assert settings.real_debrid_account_username == "premium-user"
+
+
+def test_settings_page_renders_phase36_integration_controls(app_client) -> None:
+    response = app_client.get("/settings")
+
+    assert response.status_code == 200
+    assert 'name="real_debrid_enabled"' in response.text
+    assert 'name="real_debrid_metadata_wait_seconds"' in response.text
+    assert 'formaction="/api/settings/real-debrid/connect"' in response.text
+    assert 'name="myjd_email"' in response.text
+    assert 'formaction="/api/settings/test-myjdownloader"' in response.text

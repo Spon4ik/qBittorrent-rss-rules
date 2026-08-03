@@ -12,9 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import obfuscate_secret
 from app.db import get_db_session
 from app.models import (
     AppSettings,
+    DownloadAccelerationJob,
     MediaType,
     QualityMode,
     QualityProfile,
@@ -68,8 +70,13 @@ from app.services.metadata import (
     metadata_lookup_provider_catalog,
     metadata_lookup_provider_choices,
 )
+from app.services.myjdownloader import MyJDownloaderClient, MyJDownloaderError
 from app.services.operation_status import operations_status_payload
-from app.services.qbittorrent import QbittorrentClient, QbittorrentClientError
+from app.services.qbittorrent import (
+    MANAGED_TORRENT_TAG,
+    QbittorrentClient,
+    QbittorrentClientError,
+)
 from app.services.quality_filters import (
     add_quality_taxonomy_option,
     apply_quality_taxonomy_update,
@@ -91,6 +98,14 @@ from app.services.quality_filters import (
     resolve_quality_profile_rules,
     slugify_profile_key,
 )
+from app.services.real_debrid import (
+    DEVICE_FLOW_REGISTRY,
+    RealDebridAuthorizationPendingError,
+    RealDebridClient,
+    RealDebridError,
+)
+from app.services.real_debrid_auth import ensure_real_debrid_access_token
+from app.services.real_debrid_webseed import WebseedError, fetch_webseed_file
 from app.services.rule_builder import RuleBuilder
 from app.services.rule_fetch_ops import (
     refresh_snapshot_release_cache,
@@ -115,6 +130,40 @@ from app.services.watch_progress_sync import sync_watch_progress
 
 router = APIRouter(prefix="/api")
 compat_router = APIRouter()
+
+
+@compat_router.api_route(
+    "/webseeds/real-debrid/{token}/{relative_path:path}",
+    methods=["GET", "HEAD"],
+)
+def real_debrid_webseed(
+    token: str,
+    relative_path: str,
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> Response:
+    settings = SettingsService.get_or_create(session)
+    try:
+        access_token = ensure_real_debrid_access_token(session, settings)
+        with RealDebridClient(access_token) as client:
+            result = fetch_webseed_file(
+                session,
+                token=token,
+                relative_path=relative_path,
+                range_header=request.headers.get("range"),
+                head_only=request.method == "HEAD",
+                real_debrid_client=client,
+            )
+    except WebseedError as exc:
+        return Response(str(exc), status_code=404)
+    except RealDebridError:
+        return Response("Real-Debrid web-seed is temporarily unavailable.", status_code=502)
+    return Response(
+        content=result.content,
+        status_code=result.status_code,
+        headers=result.headers,
+        media_type=None,
+    )
 
 
 def _template_context(request: Request) -> dict[str, object]:
@@ -313,6 +362,18 @@ def _raw_settings_form_data(form: Any) -> dict[str, Any]:
         "jackett_qb_url": form.get("jackett_qb_url") or None,
         "jackett_api_key": form.get("jackett_api_key") or None,
         "jackett_language_overrides_text": form.get("jackett_language_overrides_text", ""),
+        "real_debrid_enabled": _bool_from_form(form, "real_debrid_enabled"),
+        "real_debrid_webseed_base_url": form.get(
+            "real_debrid_webseed_base_url", "http://127.0.0.1:8000"
+        ),
+        "real_debrid_metadata_wait_seconds": form.get(
+            "real_debrid_metadata_wait_seconds", 120
+        ),
+        "myjd_enabled": _bool_from_form(form, "myjd_enabled"),
+        "myjd_email": form.get("myjd_email") or None,
+        "myjd_password": form.get("myjd_password") or None,
+        "myjd_device_id": form.get("myjd_device_id") or None,
+        "myjd_device_name": form.get("myjd_device_name") or None,
         "jellyfin_db_path": form.get("jellyfin_db_path") or None,
         "jellyfin_user_name": form.get("jellyfin_user_name") or None,
         "jellyfin_server_url": form.get("jellyfin_server_url") or None,
@@ -765,6 +826,47 @@ def _clone_settings(settings: AppSettings) -> AppSettings:
         jackett_api_url=settings.jackett_api_url,
         jackett_qb_url=settings.jackett_qb_url,
         jackett_api_key_encrypted=settings.jackett_api_key_encrypted,
+        real_debrid_enabled=bool(getattr(settings, "real_debrid_enabled", False)),
+        real_debrid_client_id_encrypted=getattr(
+            settings, "real_debrid_client_id_encrypted", None
+        ),
+        real_debrid_client_secret_encrypted=getattr(
+            settings, "real_debrid_client_secret_encrypted", None
+        ),
+        real_debrid_access_token_encrypted=getattr(
+            settings, "real_debrid_access_token_encrypted", None
+        ),
+        real_debrid_refresh_token_encrypted=getattr(
+            settings, "real_debrid_refresh_token_encrypted", None
+        ),
+        real_debrid_token_expires_at=getattr(settings, "real_debrid_token_expires_at", None),
+        real_debrid_account_username=getattr(
+            settings, "real_debrid_account_username", None
+        ),
+        real_debrid_account_premium_until=getattr(
+            settings, "real_debrid_account_premium_until", None
+        ),
+        real_debrid_connection_status=str(
+            getattr(settings, "real_debrid_connection_status", "disconnected")
+        ),
+        real_debrid_connection_message=str(
+            getattr(settings, "real_debrid_connection_message", "")
+        ),
+        real_debrid_webseed_base_url=str(
+            getattr(settings, "real_debrid_webseed_base_url", "http://127.0.0.1:8000")
+        ),
+        real_debrid_metadata_wait_seconds=int(
+            getattr(settings, "real_debrid_metadata_wait_seconds", 120)
+        ),
+        myjd_enabled=bool(getattr(settings, "myjd_enabled", False)),
+        myjd_email=getattr(settings, "myjd_email", None),
+        myjd_password_encrypted=getattr(settings, "myjd_password_encrypted", None),
+        myjd_device_id=getattr(settings, "myjd_device_id", None),
+        myjd_device_name=getattr(settings, "myjd_device_name", None),
+        myjd_connection_status=str(
+            getattr(settings, "myjd_connection_status", "disconnected")
+        ),
+        myjd_connection_message=str(getattr(settings, "myjd_connection_message", "")),
         jellyfin_db_path=getattr(settings, "jellyfin_db_path", None),
         jellyfin_user_name=getattr(settings, "jellyfin_user_name", None),
         jellyfin_server_url=getattr(settings, "jellyfin_server_url", None),
@@ -873,8 +975,6 @@ def queue_search_result(
     settings = SettingsService.get_or_create(session)
     connection = SettingsService.resolve_qb_connection(settings)
     jackett = SettingsService.resolve_jackett(settings)
-    if not connection.is_configured:
-        return JSONResponse({"error": "qBittorrent connection is not configured."}, status_code=400)
 
     category = ""
     save_path = ""
@@ -891,6 +991,29 @@ def queue_search_result(
             add_paused = rule.add_paused
     if add_paused is None:
         add_paused = settings.default_add_paused
+
+    if payload.source_kind.value == "real_debrid_download":
+        return _queue_real_debrid_history_download(
+            session=session,
+            settings=settings,
+            payload=payload,
+            save_path=save_path,
+        )
+    if not connection.is_configured:
+        return JSONResponse({"error": "qBittorrent connection is not configured."}, status_code=400)
+    if payload.source_kind.value == "real_debrid_torrent":
+        try:
+            access_token = ensure_real_debrid_access_token(session, settings)
+            with RealDebridClient(access_token) as rd_client:
+                provider = rd_client.get_torrent(str(payload.provider_id or ""))
+            info_hash = str(provider.get("hash") or payload.info_hash or "").strip().casefold()
+            if len(info_hash) != 40:
+                raise RealDebridError("Real-Debrid torrent has no supported v1 infohash.")
+            payload.link = f"magnet:?xt=urn:btih:{info_hash}"
+            payload.links = [payload.link]
+            payload.info_hash = info_hash
+        except RealDebridError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
 
     retryable_stale_link = str(payload.link or "").strip()
     try:
@@ -1033,8 +1156,112 @@ def read_debug_hover_telemetry(
 
 
 @router.get("/operations/status")
-def read_operations_status() -> JSONResponse:
-    return JSONResponse(operations_status_payload())
+def read_operations_status(
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    payload = operations_status_payload()
+    jobs = list(
+        session.scalars(
+            select(DownloadAccelerationJob).order_by(
+                DownloadAccelerationJob.updated_at.desc()
+            ).limit(50)
+        )
+    )
+    operations = cast(list[dict[str, object]], payload["operations"])
+    operations.extend(
+        {
+            "id": job.id,
+            "type": "download_acceleration",
+            "label": f"Real-Debrid acceleration {str(job.info_hash or job.provider_download_id or '')[:12]}",
+            "status": "error"
+            if job.state in {"terminal_error", "retry_wait", "metadata_unavailable"}
+            else "success"
+            if job.state in {"completed", "webseed_attached"}
+            else "running",
+            "current": 1 if job.state in {"completed", "webseed_attached"} else 0,
+            "total": 1,
+            "percent": 100 if job.state in {"completed", "webseed_attached"} else 0,
+            "message": job.last_error or job.state.replace("_", " ").title(),
+            "errors": [job.last_error] if job.last_error else [],
+            "started_at": job.created_at.isoformat(),
+            "updated_at": job.updated_at.isoformat(),
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        }
+        for job in jobs
+    )
+    return JSONResponse(payload)
+
+
+@router.post("/acceleration/adopt")
+def adopt_existing_rule_torrents(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> Response:
+    settings = SettingsService.get_or_create(session)
+    config = SettingsService.resolve_qb_connection(settings)
+    if not config.is_configured:
+        return JSONResponse({"error": "qBittorrent is not configured."}, status_code=400)
+    categories = sorted(
+        {
+            str(rule.assigned_category or "").strip()
+            for rule in session.scalars(select(Rule).where(Rule.enabled.is_(True)))
+            if str(rule.assigned_category or "").strip()
+        }
+    )
+    adopted: list[str] = []
+    with QbittorrentClient(config.base_url, config.username, config.password) as client:
+        for category in categories:
+            for torrent in client.get_torrents(category=category):
+                info_hash = str(torrent.get("hash") or "").strip().casefold()
+                tags = {item.strip() for item in str(torrent.get("tags") or "").split(",")}
+                try:
+                    progress = float(str(torrent.get("progress") or 0))
+                except ValueError:
+                    progress = 0.0
+                if info_hash and progress < 1 and MANAGED_TORRENT_TAG not in tags:
+                    client.add_tags(info_hash, [MANAGED_TORRENT_TAG])
+                    adopted.append(info_hash)
+    if "application/x-www-form-urlencoded" in request.headers.get("content-type", ""):
+        return RedirectResponse(
+            url=f"/?message=Adopted%20{len(adopted)}%20existing%20torrent(s).&level=success",
+            status_code=303,
+        )
+    return JSONResponse({"status": "ok", "adopted_count": len(adopted)})
+
+
+@router.post("/acceleration/jobs/{job_id}/retry")
+def retry_acceleration_job(
+    job_id: str,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    job = session.get(DownloadAccelerationJob, job_id)
+    if job is None:
+        return JSONResponse({"error": "Acceleration job not found."}, status_code=404)
+    job.state = "discovered" if not job.provider_torrent_id else "provider_submitted"
+    job.retry_count = 0
+    job.next_retry_at = None
+    job.last_error = ""
+    session.add(job)
+    session.commit()
+    return JSONResponse({"status": "queued", "job_id": job.id})
+
+
+@router.post("/acceleration/jobs/{job_id}/cleanup")
+def cleanup_acceleration_job(
+    job_id: str,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    job = session.get(DownloadAccelerationJob, job_id)
+    if job is None:
+        return JSONResponse({"error": "Acceleration job not found."}, status_code=404)
+    settings = SettingsService.get_or_create(session)
+    config = SettingsService.resolve_qb_connection(settings)
+    if config.is_configured and job.info_hash and job.app_webseed_urls:
+        with QbittorrentClient(config.base_url, config.username, config.password) as client:
+            client.remove_webseeds(job.info_hash, list(job.app_webseed_urls))
+    session.delete(job)
+    session.commit()
+    return JSONResponse({"status": "cleaned", "delete_files": False})
 
 
 @router.post("/rules/page-preferences")
@@ -1810,6 +2037,220 @@ async def save_settings(
     )
 
 
+@router.post("/settings/real-debrid/connect", response_class=HTMLResponse)
+async def connect_real_debrid_settings(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> HTMLResponse:
+    form = await request.form()
+    raw_form = _raw_settings_form_data(form)
+    try:
+        payload = SettingsFormPayload.model_validate(raw_form)
+    except ValidationError as exc:
+        return _render_settings_page(
+            request,
+            form_data=raw_form,
+            errors=[error["msg"] for error in exc.errors()],
+        )
+
+    settings = SettingsService.get_or_create(session)
+    SettingsService.apply_payload(settings, payload)
+    settings.real_debrid_connection_status = "authorizing"
+    settings.real_debrid_connection_message = "Waiting for device authorization."
+    session.add(settings)
+    session.commit()
+
+    try:
+        with RealDebridClient() as client:
+            flow = client.start_device_flow()
+    except RealDebridError as exc:
+        settings.real_debrid_connection_status = "error"
+        settings.real_debrid_connection_message = str(exc)
+        session.add(settings)
+        session.commit()
+        return _render_settings_page(
+            request,
+            form_data=SettingsService.to_form_dict(settings),
+            errors=[str(exc)],
+        )
+
+    form_data = SettingsService.to_form_dict(settings)
+    form_data["real_debrid_device_flow"] = {
+        "flow_id": flow.flow_id,
+        "user_code": flow.user_code,
+        "verification_url": flow.verification_url,
+        "direct_verification_url": flow.direct_verification_url or flow.verification_url,
+        "poll_url": f"/api/settings/real-debrid/device/{flow.flow_id}",
+        "interval_seconds": flow.interval_seconds,
+    }
+    return _render_settings_page(
+        request,
+        form_data=form_data,
+        errors=[],
+        message="Authorize this device in Real-Debrid; this page will finish connecting automatically.",
+        message_level="info",
+        status_code=200,
+    )
+
+
+@router.get("/settings/real-debrid/device/{flow_id}")
+def poll_real_debrid_device(
+    flow_id: str,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    flow = DEVICE_FLOW_REGISTRY.get(flow_id)
+    if flow is None:
+        return JSONResponse(
+            {"status": "expired", "message": "Real-Debrid device authorization expired."},
+            status_code=404,
+        )
+    settings = SettingsService.get_or_create(session)
+    try:
+        with RealDebridClient() as client:
+            credentials = client.poll_device_credentials(flow)
+            token = client.exchange_device_code(flow, credentials)
+        with RealDebridClient(token.access_token) as authenticated_client:
+            account = authenticated_client.get_account()
+    except RealDebridAuthorizationPendingError:
+        return JSONResponse(
+            {"status": "pending", "message": "Waiting for Real-Debrid authorization."}
+        )
+    except RealDebridError as exc:
+        settings.real_debrid_connection_status = "error"
+        settings.real_debrid_connection_message = str(exc)
+        session.add(settings)
+        session.commit()
+        DEVICE_FLOW_REGISTRY.remove(flow_id)
+        return JSONResponse({"status": "error", "message": str(exc)}, status_code=400)
+
+    settings.real_debrid_client_id_encrypted = obfuscate_secret(credentials.client_id)
+    settings.real_debrid_client_secret_encrypted = obfuscate_secret(credentials.client_secret)
+    settings.real_debrid_access_token_encrypted = obfuscate_secret(token.access_token)
+    settings.real_debrid_refresh_token_encrypted = obfuscate_secret(token.refresh_token)
+    settings.real_debrid_token_expires_at = token.expires_at
+    settings.real_debrid_account_username = account.username
+    settings.real_debrid_account_premium_until = account.premium_until
+    settings.real_debrid_connection_status = "connected" if account.is_premium else "account_error"
+    settings.real_debrid_connection_message = (
+        "Real-Debrid Premium connection is ready."
+        if account.is_premium
+        else "Real-Debrid connected, but a Premium account is required for acceleration."
+    )
+    settings.real_debrid_enabled = bool(account.is_premium)
+    session.add(settings)
+    session.commit()
+    DEVICE_FLOW_REGISTRY.remove(flow_id)
+    return JSONResponse(
+        {
+            "status": "connected" if account.is_premium else "account_error",
+            "message": settings.real_debrid_connection_message,
+            "premium": account.is_premium,
+        }
+    )
+
+
+def _queue_real_debrid_history_download(
+    *,
+    session: Session,
+    settings: AppSettings,
+    payload: SearchQueueRequest,
+    save_path: str,
+) -> JSONResponse:
+    config = SettingsService.resolve_myjd(settings)
+    if not (config.enabled and config.is_configured):
+        return JSONResponse(
+            {"error": "This Real-Debrid history item requires configured MyJDownloader."},
+            status_code=400,
+        )
+    provider_id = str(payload.provider_id or "").strip()
+    if not provider_id:
+        return JSONResponse({"error": "Missing Real-Debrid download ID."}, status_code=400)
+    try:
+        access_token = ensure_real_debrid_access_token(session, settings)
+        with RealDebridClient(access_token) as rd_client:
+            provider: dict[str, Any] | None = None
+            for page in range(1, 101):
+                rows = rd_client.list_downloads(page=page, limit=100)
+                provider = next(
+                    (row for row in rows if str(row.get("id") or "") == provider_id),
+                    None,
+                )
+                if provider is not None or len(rows) < 100:
+                    break
+            if provider is None:
+                raise RealDebridError("Real-Debrid download history item was not found.")
+            restricted_link = str(provider.get("link") or "").strip()
+            download_link = str(
+                rd_client.unrestrict_link(restricted_link).get("download") or ""
+            ).strip()
+        if not download_link:
+            raise RealDebridError("Real-Debrid history item has no downloadable link.")
+        existing = session.scalar(
+            select(DownloadAccelerationJob).where(
+                DownloadAccelerationJob.identity_key == f"rd-download:{provider_id}"
+            )
+        )
+        if existing is not None and existing.myjd_job_ids:
+            return JSONResponse(
+                {"status": "already_queued", "job_id": existing.id, "message": "Already queued."}
+            )
+        jd_job_id = MyJDownloaderClient().add_links(
+            email=str(config.email),
+            password=str(config.password),
+            device_id=str(config.device_id),
+            links=[download_link],
+            package_name=str(provider.get("filename") or "Real-Debrid download"),
+            destination_folder=save_path,
+            autostart=True,
+        )
+    except (RealDebridError, MyJDownloaderError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    job = existing or DownloadAccelerationJob(
+        identity_key=f"rd-download:{provider_id}",
+        source_kind="real_debrid_download",
+        provider_download_id=provider_id,
+    )
+    job.myjd_job_ids = [jd_job_id]
+    job.state = "fallback_progress"
+    job.last_error = ""
+    session.add(job)
+    session.commit()
+    return JSONResponse(
+        {
+            "status": "queued",
+            "job_id": job.id,
+            "message": "Queued in MyJDownloader.",
+            "category": "",
+            "save_path": save_path,
+        }
+    )
+
+
+@router.post("/settings/real-debrid/disconnect")
+def disconnect_real_debrid_settings(
+    session: Session = Depends(get_db_session),
+) -> RedirectResponse:
+    settings = SettingsService.get_or_create(session)
+    for attribute in (
+        "real_debrid_client_id_encrypted",
+        "real_debrid_client_secret_encrypted",
+        "real_debrid_access_token_encrypted",
+        "real_debrid_refresh_token_encrypted",
+        "real_debrid_token_expires_at",
+        "real_debrid_account_username",
+        "real_debrid_account_premium_until",
+    ):
+        setattr(settings, attribute, None)
+    settings.real_debrid_enabled = False
+    settings.real_debrid_connection_status = "disconnected"
+    settings.real_debrid_connection_message = "Real-Debrid connection removed."
+    session.add(settings)
+    session.commit()
+    return RedirectResponse(
+        url="/settings?message=Real-Debrid%20disconnected.&level=success", status_code=303
+    )
+
+
 @router.post("/settings/test-qb", response_class=HTMLResponse)
 async def test_qb_settings(
     request: Request,
@@ -1852,6 +2293,69 @@ async def test_qb_settings(
         form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
         errors=[],
         message="qBittorrent connection test succeeded. Test actions do not save settings; use Save Settings before syncing rules.",
+        message_level="success",
+        status_code=200,
+    )
+
+
+@router.post("/settings/test-myjdownloader", response_class=HTMLResponse)
+async def test_myjdownloader_settings(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> HTMLResponse:
+    form = await request.form()
+    raw_form = _raw_settings_form_data(form)
+    try:
+        payload = SettingsFormPayload.model_validate(raw_form)
+    except ValidationError as exc:
+        return _render_settings_page(
+            request,
+            form_data=raw_form,
+            errors=[error["msg"] for error in exc.errors()],
+        )
+
+    settings = SettingsService.get_or_create(session)
+    temp_settings = _clone_settings(settings)
+    SettingsService.apply_payload(temp_settings, payload)
+    config = SettingsService.resolve_myjd(temp_settings)
+    if not (config.email and config.password):
+        return _render_settings_page(
+            request,
+            form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
+            errors=["MyJDownloader email and password are required."],
+        )
+    try:
+        devices = MyJDownloaderClient().list_devices(
+            email=config.email,
+            password=config.password,
+        )
+    except MyJDownloaderError as exc:
+        return _render_settings_page(
+            request,
+            form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
+            errors=[str(exc)],
+        )
+    if not devices:
+        return _render_settings_page(
+            request,
+            form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
+            errors=["MyJDownloader connected, but no online devices were found."],
+        )
+    selected = next(
+        (device for device in devices if device.id == config.device_id),
+        devices[0],
+    )
+    form_data = {**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")}
+    form_data["myjd_device_id"] = selected.id
+    form_data["myjd_device_name"] = selected.name
+    form_data["myjd_devices"] = [
+        {"id": device.id, "name": device.name, "type": device.type} for device in devices
+    ]
+    return _render_settings_page(
+        request,
+        form_data=form_data,
+        errors=[],
+        message=f"MyJDownloader connection succeeded; selected {selected.name}.",
         message_level="success",
         status_code=200,
     )

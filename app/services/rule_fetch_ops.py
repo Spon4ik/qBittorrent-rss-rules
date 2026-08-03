@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_session_factory
 from app.models import MediaType, Rule, RuleSearchSnapshot, utcnow
-from app.schemas import JackettSearchRequest
+from app.schemas import JackettSearchRequest, JackettSearchRun
 from app.services.category_catalog import (
     sync_category_catalog_from_indexer_map,
     sync_category_catalog_from_results,
@@ -45,6 +45,9 @@ from app.services.quality_filters import (
     grouped_tokens_to_regex,
     tokens_to_regex,
 )
+from app.services.real_debrid import RealDebridClient, RealDebridError
+from app.services.real_debrid_auth import ensure_real_debrid_access_token
+from app.services.real_debrid_search import search_real_debrid
 from app.services.rule_builder import (
     build_episode_progress_fragment,
     build_existing_episode_exclusion_fragment,
@@ -1161,7 +1164,9 @@ def execute_rule_fetch(
 
     settings = SettingsService.get_or_create(session)
     jackett = SettingsService.resolve_jackett(settings)
-    if not jackett.app_ready:
+    real_debrid = SettingsService.resolve_real_debrid(settings)
+    real_debrid_ready = bool(real_debrid.enabled and real_debrid.is_connected)
+    if not jackett.app_ready and not real_debrid_ready:
         return {
             "rule_id": rule.id,
             "rule_name": rule.rule_name,
@@ -1172,7 +1177,7 @@ def execute_rule_fetch(
             "fetched_count": 0,
             "warnings": [],
             "notices": [],
-            "error": "Jackett app search is not configured in Settings.",
+            "error": "Neither Jackett nor Real-Debrid search is configured in Settings.",
         }
 
     payload_from_rule: JackettSearchRequest | None = None
@@ -1220,24 +1225,52 @@ def execute_rule_fetch(
 
     try:
         payload_from_rule = _auto_imdb_first_payload(payload_from_rule)
-        client = JackettClient(
-            jackett.api_url,
-            jackett.api_key,
-            language_overrides=jackett.language_overrides,
+        run = JackettSearchRun()
+        provider_success_count = 0
+        provider_errors: list[str] = []
+        jackett_client: JackettClient | None = None
+        if jackett.app_ready:
+            try:
+                jackett_client = JackettClient(
+                    jackett.api_url,
+                    jackett.api_key,
+                    language_overrides=jackett.language_overrides,
+                )
+                run = jackett_client.search(payload_from_rule)
+                provider_success_count += 1
+            except JackettClientError as exc:
+                provider_errors.append(f"Jackett: {exc}")
+        else:
+            run.warning_messages.append("Jackett search is not configured.")
+        if real_debrid_ready:
+            try:
+                access_token = ensure_real_debrid_access_token(session, settings)
+                with RealDebridClient(access_token) as real_debrid_client:
+                    real_debrid_rows = search_real_debrid(real_debrid_client, payload_from_rule)
+                run.raw_results.extend(real_debrid_rows)
+                run.results.extend(real_debrid_rows)
+                provider_success_count += 1
+            except RealDebridError as exc:
+                provider_errors.append(f"Real-Debrid: {exc}")
+        if provider_success_count == 0:
+            raise JackettClientError("; ".join(provider_errors) or "All search providers failed.")
+        run.warning_messages.extend(
+            f"{message} Other configured search sources were kept."
+            for message in provider_errors
         )
-        run = client.search(payload_from_rule)
         all_results = [
             *list(run.raw_results or []),
             *list(run.results or []),
             *list(run.raw_fallback_results or []),
             *list(run.fallback_results or []),
         ]
-        client.enrich_result_category_labels(all_results)
-        sync_category_catalog_from_results(session, all_results)
-        sync_category_catalog_from_indexer_map(
-            session,
-            client.configured_indexer_category_labels(),
-        )
+        if jackett_client is not None:
+            jackett_client.enrich_result_category_labels(all_results)
+            sync_category_catalog_from_results(session, all_results)
+            sync_category_catalog_from_indexer_map(
+                session,
+                jackett_client.configured_indexer_category_labels(),
+            )
         snapshot = save_rule_search_snapshot(
             session,
             rule_id=rule.id,

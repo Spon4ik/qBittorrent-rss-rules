@@ -3518,12 +3518,17 @@ function initResultQueueActions(root = document) {
       const groupedLinks = parseJsonData(button.dataset.resultLinks || "[]", []);
       const trackerUrls = parseJsonData(button.dataset.resultTrackerUrls || "[]", []);
       const resultInfoHash = String(button.dataset.resultInfoHash || "").trim().toLowerCase();
+      const sourceKind = String(button.dataset.resultSourceKind || "jackett_active_search").trim();
+      const providerId = String(button.dataset.resultProviderId || "").trim();
+      const queueCapability = String(button.dataset.resultQueueCapability || "qbittorrent").trim();
       const ruleId = String(button.dataset.resultRuleId || "").trim();
       const queueOptions = readQueueOptions(button);
       const originalLabel = button.textContent;
       button.disabled = true;
       button.textContent = "Queueing...";
-      const queueingLabel = Array.isArray(groupedLinks) && groupedLinks.length > 1
+      const queueingLabel = queueCapability === "jdownloader"
+        ? "Queueing result in MyJDownloader..."
+        : Array.isArray(groupedLinks) && groupedLinks.length > 1
         ? "Queueing grouped same-hash results in qBittorrent..."
         : "Queueing result in qBittorrent...";
       setQueueStatus(button, queueingLabel);
@@ -3543,6 +3548,9 @@ function initResultQueueActions(root = document) {
             add_paused: queueOptions.addPaused,
             sequential_download: queueOptions.sequentialDownload,
             first_last_piece_prio: queueOptions.firstLastPiecePrio,
+            source_kind: sourceKind,
+            provider_id: providerId || null,
+            queue_capability: queueCapability,
           }),
         });
         let payload = {};
@@ -3556,7 +3564,7 @@ function initResultQueueActions(root = document) {
           throw new Error(errorMessage);
         }
         const queueSummary = [
-          "Queued in qBittorrent.",
+          queueCapability === "jdownloader" ? "Queued in MyJDownloader." : "Queued in qBittorrent.",
           payload?.message ? String(payload.message) : "",
           payload?.category ? `Category: ${payload.category}.` : "",
           payload?.save_path ? `Save path: ${payload.save_path}.` : "",
@@ -4452,6 +4460,35 @@ function initSettingsForm(form) {
     "profile_2160p_hdr_include_tokens",
     "profile_2160p_hdr_exclude_tokens"
   );
+
+  const deviceFlow = form.querySelector("[data-real-debrid-device-flow]");
+  if (deviceFlow) {
+    const pollUrl = String(deviceFlow.dataset.pollUrl || "");
+    const intervalSeconds = Math.max(1, Number(deviceFlow.dataset.pollInterval || 5));
+    const status = deviceFlow.querySelector("[data-real-debrid-device-status]");
+    const poll = async () => {
+      try {
+        const response = await fetch(pollUrl, { headers: { Accept: "application/json" } });
+        const payload = await response.json();
+        if (status) {
+          status.textContent = String(payload.message || payload.status || "Checking...");
+        }
+        if (payload.status === "pending") {
+          window.setTimeout(poll, intervalSeconds * 1000);
+          return;
+        }
+        if (payload.status === "connected") {
+          window.setTimeout(() => window.location.assign("/settings?message=Real-Debrid%20connected.&level=success"), 500);
+        }
+      } catch {
+        if (status) {
+          status.textContent = "Could not check authorization; retrying...";
+        }
+        window.setTimeout(poll, intervalSeconds * 1000);
+      }
+    };
+    window.setTimeout(poll, intervalSeconds * 1000);
+  }
 }
 
 function initOperationProgress(root) {
@@ -4534,6 +4571,35 @@ function initOperationProgress(root) {
         const detail = document.createElement("span");
         detail.textContent = String(operation?.message || formatOperationDetail(operation));
         item.append(label, detail);
+        if (String(operation?.type || "") === "download_acceleration") {
+          const actions = document.createElement("span");
+          actions.className = "operation-progress-actions";
+          if (String(operation?.status || "") === "error") {
+            const retry = document.createElement("button");
+            retry.type = "button";
+            retry.textContent = "Retry";
+            retry.addEventListener("click", async () => {
+              retry.disabled = true;
+              await fetch(`/api/acceleration/jobs/${encodeURIComponent(operation.id)}/retry`, { method: "POST" });
+              poll();
+            });
+            actions.appendChild(retry);
+          }
+          const cleanup = document.createElement("button");
+          cleanup.type = "button";
+          cleanup.textContent = "Clean up";
+          cleanup.title = "Remove only app-owned web seeds and job state; downloaded files are never deleted.";
+          cleanup.addEventListener("click", async () => {
+            if (!window.confirm("Remove this acceleration job and its app-owned web seed? Downloaded files will be kept.")) {
+              return;
+            }
+            cleanup.disabled = true;
+            await fetch(`/api/acceleration/jobs/${encodeURIComponent(operation.id)}/cleanup`, { method: "POST" });
+            poll();
+          });
+          actions.appendChild(cleanup);
+          item.appendChild(actions);
+        }
         listElement.appendChild(item);
       }
     }

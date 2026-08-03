@@ -12,10 +12,15 @@ from app.db import get_session_factory, init_db
 from app.routes.api import compat_router as api_compat_router
 from app.routes.api import router as api_router
 from app.routes.pages import router as pages_router
+from app.services.download_acceleration_scheduler import (
+    start_download_acceleration_scheduler,
+    stop_download_acceleration_scheduler,
+)
 from app.services.jellyfin_auto_sync import (
     start_jellyfin_auto_sync_service,
     stop_jellyfin_auto_sync_service,
 )
+from app.services.log_redaction import install_sensitive_access_log_filter
 from app.services.rule_fetch_scheduler import (
     start_rule_fetch_scheduler,
     stop_rule_fetch_scheduler,
@@ -28,17 +33,20 @@ from app.services.stremio_auto_sync import (
 )
 from app.services.sync import SyncService
 
-DESKTOP_BACKEND_CONTRACT = "2026-04-18"
+DESKTOP_BACKEND_CONTRACT = "2026-08-03"
 DESKTOP_BACKEND_CAPABILITIES = (
     "hover_debug_telemetry",
     "search_hidden_result_diagnostics",
     "jellyfin_auto_sync",
     "stremio_library_sync",
+    "real_debrid_acceleration",
+    "myjdownloader_fallback",
 )
 LOGGER = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
+    install_sensitive_access_log_filter()
     ensure_runtime_dirs()
     init_db()
     env_settings = get_environment_settings()
@@ -46,7 +54,7 @@ def create_app() -> FastAPI:
     static_dir = Path(__file__).resolve().parent / "static"
     app = FastAPI(
         title="qBittorrent RSS Rule Manager",
-        version="1.3.4",
+        version="1.4.0",
     )
     app.state.static_asset_version = compute_static_asset_version(static_dir) or app.version
     app.state.desktop_backend_contract = DESKTOP_BACKEND_CONTRACT
@@ -60,6 +68,14 @@ def create_app() -> FastAPI:
     app.include_router(pages_router)
     app.include_router(api_compat_router)
     app.include_router(api_router)
+
+    @app.on_event("startup")
+    def _start_download_acceleration() -> None:  # pragma: no cover - startup hook
+        start_download_acceleration_scheduler(session_factory=get_session_factory())
+
+    @app.on_event("shutdown")
+    def _stop_download_acceleration() -> None:  # pragma: no cover - shutdown hook
+        stop_download_acceleration_scheduler()
 
     if env_settings.sync_rules_on_startup:
 

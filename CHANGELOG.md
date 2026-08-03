@@ -8,6 +8,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.0] - 2026-08-03
+
+- Added official Real-Debrid Device OAuth, Premium account validation, token refresh, and fail-soft searches across the user's torrent cloud and download history alongside Jackett.
+- Added managed qBittorrent ownership tags, restart-safe acceleration jobs, safe public-metainfo or tracker-free magnet submission, exact selected-file matching, and app-owned HTTP web seeds with authenticated GET, HEAD, and byte-range proxying.
+- Added a pinned MyJDownloader adapter for metadata-less torrent and standalone Real-Debrid-history fallback, preserving qBittorrent save paths and relative parent folders while stopping and retaining qB placeholders.
+- Added explicit adoption, retry, cleanup, and operation-status controls without deleting downloaded files or exposing provider links and credentials.
+- Replaced reversible base64 secret storage with versioned Fernet authenticated encryption while retaining one-time legacy secret migration.
 ## [1.3.4] - 2026-08-03
 
 - Made saved Jackett search indexers remotely authoritative: scoped searches now call only the selected direct indexer endpoints instead of querying the aggregate `all` endpoint first.

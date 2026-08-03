@@ -337,6 +337,37 @@ def test_explicit_managed_rule_inherits_preset_edits_while_manual_rule_keeps_sna
     )
 
 
+def test_empty_managed_profile_rules_restore_taxonomy_defaults() -> None:
+    settings = AppSettings(
+        id="default",
+        quality_profile_rules={
+            QualityProfile.HD_1080P.value: {
+                "include_tokens": [],
+                "exclude_tokens": [],
+            },
+            QualityProfile.UHD_2160P_HDR.value: {
+                "include_tokens": [],
+                "exclude_tokens": [],
+            },
+        },
+    )
+    rule = Rule(
+        rule_name="Managed UHD",
+        content_name="Managed UHD",
+        normalized_title="Managed UHD",
+        quality_profile=QualityProfile.UHD_2160P_HDR,
+        quality_mode=QualityMode.MANAGED,
+        quality_include_tokens=["hdr", "dolby_vision"],
+        quality_exclude_tokens=["720p", "1080p"],
+    )
+
+    include_tokens, exclude_tokens = effective_rule_quality_tokens(rule, settings)
+
+    assert "2160p" in include_tokens
+    assert "hdr" in include_tokens
+    assert "720p" in exclude_tokens
+
+
 def test_quality_option_choices_preserve_seed_order_and_groups(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         quality_filters,

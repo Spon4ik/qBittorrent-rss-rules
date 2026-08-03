@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, load_only
 
 from app.db import get_db_session, get_session_factory
 from app.models import (
+    AppSettings,
     MediaType,
     QualityMode,
     QualityProfile,
@@ -25,7 +26,7 @@ from app.models import (
     media_type_choices,
     media_type_label,
 )
-from app.schemas import JackettSearchRequest
+from app.schemas import JackettSearchRequest, JackettSearchRun
 from app.services.category_catalog import (
     resolve_category_labels,
     sync_category_catalog_from_indexer_map,
@@ -67,6 +68,9 @@ from app.services.quality_filters import (
     recent_quality_taxonomy_audit_entries,
     resolve_quality_profile_rules,
 )
+from app.services.real_debrid import RealDebridClient, RealDebridError
+from app.services.real_debrid_auth import ensure_real_debrid_access_token
+from app.services.real_debrid_search import search_real_debrid
 from app.services.rule_fetch_ops import (
     inline_search_from_rule_snapshot,
     refresh_snapshot_release_cache,
@@ -1449,6 +1453,8 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
     jackett_qb_url = ""
     jackett_api_key: str | None = None
     jackett_language_overrides: dict[str, list[str]] = {}
+    real_debrid_ready = False
+    settings: AppSettings | None = None
     search_view_defaults = {
         "view_mode": DEFAULT_SEARCH_RESULT_VIEW_MODE,
         "sort_criteria": [dict(item) for item in DEFAULT_SEARCH_SORT_CRITERIA],
@@ -1469,6 +1475,8 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
         jackett_qb_url = jackett.qb_url or ""
         jackett_api_key = jackett.api_key
         jackett_language_overrides = jackett.language_overrides
+        real_debrid = SettingsService.resolve_real_debrid(settings)
+        real_debrid_ready = bool(real_debrid.enabled and real_debrid.is_connected)
         search_view_defaults = {
             "view_mode": normalize_search_result_view_mode(settings.search_result_view_mode),
             "sort_criteria": normalize_search_sort_criteria(settings.search_sort_criteria),
@@ -1656,25 +1664,58 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
             try:
                 active_payload = _auto_imdb_first_payload(active_payload)
                 _sync_search_form_data_with_payload(form_data, active_payload)
-                client = JackettClient(
-                    jackett_api_url,
-                    jackett_api_key,
-                    language_overrides=jackett_language_overrides,
-                )
-                result = client.search(active_payload)
+                result = JackettSearchRun()
+                jackett_client: JackettClient | None = None
+                if jackett_ready or not real_debrid_ready:
+                    try:
+                        jackett_client = JackettClient(
+                            jackett_api_url,
+                            jackett_api_key,
+                            language_overrides=jackett_language_overrides,
+                        )
+                        result = jackett_client.search(active_payload)
+                    except JackettClientError as exc:
+                        result.warning_messages.append(
+                            f"Jackett search failed; other configured sources were kept: {exc}"
+                        )
+                else:
+                    result.warning_messages.append("Jackett search is not configured.")
+
+                real_debrid_rows = []
+                if real_debrid_ready and settings is not None:
+                    try:
+                        access_token = ensure_real_debrid_access_token(session, settings)
+                        with RealDebridClient(access_token) as real_debrid_client:
+                            real_debrid_rows = search_real_debrid(
+                                real_debrid_client, active_payload
+                            )
+                    except RealDebridError as exc:
+                        result.warning_messages.append(
+                            f"Real-Debrid search failed; other configured sources were kept: {exc}"
+                        )
+                elif settings is not None and bool(
+                    getattr(settings, "real_debrid_enabled", False)
+                ):
+                    result.warning_messages.append(
+                        "Real-Debrid search is enabled but Device OAuth is not connected."
+                    )
+                if real_debrid_rows:
+                    result.raw_results.extend(real_debrid_rows)
+                    result.results.extend(real_debrid_rows)
                 all_results = [
                     *list(result.raw_results or []),
                     *list(result.results or []),
                     *list(result.raw_fallback_results or []),
                     *list(result.fallback_results or []),
                 ]
-                client.enrich_result_category_labels(all_results)
-                sync_category_catalog_from_results(session, all_results)
-                sync_category_catalog_from_indexer_map(
-                    session,
-                    client.configured_indexer_category_labels(),
-                )
-                _apply_catalog_category_labels(session, all_results)
+                if jackett_client is not None:
+                    jackett_client.enrich_result_category_labels(all_results)
+                    sync_category_catalog_from_results(session, all_results)
+                    sync_category_catalog_from_indexer_map(
+                        session,
+                        jackett_client.configured_indexer_category_labels(),
+                    )
+                    _apply_catalog_category_labels(session, all_results)
                 session.commit()
                 rule_prefill = {
                     "rule_name": active_payload.query,
@@ -1745,9 +1786,15 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                     ]
                 search_run.update(
                     {
-                        "source_label": "Saved rule search"
-                        if source_rule
-                        else "Jackett active search",
+                        "source_label": (
+                            "Saved rule search + Real-Debrid"
+                            if source_rule and real_debrid_ready
+                            else (
+                                "Jackett + Real-Debrid search"
+                                if real_debrid_ready
+                                else ("Saved rule search" if source_rule else "Jackett active search")
+                            )
+                        ),
                         "rule_prefill_summary": f"{', '.join(summary_parts)}.",
                         "source_rule_name": source_rule.rule_name if source_rule else "",
                         "ignored_full_regex": ignored_full_regex,

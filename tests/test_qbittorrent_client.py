@@ -123,6 +123,7 @@ def test_add_torrent_url_sends_paused_and_stopped_for_compatibility() -> None:
     assert captured_body["firstLastPiecePrio"] == ["true"]
     assert captured_body["category"] == ["Series/Shrinking [imdbid-tt15153834]"]
     assert captured_body["savepath"] == ["/data/shrinking"]
+    assert captured_body["tags"] == ["qb-rss-rules"]
 
 
 def test_add_torrent_url_accepts_duplicate_conflict() -> None:
@@ -180,6 +181,69 @@ def test_add_torrent_file_posts_multipart_payload() -> None:
     assert "Series/Shrinking [imdbid-tt15153834]" in body_text
     assert 'name="paused"' in body_text
     assert "false" in body_text
+    assert 'name="tags"' in body_text
+    assert "qb-rss-rules" in body_text
+
+
+def test_acceleration_endpoints_use_qbittorrent_web_api_contracts() -> None:
+    captured: list[tuple[str, str, dict[str, list[str]]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/auth/login":
+            return httpx.Response(200, text="Ok.")
+        if request.url.path == "/api/v2/torrents/export":
+            assert request.url.params["hash"] == "abc123"
+            return httpx.Response(200, content=b"torrent-metainfo")
+        if request.url.path == "/api/v2/torrents/webseeds":
+            assert request.url.params["hash"] == "abc123"
+            return httpx.Response(
+                200,
+                json=[{"url": "https://example.test/file"}, "https://example.test/other"],
+            )
+        captured.append(
+            (
+                request.method,
+                request.url.path,
+                parse_qs(request.content.decode()),
+            )
+        )
+        return httpx.Response(200, text="Ok.")
+
+    client = QbittorrentClient(
+        "http://127.0.0.1:8080",
+        "admin",
+        "adminadmin",
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.export_torrent("abc123") == b"torrent-metainfo"
+    assert client.get_webseeds("abc123") == [
+        "https://example.test/file",
+        "https://example.test/other",
+    ]
+    client.add_webseeds("abc123", ["https://proxy.test/a", "https://proxy.test/a"])
+    client.remove_webseeds("abc123", ["https://proxy.test/a"])
+    client.add_tags("abc123", ["qb-rss-rules"])
+    client.stop_torrents("abc123")
+
+    assert captured == [
+        (
+            "POST",
+            "/api/v2/torrents/addWebSeeds",
+            {"hash": ["abc123"], "urls": ["https://proxy.test/a"]},
+        ),
+        (
+            "POST",
+            "/api/v2/torrents/removeWebSeeds",
+            {"hash": ["abc123"], "urls": ["https://proxy.test/a"]},
+        ),
+        (
+            "POST",
+            "/api/v2/torrents/addTags",
+            {"hashes": ["abc123"], "tags": ["qb-rss-rules"]},
+        ),
+        ("POST", "/api/v2/torrents/stop", {"hashes": ["abc123"]}),
+    ]
 
 
 def test_add_torrent_file_accepts_duplicate_conflict() -> None:

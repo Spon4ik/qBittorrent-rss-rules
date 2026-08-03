@@ -1,8 +1,10 @@
 # Roadmap
 
-## Current release state: v1.3.0 published; next phase pending discovery review
+## Current release state: v1.3.4 published; Phase 36 / v1.4.0 active
 
 ### Validated locally
+
+- Phase 36 is the active `v1.4.0` feature phase: add official Real-Debrid Device OAuth, personal torrent-cloud/download-history search, qBittorrent HTTP web-seed acceleration, encrypted integration secrets, and a MyJDownloader fallback only when qBittorrent cannot obtain metadata (`docs/plans/phase-36-real-debrid-search-and-qbittorrent-http-acceleration.md`).
 
 - Phase 35 is implemented and locally/Docker validated as the smart audiobook lookup/search slice: audiobook rules default to a provider-aware Google Books/OpenLibrary lookup chain, persist structured search hints, and use those hints for capability-aware Jackett `t=book` searches without changing qB RSS rule generation (`docs/plans/phase-35-smart-audiobook-rule-search.md`).
 - Phase 31 is implemented and locally/Docker validated as the shared operation progress slice: a process-local operation registry, `/api/operations/status`, qB/Jackett/Jellyfin/Stremio producer instrumentation, and a global polling progress bar in the base layout (`docs/plans/phase-31-shared-operation-progress-bar.md`).
@@ -27,6 +29,7 @@
 
 ### Current phase track
 
+- Phase 36: Real-Debrid search and qBittorrent HTTP acceleration (active for `v1.4.0`; `docs/plans/phase-36-real-debrid-search-and-qbittorrent-http-acceleration.md`)
 - Phase 35: smart audiobook rule search (implemented and locally/Docker validated; `docs/plans/phase-35-smart-audiobook-rule-search.md`)
 - Phase 31: shared operation progress bar (implemented and locally/Docker validated; `docs/plans/phase-31-shared-operation-progress-bar.md`)
 - Phase 30: IMDb-backed Jackett precision hardening (implemented and locally/Docker validated; `docs/plans/phase-30-imdb-backed-jackett-precision.md`)
@@ -113,6 +116,7 @@ Phase 6 detail pointer:
 
 ### Post-release focus
 
+- Execute Phase 36 in resumable slices, keeping qBittorrent primary whenever metadata exists and using MyJDownloader only for the documented no-metadata fallback.
 - Keep bidirectional watch-progress write-back as a dedicated follow-up after Phase 31; it needs a canonical progress store, source timestamps, and opt-in safe write-back paths for Jellyfin/Stremio rather than a simple UI progress addition.
 - Track the Phase 30 long-term exactness path separately: upstream/custom Jackett definition improvements for trackers that expose IMDb links without Torznab `imdbid` support, and a later opt-in detail-page enrichment fallback that is disabled by default, allowlisted per indexer, bounded, cached, and never promotes a row without confirming the requested IMDb ID.
 - Decide whether the next catalog/search step should expand beyond OMDb-backed title search into richer provider support or more explicit release-calendar reasoning.

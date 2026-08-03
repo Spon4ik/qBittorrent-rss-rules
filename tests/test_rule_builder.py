@@ -167,6 +167,12 @@ def test_build_qb_rule_enables_regex_when_generated_conditions_are_present() -> 
     )
     assert qb_rule["useRegex"] is True
     assert qb_rule["mustContain"] == r"(?i)(?=.*anaconda)(?=.*remux)"
+    assert qb_rule["torrentParams"] == {
+        "category": qb_rule["assignedCategory"],
+        "save_path": qb_rule["savePath"],
+        "stopped": False,
+        "tags": ["qb-rss-rules"],
+    }
 
 
 def test_build_qb_rule_rewrites_jackett_feed_urls_for_qb_host() -> None:

@@ -392,7 +392,7 @@
   >
     <div class="rule-card-top">
       <div>
-        <p class="eyebrow">{{ item.indexer or 'Unknown indexer' }}</p>
+        <p class="eyebrow">{{ item.indexer or 'Unknown indexer' }}{% if item.in_real_debrid %} · In Real-Debrid{% endif %}{% if item.provider_status %} · {{ item.provider_status }}{% endif %}</p>
         <h3>{{ item.title }}</h3>
       </div>
       <span class="status-chip status-ok">{{ item.query_source_label or 'Primary query' }}</span>
@@ -455,6 +455,10 @@
         data-result-tracker-urls='{{ (item.grouped_trackers or []) | tojson }}'
         data-result-queue-scope="{{ item.queue_scope or 'single' }}"
         data-result-rule-id="{{ queue_defaults.rule_id }}"
+        data-result-source-kind="{{ item.source_kind | default('jackett_active_search', true) }}"
+        data-result-provider-id="{{ item.provider_id or '' }}"
+        data-result-queue-capability="{{ item.queue_capability or 'qbittorrent' }}"
+        {% if item.queue_capability == 'none' %}disabled title="This provider item cannot be queued."{% endif %}
       >
         Queue
       </button>
@@ -578,7 +582,7 @@
           >
         <td>{{ item.query_source_label or 'Primary query' }}</td>
         <td>{{ item.title }}</td>
-        <td>{{ item.indexer or 'Unknown' }}</td>
+        <td>{{ item.indexer or 'Unknown' }}{% if item.in_real_debrid %} · In Real-Debrid{% endif %}{% if item.provider_status %} · {{ item.provider_status }}{% endif %}</td>
         <td>{{ item.size_label or 'Unknown' }}</td>
         <td>{{ item.published_label or 'Unknown' }}</td>
         <td>{{ item.year or 'Unknown' }}</td>
@@ -621,6 +625,10 @@
               data-result-tracker-urls='{{ (item.grouped_trackers or []) | tojson }}'
               data-result-queue-scope="{{ item.queue_scope or 'single' }}"
               data-result-rule-id="{{ queue_defaults.rule_id }}"
+              data-result-source-kind="{{ item.source_kind | default('jackett_active_search', true) }}"
+              data-result-provider-id="{{ item.provider_id or '' }}"
+              data-result-queue-capability="{{ item.queue_capability or 'qbittorrent' }}"
+              {% if item.queue_capability == 'none' %}disabled title="This provider item cannot be queued."{% endif %}
             >
               Queue
             </button>

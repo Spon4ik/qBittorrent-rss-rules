@@ -18,6 +18,8 @@ qBittorrent's built-in RSS rule editor is functional but awkward for large libra
 - Local SQLite source of truth for app-managed rules
 - qBittorrent WebUI API sync (`rss/setRule`, `rss/removeRule`, `torrents/createCategory`)
 - Separate Jackett-backed active search workspace for on-demand searching, including one-click rule-derived searches that reuse saved structured terms without sending raw regex text to Jackett
+- Real-Debrid Device OAuth, personal torrent-cloud/download-history search, and qBittorrent HTTP web-seed acceleration
+- MyJDownloader fallback for Real-Debrid files when a hash-only torrent never obtains metadata in qBittorrent
 - Media-aware metadata lookup via OMDb, MusicBrainz, OpenLibrary, and Google Books, with manual fallback
 - Rule generation from preset-managed include/exclude quality selections, optional year matching, and extra include keywords
 - Split video and audio quality filters with reusable saved profiles and media-aware built-in presets
@@ -69,6 +71,15 @@ http://127.0.0.1:8000
 ```
 
 The shared Compose setup in `C:\Users\nucc\docker-config\docker-compose.yml` bind-mounts this repo's `data` directory into `/app/data` and publishes the backend on `${QB_RULES_PORT:-8000}`. This keeps Docker and local/dev launches pointed at the same `data/qb_rules.db`.
+
+### Real-Debrid and MyJDownloader setup
+
+1. Open `/settings`, connect Real-Debrid, and authorize the displayed Device OAuth code. Acceleration enables only for a Premium account.
+2. Keep the web-seed base URL reachable from qBittorrent. For the current Windows-host qBittorrent and Docker backend, `http://127.0.0.1:8000` is correct; use an appropriate host/container address for other network layouts.
+3. Optionally enter MyJDownloader credentials, test the connection, select a device, then save settings. It is used only for standalone Real-Debrid history items or after the configurable metadata timeout.
+4. New manual and RSS downloads receive the `qb-rss-rules` tag automatically. Use **Adopt Existing Torrents** to opt incomplete torrents in enabled rule categories into acceleration; untagged torrents are never adopted automatically.
+
+Real-Debrid is not a public indexer: searches cover only the authenticated account's torrent cloud and download history. qBittorrent remains the primary downloader whenever v1/hybrid torrent metadata exists. Private or credential-bearing metainfo is never uploaded; the app sends only a tracker-free hash magnet. The local secret key is stored as ignored runtime data at `data/.secret-key`; back it up with the database or provide a stable `QB_RULES_SECRET_KEY`.
 
 If you move the project folder again, update that bind mount in `C:\Users\nucc\docker-config\docker-compose.yml` to the new repo `data` path, then rebuild the `qb-rss-rules` service. The app itself resolves relative SQLite URLs from its own app root, so local runs do not depend on the shell's current working directory.
 
@@ -157,6 +168,7 @@ The WinUI app ships with a **fixed expected** backend semver (`RequiredDesktopBa
 - `QB_RULES_PORT`: bind port
 - `QB_RULES_DATABASE_URL`: SQLAlchemy database URL
 - `QB_RULES_REQUEST_TIMEOUT`: external HTTP timeout in seconds
+- `QB_RULES_SECRET_KEY`: optional stable Fernet key used to encrypt saved integration secrets; otherwise `data/.secret-key` is generated
 - `QB_RULES_QB_BASE_URL`: qBittorrent WebUI base URL
 - `QB_RULES_QB_USERNAME`: qBittorrent username
 - `QB_RULES_QB_PASSWORD`: qBittorrent password

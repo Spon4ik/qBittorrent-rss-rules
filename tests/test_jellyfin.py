@@ -256,7 +256,7 @@ def test_jellyfin_write_watch_progress_uses_http_api(monkeypatch) -> None:
         jellyfin_api_key_encrypted=obfuscate_secret("token"),
     )
     service = JellyfinService(settings)
-    calls: list[tuple[str, str, dict[str, object]]] = []
+    calls: list[tuple[str, str, dict[str, str], dict[str, object]]] = []
 
     class FakeClient:
         def __init__(self, *args, **kwargs) -> None:
@@ -268,11 +268,12 @@ def test_jellyfin_write_watch_progress_uses_http_api(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def post(self, url, *, headers=None, json=None):
-            calls.append((url, headers["X-Emby-Token"], json))
+        def post(self, url, *, headers=None, params=None, json=None):
+            calls.append((url, headers["X-Emby-Token"], params, json))
             return type("Response", (), {"raise_for_status": lambda self: None})()
 
     monkeypatch.setattr("app.services.jellyfin.httpx.Client", FakeClient)
+    monkeypatch.setattr(service, "_resolve_writeback_user_id", lambda: PRIMARY_USER_ID)
 
     service.write_watch_progress(
         WatchProgressRecord(
@@ -290,12 +291,12 @@ def test_jellyfin_write_watch_progress_uses_http_api(monkeypatch) -> None:
 
     assert calls == [
         (
-            "http://jellyfin.local/Sessions/Playing/Progress",
+            "http://jellyfin.local/UserItems/episode-1/UserData",
             "token",
+            {"userId": PRIMARY_USER_ID},
             {
-                "ItemId": "episode-1",
-                "PositionTicks": 4_200_000_000,
-                "IsPaused": True,
+                "PlaybackPositionTicks": 4_200_000_000,
+                "Played": False,
             },
         )
     ]

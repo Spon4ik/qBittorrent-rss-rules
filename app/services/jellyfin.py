@@ -182,6 +182,7 @@ class JellyfinService:
         self.metadata_config = SettingsService.resolve_metadata(settings)
         self.allow_metadata_requests = allow_metadata_requests
         self._catalog_imdb_id_cache: dict[str, str | None] = {}
+        self._selected_user_id: str | None = None
         self._series_catalog = SeriesCatalogClient(
             settings,
             allow_metadata_requests=allow_metadata_requests,
@@ -281,6 +282,7 @@ class JellyfinService:
             self._ensure_schema(connection)
             users = self._list_users(connection)
             selected_user = self._resolve_user(users)
+            self._selected_user_id = selected_user.user_id
             return self._collect_watch_progress_records(connection, selected_user)
 
     def write_watch_progress(self, record: WatchProgressRecord) -> None:
@@ -293,18 +295,27 @@ class JellyfinService:
         item_id = str(record.provider_parent_id or record.provider_item_id or "").strip()
         if not item_id:
             raise JellyfinError(f"Cannot write Jellyfin progress without an item ID for {record.item_key}.")
+        user_id = self._selected_user_id or self._resolve_writeback_user_id()
         payload = {
-            "ItemId": item_id,
-            "PositionTicks": _ms_to_ticks(record.position_ms),
-            "IsPaused": True,
+            "PlaybackPositionTicks": _ms_to_ticks(record.position_ms),
+            "Played": bool(record.completed),
         }
         with httpx.Client(timeout=10) as client:
             response = client.post(
-                f"{server_url}/Sessions/Playing/Progress",
+                f"{server_url}/UserItems/{item_id}/UserData",
                 headers={"X-Emby-Token": api_key},
+                params={"userId": user_id},
                 json=payload,
             )
             response.raise_for_status()
+
+    def _resolve_writeback_user_id(self) -> str:
+        db_path = self._resolve_db_path()
+        with self._connect(db_path) as connection:
+            self._ensure_schema(connection)
+            selected_user = self._resolve_user(self._list_users(connection))
+        self._selected_user_id = selected_user.user_id
+        return selected_user.user_id
 
     def _collect_watch_progress_records(
         self,

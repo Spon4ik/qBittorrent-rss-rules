@@ -4315,7 +4315,7 @@ function initRuleForm(form) {
     if (titleField) {
       titleField.value = payload.title || "";
     }
-    if (contentField && !contentField.value.trim()) {
+    if (contentField) {
       contentField.value = payload.title || "";
     }
     if (ruleNameField && !ruleNameField.value.trim()) {

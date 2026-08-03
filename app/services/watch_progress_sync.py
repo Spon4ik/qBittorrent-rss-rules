@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from sqlalchemy.orm import Session
 
@@ -43,6 +43,27 @@ def _records_to_write_for_winner(
     return sorted(
         selected.values(),
         key=lambda record: (record.updated_at is not None, record.updated_at, record.item_key),
+    )
+
+
+def _with_jellyfin_target(
+    record: WatchProgressRecord,
+    jellyfin_records: list[WatchProgressRecord],
+) -> WatchProgressRecord:
+    target = next(
+        (
+            candidate
+            for candidate in jellyfin_records
+            if candidate.item_key.casefold() == record.item_key.casefold()
+        ),
+        None,
+    )
+    if target is None:
+        raise RuntimeError(f"No exact Jellyfin item matched {record.item_key} for write-back.")
+    return replace(
+        record,
+        provider_item_id=target.provider_item_id,
+        provider_parent_id=target.provider_parent_id,
     )
 
 
@@ -114,7 +135,9 @@ class WatchProgressSyncService:
                         stremio_by_key[item_key],
                         selection.winner,
                     ):
-                        self.jellyfin_writer(record_to_write)
+                        self.jellyfin_writer(
+                            _with_jellyfin_target(record_to_write, jellyfin_by_key[item_key])
+                        )
                         jellyfin_write_count += 1
                     messages.append(f"Updated Jellyfin from Stremio for {item_key}.")
                 elif selection.winner.source == "jellyfin":

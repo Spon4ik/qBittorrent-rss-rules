@@ -155,6 +155,9 @@ def test_rule_edit_page_uses_full_width_console_results_contract() -> None:
     assert "data-quality-manual-help" in template
     assert 'id="metadata-lookup-value"' in template
     assert 'id="metadata-lookup"' in template
+    app_js = APP_JS_PATH.read_text(encoding="utf-8")
+    assert "if (contentField) {\n      contentField.value = payload.title" in app_js
+    assert "if (contentField && !contentField.value.trim())" not in app_js
     assert "data-feed-summary" in template
     assert "Quality pre-defined profile" in template
     assert "rule-search-notices" in template

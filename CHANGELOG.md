@@ -8,6 +8,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.1] - 2026-08-03
+
+- Preserve manually edited rule titles during automatic Stremio library sync; provider titles now refresh only when the user explicitly presses Metadata Lookup.
+- Refresh both Normalized title and Content name when Metadata Lookup is explicitly requested.
+- Use the Docker host route for Jellyfin HTTP write-back so watch-progress updates reach the Windows Jellyfin service instead of the app container loopback.
+- Write watch state through Jellyfin's user-data API with the selected user ID instead of reporting progress to a nonexistent playback session.
+
 ## [1.4.0] - 2026-08-03
 
 - Added official Real-Debrid Device OAuth, Premium account validation, token refresh, and fail-soft searches across the user's torrent cloud and download history alongside Jackett.

@@ -1518,12 +1518,6 @@ class StremioService:
         rule.stremio_library_item_type = item.item_type
 
         if previous_managed:
-            if rule.content_name != item.title:
-                rule.content_name = item.title
-                managed_changed = True
-            if rule.normalized_title != item.title:
-                rule.normalized_title = item.title
-                managed_changed = True
             if rule.media_type != item.media_type:
                 rule.media_type = item.media_type
                 managed_changed = True

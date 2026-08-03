@@ -46,6 +46,8 @@ def test_watch_progress_sync_writes_newer_stremio_progress_to_jellyfin() -> None
     assert summary.skipped_count == 0
     assert jellyfin_writes[0].source == "stremio"
     assert jellyfin_writes[0].position_ms == 180_000
+    assert jellyfin_writes[0].provider_item_id == "jf-movie"
+    assert jellyfin_writes[0].provider_parent_id is None
     assert stremio_writes == []
 
 

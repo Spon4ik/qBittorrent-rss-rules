@@ -608,6 +608,53 @@ def test_stremio_sync_links_existing_rule_by_title(
     assert rule.imdb_id == "tt13016388"
 
 
+def test_stremio_sync_preserves_manually_edited_managed_rule_titles(
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    storage_path = create_stremio_local_storage(tmp_path)
+    settings = AppSettings(
+        id="default",
+        stremio_local_storage_path=str(storage_path),
+        stremio_auto_sync_enabled=True,
+        stremio_auto_sync_interval_seconds=30,
+    )
+    rule = Rule(
+        rule_name="Custom Grogu Rule",
+        content_name="My Grogu Title",
+        normalized_title="Grogu Search Title",
+        imdb_id="tt30825738",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        stremio_library_item_id="tt30825738",
+        stremio_library_item_type="movie",
+        stremio_managed=True,
+        feed_urls=["http://feed.example/grogu"],
+    )
+    db_session.add(settings)
+    db_session.add(rule)
+    db_session.commit()
+
+    _install_stremio_api(
+        monkeypatch,
+        items=[
+            stremio_library_item(
+                "tt30825738",
+                "Star Wars: The Mandalorian and Grogu",
+                item_type="movie",
+            )
+        ],
+    )
+
+    summary = StremioService(settings).sync_rules(db_session)
+
+    db_session.refresh(rule)
+    assert summary.unchanged_count == 1
+    assert rule.content_name == "My Grogu Title"
+    assert rule.normalized_title == "Grogu Search Title"
+
+
 def test_stremio_sync_disables_completed_movie_rule_via_shared_watch_state(
     db_session,
     monkeypatch,

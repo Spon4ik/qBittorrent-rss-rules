@@ -1,10 +1,10 @@
 # Roadmap
 
-## Current release state: v1.3.4 published; Phase 36 / v1.4.0 active
+## Current release state: v1.4.0 published; Phase 36 implemented
 
 ### Validated locally
 
-- Phase 36 is the active `v1.4.0` feature phase: add official Real-Debrid Device OAuth, personal torrent-cloud/download-history search, qBittorrent HTTP web-seed acceleration, encrypted integration secrets, and a MyJDownloader fallback only when qBittorrent cannot obtain metadata (`docs/plans/phase-36-real-debrid-search-and-qbittorrent-http-acceleration.md`).
+- Phase 36 is implemented and published in `v1.4.0`: official Real-Debrid Device OAuth, personal torrent-cloud/download-history search, qBittorrent HTTP web-seed acceleration, encrypted integration secrets, and a MyJDownloader fallback only when qBittorrent cannot obtain metadata (`docs/plans/phase-36-real-debrid-search-and-qbittorrent-http-acceleration.md`).
 
 - Phase 35 is implemented and locally/Docker validated as the smart audiobook lookup/search slice: audiobook rules default to a provider-aware Google Books/OpenLibrary lookup chain, persist structured search hints, and use those hints for capability-aware Jackett `t=book` searches without changing qB RSS rule generation (`docs/plans/phase-35-smart-audiobook-rule-search.md`).
 - Phase 31 is implemented and locally/Docker validated as the shared operation progress slice: a process-local operation registry, `/api/operations/status`, qB/Jackett/Jellyfin/Stremio producer instrumentation, and a global polling progress bar in the base layout (`docs/plans/phase-31-shared-operation-progress-bar.md`).
@@ -29,7 +29,7 @@
 
 ### Current phase track
 
-- Phase 36: Real-Debrid search and qBittorrent HTTP acceleration (active for `v1.4.0`; `docs/plans/phase-36-real-debrid-search-and-qbittorrent-http-acceleration.md`)
+- Phase 36: Real-Debrid search and qBittorrent HTTP acceleration (published in `v1.4.0`; authenticated account smoke remains a post-connection check; `docs/plans/phase-36-real-debrid-search-and-qbittorrent-http-acceleration.md`)
 - Phase 35: smart audiobook rule search (implemented and locally/Docker validated; `docs/plans/phase-35-smart-audiobook-rule-search.md`)
 - Phase 31: shared operation progress bar (implemented and locally/Docker validated; `docs/plans/phase-31-shared-operation-progress-bar.md`)
 - Phase 30: IMDb-backed Jackett precision hardening (implemented and locally/Docker validated; `docs/plans/phase-30-imdb-backed-jackett-precision.md`)

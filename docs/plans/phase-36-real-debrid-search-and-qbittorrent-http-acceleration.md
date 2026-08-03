@@ -2,7 +2,7 @@
 
 ## Status
 
-- Active on 2026-08-03 for the planned `v1.4.0` minor release.
+- Implemented and published as `v1.4.0` on 2026-08-03.
 - Implementation is complete and automated, desktop, and Docker validation are green. Authenticated provider smoke tests remain blocked until Real-Debrid and MyJDownloader accounts are connected in Settings.
 - Execution branch: `codex/real-debrid-v1.4.0` from published `v1.3.4` handoff `dadaf9d6`.
 
@@ -40,7 +40,7 @@ A SHA1 infohash can always be represented as a magnet, but a magnet alone does n
 | S7 | Range-capable Real-Debrid web-seed adapter | S6 | qB downloads exact single/multi-file bytes through GET/HEAD/Range with link refresh and traversal protection | done |
 | S8 | MyJDownloader fallback and status lifecycle | S2, S6 | Metadata timeout queues safe path-preserving jobs, retains/stops qB placeholder, and retries without duplication | done |
 | S9 | Operations UI, job retry/cleanup, explicit existing-torrent adoption | S4, S6, S8 | Loading/empty/error/success states and safe actions are covered | done |
-| S10 | Full QA, Docker/desktop validation, `v1.4.0` release | S2-S9 | All automated/live gates pass; docs/version/release are published | todo |
+| S10 | Full QA, Docker/desktop validation, `v1.4.0` release | S2-S9 | Automated, desktop, Docker, and live qB gates pass; PR, tag, and release are published; credential-dependent smoke is recorded | done |
 
 ## Interfaces and Data Flow
 
@@ -122,7 +122,7 @@ A SHA1 infohash can always be represented as a magnet, but a magnet alone does n
 - [x] Live qB rule sync completed 341/341; all 254 locally enabled remote rules retain the managed tag and have no sync errors.
 - [ ] Live Real-Debrid Device OAuth and Premium account test passes without exposing credentials.
 - [ ] Live qB web-seed controlled fixture and MyJDownloader fallback smoke pass at normal Windows media paths.
-- [ ] Changelog, roadmap, phase plan, current status, version touchpoints, commit, push, tag, PR, and GitHub Release are complete.
+- [x] Changelog, roadmap, phase plan, current status, version touchpoints, commit, push, tag, PR, and GitHub Release are complete.
 
 ## Risks
 

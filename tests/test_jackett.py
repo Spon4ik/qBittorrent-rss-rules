@@ -1963,6 +1963,61 @@ def test_jackett_client_uses_strict_title_identity_and_year_for_common_title_fal
     assert [item.title for item in result.fallback_results] == ["Ghosts (2019) S01 1080p"]
 
 
+def test_scoped_imdb_search_without_capable_indexers_continues_to_exact_title_fallback() -> None:
+    seen_requests: list[tuple[str, dict[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = dict(request.url.params.multi_items())
+        seen_requests.append((path, params))
+        if path.endswith("/all/results/torznab/api") and params.get("t") == "indexers":
+            return httpx.Response(
+                200,
+                text="""
+<indexers>
+  <indexer id="bigfangroup"><caps><searching>
+    <tv-search available="yes" supportedParams="q" />
+  </searching></caps></indexer>
+</indexers>
+""",
+            )
+        if path.endswith("/bigfangroup/results/torznab/api") and params.get("q") == "Silo":
+            return httpx.Response(
+                200,
+                text="""
+<rss xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel><item>
+  <title>Silo S03E01 2160p HDR</title>
+  <guid>silo-exact</guid>
+  <link>magnet:?xt=urn:btih:SILOEXACT</link>
+  <torznab:attr name="jackettindexer" value="BigFanGroup" />
+</item></channel></rss>
+""",
+            )
+        raise AssertionError(f"Unexpected request: {path} {params}")
+
+    client = JackettClient(
+        "http://jackett:9117",
+        "secret",
+        transport=httpx.MockTransport(handler),
+    )
+    result = client.search(
+        JackettSearchRequest(
+            query="Silo",
+            media_type="series",
+            imdb_id="tt14688458",
+            imdb_id_only=True,
+            filter_indexers=["bigfangroup"],
+        )
+    )
+
+    assert [item.title for item in result.raw_results] == ["Silo S03E01 2160p HDR"]
+    assert any("do not advertise IMDb-enforced" in item for item in result.warning_messages)
+    assert not any(
+        path.endswith("/all/results/torznab/api") and params.get("t") != "indexers"
+        for path, params in seen_requests
+    )
+
+
 def test_jackett_client_imdb_title_fallback_uses_scoped_indexers_after_all_timeout() -> None:
     seen_requests: list[tuple[str, dict[str, str]]] = []
 

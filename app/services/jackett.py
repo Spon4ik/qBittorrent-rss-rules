@@ -2065,6 +2065,11 @@ class JackettClient:
         except JackettTimeoutError as exc:
             last_timeout_error = exc
             self._add_warning(warning_messages, seen_warning_messages, str(exc))
+        except JackettClientError as exc:
+            # A scoped set may contain no indexer that advertises IMDb-enforced
+            # search. That is a degraded capability state, not a failed search:
+            # retain the diagnostic and continue into the exact-title fallbacks.
+            self._add_warning(warning_messages, seen_warning_messages, str(exc))
 
         if payload.indexer == "all" and not primary_merged and not direct_probe_attempted:
             try:

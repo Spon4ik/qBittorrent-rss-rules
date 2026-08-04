@@ -8,6 +8,9 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.3] - 2026-08-04
+
+- Continue saved-indexer IMDb-backed searches through exact-title fallback when none of the selected trackers advertises IMDb-enforced search, allowing scheduled refreshes to replace stale snapshots instead of failing the rule.
 ## [1.4.2] - 2026-08-04
 
 - Restore taxonomy defaults when a saved managed HD/UHD quality preset is empty, preventing the edit-page browser filter from promoting backend-hidden quality failures to visible, queueable results.

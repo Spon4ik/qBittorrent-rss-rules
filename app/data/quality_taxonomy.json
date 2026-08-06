@@ -480,8 +480,6 @@
       "key": "at_least_hd",
       "label": "At Least Full HD",
       "tokens": [
-        "hd",
-        "720p",
         "full_hd",
         "1080p",
         "ultra_hd",

@@ -1014,11 +1014,24 @@ LEGACY_DEFAULT_QUALITY_PROFILE_RULES: dict[str, dict[str, list[str]]] = {
     QualityProfile.CUSTOM.value: {"include_tokens": [], "exclude_tokens": []},
 }
 
-DEFAULT_QUALITY_PROFILE_RULES: dict[str, dict[str, list[str]]] = {
+PREVIOUS_DEFAULT_QUALITY_PROFILE_RULES: dict[str, dict[str, list[str]]] = {
     QualityProfile.PLAIN.value: {"include_tokens": [], "exclude_tokens": []},
     QualityProfile.HD_1080P.value: {
         "include_tokens": ["hd", "720p", "full_hd", "1080p", "ultra_hd", "uhd", "2160p", "4k"],
-        "exclude_tokens": ["480p", "360p", "sd"],
+        "exclude_tokens": ["sd", "240p", "360p", "400p", "480p"],
+    },
+    QualityProfile.UHD_2160P_HDR.value: {
+        "include_tokens": ["ultra_hd", "uhd", "4k", "2160p", "hdr", "dolby_vision"],
+        "exclude_tokens": ["sd", "240p", "360p", "400p", "480p", "hd", "720p", "full_hd", "1080p"],
+    },
+    QualityProfile.CUSTOM.value: {"include_tokens": [], "exclude_tokens": []},
+}
+
+DEFAULT_QUALITY_PROFILE_RULES: dict[str, dict[str, list[str]]] = {
+    QualityProfile.PLAIN.value: {"include_tokens": [], "exclude_tokens": []},
+    QualityProfile.HD_1080P.value: {
+        "include_tokens": ["full_hd", "1080p", "ultra_hd", "uhd", "2160p", "4k"],
+        "exclude_tokens": ["720p", "480p", "360p", "sd"],
     },
     QualityProfile.UHD_2160P_HDR.value: {
         "include_tokens": ["ultra_hd", "uhd", "4k", "2160p", "hdr", "dolby_vision"],
@@ -1086,7 +1099,7 @@ def _dynamic_default_quality_profile_rules_from_taxonomy(
     hd_resolution_tokens = _tokens_at_or_above_rank_value_from_taxonomy(
         taxonomy,
         "resolution",
-        "hd",
+        "full_hd",
     )
     uhd_resolution_tokens = _tokens_at_or_above_rank_value_from_taxonomy(
         taxonomy,
@@ -1096,8 +1109,14 @@ def _dynamic_default_quality_profile_rules_from_taxonomy(
     below_hd_resolution_tokens = _tokens_below_rank_value_from_taxonomy(
         taxonomy,
         "resolution",
-        "hd",
+        "full_hd",
     )
+    # Generic "HD" commonly accompanies an explicit valid resolution such as
+    # "HD 1080p". Do not make it a veto; without a Full HD-or-higher token the
+    # include group still rejects ambiguous HD-only releases.
+    below_hd_resolution_tokens = [
+        token for token in below_hd_resolution_tokens if token != "hd"
+    ]
     below_uhd_resolution_tokens = _tokens_below_rank_value_from_taxonomy(
         taxonomy,
         "resolution",
@@ -1455,7 +1474,11 @@ def resolve_quality_profile_rules(settings: AppSettings | None) -> dict[str, dic
 
 def _legacy_profile_rule_snapshots(profile_value: str) -> list[dict[str, list[str]]]:
     snapshots: list[dict[str, list[str]]] = []
-    for defaults in (LEGACY_DEFAULT_QUALITY_PROFILE_RULES, DEFAULT_QUALITY_PROFILE_RULES):
+    for defaults in (
+        LEGACY_DEFAULT_QUALITY_PROFILE_RULES,
+        PREVIOUS_DEFAULT_QUALITY_PROFILE_RULES,
+        DEFAULT_QUALITY_PROFILE_RULES,
+    ):
         if profile_value in defaults:
             snapshots.append(defaults[profile_value])
     return snapshots
@@ -1498,6 +1521,12 @@ def _tokens_match_profile_inheritance(
     legacy_tokens = set(
         canonicalize_quality_tokens(
             LEGACY_DEFAULT_QUALITY_PROFILE_RULES.get(profile_value, {}).get("include_tokens")
+        )
+        + canonicalize_quality_tokens(
+            PREVIOUS_DEFAULT_QUALITY_PROFILE_RULES.get(profile_value, {}).get("include_tokens")
+        )
+        + canonicalize_quality_tokens(
+            PREVIOUS_DEFAULT_QUALITY_PROFILE_RULES.get(profile_value, {}).get("exclude_tokens")
         )
         + canonicalize_quality_tokens(
             LEGACY_DEFAULT_QUALITY_PROFILE_RULES.get(profile_value, {}).get("exclude_tokens")

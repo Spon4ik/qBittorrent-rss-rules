@@ -13,6 +13,7 @@ from app.services.quality_filters import (
     AT_LEAST_UHD_PROFILE,
     DEFAULT_QUALITY_PROFILE_RULES,
     LEGACY_DEFAULT_QUALITY_PROFILE_RULES,
+    PREVIOUS_DEFAULT_QUALITY_PROFILE_RULES,
     _clear_quality_taxonomy_cache,
     apply_quality_taxonomy_update,
     available_filter_profile_choices,
@@ -60,6 +61,7 @@ def _write_quality_taxonomy(tmp_path, payload: dict[str, object]):
 
 def test_default_resolution_profiles_do_not_exclude_sources() -> None:
     assert DEFAULT_QUALITY_PROFILE_RULES[QualityProfile.HD_1080P.value]["exclude_tokens"] == [
+        "720p",
         "480p",
         "360p",
         "sd",
@@ -839,6 +841,7 @@ def test_get_or_create_migrates_legacy_default_quality_profile_rules(db_session)
         "360p",
         "400p",
         "480p",
+        "720p",
     ]
     assert resolved.quality_profile_rules[QualityProfile.UHD_2160P_HDR.value]["exclude_tokens"] == [
         "sd",
@@ -851,6 +854,24 @@ def test_get_or_create_migrates_legacy_default_quality_profile_rules(db_session)
         "full_hd",
         "1080p",
     ]
+
+
+def test_get_or_create_migrates_deployed_hd_or_better_profile_rules(db_session) -> None:
+    settings = AppSettings(
+        id="default",
+        quality_profile_rules=deepcopy(PREVIOUS_DEFAULT_QUALITY_PROFILE_RULES),
+        saved_quality_profiles={},
+        default_quality_profile=QualityProfile.HD_1080P,
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    resolved = SettingsService.get_or_create(db_session)
+
+    assert resolved.quality_profile_rules[QualityProfile.HD_1080P.value] == {
+        "include_tokens": ["full_hd", "1080p", "ultra_hd", "uhd", "2160p", "4k"],
+        "exclude_tokens": ["sd", "240p", "360p", "400p", "480p", "720p"],
+    }
 
 
 def test_get_or_create_refreshes_uncustomized_profile_rules_after_taxonomy_change(

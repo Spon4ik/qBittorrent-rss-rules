@@ -22,6 +22,7 @@ from app.services.metadata import normalize_omdb_api_key
 from app.services.quality_filters import (
     DEFAULT_QUALITY_PROFILE_RULES,
     LEGACY_DEFAULT_QUALITY_PROFILE_RULES,
+    PREVIOUS_DEFAULT_QUALITY_PROFILE_RULES,
     builtin_filter_profile_keys,
     canonicalize_quality_tokens,
     dynamic_default_quality_profile_rules,
@@ -455,6 +456,7 @@ class SettingsService:
                     == canonicalize_quality_tokens(defaults[profile_key]["exclude_tokens"])
                     for defaults in (
                         LEGACY_DEFAULT_QUALITY_PROFILE_RULES,
+                        PREVIOUS_DEFAULT_QUALITY_PROFILE_RULES,
                         DEFAULT_QUALITY_PROFILE_RULES,
                     )
                 )

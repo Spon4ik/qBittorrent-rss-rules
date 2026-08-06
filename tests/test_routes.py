@@ -94,7 +94,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.3"
+    assert payload["app_version"] == "1.4.4"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -3240,6 +3240,60 @@ def test_edit_rule_managed_profile_repairs_empty_settings_and_keeps_quality_fail
     assert settings.quality_profile_rules[QualityProfile.UHD_2160P_HDR.value][
         "include_tokens"
     ]
+
+
+def test_edit_rule_managed_1080p_profile_hides_ghosts_720p_result(
+    app_client,
+    db_session,
+) -> None:
+    rule = Rule(
+        rule_name="Ghosts",
+        content_name="Ghosts",
+        normalized_title="Ghosts",
+        imdb_id="tt32536158",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.HD_1080P,
+        quality_mode=QualityMode.MANAGED,
+    )
+    db_session.add(rule)
+    db_session.flush()
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule.id,
+            payload={"query": "Ghosts", "media_type": "series"},
+            inline_search={
+                "query": "Ghosts",
+                "unified_raw_results": [
+                    {
+                        "title": (
+                            "Ghosts - S1-2E1-40 - 2021-2023 MVO (TVShows) "
+                            "WEBRip 720p - RUSSIAN"
+                        ),
+                        "text_surface": (
+                            "ghosts s1 2e1 40 2021 2023 mvo tvshows webrip 720p russian"
+                        ),
+                        "link": "https://example.com/ghosts-720p.torrent",
+                        "indexer": "Kinozal",
+                        "query_source_key": "primary",
+                        "query_source_label": "Precise results",
+                    }
+                ],
+                "source_breakdown": [],
+                "warning_messages": [],
+            },
+        )
+    )
+    db_session.commit()
+
+    response = app_client.get(f"/rules/{rule.id}")
+
+    assert response.status_code == 200
+    assert '<span data-search-filtered-count="combined">0</span> filtered' in response.text
+    assert re.search(
+        r'<article[^>]+data-title="Ghosts - S1-2E1-40[^>]+(?=[^>]*hidden)',
+        response.text,
+        re.DOTALL,
+    )
 
 
 def test_edit_rule_saved_snapshot_hides_broad_imdb_title_fallback_rows(

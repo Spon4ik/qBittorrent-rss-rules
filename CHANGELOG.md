@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.4] - 2026-08-06
+
+- Tighten the managed 1080p preset to require Full HD or higher, preventing 720p releases such as the reported Ghosts Kinozal row from remaining visible, queueable, or eligible for qBittorrent RSS import.
+- Migrate settings that still match the former built-in HD-or-better preset while preserving customized and manual quality profiles.
 ## [1.4.3] - 2026-08-04
 
 - Continue saved-indexer IMDb-backed searches through exact-title fallback when none of the selected trackers advertises IMDb-enforced search, allowing scheduled refreshes to replace stale snapshots instead of failing the rule.

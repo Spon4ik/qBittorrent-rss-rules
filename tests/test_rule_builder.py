@@ -466,5 +466,23 @@ def test_build_generated_pattern_requires_all_selected_quality_groups() -> None:
     assert not compiled.search("3 Body Problem S01 4K SDR WEBDL")
 
 
+def test_managed_1080p_pattern_rejects_ghosts_720p_release() -> None:
+    builder = RuleBuilder(settings=None)
+    pattern = builder.build_generated_pattern(
+        build_rule(
+            quality_profile=QualityProfile.HD_1080P,
+            normalized_title="Ghosts",
+            content_name="Ghosts",
+        )
+    )
+    compiled = re.compile(pattern)
+
+    assert compiled.search("Ghosts S03 WEB-DL 1080p")
+    assert compiled.search("Ghosts S03 WEB-DL 2160p")
+    assert not compiled.search(
+        "Ghosts - S1-2E1-40 - 2021-2023 MVO (TVShows) WEBRip 720p - RUSSIAN"
+    )
+
+
 def test_build_title_regex_fragment_normalizes_case_and_separators() -> None:
     assert build_title_regex_fragment("3 Body Problem") == r"3[\s._-]*body[\s._-]*problem"

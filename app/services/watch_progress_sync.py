@@ -49,7 +49,7 @@ def _records_to_write_for_winner(
 def _with_jellyfin_target(
     record: WatchProgressRecord,
     jellyfin_records: list[WatchProgressRecord],
-) -> WatchProgressRecord:
+) -> WatchProgressRecord | None:
     target = next(
         (
             candidate
@@ -59,7 +59,7 @@ def _with_jellyfin_target(
         None,
     )
     if target is None:
-        raise RuntimeError(f"No exact Jellyfin item matched {record.item_key} for write-back.")
+        return None
     return replace(
         record,
         provider_item_id=target.provider_item_id,
@@ -131,15 +131,27 @@ class WatchProgressSyncService:
                 continue
             try:
                 if selection.winner.source == "stremio":
+                    write_count_before = jellyfin_write_count
                     for record_to_write in _records_to_write_for_winner(
                         stremio_by_key[item_key],
                         selection.winner,
                     ):
-                        self.jellyfin_writer(
-                            _with_jellyfin_target(record_to_write, jellyfin_by_key[item_key])
+                        targeted_record = _with_jellyfin_target(
+                            record_to_write,
+                            jellyfin_by_key[item_key],
                         )
+                        if targeted_record is None:
+                            messages.append(
+                                f"Skipped {record_to_write.item_key}: no exact Jellyfin item "
+                                "is available for write-back."
+                            )
+                            continue
+                        self.jellyfin_writer(targeted_record)
                         jellyfin_write_count += 1
-                    messages.append(f"Updated Jellyfin from Stremio for {item_key}.")
+                    if jellyfin_write_count > write_count_before:
+                        messages.append(f"Updated Jellyfin from Stremio for {item_key}.")
+                    else:
+                        skipped_count += 1
                 elif selection.winner.source == "jellyfin":
                     for record_to_write in _records_to_write_for_winner(
                         jellyfin_by_key[item_key],

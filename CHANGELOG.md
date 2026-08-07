@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.5] - 2026-08-07
+
+- Treat Stremio episode progress as safely skipped when the corresponding exact
+  Jellyfin episode is not in the library, while continuing to sync other exact
+  episodes in the same series instead of reporting a watch-progress error.
 ## [1.4.4] - 2026-08-06
 
 - Tighten the managed 1080p preset to require Full HD or higher, preventing 720p releases such as the reported Ghosts Kinozal row from remaining visible, queueable, or eligible for qBittorrent RSS import.

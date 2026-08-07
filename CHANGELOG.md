@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.6] - 2026-08-07
+
+- Reconcile every active unseen Stremio-linked rule to the configured enabled and
+  managed quality defaults, including rules created or linked before the current
+  sync, while preserving completion-based auto-disablement for watched titles.
 ## [1.4.5] - 2026-08-07
 
 - Treat Stremio episode progress as safely skipped when the corresponding exact

@@ -569,6 +569,50 @@ def test_stremio_sync_creates_missing_managed_rule(
     assert created_rule.assigned_category.startswith("Series/3 Body Problem")
 
 
+def test_stremio_sync_repairs_existing_unseen_rule_defaults(
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    storage_path = create_stremio_local_storage(tmp_path)
+    settings = AppSettings(
+        id="default",
+        stremio_local_storage_path=str(storage_path),
+        stremio_auto_sync_enabled=True,
+        stremio_auto_sync_interval_seconds=30,
+        default_quality_profile=QualityProfile.UHD_2160P_HDR,
+        default_enabled=True,
+    )
+    rule = Rule(
+        rule_name="Unseen Movie",
+        content_name="Unseen Movie",
+        imdb_id="tt32332915",
+        normalized_title="Unseen Movie",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=False,
+        stremio_library_item_id="tt32332915",
+        stremio_library_item_type="movie",
+        stremio_managed=True,
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    _install_stremio_api(
+        monkeypatch,
+        items=[stremio_library_item("tt32332915", "Unseen Movie", item_type="movie")],
+    )
+
+    summary = StremioService(settings).sync_rules(db_session)
+    db_session.refresh(rule)
+
+    assert summary.reenabled_count == 1
+    assert rule.enabled is True
+    assert rule.quality_profile == QualityProfile.UHD_2160P_HDR
+    assert rule.quality_include_tokens
+    assert "Restored active Stremio rule defaults" in summary.changed_outcomes[0].message
+
+
 def test_stremio_sync_links_existing_rule_by_title(
     db_session,
     monkeypatch,
@@ -650,9 +694,10 @@ def test_stremio_sync_preserves_manually_edited_managed_rule_titles(
     summary = StremioService(settings).sync_rules(db_session)
 
     db_session.refresh(rule)
-    assert summary.unchanged_count == 1
+    assert summary.updated_count == 1
     assert rule.content_name == "My Grogu Title"
     assert rule.normalized_title == "Grogu Search Title"
+    assert rule.quality_profile == QualityProfile.UHD_2160P_HDR
 
 
 def test_stremio_sync_disables_completed_movie_rule_via_shared_watch_state(

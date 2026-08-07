@@ -217,6 +217,50 @@ def test_watch_progress_sync_writes_all_completed_jellyfin_series_episodes_to_st
     assert [record.item_key for record in stremio_writes] == ["tt1190634:S05E01", "tt1190634:S05E05"]
 
 
+def test_watch_progress_sync_skips_stremio_episode_missing_from_jellyfin() -> None:
+    jellyfin_writes: list[WatchProgressRecord] = []
+    service = WatchProgressSyncService(
+        jellyfin_records=[
+            WatchProgressRecord(
+                source="jellyfin",
+                media_type="episode",
+                item_key="tt14688458:S02E09",
+                provider_item_id="jf-s02e09",
+                position_ms=0,
+                duration_ms=3_600_000,
+                completed=True,
+                updated_at=datetime(2026, 8, 6, 20, 0, tzinfo=UTC),
+            )
+        ],
+        stremio_records=[
+            WatchProgressRecord(
+                source="stremio",
+                media_type="episode",
+                item_key="tt14688458:S02E10",
+                provider_item_id="tt14688458",
+                provider_video_id="tt14688458:2:10",
+                position_ms=900_000,
+                duration_ms=3_600_000,
+                completed=False,
+                updated_at=datetime(2026, 8, 6, 21, 0, tzinfo=UTC),
+            )
+        ],
+        jellyfin_writer=jellyfin_writes.append,
+        stremio_writer=lambda record: None,
+    )
+
+    summary = service.sync()
+
+    assert summary.matched_count == 1
+    assert summary.jellyfin_write_count == 0
+    assert summary.skipped_count == 1
+    assert summary.error_count == 0
+    assert jellyfin_writes == []
+    assert summary.messages == [
+        "Skipped tt14688458:S02E10: no exact Jellyfin item is available for write-back."
+    ]
+
+
 def test_watch_progress_sync_writes_jellyfin_progress_to_stremio_placeholder() -> None:
     stremio_writes: list[WatchProgressRecord] = []
     service = WatchProgressSyncService(

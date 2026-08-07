@@ -94,7 +94,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.7"
+    assert payload["app_version"] == "1.4.8"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -5631,6 +5631,7 @@ def test_create_rule_persists_locally_and_enqueues_qb_sync_without_inline_call(
 ) -> None:
     inline_sync_calls: list[str] = []
     enqueued_rule_ids: list[str] = []
+    fetched_rule_ids: list[str] = []
 
     def fail_inline_sync(self, rule_id: str):
         inline_sync_calls.append(rule_id)
@@ -5641,6 +5642,10 @@ def test_create_rule_persists_locally_and_enqueues_qb_sync_without_inline_call(
         "app.routes.api.enqueue_rule_sync",
         lambda rule_id: enqueued_rule_ids.append(rule_id),
         raising=False,
+    )
+    monkeypatch.setattr(
+        "app.routes.api.enqueue_rule_fetch",
+        lambda rule_id: fetched_rule_ids.append(rule_id),
     )
 
     response = app_client.post(
@@ -5679,6 +5684,7 @@ def test_create_rule_persists_locally_and_enqueues_qb_sync_without_inline_call(
     assert rule.last_sync_status == SyncStatus.PENDING
     assert inline_sync_calls == []
     assert enqueued_rule_ids == [rule.id]
+    assert fetched_rule_ids == [rule.id]
 
 
 def test_create_rule_persists_audiobook_search_metadata(

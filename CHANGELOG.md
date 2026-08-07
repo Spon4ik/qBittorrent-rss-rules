@@ -8,6 +8,12 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.8] - 2026-08-07
+
+- Retry transport-failed RSS rules promptly when qBittorrent becomes reachable
+  again, without retry-looping configuration or authentication failures.
+- Queue both qBittorrent sync and a fresh Jackett snapshot after a new rule is
+  created, including rules initially saved as disabled.
 ## [1.4.7] - 2026-08-07
 
 - Treat Jellyfin movies as completed only when the selected user's `Played` flag

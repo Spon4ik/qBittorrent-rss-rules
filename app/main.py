@@ -21,6 +21,10 @@ from app.services.jellyfin_auto_sync import (
     stop_jellyfin_auto_sync_service,
 )
 from app.services.log_redaction import install_sensitive_access_log_filter
+from app.services.qb_recovery_scheduler import (
+    start_qb_recovery_scheduler,
+    stop_qb_recovery_scheduler,
+)
 from app.services.rule_fetch_scheduler import (
     start_rule_fetch_scheduler,
     stop_rule_fetch_scheduler,
@@ -54,7 +58,7 @@ def create_app() -> FastAPI:
     static_dir = Path(__file__).resolve().parent / "static"
     app = FastAPI(
         title="qBittorrent RSS Rule Manager",
-        version="1.4.7",
+        version="1.4.8",
     )
     app.state.static_asset_version = compute_static_asset_version(static_dir) or app.version
     app.state.desktop_backend_contract = DESKTOP_BACKEND_CONTRACT
@@ -76,6 +80,14 @@ def create_app() -> FastAPI:
     @app.on_event("shutdown")
     def _stop_download_acceleration() -> None:  # pragma: no cover - shutdown hook
         stop_download_acceleration_scheduler()
+
+    @app.on_event("startup")
+    def _start_qb_recovery() -> None:  # pragma: no cover - startup hook
+        start_qb_recovery_scheduler(session_factory=get_session_factory())
+
+    @app.on_event("shutdown")
+    def _stop_qb_recovery() -> None:  # pragma: no cover - shutdown hook
+        stop_qb_recovery_scheduler()
 
     if env_settings.sync_rules_on_startup:
 

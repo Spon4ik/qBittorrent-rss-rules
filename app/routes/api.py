@@ -114,6 +114,7 @@ from app.services.rule_fetch_ops import (
     schedule_payload,
     update_schedule_settings,
 )
+from app.services.rule_fetch_queue import enqueue_rule_fetch
 from app.services.rule_search_snapshots import get_rule_search_snapshot, save_rule_search_snapshot
 from app.services.selective_queue import (
     SelectiveQueueError,
@@ -1662,7 +1663,8 @@ async def create_rule(
         )
 
     enqueue_rule_sync(rule.id)
-    message = "Rule saved locally. qB sync is queued in the background."
+    enqueue_rule_fetch(rule.id)
+    message = "Rule saved locally. qB sync and initial snapshot fetch are queued."
     level = "success"
     return RedirectResponse(
         url=f"/rules/{rule.id}?message={message}&level={level}",

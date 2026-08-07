@@ -37,7 +37,7 @@ from qBittorrent, and repeated Jackett download attempts during app rule sync.
 - [x] Shared Docker backend serves `v1.4.10`.
 - [x] Live Kinozal-backed sync succeeds while Jackett's Kinozal torrent-download
   error count remains `0 -> 0`.
-- [ ] Patch release is pushed and published.
+- [x] PR `#33` is merged; tag and GitHub Release `v1.4.10` are published.
 
 ## Validation commands
 

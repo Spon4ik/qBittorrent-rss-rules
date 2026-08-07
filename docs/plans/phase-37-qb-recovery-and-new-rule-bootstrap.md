@@ -22,7 +22,7 @@ Restore qB rule convergence promptly after a temporary qBittorrent outage and bo
 
 ## Status
 
-- Status: implemented and locally/Docker validated for patch release `v1.4.8`.
+- Status: implemented, validated, and published as patch release `v1.4.8`.
 - Implemented: transport-failure recovery scheduler, deduplicated initial snapshot queue, create-route wiring, and focused regressions.
 - Validation evidence: focused recovery/create/fetch regressions pass; `cmd.exe /c scripts\check.bat` passes with Ruff/mypy clean and all `529` tests green; WinUI builds with zero warnings/errors; the shared Docker backend rebuilt successfully; `/health` serves `status=ok` / `app_version=1.4.8`; and an in-container recovery tick completed cleanly with zero currently failed transport candidates.
-- Remaining: commit, push, PR merge, tag, and GitHub Release publication.
+- Release: PR `#30` merged to `main`; tag and GitHub Release `v1.4.8` published on 2026-08-07.

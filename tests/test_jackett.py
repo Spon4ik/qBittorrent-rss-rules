@@ -2603,6 +2603,7 @@ def test_jackett_client_groups_same_hash_duplicates_in_one_result() -> None:
       <title>Dune Part Two 2160p HDR</title>
       <guid>dune-1</guid>
       <link>magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12&amp;tr=https://tracker.one/announce</link>
+      <comments>https://rutracker.example/details/1</comments>
       <torznab:attr name="infohash" value="ABCDEF1234567890ABCDEF1234567890ABCDEF12" />
       <torznab:attr name="jackettindexer" value="rutracker" />
       <torznab:attr name="seeders" value="5" />
@@ -2611,6 +2612,7 @@ def test_jackett_client_groups_same_hash_duplicates_in_one_result() -> None:
       <title>Dune Part Two 2160p HDR Proper</title>
       <guid>dune-2</guid>
       <link>magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12&amp;tr=https://tracker.two/announce</link>
+      <comments>https://kinozal.example/details/2</comments>
       <torznab:attr name="infohash" value="ABCDEF1234567890ABCDEF1234567890ABCDEF12" />
       <torznab:attr name="jackettindexer" value="kinozal" />
       <torznab:attr name="seeders" value="12" />
@@ -2644,6 +2646,10 @@ def test_jackett_client_groups_same_hash_duplicates_in_one_result() -> None:
         "https://tracker.two/announce",
     ]
     assert len(merged.grouped_links) == 2
+    assert merged.grouped_details == [
+        {"url": "https://rutracker.example/details/1", "indexer": "rutracker"},
+        {"url": "https://kinozal.example/details/2", "indexer": "kinozal"},
+    ]
     assert merged.merged_magnet_link == (
         "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12"
         "&dn=Dune%20Part%20Two%202160p%20HDR%20Proper"

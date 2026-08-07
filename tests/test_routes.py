@@ -94,7 +94,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.8"
+    assert payload["app_version"] == "1.4.9"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -3397,6 +3397,52 @@ def test_edit_rule_saved_snapshot_hides_broad_imdb_title_fallback_rows(
         response.text,
         re.DOTALL,
     )
+
+
+def test_edit_rule_renders_every_grouped_tracker_details_link(app_client, db_session) -> None:
+    rule = Rule(
+        rule_name="Grouped Details",
+        content_name="Grouped Details",
+        normalized_title="Grouped Details",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add(rule)
+    db_session.flush()
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule.id,
+            payload={"query": "Grouped Details", "media_type": "movie"},
+            inline_search={
+                "query": "Grouped Details",
+                "raw_results": [
+                    {
+                        "title": "Grouped Details 2026 1080p",
+                        "link": "magnet:?xt=urn:btih:abc123",
+                        "indexer": "Kinozal",
+                        "details_url": "https://kinozal.example/details/1",
+                        "grouped_details": [
+                            {"url": "https://kinozal.example/details/1", "indexer": "Kinozal"},
+                            {"url": "https://rutor.example/details/2", "indexer": "RuTor"},
+                        ],
+                        "duplicate_count": 2,
+                        "visible": True,
+                    }
+                ],
+                "results": [],
+                "raw_fallback_results": [],
+                "fallback_results": [],
+            },
+        )
+    )
+    db_session.commit()
+
+    response = app_client.get(f"/rules/{rule.id}")
+
+    assert response.status_code == 200
+    assert 'href="https://kinozal.example/details/1"' in response.text
+    assert 'href="https://rutor.example/details/2"' in response.text
+    assert "Details (RuTor)" in response.text
 
 
 def test_edit_rule_page_loads_saved_snapshot_by_default_and_can_clear_results(

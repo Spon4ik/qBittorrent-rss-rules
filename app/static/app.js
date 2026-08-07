@@ -2425,6 +2425,13 @@ function initSearchPage(container) {
     const isPrecisePrimaryRow = Boolean(
       payloadImdbId && effectiveQuerySourceKeys(entry, filters).includes("primary")
     );
+    if (
+      payloadImdbId
+      && !imdbExactMatch
+      && !matchesPreciseTitleIdentity(entry.title, filters.query)
+    ) {
+      return "Title is not a strict match for the IMDb-backed search.";
+    }
     if (!isPrecisePrimaryRow && !imdbExactMatch && !matchesQueryText(entry.titleSurface, filters.query)) {
       const queryLabel = getSearchQueryLabel();
       return queryLabel

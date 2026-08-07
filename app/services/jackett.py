@@ -882,6 +882,22 @@ def _merge_result_details(
             str(candidate.indexer or ""),
         ]
     )
+    grouped_details: list[dict[str, str]] = []
+    seen_detail_urls: set[str] = set()
+    for result in (existing, candidate):
+        detail_entries = list(result.grouped_details or [])
+        if result.details_url:
+            detail_entries.append(
+                {"url": result.details_url, "indexer": str(result.indexer or "")}
+            )
+        for entry in detail_entries:
+            url = str(entry.get("url") or "").strip()
+            if not url or url.casefold() in seen_detail_urls:
+                continue
+            seen_detail_urls.add(url.casefold())
+            grouped_details.append(
+                {"url": url, "indexer": str(entry.get("indexer") or "").strip()}
+            )
     grouped_trackers = _dedupe_strings(
         [
             *list(existing.grouped_trackers or []),
@@ -893,6 +909,7 @@ def _merge_result_details(
 
     merged.grouped_links = grouped_links
     merged.grouped_indexers = grouped_indexers
+    merged.grouped_details = grouped_details
     merged.grouped_trackers = grouped_trackers
     merged.duplicate_count = max(
         int(existing.duplicate_count or 1),
@@ -2237,6 +2254,11 @@ class JackettClient:
             initial_result = result.model_copy(deep=True)
             initial_result.grouped_links = _dedupe_strings([result.link])
             initial_result.grouped_indexers = _dedupe_strings([str(result.indexer or "")])
+            initial_result.grouped_details = (
+                [{"url": result.details_url, "indexer": str(result.indexer or "")}]
+                if result.details_url
+                else []
+            )
             initial_result.grouped_trackers = _tracker_urls_from_link(result.link)
             initial_result.merged_magnet_link = _merged_magnet_link_for_result(initial_result)
             initial_result.duplicate_count = 1

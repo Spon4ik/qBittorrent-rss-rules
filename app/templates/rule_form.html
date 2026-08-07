@@ -796,9 +796,9 @@
             </button>
             {% endif %}
             <a class="button-link muted" href="{{ item.link }}" target="_blank" rel="noreferrer">Open Result</a>
-            {% if item.details_url %}
-            <a class="button-link muted" href="{{ item.details_url }}" target="_blank" rel="noreferrer">Details</a>
-          {% endif %}
+            {% for detail in (item.grouped_details or ([{'url': item.details_url, 'indexer': item.indexer}] if item.details_url else [])) %}
+            <a class="button-link muted" href="{{ detail.url }}" target="_blank" rel="noreferrer">Details{% if (item.grouped_details or []) | length > 1 and detail.indexer %} ({{ detail.indexer }}){% endif %}</a>
+            {% endfor %}
         </div>
       </article>
       {% endfor %}
@@ -968,9 +968,9 @@
                   </button>
                   {% endif %}
                   <a class="button-link muted search-action-icon" href="{{ item.link }}" target="_blank" rel="noreferrer" aria-label="Open result" title="Open result">Open</a>
-                  {% if item.details_url %}
-                  <a class="button-link muted search-action-icon" href="{{ item.details_url }}" target="_blank" rel="noreferrer" aria-label="Open details" title="Open details">Details</a>
-                {% endif %}
+                  {% for detail in (item.grouped_details or ([{'url': item.details_url, 'indexer': item.indexer}] if item.details_url else [])) %}
+                  <a class="button-link muted search-action-icon" href="{{ detail.url }}" target="_blank" rel="noreferrer" aria-label="Open {{ detail.indexer or 'tracker' }} details" title="Open {{ detail.indexer or 'tracker' }} details">Details{% if (item.grouped_details or []) | length > 1 and detail.indexer %} ({{ detail.indexer }}){% endif %}</a>
+                  {% endfor %}
               </div>
             </td>
           </tr>

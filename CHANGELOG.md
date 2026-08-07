@@ -8,6 +8,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.9] - 2026-08-07
+
+- Keep broad title-only rows such as `The Ridiculous 6` hidden for an
+  IMDb-backed `Ridiculous` search after browser-side filter recomputation.
+- Show a labeled tracker-details link for every grouped result variant that
+  supplies one, while keeping queue and merged-magnet actions group-wide.
+
 ## [1.4.8] - 2026-08-07
 
 - Retry transport-failed RSS rules promptly when qBittorrent becomes reachable

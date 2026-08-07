@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.7] - 2026-08-07
+
+- Treat Jellyfin movies as completed only when the selected user's `Played` flag
+  is set; a nonzero `PlayCount` by itself now remains unseen and cannot disable
+  the corresponding RSS rule.
 ## [1.4.6] - 2026-08-07
 
 - Reconcile every active unseen Stremio-linked rule to the configured enabled and

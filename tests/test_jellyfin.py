@@ -864,6 +864,57 @@ def test_jellyfin_sync_rules_disables_completed_movies_via_shared_watch_state(
     assert rule.movie_completion_sources == ["jellyfin"]
 
 
+def test_jellyfin_sync_does_not_complete_movie_from_play_count_alone(
+    tmp_path: Path,
+    db_session,
+) -> None:
+    db_path = create_jellyfin_test_db(tmp_path / "jellyfin.db")
+    add_jellyfin_user(db_path, user_id=PRIMARY_USER_ID, username="Spon4ik")
+    add_jellyfin_movie(
+        db_path,
+        movie_id="MOVIE-DALLAS-BUYERS-CLUB",
+        title="Dallas Buyers Club",
+        clean_name="Dallas Buyers Club",
+        production_year=2013,
+        imdb_id="tt0790636",
+    )
+    add_jellyfin_userdata(
+        db_path,
+        item_id="MOVIE-DALLAS-BUYERS-CLUB",
+        user_id=PRIMARY_USER_ID,
+        custom_data_key="tt0790636",
+        played=0,
+        play_count=1,
+        playback_position_ticks=49_170_959,
+    )
+
+    settings = AppSettings(id="default", jellyfin_db_path=str(db_path))
+    rule = Rule(
+        rule_name="Dallas Buyers Club",
+        content_name="Dallas Buyers Club",
+        normalized_title="Dallas Buyers Club",
+        imdb_id="tt0790636",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.UHD_2160P_HDR,
+        enabled=False,
+        movie_completion_auto_disabled=True,
+        movie_completion_sources=["jellyfin"],
+        stremio_library_item_id="tt0790636",
+        stremio_library_item_type="movie",
+        stremio_managed=True,
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    summary = JellyfinService(settings).sync_rules(db_session)
+
+    assert summary.synced_count == 1
+    db_session.refresh(rule)
+    assert rule.enabled is True
+    assert rule.movie_completion_auto_disabled is False
+    assert rule.movie_completion_sources == []
+
+
 def test_jellyfin_sync_rules_disables_finished_series_when_latest_known_episode_is_watched(
     tmp_path: Path,
     db_session,

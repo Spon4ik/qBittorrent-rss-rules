@@ -810,7 +810,7 @@ class JellyfinService:
         ).fetchone()
         if row is None:
             return False
-        return int(row["Played"] or 0) > 0 or int(row["PlayCount"] or 0) > 0
+        return int(row["Played"] or 0) > 0
 
     def _resolve_catalog_imdb_id(
         self,

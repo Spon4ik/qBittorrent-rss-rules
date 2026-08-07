@@ -3,12 +3,49 @@ from __future__ import annotations
 import threading
 import time
 
+import httpx
+
 from app.config import obfuscate_secret
 from app.models import AppSettings, MediaType, QualityProfile, Rule, SyncStatus
 from app.services.sync import SyncService
 
 
-def test_sync_service_skips_feed_with_broken_sample_download(monkeypatch, db_session) -> None:
+def test_feed_health_check_never_requests_torrent_enclosure(monkeypatch, db_session) -> None:
+    feed_url = "http://localhost:9117/api/v2.0/indexers/kinozal/results/torznab/api"
+    torrent_url = "http://localhost:9117/dl/kinozal/?path=private-torrent"
+    requested_urls: list[str] = []
+
+    class FakeClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback) -> None:
+            pass
+
+        def get(self, url: str) -> httpx.Response:
+            requested_urls.append(url)
+            if url != feed_url:
+                raise AssertionError(f"Feed health check requested torrent URL: {url}")
+            return httpx.Response(
+                200,
+                request=httpx.Request("GET", url),
+                text=(
+                    "<rss><channel><item><title>Subnautica 2</title>"
+                    f'<enclosure url="{torrent_url}" type="application/x-bittorrent" />'
+                    f"<link>{torrent_url}</link></item></channel></rss>"
+                ),
+            )
+
+    monkeypatch.setattr("app.services.sync.httpx.Client", FakeClient)
+
+    assert SyncService(db_session, None)._jackett_feed_is_readable(feed_url) is True
+    assert requested_urls == [feed_url]
+
+
+def test_sync_service_skips_unavailable_feed(monkeypatch, db_session) -> None:
     settings = AppSettings(
         id="default",
         qb_base_url="http://localhost:8080",
@@ -33,7 +70,7 @@ def test_sync_service_skips_feed_with_broken_sample_download(monkeypatch, db_ses
 
     monkeypatch.setattr(
         SyncService,
-        "_jackett_feed_sample_download_works",
+        "_jackett_feed_is_readable",
         lambda self, feed_url: "kinozal" not in feed_url,
     )
     monkeypatch.setattr("app.services.sync.QbittorrentClient.create_category", lambda self, name: None)
@@ -42,7 +79,7 @@ def test_sync_service_skips_feed_with_broken_sample_download(monkeypatch, db_ses
     result = SyncService(db_session, settings).sync_rule(rule.id)
 
     assert result.success is True
-    assert "Skipped Jackett feeds with broken sample downloads: kinozal." in result.message
+    assert "Skipped unavailable Jackett feeds: kinozal." in result.message
     assert sent_rule_defs[0]["affectedFeeds"] == [
         "http://localhost:9117/api/v2.0/indexers/rutor/results/torznab/api?apikey=abc&t=search"
     ]
@@ -84,7 +121,7 @@ def test_sync_service_checks_tracker_health_in_parallel(monkeypatch, db_session)
         return "tracker0" in feed_url
 
     sent_rule_defs: list[dict[str, object]] = []
-    monkeypatch.setattr(SyncService, "_jackett_feed_sample_download_works", slow_health_check)
+    monkeypatch.setattr(SyncService, "_jackett_feed_is_readable", slow_health_check)
     monkeypatch.setattr("app.services.sync.QbittorrentClient.create_category", lambda self, name: None)
     monkeypatch.setattr(
         "app.services.sync.QbittorrentClient.set_rule",
@@ -124,7 +161,7 @@ def test_sync_all_compares_remote_against_health_filtered_payload(monkeypatch, d
     monkeypatch.setattr(SyncService, "_reconcile_qb_jackett_feeds", lambda self: None)
     monkeypatch.setattr(
         SyncService,
-        "_jackett_feed_sample_download_works",
+        "_jackett_feed_is_readable",
         lambda self, feed_url: "kinozal" not in feed_url,
     )
     monkeypatch.setattr("app.services.sync.QbittorrentClient.create_category", lambda self, name: None)
@@ -164,7 +201,7 @@ def test_sync_service_keeps_feeds_when_all_sample_downloads_work(monkeypatch, db
 
     monkeypatch.setattr(
         SyncService,
-        "_jackett_feed_sample_download_works",
+        "_jackett_feed_is_readable",
         lambda self, feed_url: True,
     )
     monkeypatch.setattr("app.services.sync.QbittorrentClient.create_category", lambda self, name: None)
@@ -206,7 +243,7 @@ def test_sync_rule_uses_feed_urls_for_qb_payload_not_search_indexers(
 
     monkeypatch.setattr(
         SyncService,
-        "_jackett_feed_sample_download_works",
+        "_jackett_feed_is_readable",
         lambda self, feed_url: True,
     )
     monkeypatch.setattr("app.services.sync.QbittorrentClient.create_category", lambda self, name: None)
@@ -248,7 +285,7 @@ def test_sync_rule_persists_qb_payload_diagnostics(monkeypatch, db_session) -> N
 
     monkeypatch.setattr(
         SyncService,
-        "_jackett_feed_sample_download_works",
+        "_jackett_feed_is_readable",
         lambda self, feed_url: True,
     )
     monkeypatch.setattr("app.services.sync.QbittorrentClient.create_category", lambda self, name: None)
@@ -302,7 +339,7 @@ def test_sync_all_marks_remote_rule_drift_before_repair(monkeypatch, db_session)
     monkeypatch.setattr(SyncService, "_safe_remote_rules", lambda self: {"The Boys": stale_remote_rule})
     monkeypatch.setattr(
         SyncService,
-        "_jackett_feed_sample_download_works",
+        "_jackett_feed_is_readable",
         lambda self, feed_url: True,
     )
     monkeypatch.setattr("app.services.sync.QbittorrentClient.create_category", lambda self, name: None)
@@ -344,7 +381,7 @@ def test_sync_rule_success_clears_previous_active_drift(monkeypatch, db_session)
 
     monkeypatch.setattr(
         SyncService,
-        "_jackett_feed_sample_download_works",
+        "_jackett_feed_is_readable",
         lambda self, feed_url: True,
     )
     monkeypatch.setattr("app.services.sync.QbittorrentClient.create_category", lambda self, name: None)
@@ -385,7 +422,7 @@ def test_sync_all_ignores_qb_owned_remote_rule_metadata(monkeypatch, db_session)
     monkeypatch.setattr(SyncService, "_reconcile_qb_jackett_feeds", lambda self: None)
     monkeypatch.setattr(
         SyncService,
-        "_jackett_feed_sample_download_works",
+        "_jackett_feed_is_readable",
         lambda self, feed_url: True,
     )
     monkeypatch.setattr("app.services.sync.QbittorrentClient.create_category", lambda self, name: None)

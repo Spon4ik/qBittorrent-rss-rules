@@ -94,7 +94,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.9"
+    assert payload["app_version"] == "1.4.10"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -6556,17 +6556,8 @@ def test_create_rule_resolves_feed_urls_from_language_before_save(
         "configured_indexer_languages",
         lambda self: {"rutracker": ["ru"], "fuzer": ["he"]},
     )
-    monkeypatch.setattr(
-        SyncService,
-        "sync_rule",
-        lambda self, rule_id: SyncResult(
-            success=True,
-            action="create",
-            rule_id=rule_id,
-            rule_name="Rule With Language",
-            message="ok",
-        ),
-    )
+    monkeypatch.setattr("app.routes.api.enqueue_rule_sync", lambda rule_id: {"enqueued": True})
+    monkeypatch.setattr("app.routes.api.enqueue_rule_fetch", lambda rule_id: {"enqueued": True})
 
     response = app_client.post(
         "/api/rules",

@@ -8,6 +8,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.10] - 2026-08-07
+
+- Stop background qB rule synchronization from downloading the first torrent
+  enclosure in each Jackett RSS feed as a health probe, preventing private
+  tracker download quotas from being consumed without an explicit Queue action.
+- Keep feed reachability and XML validation while preserving explicit Queue,
+  search, snapshot fetching, and qB RSS rule behavior.
 ## [1.4.9] - 2026-08-07
 
 - Keep broad title-only rows such as `The Ridiculous 6` hidden for an

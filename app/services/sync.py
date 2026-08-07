@@ -395,7 +395,7 @@ class SyncService:
             max_workers=max_workers,
             thread_name_prefix="jackett-feed-health",
         ) as executor:
-            feed_health = list(executor.map(self._jackett_feed_sample_download_works, feed_urls))
+            feed_health = list(executor.map(self._jackett_feed_is_readable, feed_urls))
 
         healthy_feed_urls: list[str] = []
         skipped_hosts: list[str] = []
@@ -415,11 +415,12 @@ class SyncService:
             if extra > 0:
                 skipped_label = f"{skipped_label} (+{extra} more)"
             return updated_rule_def, [
-                f"Skipped Jackett feeds with broken sample downloads: {skipped_label}."
+                f"Skipped unavailable Jackett feeds: {skipped_label}."
             ]
         return rule_def, []
 
-    def _jackett_feed_sample_download_works(self, feed_url: str) -> bool:
+    def _jackett_feed_is_readable(self, feed_url: str) -> bool:
+        """Validate feed access without consuming private-tracker download quotas."""
         timeout = min(
             float(get_environment_settings().request_timeout),
             JACKETT_FEED_HEALTH_TIMEOUT_SECONDS,
@@ -428,20 +429,8 @@ class SyncService:
             with httpx.Client(timeout=timeout, follow_redirects=False) as client:
                 response = client.get(feed_url)
                 response.raise_for_status()
-                root = ET.fromstring(response.text)
-                item = root.find("./channel/item")
-                if item is None:
-                    return True
-                enclosure = item.find("enclosure")
-                download_url = ""
-                if enclosure is not None:
-                    download_url = str(enclosure.attrib.get("url") or "").strip()
-                if not download_url:
-                    download_url = str(item.findtext("link") or "").strip()
-                if not download_url:
-                    return True
-                download_response = client.get(download_url)
-                return download_response.status_code < 400
+                ET.fromstring(response.text)
+                return True
         except (httpx.HTTPError, ET.ParseError):
             return False
 

@@ -382,6 +382,7 @@ class StremioService:
                     session,
                     matched_rule,
                     item,
+                    settings=settings,
                     matched_by=matched_by,
                 )
             outcomes.append(outcome)
@@ -1498,6 +1499,7 @@ class StremioService:
         rule: Rule,
         item: StremioLibraryItem,
         *,
+        settings: AppSettings,
         matched_by: str | None,
     ) -> StremioRuleSyncOutcome:
         previous_item_id = str(getattr(rule, "stremio_library_item_id", "") or "").strip() or None
@@ -1509,6 +1511,10 @@ class StremioService:
         previous_imdb_id = str(rule.imdb_id or "").strip().lower() or None
         previous_title = _resolved_rule_title(rule)
         previous_media_type = rule.media_type
+        previous_enabled = bool(rule.enabled)
+        previous_quality_profile = rule.quality_profile
+        previous_quality_include_tokens = list(rule.quality_include_tokens or [])
+        previous_quality_exclude_tokens = list(rule.quality_exclude_tokens or [])
 
         link_changed = previous_item_id != item.item_id or previous_item_type != item.item_type
         managed_changed = False
@@ -1516,6 +1522,27 @@ class StremioService:
 
         rule.stremio_library_item_id = item.item_id
         rule.stremio_library_item_type = item.item_type
+
+        active_defaults_changed = False
+        if not item.completed and not bool(
+            getattr(rule, "movie_completion_auto_disabled", False)
+        ):
+            resolved_quality_rules = resolve_quality_profile_rules(settings)
+            quality_profile_key = settings.default_quality_profile.value
+            quality_filters = resolved_quality_rules.get(
+                quality_profile_key,
+                {"include_tokens": [], "exclude_tokens": []},
+            )
+            rule.enabled = True
+            rule.quality_profile = settings.default_quality_profile
+            rule.quality_include_tokens = list(quality_filters.get("include_tokens", []))
+            rule.quality_exclude_tokens = list(quality_filters.get("exclude_tokens", []))
+            active_defaults_changed = (
+                not previous_enabled
+                or previous_quality_profile != rule.quality_profile
+                or previous_quality_include_tokens != rule.quality_include_tokens
+                or previous_quality_exclude_tokens != rule.quality_exclude_tokens
+            )
 
         if previous_managed:
             if rule.media_type != item.media_type:
@@ -1543,6 +1570,13 @@ class StremioService:
             if status == "unchanged":
                 status = "updated"
 
+        if active_defaults_changed:
+            message_parts.append(
+                "Restored active Stremio rule defaults for an unseen library title."
+            )
+            if status == "unchanged":
+                status = "reenabled" if not previous_enabled else "updated"
+
         if previous_auto_disabled:
             rule.enabled = True
             rule.stremio_auto_disabled = False
@@ -1550,7 +1584,7 @@ class StremioService:
             message_parts.append("Re-enabled because the title is back in the Stremio library.")
             status = "reenabled"
 
-        if link_changed or managed_changed or previous_auto_disabled:
+        if link_changed or managed_changed or previous_auto_disabled or active_defaults_changed:
             session.add(rule)
 
         base_outcome = StremioRuleSyncOutcome(

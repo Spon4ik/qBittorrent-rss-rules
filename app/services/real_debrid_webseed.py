@@ -42,12 +42,15 @@ def resolve_webseed_file(
     )
     if job is None or not job.provider_torrent_id:
         raise WebseedError("Unknown web-seed token.")
+    mappings = list(job.webseed_files or [])
     requested = safe_relative_path(relative_path)
+    if requested is None and not str(relative_path or "").strip() and len(mappings) == 1:
+        return job, mappings[0]
     if requested is None:
         raise WebseedError("Invalid web-seed path.")
     matches = [
         item
-        for item in list(job.webseed_files or [])
+        for item in mappings
         if safe_relative_path(item.get("path")) == requested
         or safe_relative_path(item.get("provider_path")) == requested
     ]
@@ -82,30 +85,62 @@ def fetch_webseed_file(
     request_headers = {}
     if requested_range is not None:
         request_headers["Range"] = f"bytes={requested_range[0]}-{requested_range[1]}"
+        request_headers["Accept-Encoding"] = "identity"
     with httpx.Client(follow_redirects=True, timeout=60.0, transport=transport) as client:
-        response = client.request("HEAD" if head_only else "GET", download_url, headers=request_headers)
-        response.raise_for_status()
+        with client.stream(
+            "HEAD" if head_only else "GET", download_url, headers=request_headers
+        ) as response:
+            response.raise_for_status()
+            response_status = response.status_code
+            response_headers = dict(response.headers)
+            content = _read_response_content(
+                response,
+                requested_range=requested_range,
+                head_only=head_only,
+            )
     size = _as_int(mapping.get("size") or 0)
-    content = b"" if head_only else response.content
-    status_code = response.status_code
-    if requested_range is not None and response.status_code == 200:
-        start, end = requested_range
-        content = b"" if head_only else content[start : end + 1]
+    status_code = response_status
+    if requested_range is not None and response_status == 200:
         status_code = 206
     headers = {
         "Accept-Ranges": "bytes",
-        "Content-Type": response.headers.get("Content-Type", "application/octet-stream"),
+        "Content-Type": response_headers.get("content-type", "application/octet-stream"),
     }
     if requested_range is not None:
         start, end = requested_range
-        headers["Content-Range"] = response.headers.get(
-            "Content-Range", f"bytes {start}-{end}/{size}"
+        headers["Content-Range"] = response_headers.get(
+            "content-range", f"bytes {start}-{end}/{size}"
         )
         headers["Content-Length"] = str(end - start + 1)
         status_code = 206
     else:
         headers["Content-Length"] = str(size or len(content))
     return WebseedResponse(status_code=status_code, headers=headers, content=content)
+
+
+def _read_response_content(
+    response: httpx.Response,
+    *,
+    requested_range: tuple[int, int] | None,
+    head_only: bool,
+) -> bytes:
+    if head_only:
+        return b""
+    if requested_range is None:
+        return response.read()
+    start, end = requested_range
+    read_limit = end - start + 1 if response.status_code == 206 else end + 1
+    buffered = bytearray()
+    for chunk in response.iter_bytes():
+        remaining = read_limit - len(buffered)
+        if remaining <= 0:
+            break
+        buffered.extend(chunk[:remaining])
+        if len(buffered) >= read_limit:
+            break
+    if len(buffered) != read_limit:
+        raise WebseedError("Real-Debrid returned fewer bytes than the requested range.")
+    return bytes(buffered if response.status_code == 206 else buffered[start : end + 1])
 
 
 def _parse_range(value: str | None, size: int) -> tuple[int, int] | None:

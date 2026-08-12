@@ -8,6 +8,17 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.11] - 2026-08-13
+
+- Release prep in progress.
+  active downloads so an existing managed backlog cannot starve a newly queued torrent.
+- Fall back to a tracker-free magnet when Real-Debrid rejects safe exported
+  qBittorrent metainfo as invalid.
+- Commit HTTP-source mappings before qBittorrent's first request and stop reading
+  overlong provider responses once the requested byte range is satisfied.
+- Use complete file URLs for single-file HTTP sources instead of directory-style
+  token bases that open as an invalid web-seed path.
+
 ## [1.4.10] - 2026-08-07
 
 - Stop background qB rule synchronization from downloading the first torrent

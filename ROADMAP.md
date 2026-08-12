@@ -1,9 +1,14 @@
 # Roadmap
 
-## Current release state: v1.4.0 published; Phase 36 implemented
+## Current release state: v1.4.10 published; Phase 39 patch in validation
 
 ### Validated locally
 
+- Phase 39 hardens the first authenticated Real-Debrid acceleration run by
+  bounding and prioritizing scheduler work, falling back from rejected public
+  metainfo to a tracker-free magnet, committing web-seed mappings before
+  attachment, and bounding overlong provider range streams
+  (`docs/plans/phase-39-real-debrid-live-acceleration-hardening.md`).
 - Phase 36 is implemented and published in `v1.4.0`: official Real-Debrid Device OAuth, personal torrent-cloud/download-history search, qBittorrent HTTP web-seed acceleration, encrypted integration secrets, and a MyJDownloader fallback only when qBittorrent cannot obtain metadata (`docs/plans/phase-36-real-debrid-search-and-qbittorrent-http-acceleration.md`).
 
 - Phase 35 is implemented and locally/Docker validated as the smart audiobook lookup/search slice: audiobook rules default to a provider-aware Google Books/OpenLibrary lookup chain, persist structured search hints, and use those hints for capability-aware Jackett `t=book` searches without changing qB RSS rule generation (`docs/plans/phase-35-smart-audiobook-rule-search.md`).
@@ -29,6 +34,8 @@
 
 ### Current phase track
 
+- Phase 39: Real-Debrid live acceleration hardening (`v1.4.11` patch candidate;
+  `docs/plans/phase-39-real-debrid-live-acceleration-hardening.md`)
 - Phase 36: Real-Debrid search and qBittorrent HTTP acceleration (published in `v1.4.0`; authenticated account smoke remains a post-connection check; `docs/plans/phase-36-real-debrid-search-and-qbittorrent-http-acceleration.md`)
 - Phase 35: smart audiobook rule search (implemented and locally/Docker validated; `docs/plans/phase-35-smart-audiobook-rule-search.md`)
 - Phase 31: shared operation progress bar (implemented and locally/Docker validated; `docs/plans/phase-31-shared-operation-progress-bar.md`)

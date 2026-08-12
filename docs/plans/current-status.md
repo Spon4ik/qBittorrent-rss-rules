@@ -2,6 +2,21 @@
 
 ## Current focus
 
+- Phase 39 Real-Debrid live acceleration hardening is implemented and live-
+  validated as the `v1.4.11` patch candidate
+  (`docs/plans/phase-39-real-debrid-live-acceleration-hardening.md`). The first
+  authenticated Phase 36 smoke test reproduced the reported Eternal Sunshine
+  torrent without an HTTP source and exposed scheduler backlog fan-out, rejected
+  exported metainfo without magnet fallback, a mapping-before-attachment race,
+  and an overlong provider range stream. The repaired live job for hash
+  `55af83cd0e15aa63819d6d8b407ca40e8a7d42f6` reached `webseed_attached`;
+  qBittorrent reads back one source; a one-byte range returns exact `206` data in
+  0.8 seconds; the original directory-style source was replaced with a complete
+  single-file URL ending in the mapped MKV name; and qBittorrent itself receives
+  repeated `206 Partial Content` responses from that exact path. The full gate
+  passes with Ruff/mypy clean and `535 passed`; WinUI builds with zero warnings
+  and errors; and shared Docker `/health` serves `v1.4.11`. Publishing remains
+  in progress.
 - Phase 38 quota-safe Jackett feed validation is implemented and release-validated
   as `v1.4.10` (`docs/plans/phase-38-quota-safe-jackett-feed-validation.md`).
   The app no longer downloads the first torrent enclosure from every affected

@@ -18,11 +18,15 @@ from app.services.qbittorrent import (
     MANAGED_TORRENT_TAG,
     QbittorrentClient,
 )
-from app.services.real_debrid import RealDebridClient
+from app.services.real_debrid import RealDebridClient, RealDebridError
 from app.services.selective_queue import _decode_bencode_value, parse_torrent_info
 from app.services.settings_service import SettingsService
 
 TERMINAL_STATES = frozenset({"completed", "skipped", "terminal_error"})
+MAX_JOBS_PER_TICK = 5
+ACTIVE_DOWNLOAD_STATES = frozenset(
+    {"allocating", "checkingdl", "downloading", "forceddl", "metadl", "queueddl", "stalleddl"}
+)
 
 
 def sanitize_error(exc: Exception) -> str:
@@ -169,6 +173,7 @@ class DownloadAccelerationService:
                 )
             )
         )
+        ready_jobs: list[tuple[tuple[int, int], DownloadAccelerationJob, dict[str, object]]] = []
         for job in jobs:
             if job.state in TERMINAL_STATES:
                 continue
@@ -181,6 +186,10 @@ class DownloadAccelerationService:
             torrent = discovered.get(str(job.info_hash or "").casefold())
             if torrent is None:
                 continue
+            ready_jobs.append((self._job_priority(torrent), job, torrent))
+
+        ready_jobs.sort(key=lambda item: item[0])
+        for _priority, job, torrent in ready_jobs[:MAX_JOBS_PER_TICK]:
             try:
                 self._advance(job, torrent)
             except Exception as exc:
@@ -196,6 +205,12 @@ class DownloadAccelerationService:
                     self.session.add(current)
                     self.session.commit()
         return jobs
+
+    @staticmethod
+    def _job_priority(torrent: dict[str, object]) -> tuple[int, int]:
+        state = str(torrent.get("state") or "").strip().casefold()
+        activity_rank = 0 if state in ACTIVE_DOWNLOAD_STATES else 1
+        return activity_rank, -_as_int(torrent.get("added_on") or 0)
 
     def discover_managed_torrents(self) -> dict[str, dict[str, object]]:
         torrents = self.qb.get_torrents(tag=MANAGED_TORRENT_TAG)
@@ -300,7 +315,12 @@ class DownloadAccelerationService:
         metainfo = self.qb.export_torrent(info_hash)
         if metainfo_is_sensitive(metainfo):
             return self.rd.add_magnet(tracker_free_magnet(info_hash, name))
-        return self.rd.add_torrent(metainfo, filename=f"{info_hash}.torrent")
+        try:
+            return self.rd.add_torrent(metainfo, filename=f"{info_hash}.torrent")
+        except RealDebridError as exc:
+            if "torrent_file_invalid" not in str(exc).casefold():
+                raise
+            return self.rd.add_magnet(tracker_free_magnet(info_hash, name))
 
     def _attach_webseed(
         self,
@@ -328,14 +348,18 @@ class DownloadAccelerationService:
         if not job.webseed_token:
             job.webseed_token = secrets.token_urlsafe(32)
         base_url = SettingsService.resolve_real_debrid(self.settings).webseed_base_url.rstrip("/")
-        webseed_url = f"{base_url}/webseeds/real-debrid/{job.webseed_token}/"
-        if webseed_url not in self.qb.get_webseeds(str(job.info_hash)):
-            self.qb.add_webseeds(str(job.info_hash), [webseed_url])
+        webseed_path = ""
+        if len(qb_files) == 1 and len(mappings) == 1:
+            webseed_path = quote(str(mappings[0]["path"]), safe="/")
+        webseed_url = f"{base_url}/webseeds/real-debrid/{job.webseed_token}/{webseed_path}"
         job.selected_files = selected
         job.webseed_files = mappings
         job.app_webseed_urls = [webseed_url]
-        job.state = "webseed_attached"
         job.last_error = ""
+        self._save(job)
+        if webseed_url not in self.qb.get_webseeds(str(job.info_hash)):
+            self.qb.add_webseeds(str(job.info_hash), [webseed_url])
+        job.state = "webseed_attached"
         self._save(job)
 
     def _fallback_to_myjd(

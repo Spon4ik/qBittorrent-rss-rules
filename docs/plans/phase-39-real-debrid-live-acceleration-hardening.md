@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented and live-validated for the `v1.4.11` patch release on 2026-08-13.
+Implemented, live-validated, and published as `v1.4.11` on 2026-08-13.
 
 ## Problem
 
@@ -49,7 +49,7 @@ exposed four gaps that disconnected-provider tests could not exercise:
   `bytes=0-0` request in under one second.
 - [x] qBittorrent itself requests the mapped movie path and receives `206 Partial Content`.
 - [x] Full repository gate, desktop build, and versioned Docker health pass.
-- [ ] Commit, push, PR merge, tag, and GitHub Release publishing complete.
+- [x] PR `#35` is merged; annotated tag and GitHub Release `v1.4.11` are published.
 
 ## Validation evidence
 

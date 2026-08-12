@@ -1,6 +1,6 @@
 # Roadmap
 
-## Current release state: v1.4.10 published; Phase 39 patch in validation
+## Current release state: v1.4.11 published; Phase 39 complete
 
 ### Validated locally
 
@@ -34,7 +34,7 @@
 
 ### Current phase track
 
-- Phase 39: Real-Debrid live acceleration hardening (`v1.4.11` patch candidate;
+- Phase 39: Real-Debrid live acceleration hardening (published in `v1.4.11`;
   `docs/plans/phase-39-real-debrid-live-acceleration-hardening.md`)
 - Phase 36: Real-Debrid search and qBittorrent HTTP acceleration (published in `v1.4.0`; authenticated account smoke remains a post-connection check; `docs/plans/phase-36-real-debrid-search-and-qbittorrent-http-acceleration.md`)
 - Phase 35: smart audiobook rule search (implemented and locally/Docker validated; `docs/plans/phase-35-smart-audiobook-rule-search.md`)

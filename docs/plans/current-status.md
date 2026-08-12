@@ -15,8 +15,9 @@
   single-file URL ending in the mapped MKV name; and qBittorrent itself receives
   repeated `206 Partial Content` responses from that exact path. The full gate
   passes with Ruff/mypy clean and `535 passed`; WinUI builds with zero warnings
-  and errors; and shared Docker `/health` serves `v1.4.11`. Publishing remains
-  in progress.
+  and errors; and shared Docker `/health` serves `v1.4.11`. PR `#35` is merged;
+  annotated tag `v1.4.11` is pushed; and the GitHub Release is published at
+  `https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.11`.
 - Phase 38 quota-safe Jackett feed validation is implemented and release-validated
   as `v1.4.10` (`docs/plans/phase-38-quota-safe-jackett-feed-validation.md`).
   The app no longer downloads the first torrent enclosure from every affected

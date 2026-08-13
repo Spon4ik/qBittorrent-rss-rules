@@ -4556,11 +4556,9 @@ function initOperationProgress(root) {
   const titleElement = shell.querySelector("[data-operation-progress-title]");
   const barElement = shell.querySelector("[data-operation-progress-bar]");
   const listElement = shell.querySelector("[data-operation-progress-list]");
-  const showHistoryButton = shell.querySelector("[data-operation-show-history]");
-  const dismissFinishedButton = shell.querySelector("[data-operation-dismiss-finished]");
+  const problemLink = shell.querySelector("[data-acceleration-problem-link]");
   let pollTimer = 0;
   let optimisticUntil = 0;
-  let showHistory = false;
 
   const clearPollTimer = () => {
     if (pollTimer) {
@@ -4582,26 +4580,21 @@ function initOperationProgress(root) {
   const renderPayload = (payload) => {
     const operations = Array.isArray(payload?.operations) ? payload.operations : [];
     const summary = payload?.summary || {};
-    const hiddenFinishedCount = Number(payload?.hidden_finished_count || 0);
-    if (showHistoryButton) {
-      showHistoryButton.hidden = hiddenFinishedCount === 0 && !showHistory;
-      showHistoryButton.textContent = showHistory ? "Hide finished" : `Show finished (${hiddenFinishedCount})`;
-    }
-    if (dismissFinishedButton) {
-      dismissFinishedButton.hidden = hiddenFinishedCount === 0;
+    const problemCount = Number(payload?.acceleration_problem_count || 0);
+    if (problemLink) {
+      problemLink.hidden = problemCount === 0;
+      problemLink.textContent = `${problemCount} acceleration issue${problemCount === 1 ? "" : "s"}`;
     }
     if (operations.length === 0) {
       if (Date.now() < optimisticUntil) {
         return true;
       }
-      shell.hidden = hiddenFinishedCount === 0;
+      shell.hidden = problemCount === 0;
       if (titleElement) {
-        titleElement.textContent = "Background work finished";
+        titleElement.textContent = "Background work";
       }
       if (summaryElement) {
-        summaryElement.textContent = hiddenFinishedCount > 0
-          ? `${hiddenFinishedCount} finished item(s) hidden`
-          : "No active operations";
+        summaryElement.textContent = "No active progress";
       }
       if (barElement) {
         barElement.style.width = "0%";
@@ -4743,7 +4736,7 @@ function initOperationProgress(root) {
   const poll = async () => {
     clearPollTimer();
     try {
-      const response = await fetch(`/api/operations/status?show_history=${showHistory ? "true" : "false"}`, {
+      const response = await fetch("/api/operations/status", {
         headers: { Accept: "application/json" },
       });
       if (!response.ok) {
@@ -4767,20 +4760,143 @@ function initOperationProgress(root) {
     }
   });
 
-  showHistoryButton?.addEventListener("click", () => {
-    showHistory = !showHistory;
-    poll();
-  });
-  dismissFinishedButton?.addEventListener("click", async () => {
-    dismissFinishedButton.disabled = true;
-    await fetch("/api/acceleration/jobs/dismiss-finished", { method: "POST" });
-    dismissFinishedButton.disabled = false;
-    showHistory = false;
-    poll();
-  });
-
   poll();
   window.addEventListener("beforeunload", clearPollTimer);
+}
+
+function buildAccelerationActions(job, onChanged, { compact = false } = {}) {
+  const actions = document.createElement("span");
+  actions.className = compact ? "acceleration-actions acceleration-actions--compact" : "acceleration-actions";
+  const addAction = (label, title, handler) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button-link muted";
+    button.textContent = label;
+    button.title = title;
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      await handler(button);
+      onChanged?.();
+    });
+    actions.appendChild(button);
+  };
+  if (String(job?.status) === "error") {
+    addAction("Retry", "Retry this exact torrent's Real-Debrid acceleration job.", async () => {
+      await fetch(`/api/acceleration/jobs/${encodeURIComponent(job.id)}/retry`, { method: "POST" });
+    });
+    const codexStatus = String(job?.codex_request_status || "").toLowerCase();
+    if (!codexStatus) {
+      addAction("Ask Codex", "Send this exact torrent failure to Codex for log inspection, diagnosis, repair, and validation.", async (button) => {
+        const response = await fetch(`/api/acceleration/jobs/${encodeURIComponent(job.id)}/ask-codex`, { method: "POST" });
+        button.textContent = response.ok ? "Codex queued" : "Queue failed";
+      });
+    } else {
+      const status = document.createElement("span");
+      status.className = "status-chip";
+      status.textContent = `Codex: ${codexStatus}`;
+      status.title = String(job?.codex_request_result || "");
+      actions.appendChild(status);
+    }
+  }
+  if (!compact) {
+    addAction("Dismiss", "Hide this issue from the problem count without changing the torrent or acceleration job.", async () => {
+      await fetch(`/api/acceleration/jobs/${encodeURIComponent(job.id)}/dismiss`, { method: "POST" });
+    });
+    addAction("Remove acceleration", "Remove only app-owned acceleration state and web seeds. The torrent and downloaded files are kept.", async (button) => {
+      if (!window.confirm("Remove acceleration for this torrent? The torrent and downloaded files will be kept.")) {
+        button.disabled = false;
+        return;
+      }
+      await fetch(`/api/acceleration/jobs/${encodeURIComponent(job.id)}/cleanup`, { method: "POST" });
+    });
+  }
+  return actions;
+}
+
+function initAccelerationConsole(root) {
+  const consoleRoot = root.querySelector("[data-acceleration-console]");
+  if (!consoleRoot) return;
+  const filter = consoleRoot.querySelector("[data-acceleration-status-filter]");
+  const search = consoleRoot.querySelector("[data-acceleration-search]");
+  const refresh = consoleRoot.querySelector("[data-acceleration-refresh]");
+  const summary = consoleRoot.querySelector("[data-acceleration-summary]");
+  const body = consoleRoot.querySelector("[data-acceleration-jobs]");
+  const requestedHash = new URLSearchParams(window.location.search).get("hash") || "";
+  if (requestedHash && search) {
+    search.value = requestedHash;
+    filter.value = "all";
+  }
+  let items = [];
+  const render = () => {
+    const needle = String(search?.value || "").trim().toLowerCase();
+    const visible = items.filter((job) => `${job.subject || ""} ${job.info_hash || ""} ${job.reference || ""}`.toLowerCase().includes(needle));
+    body.replaceChildren();
+    for (const job of visible) {
+      const row = document.createElement("tr");
+      const torrent = document.createElement("td");
+      const name = document.createElement("strong");
+      name.textContent = String(job.subject || "Unknown torrent");
+      const reference = document.createElement("span");
+      reference.className = "helper-text acceleration-reference";
+      reference.textContent = `Torrent ref ${job.reference || "unknown"}`;
+      torrent.append(name, reference);
+      const state = document.createElement("td");
+      const chip = document.createElement("span");
+      chip.className = `status-chip ${job.status === "error" ? "status-error" : job.status === "success" ? "status-ok" : "status-warning"}`;
+      chip.textContent = String(job.state || job.status || "unknown").replaceAll("_", " ");
+      const detail = document.createElement("span");
+      detail.className = "helper-text acceleration-message";
+      detail.textContent = String(job.message || "");
+      state.append(chip, detail);
+      const updated = document.createElement("td");
+      updated.textContent = job.updated_at ? new Date(job.updated_at).toLocaleString() : "Unknown";
+      const actionCell = document.createElement("td");
+      actionCell.appendChild(buildAccelerationActions(job, load));
+      row.append(torrent, state, updated, actionCell);
+      body.appendChild(row);
+    }
+    summary.textContent = `${visible.length} of ${items.length} acceleration job(s)`;
+  };
+  const load = async () => {
+    const response = await fetch(`/api/acceleration/jobs?status=${encodeURIComponent(filter?.value || "problems")}`);
+    const payload = await response.json();
+    items = Array.isArray(payload?.items) ? payload.items : [];
+    render();
+  };
+  filter?.addEventListener("change", load);
+  search?.addEventListener("input", render);
+  refresh?.addEventListener("click", load);
+  load();
+}
+
+async function initVariantAcceleration(root) {
+  const resultNodes = [...root.querySelectorAll("[data-result-info-hash]")]
+    .filter((node) => String(node.dataset.resultInfoHash || "").trim());
+  if (!resultNodes.length) return;
+  const response = await fetch("/api/acceleration/jobs?status=all&limit=1000");
+  if (!response.ok) return;
+  const payload = await response.json();
+  const jobsByHash = new Map();
+  for (const job of payload?.items || []) {
+    const hash = String(job?.info_hash || "").toLowerCase();
+    if (hash && !jobsByHash.has(hash)) jobsByHash.set(hash, job);
+  }
+  const decorated = new Set();
+  for (const node of resultNodes) {
+    const hash = String(node.dataset.resultInfoHash || "").toLowerCase();
+    const job = jobsByHash.get(hash);
+    const container = node.closest("tr, article");
+    if (!job || !container || decorated.has(container)) continue;
+    decorated.add(container);
+    const target = container.querySelector(".search-row-actions, .card-actions");
+    if (!target) continue;
+    const link = document.createElement("a");
+    link.className = `status-chip ${job.status === "error" ? "status-error" : job.status === "success" ? "status-ok" : "status-warning"}`;
+    link.href = `/acceleration?hash=${encodeURIComponent(hash)}`;
+    link.textContent = `Acceleration: ${String(job.state || job.status).replaceAll("_", " ")}`;
+    link.title = `${job.subject || "Torrent"} · ref ${job.reference || hash.slice(0, 12)}`;
+    target.append(link, buildAccelerationActions(job, () => window.location.reload(), { compact: true }));
+  }
 }
 
 function initRulesPage(container) {
@@ -5825,6 +5941,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initThemeControl();
   initOperationProgress(document);
   initResultQueueActions(document);
+  initAccelerationConsole(document);
+  initVariantAcceleration(document);
 
   const searchPage = document.querySelector("[data-search-page]");
   if (searchPage) {

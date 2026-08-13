@@ -1241,23 +1241,102 @@ def read_debug_hover_telemetry(
 
 @router.get("/operations/status")
 def read_operations_status(
-    show_history: bool = False,
     session: Session = Depends(get_db_session),
 ) -> JSONResponse:
     payload = operations_status_payload()
-    terminal_states = {"completed", "webseed_attached"}
-    jobs_query = select(DownloadAccelerationJob).where(
-        DownloadAccelerationJob.notification_dismissed_at.is_(None)
+    active_operations = [
+        operation
+        for operation in cast(list[dict[str, object]], payload["operations"])
+        if str(operation.get("status") or "") in {"queued", "running"}
+    ]
+    payload["operations"] = active_operations
+    total = sum(
+        int(value) if isinstance(value, (int, float, str)) else 0
+        for operation in active_operations
+        for value in [operation.get("total") or 0]
     )
-    if not show_history:
-        jobs_query = jobs_query.where(
-            DownloadAccelerationJob.state.not_in(terminal_states)
-        )
-    jobs = list(
-        session.scalars(
-            jobs_query.order_by(DownloadAccelerationJob.updated_at.desc()).limit(50)
-        )
+    current = sum(
+        int(value) if isinstance(value, (int, float, str)) else 0
+        for operation in active_operations
+        for value in [operation.get("current") or 0]
     )
+    payload["summary"] = {
+        "is_running": bool(active_operations),
+        "operation_count": len(active_operations),
+        "active_count": len(active_operations),
+        "current": current,
+        "total": total,
+        "percent": round((current / total) * 100) if total else None,
+    }
+    problem_states = {"terminal_error", "retry_wait", "metadata_unavailable"}
+    problem_count = int(
+        session.scalar(
+            select(func.count()).select_from(DownloadAccelerationJob).where(
+                DownloadAccelerationJob.state.in_(problem_states),
+                DownloadAccelerationJob.notification_dismissed_at.is_(None),
+            )
+        ) or 0
+    )
+    payload["acceleration_problem_count"] = problem_count
+    payload["acceleration_console_url"] = "/acceleration"
+    return JSONResponse(payload)
+
+
+def _acceleration_job_payload(
+    job: DownloadAccelerationJob,
+    *,
+    rules_by_id: dict[str, Rule],
+    maintenance_by_job: dict[str, dict[str, object]],
+) -> dict[str, object]:
+    error_states = {"terminal_error", "retry_wait", "metadata_unavailable"}
+    success_states = {"completed", "webseed_attached"}
+    return {
+        "id": job.id,
+        "type": "download_acceleration",
+        "label": (
+            f"{rules_by_id[job.rule_id].rule_name} - Real-Debrid acceleration"
+            if job.rule_id in rules_by_id
+            else "Real-Debrid acceleration"
+        ),
+        "info_hash": job.info_hash,
+        "reference": str(job.info_hash or job.provider_download_id or job.id)[:12],
+        "subject": job.torrent_name,
+        "rule_id": job.rule_id,
+        "rule_name": rules_by_id[job.rule_id].rule_name
+        if job.rule_id in rules_by_id
+        else None,
+        "context_url": f"/rules/{job.rule_id}" if job.rule_id in rules_by_id else None,
+        "codex_request_status": str(maintenance_by_job.get(job.id, {}).get("status") or ""),
+        "codex_request_result": str(maintenance_by_job.get(job.id, {}).get("result") or ""),
+        "status": "error" if job.state in error_states else "success" if job.state in success_states else "running",
+        "state": job.state,
+        "message": job.last_error or job.state.replace("_", " ").title(),
+        "updated_at": job.updated_at.isoformat(),
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "dismissed": job.notification_dismissed_at is not None,
+    }
+
+
+@router.get("/acceleration/jobs")
+def read_acceleration_jobs(
+    status: str = "all",
+    limit: int = 500,
+    include_dismissed: bool = False,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    limit = max(1, min(limit, 1000))
+    query = select(DownloadAccelerationJob)
+    if not include_dismissed:
+        query = query.where(DownloadAccelerationJob.notification_dismissed_at.is_(None))
+    error_states = {"terminal_error", "retry_wait", "metadata_unavailable"}
+    success_states = {"completed", "webseed_attached"}
+    if status == "problems":
+        query = query.where(DownloadAccelerationJob.state.in_(error_states))
+    elif status == "active":
+        query = query.where(DownloadAccelerationJob.state.not_in(error_states | success_states))
+    elif status == "finished":
+        query = query.where(DownloadAccelerationJob.state.in_(success_states))
+    jobs = list(session.scalars(query.order_by(DownloadAccelerationJob.updated_at.desc()).limit(limit)))
     rules_by_id = {
         rule.id: rule
         for rule in session.scalars(
@@ -1266,67 +1345,12 @@ def read_operations_status(
             )
         )
     }
-    hidden_finished_count = int(
-        session.scalar(
-            select(func.count())
-            .select_from(DownloadAccelerationJob)
-            .where(
-                DownloadAccelerationJob.state.in_(terminal_states),
-                DownloadAccelerationJob.notification_dismissed_at.is_(None),
-            )
-        )
-        or 0
-    )
-    operations = cast(list[dict[str, object]], payload["operations"])
     maintenance_by_job = maintenance_status_by_job()
-    operations.extend(
-        {
-            "id": job.id,
-            "type": "download_acceleration",
-            "label": (
-                f"{rules_by_id[job.rule_id].rule_name} - Real-Debrid acceleration"
-                if job.rule_id in rules_by_id
-                else "Real-Debrid acceleration"
-            ),
-            "reference": str(job.info_hash or job.provider_download_id or job.id)[:12],
-            "subject": job.torrent_name,
-            "rule_id": job.rule_id,
-            "rule_name": rules_by_id[job.rule_id].rule_name
-            if job.rule_id in rules_by_id
-            else None,
-            "context_url": f"/rules/{job.rule_id}" if job.rule_id in rules_by_id else None,
-            "codex_request_status": str(
-                maintenance_by_job.get(job.id, {}).get("status") or ""
-            ),
-            "codex_request_result": str(
-                maintenance_by_job.get(job.id, {}).get("result") or ""
-            ),
-            "status": "error"
-            if job.state in {"terminal_error", "retry_wait", "metadata_unavailable"}
-            else "success"
-            if job.state in {"completed", "webseed_attached"}
-            else "running",
-            "current": 1 if job.state in {"completed", "webseed_attached"} else 0,
-            "total": 1,
-            "percent": 100 if job.state in {"completed", "webseed_attached"} else 0,
-            "message": job.last_error or job.state.replace("_", " ").title(),
-            "errors": [job.last_error] if job.last_error else [],
-            "started_at": job.created_at.isoformat(),
-            "updated_at": job.updated_at.isoformat(),
-            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
-        }
+    items = [
+        _acceleration_job_payload(job, rules_by_id=rules_by_id, maintenance_by_job=maintenance_by_job)
         for job in jobs
-    )
-    payload["hidden_finished_count"] = hidden_finished_count if not show_history else 0
-    payload["showing_history"] = show_history
-    summary = cast(dict[str, object], payload["summary"])
-    active_statuses = {"queued", "running"}
-    summary["operation_count"] = len(operations)
-    summary["active_count"] = sum(
-        1 for operation in operations if str(operation.get("status")) in active_statuses
-    )
-    summary["is_running"] = bool(summary["active_count"])
-    return JSONResponse(payload)
+    ]
+    return JSONResponse({"items": items, "count": len(items), "status": status})
 
 
 @router.post("/acceleration/jobs/{job_id}/dismiss")

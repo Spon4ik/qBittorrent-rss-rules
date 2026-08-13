@@ -2,8 +2,8 @@
 
 ## Current focus
 
-- Phase 41 persistent dark mode and defaults-page isolation is implemented and
-  live-validated as the `v1.4.13` patch candidate
+- Phase 41 persistent dark mode and defaults-page isolation is implemented,
+  live-validated, and published as `v1.4.13`
   (`docs/plans/phase-41-persistent-dark-mode.md`). The global header now cycles
   System, Light, and Dark, stores the browser preference, applies it before the
   stylesheet loads, and follows operating-system changes in System mode. Dark
@@ -15,7 +15,8 @@
   tests pass; live Docker serves `v1.4.13`; Playwright confirms theme persistence,
   the corrected destination, no provider fields, and no horizontal overflow at
   390/1180/1720px. The WinUI build passes with zero warnings/errors and the final
-  Docker rebuild is healthy. Release publication remains in progress.
+  Docker rebuild is healthy. PR `#38` is merged; annotated tag `v1.4.13` is
+  pushed; and the GitHub Release is published.
 - Phase 40 provider-isolated settings and Stremio auth discovery is implemented,
   live-validated, and published as `v1.4.12`
   (`docs/plans/phase-40-provider-isolated-settings-and-stremio-auth-discovery.md`).

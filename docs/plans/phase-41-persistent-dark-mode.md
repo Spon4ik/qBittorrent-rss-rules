@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented and live-validated as the v1.4.13 patch candidate.
+Implemented, live-validated, and published as v1.4.13.
 
 ## Problem
 
@@ -32,7 +32,7 @@ selected across navigation and reloads without flashing the light theme first.
 - [x] Dark mode has no horizontal overflow at narrow, medium, or wide widths.
 - [x] Automated route/source and browser regressions pass.
 - [x] Full gate, desktop build, Docker rebuild, and live health pass.
-- [ ] Patch release is published.
+- [x] Patch release is published.
 
 ## Validation evidence
 
@@ -47,3 +47,4 @@ selected across navigation and reloads without flashing the light theme first.
 - Rendered screenshot: `logs/qa/phase-41-live-dark.png`.
   Visual inspection confirmed the quality-profile matrix uses dark surfaces and
   readable selected/unselected slider states rather than legacy light colors.
+- PR `#38` merged; annotated tag and GitHub Release `v1.4.13` published.

@@ -8,6 +8,15 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.14] - 2026-08-13
+
+- Make every no-rule qBittorrent Queue action add paused by default, regardless
+  of legacy global settings, while preserving explicit one-time Queue overrides
+  and saved per-rule exceptions.
+- Remove the global unpaused-default control and clarify the scope of pause
+  controls on rule and Queue surfaces.
+- Align deterministic browser closeout checks with the current defaults page and
+  settings-hub markup.
 ## [1.4.13] - 2026-08-13
 
 - Add a persistent global Light, Dark, and System theme control that applies the

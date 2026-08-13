@@ -334,7 +334,7 @@
     </label>
     <label class="toggle">
       <input type="checkbox" name="add_paused" {% if form_data.add_paused %}checked{% endif %} />
-      <span>Add paused</span>
+      <span>Add paused by default for this rule</span>
     </label>
     <label class="toggle">
       <input type="checkbox" name="use_regex" {% if form_data.use_regex %}checked{% endif %} />
@@ -623,7 +623,7 @@
       <div class="search-queue-options-grid search-queue-options-grid--compact">
         <label class="toggle">
           <input type="checkbox" data-result-queue-option="paused" {% if inline_queue_defaults.add_paused %}checked{% endif %} />
-          <span>Add paused</span>
+          <span>Add paused (uncheck for this Queue only)</span>
         </label>
         <details class="search-queue-advanced">
           <summary class="search-queue-advanced-summary">Advanced queue options</summary>

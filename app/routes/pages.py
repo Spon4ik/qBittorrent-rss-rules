@@ -1481,7 +1481,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
             "view_mode": normalize_search_result_view_mode(settings.search_result_view_mode),
             "sort_criteria": normalize_search_sort_criteria(settings.search_sort_criteria),
         }
-        queue_defaults["add_paused"] = bool(settings.default_add_paused)
+        queue_defaults["add_paused"] = True
         queue_defaults["sequential_download"] = bool(
             getattr(settings, "default_sequential_download", True)
         )
@@ -1917,7 +1917,7 @@ def new_rule(request: Request, session: Session = Depends(get_db_session)) -> HT
         "jellyfin_existing_episode_count": 0,
         "episode_filter": "",
         "ignore_days": 0,
-        "add_paused": settings.default_add_paused,
+        "add_paused": True,
         "enabled": settings.default_enabled,
         "smart_filter": False,
         "language": _default_rule_language(session),

@@ -1067,7 +1067,9 @@ def queue_search_result(
         if add_paused is None:
             add_paused = rule.add_paused
     if add_paused is None:
-        add_paused = settings.default_add_paused
+        # Queueing without a rule is always paused unless this individual
+        # request explicitly opts out. Saved rule exceptions are handled above.
+        add_paused = True
 
     if payload.source_kind.value == "real_debrid_download":
         return _queue_real_debrid_history_download(
@@ -2102,7 +2104,7 @@ async def save_default_settings(
             "series_category_template": form.get("series_category_template"),
             "movie_category_template": form.get("movie_category_template"),
             "save_path_template": form.get("save_path_template", ""),
-            "default_add_paused": _bool_from_form(form, "default_add_paused"),
+            "default_add_paused": True,
             "default_sequential_download": _bool_from_form(form, "default_sequential_download"),
             "default_first_last_piece_prio": _bool_from_form(
                 form, "default_first_last_piece_prio"
@@ -2131,7 +2133,10 @@ async def save_default_settings(
     settings.series_category_template = payload.series_category_template
     settings.movie_category_template = payload.movie_category_template
     settings.save_path_template = payload.save_path_template
-    settings.default_add_paused = payload.default_add_paused
+    # Retain the persisted field for backward compatibility, but the global
+    # unpaused default is no longer a supported semantic state. Unpaused adds
+    # must be explicit on a saved rule or on one Queue request.
+    settings.default_add_paused = True
     settings.default_sequential_download = payload.default_sequential_download
     settings.default_first_last_piece_prio = payload.default_first_last_piece_prio
     settings.default_enabled = payload.default_enabled

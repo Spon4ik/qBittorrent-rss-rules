@@ -223,6 +223,14 @@ def test_settings_payload_persists_jellyfin_api_write_settings(db_session) -> No
     assert reveal_secret(settings.jellyfin_api_key_encrypted) == "jellyfin-token"
 
 
+def test_settings_payload_cannot_enable_global_unpaused_queue_default(db_session) -> None:
+    settings = SettingsService.get_or_create(db_session)
+
+    SettingsService.apply_payload(settings, SettingsFormPayload(default_add_paused=False))
+
+    assert settings.default_add_paused is True
+
+
 def test_get_or_create_normalizes_jellyfin_settings(db_session) -> None:
     settings = AppSettings(
         id="default",

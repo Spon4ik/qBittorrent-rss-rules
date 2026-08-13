@@ -1250,8 +1250,8 @@ def main() -> int:
                             const second = luminance(background);
                             return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
                           };
-                          const card = getComputedStyle(document.querySelector('.content-card'));
-                          const button = getComputedStyle(document.querySelector('.settings-card .button-link'));
+                          const card = getComputedStyle(document.querySelector('.result-card'));
+                          const button = getComputedStyle(document.querySelector('.result-card .button-link'));
                           return {
                             content: ratio(card.color, card.backgroundColor),
                             action: ratio(button.color, button.backgroundColor),
@@ -1377,7 +1377,7 @@ def main() -> int:
 
             def check_phase_r5_profile_matrix_interactions() -> None:
                 page.goto(
-                    f"{app_base_url}/settings/all",
+                    f"{app_base_url}/settings/defaults",
                     wait_until="networkidle",
                     timeout=args.timeout_ms,
                 )
@@ -1412,7 +1412,7 @@ def main() -> int:
                     "ArrowRight from Include should exclude the profile matrix token.",
                 )
 
-                page.click('button:has-text("Save Settings")')
+                page.click('button:has-text("Save defaults and quality profiles")')
                 page.wait_for_selector(".flash-success", timeout=args.timeout_ms)
                 saved_cell = page.locator(
                     '[data-quality-profile-column="1080p"][data-quality-token="web_dl"]'

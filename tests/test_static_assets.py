@@ -10,6 +10,7 @@ BASE_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "app" / "templates" /
 RULE_FORM_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "app" / "templates" / "rule_form.html"
 SEARCH_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "app" / "templates" / "search.html"
 APP_JS_PATH = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+CLOSEOUT_BROWSER_QA_PATH = Path(__file__).resolve().parents[1] / "scripts" / "closeout_browser_qa.py"
 
 
 def test_compute_static_asset_version_tracks_app_asset_mtime(tmp_path) -> None:
@@ -29,6 +30,27 @@ def test_compute_static_asset_version_tracks_app_asset_mtime(tmp_path) -> None:
     updated_version = compute_static_asset_version(static_dir)
 
     assert updated_version != initial_version
+
+
+def test_browser_closeout_targets_current_defaults_page_contract() -> None:
+    harness = CLOSEOUT_BROWSER_QA_PATH.read_text(encoding="utf-8")
+
+    assert 'f"{app_base_url}/settings/defaults"' in harness
+    assert 'button:has-text("Save defaults and quality profiles")' in harness
+    assert "getComputedStyle(document.querySelector('.result-card'))" in harness
+
+
+def test_queue_ui_exposes_only_rule_and_one_time_pause_overrides() -> None:
+    settings_template = (
+        Path(__file__).resolve().parents[1] / "app" / "templates" / "settings.html"
+    ).read_text(encoding="utf-8")
+    rule_template = RULE_FORM_TEMPLATE_PATH.read_text(encoding="utf-8")
+    search_template = SEARCH_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+    assert 'name="default_add_paused"' not in settings_template
+    assert "Add paused by default for this rule" in rule_template
+    assert "Add paused (uncheck for this Queue only)" in rule_template
+    assert "Add paused (uncheck for this Queue only)" in search_template
 
 
 def test_app_css_declares_responsive_shell_contract() -> None:

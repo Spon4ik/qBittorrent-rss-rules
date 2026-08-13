@@ -28,7 +28,7 @@ namespace QbRssRulesDesktop.Views
 
         private const string DefaultBackendUrl = "http://127.0.0.1:8000";
         private const string RequiredDesktopBackendContract = "2026-08-03";
-        private const string RequiredDesktopBackendAppVersion = "1.4.13";
+        private const string RequiredDesktopBackendAppVersion = "1.4.14";
         private const string ManagedBackendStateFileName = "desktop-managed-backend.json";
         private const int ManagedBackendPortSearchLimit = 32;
         private const int ReconnectAttemptLimit = 30;

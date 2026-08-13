@@ -793,7 +793,9 @@ class SettingsService:
         settings.series_category_template = payload.series_category_template
         settings.movie_category_template = payload.movie_category_template
         settings.save_path_template = payload.save_path_template
-        settings.default_add_paused = payload.default_add_paused
+        # Global unpaused defaults are intentionally unsupported. Queue actions
+        # may opt out once, and rules may persist their own exception.
+        settings.default_add_paused = True
         settings.default_sequential_download = payload.default_sequential_download
         settings.default_first_last_piece_prio = payload.default_first_last_piece_prio
         settings.default_enabled = payload.default_enabled

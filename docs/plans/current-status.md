@@ -14,6 +14,8 @@
   Queue actions now always add paused unless that individual request explicitly
   opts out; saved rule-level unpaused exceptions remain authoritative; and the
   legacy global setting can no longer silently weaken this safety invariant.
+  PR `#39` is merged; annotated tag `v1.4.14` is pushed; and the GitHub Release
+  is published.
 - Phase 41 persistent dark mode and defaults-page isolation is implemented,
   live-validated, and published as `v1.4.13`
   (`docs/plans/phase-41-persistent-dark-mode.md`). The global header now cycles

@@ -4,6 +4,9 @@
 
 Implemented and release-validated for v1.4.14.
 
+PR `#39` is merged, annotated tag `v1.4.14` is pushed, and the GitHub Release is
+published.
+
 ## Contract
 
 Every qBittorrent Queue action adds paused unless the user explicitly chooses

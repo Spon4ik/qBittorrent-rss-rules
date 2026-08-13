@@ -2,6 +2,18 @@
 
 ## Current focus
 
+- Contract-roadmap completion was re-audited on 2026-08-13 against current `main`:
+  Phases R1-R8 remain implemented, the focused quality/routes contract suite passes
+  (`215 passed`), the full gate passes (`545 passed`), the WinUI build is
+  zero-warning, Docker is healthy on `v1.4.14`, and responsive R4 plus
+  preset-matrix R5 live checks pass. The browser
+  closeout harness now follows the Phase 40 defaults-page split and current
+  settings-hub theme surfaces instead of stale `/settings/all` selectors.
+- Phase 42 paused-by-default queue safety is implemented and release-validated
+  for `v1.4.14` (`docs/plans/phase-42-paused-by-default-queue-safety.md`). No-rule
+  Queue actions now always add paused unless that individual request explicitly
+  opts out; saved rule-level unpaused exceptions remain authoritative; and the
+  legacy global setting can no longer silently weaken this safety invariant.
 - Phase 41 persistent dark mode and defaults-page isolation is implemented,
   live-validated, and published as `v1.4.13`
   (`docs/plans/phase-41-persistent-dark-mode.md`). The global header now cycles

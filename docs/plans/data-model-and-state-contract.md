@@ -106,3 +106,15 @@ Save operation must:
 - Server-side guardrails in save/update normalization.
 - Regression tests for taxonomy/preset updates preserving mode.
 - UI affordance showing current mode + last conversion source.
+
+## 13) Queue pause resolution
+
+1. An explicit `add_paused` value on the individual Queue request wins.
+2. Otherwise, a Queue request linked to a rule uses that rule's persisted
+   `add_paused` exception/default.
+3. Otherwise, the result is always `true` (paused).
+
+The legacy settings field remains readable for compatibility but is normalized
+to `true` on defaults saves and is not a queue-behavior source of truth. A
+no-rule request resolving to unpaused without an explicit request override is an
+invalid state.

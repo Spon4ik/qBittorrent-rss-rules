@@ -98,7 +98,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.13"
+    assert payload["app_version"] == "1.4.14"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -4215,7 +4215,7 @@ def test_queue_search_result_api_uses_rule_defaults(app_client, db_session, monk
     }
 
 
-def test_queue_search_result_api_uses_settings_default_pause_when_no_rule(
+def test_queue_search_result_api_defaults_paused_without_rule_and_allows_one_time_override(
     app_client, db_session, monkeypatch
 ) -> None:
     settings = AppSettings(
@@ -4262,7 +4262,19 @@ def test_queue_search_result_api_uses_settings_default_pause_when_no_rule(
     payload = response.json()
     assert payload["category"] == ""
     assert payload["save_path"] == ""
-    assert payload["add_paused"] is False
+    assert payload["add_paused"] is True
+    assert captured["paused"] is True
+
+    override_response = app_client.post(
+        "/api/search/queue",
+        json={
+            "link": "https://example.com/one-time-unpaused.torrent",
+            "add_paused": False,
+        },
+    )
+
+    assert override_response.status_code == 200
+    assert override_response.json()["add_paused"] is False
     assert captured["paused"] is False
 
 
@@ -5343,6 +5355,7 @@ def test_defaults_settings_excludes_provider_controls_and_legacy_url_redirects(a
     assert 'name="qb_base_url"' not in response.text
     assert 'name="jellyfin_db_path"' not in response.text
     assert 'name="stremio_local_storage_path"' not in response.text
+    assert 'name="default_add_paused"' not in response.text
 
     legacy_response = app_client.get("/settings/all", follow_redirects=False)
     assert legacy_response.status_code == 308
@@ -5351,6 +5364,7 @@ def test_defaults_settings_excludes_provider_controls_and_legacy_url_redirects(a
 
 def test_saving_defaults_preserves_provider_settings(app_client, db_session) -> None:
     settings = SettingsService.get_or_create(db_session)
+    settings.default_add_paused = False
     settings.qb_base_url = "http://qb-preserved:8080"
     settings.jellyfin_db_path = r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db"
     settings.stremio_local_storage_path = r"C:\Users\test\Stremio\leveldb"
@@ -5373,6 +5387,7 @@ def test_saving_defaults_preserves_provider_settings(app_client, db_session) -> 
     assert response.status_code == 303
     db_session.refresh(settings)
     assert settings.series_category_template == "TV/{title}"
+    assert settings.default_add_paused is True
     assert settings.qb_base_url == "http://qb-preserved:8080"
     assert settings.jellyfin_db_path == r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db"
     assert settings.stremio_local_storage_path == r"C:\Users\test\Stremio\leveldb"

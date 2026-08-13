@@ -142,3 +142,12 @@ Progressively disclosed:
 - **Taxonomy token**: normalized quality/source/codec/etc. value key.
 - **Exact lane**: high-confidence match set tied closely to intended content identity.
 - **Fallback lane**: broader candidate set for manual review.
+
+## 11) Torrent queue safety
+
+- Every Queue action adds to qBittorrent paused by default.
+- An unpaused add is allowed only when the user explicitly unchecks the pause
+  option for that individual Queue action, or saves `Add paused` off as a
+  rule-specific exception.
+- A global unpaused default is not supported; unrelated settings saves and
+  legacy global settings must never weaken the paused default.

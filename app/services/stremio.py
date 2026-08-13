@@ -1079,7 +1079,7 @@ class StremioService:
             quality_include_tokens=list(quality_filters.get("include_tokens", [])),
             quality_exclude_tokens=list(quality_filters.get("exclude_tokens", [])),
             use_regex=True,
-            add_paused=bool(settings.default_add_paused),
+            add_paused=True,
             enabled=bool(settings.default_enabled),
             feed_urls=list(settings.default_feed_urls or []),
             assigned_category="",

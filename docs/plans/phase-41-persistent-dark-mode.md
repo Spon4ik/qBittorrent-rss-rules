@@ -4,6 +4,15 @@
 
 Implemented, live-validated, and published as v1.4.13.
 
+## 2026-08-13 maintenance verification
+
+- Updated deterministic browser closeout selectors after the Phase 40 settings
+  split: the quality-profile matrix now runs on `/settings/defaults`, saves with
+  the current submit label, and theme contrast probes use the current settings-hub
+  result cards.
+- Added a source regression so future settings navigation/label changes cannot
+  silently stale the closeout harness again.
+
 ## Problem
 
 The web UI has only a light palette. It needs a dark appearance that remains

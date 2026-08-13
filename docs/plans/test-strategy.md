@@ -73,3 +73,12 @@ Last updated: 2026-05-07
 3. `test_rule_save_noop_is_semantically_idempotent`.
 4. `test_settings_preset_editor_roundtrip_preserves_tri_state` (after UI redesign).
 5. Responsive smoke snapshots for rules/settings widths.
+
+## 12) Queue safety tests
+
+- No-rule Queue requests without an override add paused even when a legacy
+  settings row contains `default_add_paused=false`.
+- A saved rule with `add_paused=false` remains an explicit rule exception.
+- An individual Queue request can explicitly override either effective value.
+- The defaults page exposes no global unpaused switch; rule and Queue surfaces
+  label the two allowed exception scopes clearly.

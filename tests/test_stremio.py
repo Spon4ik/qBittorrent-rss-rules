@@ -569,7 +569,7 @@ def test_stremio_sync_creates_missing_managed_rule(
         stremio_auto_sync_enabled=True,
         stremio_auto_sync_interval_seconds=30,
         default_quality_profile=QualityProfile.UHD_2160P_HDR,
-        default_add_paused=True,
+        default_add_paused=False,
         default_enabled=True,
         default_feed_urls=["http://feed.example/default"],
     )
@@ -592,6 +592,7 @@ def test_stremio_sync_creates_missing_managed_rule(
     assert created_rule.media_type == MediaType.SERIES
     assert created_rule.quality_profile == QualityProfile.UHD_2160P_HDR
     assert created_rule.use_regex is True
+    assert created_rule.add_paused is True
     assert created_rule.feed_urls == ["http://feed.example/default"]
     assert created_rule.assigned_category.startswith("Series/3 Body Problem")
 

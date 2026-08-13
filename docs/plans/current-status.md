@@ -2,6 +2,18 @@
 
 ## Current focus
 
+- Phase 43 background-work lifecycle and rule-workspace density is implemented
+  and release-validated for `v1.4.15`
+  (`docs/plans/phase-43-background-work-and-variants-density.md`). Real-Debrid
+  notices now show torrent names, hide finished history by default, support
+  non-destructive dismissal, clarify retry/removal semantics, and can queue a
+  redacted scoped `Ask Codex to fix` maintenance request for the five-minute
+  Codex heartbeat. Rule search notices collapse by default and the variants
+  workspace gains the reclaimed height. Ambiguous qB category text is never
+  treated as rule identity. Ruff/mypy and all `548` tests pass; WinUI builds
+  with zero warnings/errors; Docker `/health` serves `v1.4.15`; and live
+  Playwright at 2048x1150 confirms the Reacher page has zero horizontal
+  overflow, compact notices/background work, and no `Copy for Codex` action.
 - Contract-roadmap completion was re-audited on 2026-08-13 against current `main`:
   Phases R1-R8 remain implemented, the focused quality/routes contract suite passes
   (`215 passed`), the full gate passes (`545 passed`), the WinUI build is

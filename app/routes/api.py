@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from app.models import (
     SyncStatus,
     media_type_choices,
     media_type_label,
+    utcnow,
 )
 from app.routes.pages import (
     DEFAULT_RULE_LANGUAGE,
@@ -54,6 +55,10 @@ from app.schemas import (
     SearchViewPreferencesPayload,
     SettingsFormPayload,
     StremioSettingsPayload,
+)
+from app.services.codex_maintenance import (
+    maintenance_status_by_job,
+    queue_acceleration_maintenance_request,
 )
 from app.services.hover_debug import (
     clear_hover_events,
@@ -1236,22 +1241,66 @@ def read_debug_hover_telemetry(
 
 @router.get("/operations/status")
 def read_operations_status(
+    show_history: bool = False,
     session: Session = Depends(get_db_session),
 ) -> JSONResponse:
     payload = operations_status_payload()
+    terminal_states = {"completed", "webseed_attached"}
+    jobs_query = select(DownloadAccelerationJob).where(
+        DownloadAccelerationJob.notification_dismissed_at.is_(None)
+    )
+    if not show_history:
+        jobs_query = jobs_query.where(
+            DownloadAccelerationJob.state.not_in(terminal_states)
+        )
     jobs = list(
         session.scalars(
-            select(DownloadAccelerationJob).order_by(
-                DownloadAccelerationJob.updated_at.desc()
-            ).limit(50)
+            jobs_query.order_by(DownloadAccelerationJob.updated_at.desc()).limit(50)
         )
     )
+    rules_by_id = {
+        rule.id: rule
+        for rule in session.scalars(
+            select(Rule).where(
+                Rule.id.in_({job.rule_id for job in jobs if job.rule_id})
+            )
+        )
+    }
+    hidden_finished_count = int(
+        session.scalar(
+            select(func.count())
+            .select_from(DownloadAccelerationJob)
+            .where(
+                DownloadAccelerationJob.state.in_(terminal_states),
+                DownloadAccelerationJob.notification_dismissed_at.is_(None),
+            )
+        )
+        or 0
+    )
     operations = cast(list[dict[str, object]], payload["operations"])
+    maintenance_by_job = maintenance_status_by_job()
     operations.extend(
         {
             "id": job.id,
             "type": "download_acceleration",
-            "label": f"Real-Debrid acceleration {str(job.info_hash or job.provider_download_id or '')[:12]}",
+            "label": (
+                f"{rules_by_id[job.rule_id].rule_name} - Real-Debrid acceleration"
+                if job.rule_id in rules_by_id
+                else "Real-Debrid acceleration"
+            ),
+            "reference": str(job.info_hash or job.provider_download_id or job.id)[:12],
+            "subject": job.torrent_name,
+            "rule_id": job.rule_id,
+            "rule_name": rules_by_id[job.rule_id].rule_name
+            if job.rule_id in rules_by_id
+            else None,
+            "context_url": f"/rules/{job.rule_id}" if job.rule_id in rules_by_id else None,
+            "codex_request_status": str(
+                maintenance_by_job.get(job.id, {}).get("status") or ""
+            ),
+            "codex_request_result": str(
+                maintenance_by_job.get(job.id, {}).get("result") or ""
+            ),
             "status": "error"
             if job.state in {"terminal_error", "retry_wait", "metadata_unavailable"}
             else "success"
@@ -1268,7 +1317,72 @@ def read_operations_status(
         }
         for job in jobs
     )
+    payload["hidden_finished_count"] = hidden_finished_count if not show_history else 0
+    payload["showing_history"] = show_history
+    summary = cast(dict[str, object], payload["summary"])
+    active_statuses = {"queued", "running"}
+    summary["operation_count"] = len(operations)
+    summary["active_count"] = sum(
+        1 for operation in operations if str(operation.get("status")) in active_statuses
+    )
+    summary["is_running"] = bool(summary["active_count"])
     return JSONResponse(payload)
+
+
+@router.post("/acceleration/jobs/{job_id}/dismiss")
+def dismiss_acceleration_job_notification(
+    job_id: str,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    job = session.get(DownloadAccelerationJob, job_id)
+    if job is None:
+        return JSONResponse({"error": "Acceleration job not found."}, status_code=404)
+    job.notification_dismissed_at = utcnow()
+    session.add(job)
+    session.commit()
+    return JSONResponse({"status": "dismissed", "job_id": job.id})
+
+
+@router.post("/acceleration/jobs/{job_id}/ask-codex")
+def ask_codex_to_investigate_acceleration_job(
+    job_id: str,
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    job = session.get(DownloadAccelerationJob, job_id)
+    if job is None:
+        return JSONResponse({"error": "Acceleration job not found."}, status_code=404)
+    rule = session.get(Rule, job.rule_id) if job.rule_id else None
+    request_payload = queue_acceleration_maintenance_request(job, rule=rule)
+    return JSONResponse(
+        {
+            "status": "queued",
+            "request_id": request_payload["id"],
+            "message": (
+                "Codex maintenance task queued. "
+                "It will inspect this issue within five minutes."
+            ),
+        }
+    )
+
+
+@router.post("/acceleration/jobs/dismiss-finished")
+def dismiss_finished_acceleration_notifications(
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    jobs = list(
+        session.scalars(
+            select(DownloadAccelerationJob).where(
+                DownloadAccelerationJob.state.in_({"completed", "webseed_attached"}),
+                DownloadAccelerationJob.notification_dismissed_at.is_(None),
+            )
+        )
+    )
+    dismissed_at = utcnow()
+    for job in jobs:
+        job.notification_dismissed_at = dismissed_at
+        session.add(job)
+    session.commit()
+    return JSONResponse({"status": "dismissed", "dismissed_count": len(jobs)})
 
 
 @router.post("/acceleration/adopt")
@@ -1320,6 +1434,7 @@ def retry_acceleration_job(
     job.retry_count = 0
     job.next_retry_at = None
     job.last_error = ""
+    job.notification_dismissed_at = None
     session.add(job)
     session.commit()
     return JSONResponse({"status": "queued", "job_id": job.id})

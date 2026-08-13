@@ -53,6 +53,20 @@ def test_queue_ui_exposes_only_rule_and_one_time_pause_overrides() -> None:
     assert "Add paused (uncheck for this Queue only)" in search_template
 
 
+def test_background_work_ui_has_maintenance_and_message_lifecycle_controls() -> None:
+    base_template = BASE_TEMPLATE_PATH.read_text(encoding="utf-8")
+    rule_template = RULE_FORM_TEMPLATE_PATH.read_text(encoding="utf-8")
+    js = APP_JS_PATH.read_text(encoding="utf-8")
+
+    assert "data-operation-show-history" in base_template
+    assert "data-operation-dismiss-finished" in base_template
+    assert "Ask Codex to fix" in js
+    assert "/ask-codex" in js
+    assert "Remove acceleration" in js
+    assert "Dismiss" in js
+    assert '<details class="rule-search-notices"' in rule_template
+
+
 def test_app_css_declares_responsive_shell_contract() -> None:
     css = APP_CSS_PATH.read_text(encoding="utf-8")
 
@@ -96,11 +110,11 @@ def test_global_operation_progress_shell_assets_are_present() -> None:
     assert " hidden" not in shell_open_tag
     assert ".operation-progress-shell" in css
     assert "function initOperationProgress" in js
-    assert 'fetch("/api/operations/status"' in js
+    assert 'fetch(`/api/operations/status?show_history=' in js
     assert "/api/acceleration/jobs/" in js
-    assert "Downloaded files will be kept" in js
-    assert 'titleElement.textContent = "Background work idle"' in js
-    assert 'summaryElement.textContent = "No active operations"' in js
+    assert "The torrent and downloaded files will be kept" in js
+    assert 'titleElement.textContent = "Background work finished"' in js
+    assert '"No active operations"' in js
     assert '"operation-progress-starting"' in js
     assert 'data-operation-start-label' in index_template
     assert 'data-operation-start-label' in rule_form_template
@@ -199,7 +213,8 @@ def test_rule_edit_page_uses_full_width_console_results_contract() -> None:
     assert "max-height: min(56vh, 38rem)" in css
     assert "display: flex;\n    flex-direction: column;" in css
     assert "#inline-search-results > .rule-search-notices" in css
-    assert "max-height: 8rem" in css
+    assert "max-height: 10rem" in css
+    assert '<details class="rule-search-notices"' in template
     assert "flex: 1 1 0" in css
     assert "flex-basis: 10rem" in css
     assert "min-height: 10rem" in css

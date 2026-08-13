@@ -183,6 +183,10 @@ def _ensure_rule_columns() -> None:
         "exact_filtered_count": "INTEGER",
         "exact_fetched_count": "INTEGER",
     }
+    expected_acceleration_job_columns = {
+        "notification_dismissed_at": "DATETIME",
+        "torrent_name": "VARCHAR(512) NOT NULL DEFAULT ''",
+    }
 
     with engine.begin() as connection:
         inspector = inspect(connection)
@@ -266,5 +270,19 @@ def _ensure_rule_columns() -> None:
                               WHERE rule_search_snapshots.rule_id = rules.id
                           )
                         """
+                    )
+                )
+        if "download_acceleration_jobs" in existing_tables:
+            existing_job_columns = {
+                item["name"]
+                for item in inspector.get_columns("download_acceleration_jobs")
+            }
+            for column_name, column_def in expected_acceleration_job_columns.items():
+                if column_name in existing_job_columns:
+                    continue
+                connection.execute(
+                    text(
+                        "ALTER TABLE download_acceleration_jobs "
+                        f"ADD COLUMN {column_name} {column_def}"
                     )
                 )

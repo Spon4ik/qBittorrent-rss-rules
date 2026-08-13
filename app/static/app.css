@@ -638,15 +638,27 @@ h3 {
   #inline-search-results > .rule-search-notices {
     flex: 0 0 auto;
     min-height: 0;
-    max-height: 8rem;
+    max-height: 10rem;
     overflow-y: auto;
+    padding: 0.32rem 0.5rem;
+  }
+
+  #inline-search-results > .rule-search-notices > summary {
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  #inline-search-results .rule-search-notices-list {
+    margin-top: 0.3rem;
   }
 
   #inline-search-results .result-view-panel {
     flex: 0 0 auto;
     display: grid;
-    grid-template-columns: minmax(10rem, auto) auto minmax(22rem, 1fr) auto;
+    grid-template-columns: minmax(13rem, 1fr) auto;
     align-items: center;
+    padding: 0.35rem 0.5rem;
   }
 
   #inline-search-results .result-view-header {
@@ -666,7 +678,8 @@ h3 {
   }
 
   #inline-search-results .result-view-local-grid {
-    grid-template-columns: repeat(2, minmax(10rem, 1fr));
+    grid-template-columns: repeat(2, minmax(8rem, 11rem));
+    justify-content: end;
   }
 
   #inline-search-results .result-view-active-filters {
@@ -679,6 +692,7 @@ h3 {
     gap: 0.5rem;
     align-items: center;
     justify-content: space-between;
+    padding: 0.3rem 0.5rem;
   }
 
   #inline-search-results [data-result-queue-options] > div:first-child {
@@ -691,6 +705,10 @@ h3 {
   #inline-search-results [data-result-queue-options] > div:first-child .eyebrow,
   #inline-search-results [data-result-queue-options] > div:first-child .helper-text {
     display: none;
+  }
+
+  #inline-search-results [data-result-queue-options] > div:first-child strong {
+    font-size: 0.78rem;
   }
 
   #inline-search-results [data-result-queue-options] .search-queue-options-grid--compact {
@@ -1540,6 +1558,27 @@ textarea {
   color: var(--ink);
 }
 
+.operation-progress-summary > div:first-child,
+.operation-progress-toolbar,
+.operation-progress-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.operation-progress-toolbar,
+.operation-progress-actions {
+  justify-content: flex-end;
+}
+
+.operation-progress-toolbar .button-link,
+.operation-progress-actions button {
+  min-height: 1.8rem;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.76rem;
+}
+
 .operation-progress-summary span {
   color: var(--muted);
   font-size: 0.84rem;
@@ -1572,10 +1611,14 @@ textarea {
 
 .operation-progress-item {
   display: grid;
-  grid-template-columns: minmax(8rem, 0.8fr) minmax(0, 2fr);
+  grid-template-columns: minmax(12rem, 0.9fr) minmax(16rem, 1.5fr) auto;
   gap: 0.5rem;
   align-items: baseline;
   font-size: 0.84rem;
+}
+
+.operation-progress-item strong a {
+  color: inherit;
 }
 
 .operation-progress-item strong,

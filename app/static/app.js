@@ -4556,8 +4556,11 @@ function initOperationProgress(root) {
   const titleElement = shell.querySelector("[data-operation-progress-title]");
   const barElement = shell.querySelector("[data-operation-progress-bar]");
   const listElement = shell.querySelector("[data-operation-progress-list]");
+  const showHistoryButton = shell.querySelector("[data-operation-show-history]");
+  const dismissFinishedButton = shell.querySelector("[data-operation-dismiss-finished]");
   let pollTimer = 0;
   let optimisticUntil = 0;
+  let showHistory = false;
 
   const clearPollTimer = () => {
     if (pollTimer) {
@@ -4579,16 +4582,26 @@ function initOperationProgress(root) {
   const renderPayload = (payload) => {
     const operations = Array.isArray(payload?.operations) ? payload.operations : [];
     const summary = payload?.summary || {};
+    const hiddenFinishedCount = Number(payload?.hidden_finished_count || 0);
+    if (showHistoryButton) {
+      showHistoryButton.hidden = hiddenFinishedCount === 0 && !showHistory;
+      showHistoryButton.textContent = showHistory ? "Hide finished" : `Show finished (${hiddenFinishedCount})`;
+    }
+    if (dismissFinishedButton) {
+      dismissFinishedButton.hidden = hiddenFinishedCount === 0;
+    }
     if (operations.length === 0) {
       if (Date.now() < optimisticUntil) {
         return true;
       }
-      shell.hidden = false;
+      shell.hidden = hiddenFinishedCount === 0;
       if (titleElement) {
-        titleElement.textContent = "Background work idle";
+        titleElement.textContent = "Background work finished";
       }
       if (summaryElement) {
-        summaryElement.textContent = "No active operations";
+        summaryElement.textContent = hiddenFinishedCount > 0
+          ? `${hiddenFinishedCount} finished item(s) hidden`
+          : "No active operations";
       }
       if (barElement) {
         barElement.style.width = "0%";
@@ -4625,7 +4638,16 @@ function initOperationProgress(root) {
         const label = document.createElement("strong");
         label.textContent = String(operation?.label || "Operation");
         const detail = document.createElement("span");
-        detail.textContent = String(operation?.message || formatOperationDetail(operation));
+        const reference = String(operation?.reference || "").trim();
+        const subject = String(operation?.subject || "").trim();
+        detail.textContent = `${subject ? `${subject} · ` : ""}${String(operation?.message || formatOperationDetail(operation))}${reference ? ` · ref ${reference}` : ""}`;
+        const contextUrl = String(operation?.context_url || "").trim();
+        if (contextUrl) {
+          const contextLink = document.createElement("a");
+          contextLink.href = contextUrl;
+          contextLink.textContent = label.textContent;
+          label.replaceChildren(contextLink);
+        }
         item.append(label, detail);
         if (String(operation?.type || "") === "download_acceleration") {
           const actions = document.createElement("span");
@@ -4634,6 +4656,7 @@ function initOperationProgress(root) {
             const retry = document.createElement("button");
             retry.type = "button";
             retry.textContent = "Retry";
+            retry.title = "Retry this Real-Debrid acceleration job now.";
             retry.addEventListener("click", async () => {
               retry.disabled = true;
               await fetch(`/api/acceleration/jobs/${encodeURIComponent(operation.id)}/retry`, { method: "POST" });
@@ -4641,12 +4664,48 @@ function initOperationProgress(root) {
             });
             actions.appendChild(retry);
           }
+          if (String(operation?.status || "") === "error") {
+            const askCodex = document.createElement("button");
+            askCodex.type = "button";
+            const codexStatus = String(operation?.codex_request_status || "").trim().toLowerCase();
+            askCodex.textContent = codexStatus === "pending"
+              ? "Codex task queued"
+              : codexStatus === "running"
+                ? "Codex investigating"
+                : codexStatus === "completed"
+                  ? "Codex completed"
+                  : "Ask Codex to fix";
+            askCodex.title = "Queue a scoped Codex maintenance task to inspect logs, diagnose, fix, and validate this issue.";
+            if (codexStatus) {
+              askCodex.disabled = true;
+              askCodex.title = String(operation?.codex_request_result || `Codex task status: ${codexStatus}`);
+            }
+            askCodex.addEventListener("click", async () => {
+              askCodex.disabled = true;
+              askCodex.textContent = "Queuing Codex...";
+              const response = await fetch(`/api/acceleration/jobs/${encodeURIComponent(operation.id)}/ask-codex`, { method: "POST" });
+              const result = await response.json().catch(() => ({}));
+              askCodex.textContent = response.ok ? "Codex task queued" : "Could not queue Codex";
+              askCodex.title = String(result?.message || result?.error || askCodex.title);
+            });
+            actions.appendChild(askCodex);
+          }
+          const dismiss = document.createElement("button");
+          dismiss.type = "button";
+          dismiss.textContent = "Dismiss";
+          dismiss.title = "Hide this message without changing the torrent, web seed, or job state.";
+          dismiss.addEventListener("click", async () => {
+            dismiss.disabled = true;
+            await fetch(`/api/acceleration/jobs/${encodeURIComponent(operation.id)}/dismiss`, { method: "POST" });
+            poll();
+          });
+          actions.appendChild(dismiss);
           const cleanup = document.createElement("button");
           cleanup.type = "button";
-          cleanup.textContent = "Clean up";
+          cleanup.textContent = "Remove acceleration";
           cleanup.title = "Remove only app-owned web seeds and job state; downloaded files are never deleted.";
           cleanup.addEventListener("click", async () => {
-            if (!window.confirm("Remove this acceleration job and its app-owned web seed? Downloaded files will be kept.")) {
+            if (!window.confirm("Remove this acceleration job and its app-owned web seed? The torrent and downloaded files will be kept.")) {
               return;
             }
             cleanup.disabled = true;
@@ -4684,7 +4743,7 @@ function initOperationProgress(root) {
   const poll = async () => {
     clearPollTimer();
     try {
-      const response = await fetch("/api/operations/status", {
+      const response = await fetch(`/api/operations/status?show_history=${showHistory ? "true" : "false"}`, {
         headers: { Accept: "application/json" },
       });
       if (!response.ok) {
@@ -4706,6 +4765,18 @@ function initOperationProgress(root) {
     if (trigger) {
       renderStarting(trigger.dataset.operationStartLabel);
     }
+  });
+
+  showHistoryButton?.addEventListener("click", () => {
+    showHistory = !showHistory;
+    poll();
+  });
+  dismissFinishedButton?.addEventListener("click", async () => {
+    dismissFinishedButton.disabled = true;
+    await fetch("/api/acceleration/jobs/dismiss-finished", { method: "POST" });
+    dismissFinishedButton.disabled = false;
+    showHistory = false;
+    poll();
   });
 
   poll();

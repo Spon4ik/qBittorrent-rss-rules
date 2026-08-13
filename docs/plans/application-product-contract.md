@@ -151,3 +151,14 @@ Progressively disclosed:
   rule-specific exception.
 - A global unpaused default is not supported; unrelated settings saves and
   legacy global settings must never weaken the paused default.
+
+## 12) Background operations
+
+- Global operation UI prioritizes current work and actionable failures over
+  historical success noise.
+- Completed work is compacted and clearable. Failure dismissal never performs
+  cleanup or changes provider/torrent state.
+- Provider failures identify the affected rule/torrent in user language before
+  internal hashes or IDs.
+- Maintenance escalation carries a redacted scoped diagnostic into an actual
+  Codex task rather than requiring manual transcription.

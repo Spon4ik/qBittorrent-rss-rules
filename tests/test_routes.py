@@ -16,6 +16,7 @@ from app.config import obfuscate_secret, reveal_secret
 from app.main import DESKTOP_BACKEND_CAPABILITIES, DESKTOP_BACKEND_CONTRACT
 from app.models import (
     AppSettings,
+    DownloadAccelerationJob,
     IndexerCategoryCatalog,
     MediaType,
     QualityMode,
@@ -98,7 +99,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.14"
+    assert payload["app_version"] == "1.4.15"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -125,6 +126,101 @@ def test_operations_status_endpoint_reports_registry_payload(app_client) -> None
     assert payload["operations"][0]["type"] == "jackett_fetch"
     assert payload["operations"][0]["label"] == "Fetching releases"
     operation_status.reset_operations_for_tests()
+
+
+def test_acceleration_operations_are_rule_linked_and_finished_hidden_by_default(
+    app_client, db_session
+) -> None:
+    rule = Rule(
+        rule_name="Reacher",
+        content_name="Reacher",
+        normalized_title="Reacher",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add(rule)
+    db_session.flush()
+    error_job = DownloadAccelerationJob(
+        identity_key="qb:error-operation",
+        info_hash="a" * 40,
+        rule_id=rule.id,
+        state="retry_wait",
+        last_error="Real-Debrid failed",
+    )
+    finished_job = DownloadAccelerationJob(
+        identity_key="qb:finished-operation",
+        info_hash="b" * 40,
+        rule_id=rule.id,
+        state="webseed_attached",
+    )
+    db_session.add_all([error_job, finished_job])
+    db_session.commit()
+
+    payload = app_client.get("/api/operations/status").json()
+
+    acceleration = [item for item in payload["operations"] if item["type"] == "download_acceleration"]
+    assert len(acceleration) == 1
+    assert acceleration[0]["label"] == "Reacher - Real-Debrid acceleration"
+    assert acceleration[0]["reference"] == "a" * 12
+    assert acceleration[0]["subject"] == ""
+    assert acceleration[0]["context_url"] == f"/rules/{rule.id}"
+    assert payload["hidden_finished_count"] == 1
+
+    history = app_client.get("/api/operations/status?show_history=true").json()
+    assert len([item for item in history["operations"] if item["type"] == "download_acceleration"]) == 2
+
+
+def test_acceleration_notification_dismiss_and_codex_maintenance_queue(
+    app_client, db_session, monkeypatch, tmp_path
+) -> None:
+    from app.services import codex_maintenance
+
+    monkeypatch.setattr(codex_maintenance, "REQUEST_DIR", tmp_path / "requests")
+    rule = Rule(
+        rule_name="Reacher",
+        content_name="Reacher",
+        normalized_title="Reacher",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add(rule)
+    db_session.flush()
+    job = DownloadAccelerationJob(
+        identity_key="qb:codex-operation",
+        info_hash="c" * 40,
+        rule_id=rule.id,
+        state="retry_wait",
+        last_error="failed?apikey=secret-value&x=1",
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    queued = app_client.post(f"/api/acceleration/jobs/{job.id}/ask-codex")
+    assert queued.status_code == 200
+    request_files = list((tmp_path / "requests").glob("*.json"))
+    assert len(request_files) == 1
+    request_text = request_files[0].read_text(encoding="utf-8")
+    assert '"rule_name": "Reacher"' in request_text
+    assert "secret-value" not in request_text
+    assert "<redacted>" in request_text
+
+    duplicate = app_client.post(f"/api/acceleration/jobs/{job.id}/ask-codex")
+    assert duplicate.status_code == 200
+    assert len(list((tmp_path / "requests").glob("*.json"))) == 1
+    status_item = next(
+        item
+        for item in app_client.get("/api/operations/status").json()["operations"]
+        if item.get("id") == job.id
+    )
+    assert status_item["codex_request_status"] == "pending"
+
+    dismissed = app_client.post(f"/api/acceleration/jobs/{job.id}/dismiss")
+    assert dismissed.status_code == 200
+    assert not [
+        item
+        for item in app_client.get("/api/operations/status").json()["operations"]
+        if item.get("id") == job.id
+    ]
 
 
 def test_rules_page_renders_visible_global_operation_progress_shell(app_client) -> None:

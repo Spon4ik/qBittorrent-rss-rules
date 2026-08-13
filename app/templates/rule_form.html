@@ -599,7 +599,10 @@
     <a class="button-link muted" href="#filter-profile-select">Edit profile</a>
   </section>
   {% if inline_search_notices or inline_search_errors or (inline_search and inline_search.warning_messages) %}
-  <section class="rule-search-notices" aria-label="Search notices">
+  {% set notice_count = (inline_search_notices | length) + (inline_search_errors | length) + ((inline_search.warning_messages | length) if inline_search else 0) %}
+  <details class="rule-search-notices" aria-label="Search notices">
+    <summary>Search notices ({{ notice_count }})</summary>
+    <div class="rule-search-notices-list">
     {% for notice in inline_search_notices %}
     <section class="flash flash-warning">{{ notice }}</section>
     {% endfor %}
@@ -611,7 +614,8 @@
       <section class="flash flash-warning">{{ warning }}</section>
       {% endfor %}
     {% endif %}
-  </section>
+    </div>
+  </details>
   {% endif %}
   {% if inline_search %}
     <section class="summary-strip" data-result-queue-options>

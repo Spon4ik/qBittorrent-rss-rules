@@ -459,6 +459,7 @@ class DownloadAccelerationJob(Base):
     identity_key: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
     source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="qbittorrent")
     info_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    torrent_name: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     rule_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     provider_torrent_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     provider_download_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -485,3 +486,6 @@ class DownloadAccelerationJob(Base):
         DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notification_dismissed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

@@ -22,6 +22,12 @@ Last updated: 2026-05-05
 
 ## 4) Density and component rules
 
+- On rule edit pages, the release-variants table is the critical panel: provider
+  notices default collapsed, controls use compact rows, and remaining height is
+  assigned to variants rather than decorative whitespace.
+- Global background work shows active/error rows only by default; completed
+  history is represented by a count and explicit disclosure.
+
 - Tables for rule/search operations and sortable comparisons.
 - Cards for optional alternate browsing only.
 - Badges for state chips (sync, release confidence, mode).

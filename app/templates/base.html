@@ -77,8 +77,14 @@
         aria-live="polite"
       >
         <div class="operation-progress-summary">
-          <strong data-operation-progress-title>Background work</strong>
-          <span data-operation-progress-summary>Checking progress...</span>
+          <div>
+            <strong data-operation-progress-title>Background work</strong>
+            <span data-operation-progress-summary>Checking progress...</span>
+          </div>
+          <div class="operation-progress-toolbar">
+            <button type="button" class="button-link muted" data-operation-show-history hidden>Show finished</button>
+            <button type="button" class="button-link muted" data-operation-dismiss-finished hidden>Clear finished</button>
+          </div>
         </div>
         <div class="operation-progress-track" aria-hidden="true">
           <div class="operation-progress-bar" data-operation-progress-bar></div>

@@ -232,15 +232,22 @@ class DownloadAccelerationService:
             if not info_hash:
                 continue
             result[info_hash] = torrent
+            torrent_name = str(torrent.get("name") or "").strip()
             if info_hash not in existing:
                 job = DownloadAccelerationJob(
                     identity_key=f"qb:{info_hash}",
                     info_hash=info_hash,
                     state="discovered",
                     metadata_deadline_at=now + timedelta(seconds=wait_seconds),
+                    torrent_name=torrent_name,
                 )
                 self.session.add(job)
                 existing[info_hash] = job
+            else:
+                job = existing[info_hash]
+                if torrent_name and job.torrent_name != torrent_name:
+                    job.torrent_name = torrent_name
+                self.session.add(job)
         self.session.commit()
         return result
 

@@ -8,6 +8,9 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.15] - 2026-08-14
+
+- Release prep in progress.
 ## [1.4.14] - 2026-08-13
 
 - Make every no-rule qBittorrent Queue action add paused by default, regardless

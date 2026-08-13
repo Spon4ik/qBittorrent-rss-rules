@@ -8,6 +8,15 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.12] - 2026-08-13
+
+- Split integration settings into dedicated qBittorrent, Jackett, Real-Debrid,
+  MyJDownloader, Jellyfin, Stremio, and metadata screens whose save/test actions
+  validate and update only provider-owned fields.
+- Preserve unrelated paths and encrypted credentials when testing or saving a
+  different integration.
+- Read signed-in Stremio auth from current Chromium LevelDB records as well as
+  the historical JSON storage representation.
 ## [1.4.11] - 2026-08-13
 
 - Release prep in progress.

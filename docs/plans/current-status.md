@@ -2,6 +2,23 @@
 
 ## Current focus
 
+- Phase 40 provider-isolated settings and Stremio auth discovery is implemented
+  and live-validated as the `v1.4.12` patch candidate
+  (`docs/plans/phase-40-provider-isolated-settings-and-stremio-auth-discovery.md`).
+  Settings now opens a feature hub with distinct qBittorrent, Jackett,
+  Real-Debrid, MyJDownloader, Jellyfin, Stremio, and metadata screens. Each form
+  submits, validates, and updates only fields owned by that provider, preventing
+  unrelated invalid fields or omitted credentials from blocking tests or wiping
+  sibling settings. Stremio auth discovery now supports both historical JSON and
+  current Chromium LevelDB record encoding. The full gate passes with Ruff/mypy
+  clean and `538 passed`; WinUI builds with zero warnings/errors; Docker `/health`
+  serves `v1.4.12`; live Docker Stremio validation resolves local-storage auth and
+  reads `520` items (`318` active); and browser QA proves exact form ownership on
+  all seven screens, zero narrow-screen overflow, and a successful Test Stremio.
+  A final live qBittorrent Test also stays on its dedicated screen with no
+  Stremio fields. The overlapping closeout rebuild exposed stale SQLite WAL/SHM
+  sidecars; they were moved aside recoverably, the DB passes `quick_check` with
+  all `355` rules, and Docker health is green.
 - Phase 39 Real-Debrid live acceleration hardening is implemented and live-
   validated as the `v1.4.11` patch candidate
   (`docs/plans/phase-39-real-debrid-live-acceleration-hardening.md`). The first

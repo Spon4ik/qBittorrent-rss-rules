@@ -38,7 +38,13 @@ from app.schemas import (
     FilterProfileSaveRequest,
     ImportMode,
     JackettSearchRequest,
+    JackettSettingsPayload,
+    JellyfinSettingsPayload,
     MetadataLookupRequest,
+    MetadataSettingsPayload,
+    MyJDownloaderSettingsPayload,
+    QbSettingsPayload,
+    RealDebridSettingsPayload,
     RuleBatchFetchRequest,
     RuleBatchQualityProfileRequest,
     RuleFetchSchedulePayload,
@@ -47,6 +53,7 @@ from app.schemas import (
     SearchQueueRequest,
     SearchViewPreferencesPayload,
     SettingsFormPayload,
+    StremioSettingsPayload,
 )
 from app.services.hover_debug import (
     clear_hover_events,
@@ -404,6 +411,75 @@ def _raw_settings_form_data(form: Any) -> dict[str, Any]:
         "profile_2160p_hdr_include_tokens": form.getlist("profile_2160p_hdr_include_tokens"),
         "profile_2160p_hdr_exclude_tokens": form.getlist("profile_2160p_hdr_exclude_tokens"),
         "default_quality_profile": form.get("default_quality_profile", "plain"),
+    }
+
+
+def _raw_jellyfin_settings_form_data(form: Any) -> dict[str, Any]:
+    return {
+        "jellyfin_db_path": form.get("jellyfin_db_path") or None,
+        "jellyfin_user_name": form.get("jellyfin_user_name") or None,
+        "jellyfin_server_url": form.get("jellyfin_server_url") or None,
+        "jellyfin_api_key": form.get("jellyfin_api_key") or None,
+        "jellyfin_auto_sync_enabled": _bool_from_form(form, "jellyfin_auto_sync_enabled"),
+        "jellyfin_auto_sync_interval_seconds": form.get(
+            "jellyfin_auto_sync_interval_seconds", 30
+        ),
+    }
+
+
+def _raw_stremio_settings_form_data(form: Any) -> dict[str, Any]:
+    return {
+        "stremio_local_storage_path": form.get("stremio_local_storage_path") or None,
+        "stremio_auto_sync_enabled": _bool_from_form(form, "stremio_auto_sync_enabled"),
+        "stremio_auto_sync_interval_seconds": form.get(
+            "stremio_auto_sync_interval_seconds", 30
+        ),
+    }
+
+
+def _raw_myjd_settings_form_data(form: Any) -> dict[str, Any]:
+    return {
+        "myjd_enabled": _bool_from_form(form, "myjd_enabled"),
+        "myjd_email": form.get("myjd_email") or None,
+        "myjd_password": form.get("myjd_password") or None,
+        "myjd_device_id": form.get("myjd_device_id") or None,
+        "myjd_device_name": form.get("myjd_device_name") or None,
+    }
+
+
+def _raw_qb_settings_form_data(form: Any) -> dict[str, Any]:
+    return {
+        "qb_base_url": form.get("qb_base_url") or None,
+        "qb_username": form.get("qb_username") or None,
+        "qb_password": form.get("qb_password") or None,
+    }
+
+
+def _raw_jackett_settings_form_data(form: Any) -> dict[str, Any]:
+    return {
+        "jackett_api_url": form.get("jackett_api_url") or None,
+        "jackett_qb_url": form.get("jackett_qb_url") or None,
+        "jackett_api_key": form.get("jackett_api_key") or None,
+        "jackett_language_overrides_text": form.get("jackett_language_overrides_text", ""),
+    }
+
+
+def _raw_real_debrid_settings_form_data(form: Any) -> dict[str, Any]:
+    return {
+        "real_debrid_enabled": _bool_from_form(form, "real_debrid_enabled"),
+        "real_debrid_webseed_base_url": form.get(
+            "real_debrid_webseed_base_url", "http://127.0.0.1:8000"
+        ),
+        "real_debrid_metadata_wait_seconds": form.get(
+            "real_debrid_metadata_wait_seconds", 120
+        ),
+    }
+
+
+def _raw_metadata_settings_form_data(form: Any) -> dict[str, Any]:
+    return {
+        "metadata_provider": form.get("metadata_provider", "omdb"),
+        "omdb_api_key": form.get("omdb_api_key") or None,
     }
 
 
@@ -2034,7 +2110,100 @@ async def save_settings(
     session.add(settings)
     session.commit()
     return RedirectResponse(
-        url="/settings?message=Settings saved.&level=success",
+        url="/settings/all?message=Settings saved.&level=success",
+        status_code=303,
+    )
+
+
+def _render_provider_settings_page(
+    request: Request,
+    *,
+    provider: str,
+    form_data: dict[str, Any],
+    errors: list[str],
+    message: str | None = None,
+    message_level: str = "info",
+    status_code: int = 400,
+) -> HTMLResponse:
+    provider_titles = {
+        "qbittorrent": "qBittorrent",
+        "jackett": "Jackett",
+        "real-debrid": "Real-Debrid",
+        "myjdownloader": "MyJDownloader",
+        "jellyfin": "Jellyfin",
+        "stremio": "Stremio",
+        "metadata": "Metadata",
+    }
+    return templates.TemplateResponse(
+        request,
+        "settings_provider.html",
+        {
+            "request": request,
+            "page_title": f"{provider_titles[provider]} settings",
+            "provider": provider,
+            "provider_title": provider_titles[provider],
+            "form_data": form_data,
+            "errors": errors,
+            "metadata_choices": ["omdb", "disabled"],
+            "message": message,
+            "message_level": message_level,
+        },
+        status_code=status_code,
+    )
+
+
+@router.post("/settings/{provider}/save", response_class=HTMLResponse)
+async def save_provider_settings(
+    provider: str,
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> Response:
+    form = await request.form()
+    settings = SettingsService.get_or_create(session)
+    try:
+        if provider == "qbittorrent":
+            qb_payload = QbSettingsPayload.model_validate(_raw_qb_settings_form_data(form))
+            SettingsService.apply_qb_payload(settings, qb_payload)
+        elif provider == "jackett":
+            jackett_payload = JackettSettingsPayload.model_validate(
+                _raw_jackett_settings_form_data(form)
+            )
+            SettingsService.apply_jackett_payload(settings, jackett_payload)
+        elif provider == "real-debrid":
+            real_debrid_payload = RealDebridSettingsPayload.model_validate(
+                _raw_real_debrid_settings_form_data(form)
+            )
+            SettingsService.apply_real_debrid_payload(settings, real_debrid_payload)
+        elif provider == "myjdownloader":
+            myjd_payload = MyJDownloaderSettingsPayload.model_validate(
+                _raw_myjd_settings_form_data(form)
+            )
+            SettingsService.apply_myjd_payload(settings, myjd_payload)
+        elif provider == "jellyfin":
+            jellyfin_payload = JellyfinSettingsPayload.model_validate(
+                _raw_jellyfin_settings_form_data(form)
+            )
+            SettingsService.apply_jellyfin_payload(settings, jellyfin_payload)
+        elif provider == "stremio":
+            stremio_payload = StremioSettingsPayload.model_validate(
+                _raw_stremio_settings_form_data(form)
+            )
+            SettingsService.apply_stremio_payload(settings, stremio_payload)
+        elif provider == "metadata":
+            metadata_payload = MetadataSettingsPayload.model_validate(
+                _raw_metadata_settings_form_data(form)
+            )
+            SettingsService.apply_metadata_payload(settings, metadata_payload)
+        else:
+            return JSONResponse({"error": "Unknown settings provider."}, status_code=404)
+    except ValidationError as exc:
+        return JSONResponse(
+            {"errors": [error["msg"] for error in exc.errors()]}, status_code=422
+        )
+    session.add(settings)
+    session.commit()
+    return RedirectResponse(
+        url=f"/settings/{provider}?message=Settings%20saved.&level=success",
         status_code=303,
     )
 
@@ -2045,18 +2214,19 @@ async def connect_real_debrid_settings(
     session: Session = Depends(get_db_session),
 ) -> HTMLResponse:
     form = await request.form()
-    raw_form = _raw_settings_form_data(form)
+    raw_form = _raw_real_debrid_settings_form_data(form)
     try:
-        payload = SettingsFormPayload.model_validate(raw_form)
+        payload = RealDebridSettingsPayload.model_validate(raw_form)
     except ValidationError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="real-debrid",
             form_data=raw_form,
             errors=[error["msg"] for error in exc.errors()],
         )
 
     settings = SettingsService.get_or_create(session)
-    SettingsService.apply_payload(settings, payload)
+    SettingsService.apply_real_debrid_payload(settings, payload)
     settings.real_debrid_connection_status = "authorizing"
     settings.real_debrid_connection_message = "Waiting for device authorization."
     session.add(settings)
@@ -2070,8 +2240,9 @@ async def connect_real_debrid_settings(
         settings.real_debrid_connection_message = str(exc)
         session.add(settings)
         session.commit()
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="real-debrid",
             form_data=SettingsService.to_form_dict(settings),
             errors=[str(exc)],
         )
@@ -2085,8 +2256,9 @@ async def connect_real_debrid_settings(
         "poll_url": f"/api/settings/real-debrid/device/{flow.flow_id}",
         "interval_seconds": flow.interval_seconds,
     }
-    return _render_settings_page(
+    return _render_provider_settings_page(
         request,
+        provider="real-debrid",
         form_data=form_data,
         errors=[],
         message="Authorize this device in Real-Debrid; this page will finish connecting automatically.",
@@ -2259,23 +2431,25 @@ async def test_qb_settings(
     session: Session = Depends(get_db_session),
 ) -> HTMLResponse:
     form = await request.form()
-    raw_form = _raw_settings_form_data(form)
+    raw_form = _raw_qb_settings_form_data(form)
     try:
-        payload = SettingsFormPayload.model_validate(raw_form)
+        payload = QbSettingsPayload.model_validate(raw_form)
     except ValidationError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="qbittorrent",
             form_data=raw_form,
             errors=[error["msg"] for error in exc.errors()],
         )
 
     settings = SettingsService.get_or_create(session)
     temp_settings = _clone_settings(settings)
-    SettingsService.apply_payload(temp_settings, payload)
+    SettingsService.apply_qb_payload(temp_settings, payload)
     connection = SettingsService.resolve_qb_connection(temp_settings)
     if not connection.is_configured:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="qbittorrent",
             form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
             errors=["qBittorrent connection is not fully configured."],
         )
@@ -2285,13 +2459,15 @@ async def test_qb_settings(
         ) as client:
             client.test_connection()
     except QbittorrentClientError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="qbittorrent",
             form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
             errors=[str(exc)],
         )
-    return _render_settings_page(
+    return _render_provider_settings_page(
         request,
+        provider="qbittorrent",
         form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
         errors=[],
         message="qBittorrent connection test succeeded. Test actions do not save settings; use Save Settings before syncing rules.",
@@ -2306,23 +2482,25 @@ async def test_myjdownloader_settings(
     session: Session = Depends(get_db_session),
 ) -> HTMLResponse:
     form = await request.form()
-    raw_form = _raw_settings_form_data(form)
+    raw_form = _raw_myjd_settings_form_data(form)
     try:
-        payload = SettingsFormPayload.model_validate(raw_form)
+        payload = MyJDownloaderSettingsPayload.model_validate(raw_form)
     except ValidationError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="myjdownloader",
             form_data=raw_form,
             errors=[error["msg"] for error in exc.errors()],
         )
 
     settings = SettingsService.get_or_create(session)
     temp_settings = _clone_settings(settings)
-    SettingsService.apply_payload(temp_settings, payload)
+    SettingsService.apply_myjd_payload(temp_settings, payload)
     config = SettingsService.resolve_myjd(temp_settings)
     if not (config.email and config.password):
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="myjdownloader",
             form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
             errors=["MyJDownloader email and password are required."],
         )
@@ -2332,14 +2510,16 @@ async def test_myjdownloader_settings(
             password=config.password,
         )
     except MyJDownloaderError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="myjdownloader",
             form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
             errors=[str(exc)],
         )
     if not devices:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="myjdownloader",
             form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
             errors=["MyJDownloader connected, but no online devices were found."],
         )
@@ -2353,8 +2533,9 @@ async def test_myjdownloader_settings(
     form_data["myjd_devices"] = [
         {"id": device.id, "name": device.name, "type": device.type} for device in devices
     ]
-    return _render_settings_page(
+    return _render_provider_settings_page(
         request,
+        provider="myjdownloader",
         form_data=form_data,
         errors=[],
         message=f"MyJDownloader connection succeeded; selected {selected.name}.",
@@ -2369,23 +2550,25 @@ async def test_jackett_settings(
     session: Session = Depends(get_db_session),
 ) -> HTMLResponse:
     form = await request.form()
-    raw_form = _raw_settings_form_data(form)
+    raw_form = _raw_jackett_settings_form_data(form)
     try:
-        payload = SettingsFormPayload.model_validate(raw_form)
+        payload = JackettSettingsPayload.model_validate(raw_form)
     except ValidationError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="jackett",
             form_data=raw_form,
             errors=[error["msg"] for error in exc.errors()],
         )
 
     settings = SettingsService.get_or_create(session)
     temp_settings = _clone_settings(settings)
-    SettingsService.apply_payload(temp_settings, payload)
+    SettingsService.apply_jackett_payload(temp_settings, payload)
     jackett = SettingsService.resolve_jackett(temp_settings)
     if not jackett.app_ready:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="jackett",
             form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
             errors=["Jackett app URL and API key are both required."],
         )
@@ -2398,14 +2581,16 @@ async def test_jackett_settings(
         )
         client.test_connection()
     except JackettClientError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="jackett",
             form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
             errors=[str(exc)],
         )
 
-    return _render_settings_page(
+    return _render_provider_settings_page(
         request,
+        provider="jackett",
         form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
         errors=[],
         message="Jackett connection test succeeded. Test actions do not save settings; use Save Settings before syncing rules.",
@@ -2420,33 +2605,36 @@ async def test_metadata_settings(
     session: Session = Depends(get_db_session),
 ) -> HTMLResponse:
     form = await request.form()
-    raw_form = _raw_settings_form_data(form)
+    raw_form = _raw_metadata_settings_form_data(form)
     try:
-        payload = SettingsFormPayload.model_validate(raw_form)
+        payload = MetadataSettingsPayload.model_validate(raw_form)
     except ValidationError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="metadata",
             form_data=raw_form,
             errors=[error["msg"] for error in exc.errors()],
         )
 
     settings = SettingsService.get_or_create(session)
     temp_settings = _clone_settings(settings)
-    SettingsService.apply_payload(temp_settings, payload)
+    SettingsService.apply_metadata_payload(temp_settings, payload)
     metadata = SettingsService.resolve_metadata(temp_settings)
 
     try:
         client = MetadataClient(metadata.provider, metadata.api_key)
         client.lookup_by_imdb_id("tt0944947")
     except MetadataLookupError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="metadata",
             form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
             errors=[str(exc)],
         )
 
-    return _render_settings_page(
+    return _render_provider_settings_page(
         request,
+        provider="metadata",
         form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
         errors=[],
         message="Metadata lookup test succeeded.",
@@ -2461,32 +2649,35 @@ async def test_jellyfin_settings(
     session: Session = Depends(get_db_session),
 ) -> HTMLResponse:
     form = await request.form()
-    raw_form = _raw_settings_form_data(form)
+    raw_form = _raw_jellyfin_settings_form_data(form)
     try:
-        payload = SettingsFormPayload.model_validate(raw_form)
+        payload = JellyfinSettingsPayload.model_validate(raw_form)
     except ValidationError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="jellyfin",
             form_data=raw_form,
             errors=[error["msg"] for error in exc.errors()],
         )
 
     settings = SettingsService.get_or_create(session)
     temp_settings = _clone_settings(settings)
-    SettingsService.apply_payload(temp_settings, payload)
+    SettingsService.apply_jellyfin_payload(temp_settings, payload)
 
     try:
         result = JellyfinService(temp_settings).test_connection()
     except JellyfinError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="jellyfin",
             form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
             errors=[str(exc)],
         )
 
     discovered_users = ", ".join(user.username for user in result.users) or "none"
-    return _render_settings_page(
+    return _render_provider_settings_page(
         request,
+        provider="jellyfin",
         form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
         errors=[],
         message=(
@@ -2505,32 +2696,35 @@ async def sync_jellyfin_rule_progress(
     session: Session = Depends(get_db_session),
 ) -> HTMLResponse:
     form = await request.form()
-    raw_form = _raw_settings_form_data(form)
+    raw_form = _raw_jellyfin_settings_form_data(form)
     try:
-        payload = SettingsFormPayload.model_validate(raw_form)
+        payload = JellyfinSettingsPayload.model_validate(raw_form)
     except ValidationError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="jellyfin",
             form_data=raw_form,
             errors=[error["msg"] for error in exc.errors()],
         )
 
     settings = SettingsService.get_or_create(session)
-    SettingsService.apply_payload(settings, payload)
+    SettingsService.apply_jellyfin_payload(settings, payload)
     session.add(settings)
     session.commit()
 
     try:
         execution = execute_jellyfin_sync(session, settings=settings)
     except (JellyfinError, JellyfinSyncBusyError) as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="jellyfin",
             form_data=SettingsService.to_form_dict(settings),
             errors=[str(exc)],
         )
 
-    return _render_settings_page(
+    return _render_provider_settings_page(
         request,
+        provider="jellyfin",
         form_data=SettingsService.to_form_dict(settings),
         errors=execution.top_errors(),
         message=execution.render_message(),
@@ -2546,32 +2740,35 @@ async def test_stremio_settings(
     session: Session = Depends(get_db_session),
 ) -> HTMLResponse:
     form = await request.form()
-    raw_form = _raw_settings_form_data(form)
+    raw_form = _raw_stremio_settings_form_data(form)
     try:
-        payload = SettingsFormPayload.model_validate(raw_form)
+        payload = StremioSettingsPayload.model_validate(raw_form)
     except ValidationError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="stremio",
             form_data=raw_form,
             errors=[error["msg"] for error in exc.errors()],
         )
 
     settings = SettingsService.get_or_create(session)
     temp_settings = _clone_settings(settings)
-    SettingsService.apply_payload(temp_settings, payload)
+    SettingsService.apply_stremio_payload(temp_settings, payload)
 
     try:
         result = StremioService(temp_settings).test_connection()
     except StremioError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="stremio",
             form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
             errors=[str(exc)],
         )
 
     storage_detail = f" Storage: {result.local_storage_path}." if result.local_storage_path else ""
-    return _render_settings_page(
+    return _render_provider_settings_page(
         request,
+        provider="stremio",
         form_data={**SettingsService.to_form_dict(settings), **payload.model_dump(mode="json")},
         errors=[],
         message=(
@@ -2592,32 +2789,35 @@ async def sync_stremio_library_rules(
     session: Session = Depends(get_db_session),
 ) -> HTMLResponse:
     form = await request.form()
-    raw_form = _raw_settings_form_data(form)
+    raw_form = _raw_stremio_settings_form_data(form)
     try:
-        payload = SettingsFormPayload.model_validate(raw_form)
+        payload = StremioSettingsPayload.model_validate(raw_form)
     except ValidationError as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="stremio",
             form_data=raw_form,
             errors=[error["msg"] for error in exc.errors()],
         )
 
     settings = SettingsService.get_or_create(session)
-    SettingsService.apply_payload(settings, payload)
+    SettingsService.apply_stremio_payload(settings, payload)
     session.add(settings)
     session.commit()
 
     try:
         execution = execute_stremio_sync(session, settings=settings)
     except (StremioError, StremioSyncBusyError) as exc:
-        return _render_settings_page(
+        return _render_provider_settings_page(
             request,
+            provider="stremio",
             form_data=SettingsService.to_form_dict(settings),
             errors=[str(exc)],
         )
 
-    return _render_settings_page(
+    return _render_provider_settings_page(
         request,
+        provider="stremio",
         form_data=SettingsService.to_form_dict(settings),
         errors=execution.top_errors(),
         message=execution.render_message(),
@@ -2631,21 +2831,7 @@ async def sync_provider_watch_progress(
     request: Request,
     session: Session = Depends(get_db_session),
 ) -> HTMLResponse:
-    form = await request.form()
-    raw_form = _raw_settings_form_data(form)
-    try:
-        payload = SettingsFormPayload.model_validate(raw_form)
-    except ValidationError as exc:
-        return _render_settings_page(
-            request,
-            form_data=raw_form,
-            errors=[error["msg"] for error in exc.errors()],
-        )
-
     settings = SettingsService.get_or_create(session)
-    SettingsService.apply_payload(settings, payload)
-    session.add(settings)
-    session.commit()
 
     try:
         summary = sync_watch_progress(session, settings=settings)

@@ -830,6 +830,132 @@ class RulesPagePreferencesPayload(BaseModel):
         return cleaned
 
 
+class JellyfinSettingsPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    jellyfin_db_path: str | None = None
+    jellyfin_user_name: str | None = None
+    jellyfin_server_url: str | None = None
+    jellyfin_api_key: str | None = None
+    jellyfin_auto_sync_enabled: bool = True
+    jellyfin_auto_sync_interval_seconds: int = Field(default=30, ge=5, le=3600)
+
+    @field_validator(
+        "jellyfin_db_path",
+        "jellyfin_user_name",
+        "jellyfin_server_url",
+        "jellyfin_api_key",
+        mode="before",
+    )
+    @classmethod
+    def normalize_optional_text_fields(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_optional_text(str(value))
+
+
+class StremioSettingsPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    stremio_local_storage_path: str | None = None
+    stremio_auto_sync_enabled: bool = True
+    stremio_auto_sync_interval_seconds: int = Field(default=30, ge=5, le=3600)
+
+    @field_validator("stremio_local_storage_path", mode="before")
+    @classmethod
+    def normalize_optional_text_fields(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_optional_text(str(value))
+
+
+class MyJDownloaderSettingsPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    myjd_enabled: bool = False
+    myjd_email: str | None = None
+    myjd_password: str | None = None
+    myjd_device_id: str | None = None
+    myjd_device_name: str | None = None
+
+    @field_validator(
+        "myjd_email",
+        "myjd_password",
+        "myjd_device_id",
+        "myjd_device_name",
+        mode="before",
+    )
+    @classmethod
+    def normalize_optional_text_fields(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_optional_text(str(value))
+
+
+class QbSettingsPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    qb_base_url: str | None = None
+    qb_username: str | None = None
+    qb_password: str | None = None
+
+    @field_validator("qb_base_url", "qb_username", "qb_password", mode="before")
+    @classmethod
+    def normalize_optional_text_fields(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_optional_text(str(value))
+
+
+class JackettSettingsPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    jackett_api_url: str | None = None
+    jackett_qb_url: str | None = None
+    jackett_api_key: str | None = None
+    jackett_language_overrides_text: str | None = ""
+
+    @field_validator(
+        "jackett_api_url",
+        "jackett_qb_url",
+        "jackett_api_key",
+        "jackett_language_overrides_text",
+        mode="before",
+    )
+    @classmethod
+    def normalize_optional_text_fields(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_optional_text(str(value))
+
+
+class RealDebridSettingsPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    real_debrid_enabled: bool = False
+    real_debrid_webseed_base_url: str = "http://127.0.0.1:8000"
+    real_debrid_metadata_wait_seconds: int = Field(default=120, ge=30, le=900)
+
+    @field_validator("real_debrid_webseed_base_url", mode="before")
+    @classmethod
+    def normalize_webseed_url(cls, value: str | None) -> str:
+        return _normalize_optional_text(str(value or "")) or "http://127.0.0.1:8000"
+
+
+class MetadataSettingsPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    metadata_provider: MetadataProvider = MetadataProvider.OMDB
+    omdb_api_key: str | None = None
+
+    @field_validator("omdb_api_key", mode="before")
+    @classmethod
+    def normalize_optional_text_fields(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_optional_text(str(value))
+
+
 class RuleBatchFetchRequest(BaseModel):
     run_all: bool = False
     rule_ids: list[str] = Field(default_factory=list)

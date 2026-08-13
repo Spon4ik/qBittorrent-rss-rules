@@ -49,7 +49,11 @@ from tests.jellyfin_test_utils import (
     add_jellyfin_userdata,
     create_jellyfin_test_db,
 )
-from tests.stremio_test_utils import create_stremio_local_storage, stremio_library_item
+from tests.stremio_test_utils import (
+    create_chromium_stremio_local_storage,
+    create_stremio_local_storage,
+    stremio_library_item,
+)
 
 
 def _use_temp_taxonomy(tmp_path: Path, monkeypatch):
@@ -94,7 +98,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.11"
+    assert payload["app_version"] == "1.4.12"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -4898,7 +4902,7 @@ def test_taxonomy_page_renders_editor(app_client) -> None:
 
 
 def test_settings_page_renders_jackett_language_override_editor(app_client) -> None:
-    response = app_client.get("/settings")
+    response = app_client.get("/settings/jackett")
 
     assert response.status_code == 200
     assert "Indexer language overrides" in response.text
@@ -5278,14 +5282,14 @@ def test_settings_uses_taxonomy_bundle_labels_for_builtin_profiles(
     taxonomy_path.write_text(json.dumps(payload), encoding="utf-8")
     quality_filters._clear_quality_taxonomy_cache()
 
-    response = app_client.get("/settings")
+    response = app_client.get("/settings/all")
 
     assert response.status_code == 200
     assert "<th>At Least Full HD</th>" in response.text
 
 
 def test_settings_page_renders_quality_profile_matrix(app_client) -> None:
-    response = app_client.get("/settings")
+    response = app_client.get("/settings/all")
 
     assert response.status_code == 200
     assert 'data-quality-profile-matrix="true"' in response.text
@@ -5300,7 +5304,7 @@ def test_settings_page_renders_quality_profile_matrix(app_client) -> None:
 
 
 def test_settings_page_renders_jellyfin_controls(app_client) -> None:
-    response = app_client.get("/settings")
+    response = app_client.get("/settings/jellyfin")
 
     assert response.status_code == 200
     assert 'name="jellyfin_db_path"' in response.text
@@ -5312,14 +5316,13 @@ def test_settings_page_renders_jellyfin_controls(app_client) -> None:
     assert 'formaction="/api/settings/test-jellyfin"' in response.text
     assert 'formaction="/api/settings/sync-jellyfin"' in response.text
     assert 'formaction="/api/settings/sync-watch-progress"' in response.text
-    assert "Automatic Jellyfin sync runs when the app starts" in response.text
-    assert "Save + Sync Jellyfin Now" in response.text
+    assert "Only Jellyfin fields are submitted" in response.text
+    assert "Save + Sync Jellyfin" in response.text
     assert "Sync Watch Progress" in response.text
-    assert "Auto-sync status:" in response.text
 
 
 def test_settings_page_renders_stremio_controls(app_client) -> None:
-    response = app_client.get("/settings")
+    response = app_client.get("/settings/stremio")
 
     assert response.status_code == 200
     assert 'name="stremio_local_storage_path"' in response.text
@@ -5327,11 +5330,10 @@ def test_settings_page_renders_stremio_controls(app_client) -> None:
     assert 'name="stremio_auto_sync_interval_seconds"' in response.text
     assert 'formaction="/api/settings/test-stremio"' in response.text
     assert 'formaction="/api/settings/sync-stremio"' in response.text
-    assert "Automatic Stremio sync runs when the app starts" in response.text
-    assert "Save + Sync Stremio Now" in response.text
+    assert "Only Stremio fields are submitted" in response.text
+    assert "Save + Sync Stremio" in response.text
     assert "Use this exact URL in Stremio" not in response.text
     assert "Add-on Repository URL box" not in response.text
-    assert "Auto-sync status:" in response.text
 
 
 def test_edit_movie_rule_page_renders_jellyfin_movie_sync_copy(app_client, db_session) -> None:
@@ -6032,6 +6034,66 @@ def test_test_stremio_settings_reports_success(app_client, monkeypatch, tmp_path
     assert "Active movie/series library items: 1 of 1." in response.text
 
 
+def test_stremio_test_ignores_unrelated_invalid_provider_fields(
+    app_client, monkeypatch, tmp_path
+) -> None:
+    storage_path = create_chromium_stremio_local_storage(tmp_path)
+    _install_stremio_api(
+        monkeypatch,
+        items=[stremio_library_item("tt13016388", "3 Body Problem")],
+    )
+
+    response = app_client.post(
+        "/api/settings/test-stremio",
+        data={
+            "stremio_local_storage_path": str(storage_path),
+            "stremio_auto_sync_enabled": "on",
+            "stremio_auto_sync_interval_seconds": "30",
+            "jellyfin_auto_sync_interval_seconds": "not-a-number",
+            "real_debrid_metadata_wait_seconds": "invalid",
+            "myjd_email": "not-an-email",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Stremio connection test succeeded." in response.text
+    assert "Only Stremio fields are submitted" in response.text
+
+
+def test_stremio_save_preserves_unrelated_provider_settings(
+    app_client, db_session, tmp_path
+) -> None:
+    settings = SettingsService.get_or_create(db_session)
+    settings.jellyfin_db_path = r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db"
+    settings.jellyfin_user_name = "Spon4ik"
+    settings.myjd_email = "saved@example.test"
+    settings.myjd_password_encrypted = obfuscate_secret("saved-password")
+    db_session.add(settings)
+    db_session.commit()
+    storage_path = create_chromium_stremio_local_storage(tmp_path)
+
+    response = app_client.post(
+        "/api/settings/stremio/save",
+        data={
+            "stremio_local_storage_path": str(storage_path),
+            "stremio_auto_sync_enabled": "on",
+            "stremio_auto_sync_interval_seconds": "45",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.expire_all()
+    refreshed = db_session.get(AppSettings, "default")
+    assert refreshed is not None
+    assert refreshed.stremio_local_storage_path == str(storage_path)
+    assert refreshed.stremio_auto_sync_interval_seconds == 45
+    assert refreshed.jellyfin_db_path == r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db"
+    assert refreshed.jellyfin_user_name == "Spon4ik"
+    assert refreshed.myjd_email == "saved@example.test"
+    assert reveal_secret(refreshed.myjd_password_encrypted) == "saved-password"
+
+
 def test_test_stremio_settings_compat_path_reports_success(
     app_client, monkeypatch, tmp_path
 ) -> None:
@@ -6183,6 +6245,11 @@ def test_sync_jellyfin_settings_pushes_changed_rules_to_qb_when_configured(
         feed_urls=["http://feed.example/shrinking"],
     )
     db_session.add(rule)
+    settings = SettingsService.get_or_create(db_session)
+    settings.qb_base_url = "http://127.0.0.1:8080"
+    settings.qb_username = "admin"
+    settings.qb_password_encrypted = obfuscate_secret("secret")
+    db_session.add(settings)
     db_session.commit()
 
     pushed_rule_ids: list[str] = []
@@ -6268,6 +6335,12 @@ def test_sync_stremio_settings_pushes_changed_rules_to_qb_when_configured(
         monkeypatch,
         items=[stremio_library_item("tt13016388", "3 Body Problem", item_type="series")],
     )
+    settings = SettingsService.get_or_create(db_session)
+    settings.qb_base_url = "http://127.0.0.1:8080"
+    settings.qb_username = "admin"
+    settings.qb_password_encrypted = obfuscate_secret("secret")
+    db_session.add(settings)
+    db_session.commit()
 
     pushed_rule_ids: list[str] = []
 
@@ -7169,11 +7242,13 @@ def test_real_debrid_device_flow_connects_and_persists_encrypted_tokens(
 
 
 def test_settings_page_renders_phase36_integration_controls(app_client) -> None:
-    response = app_client.get("/settings")
+    response = app_client.get("/settings/real-debrid")
 
     assert response.status_code == 200
     assert 'name="real_debrid_enabled"' in response.text
     assert 'name="real_debrid_metadata_wait_seconds"' in response.text
     assert 'formaction="/api/settings/real-debrid/connect"' in response.text
-    assert 'name="myjd_email"' in response.text
-    assert 'formaction="/api/settings/test-myjdownloader"' in response.text
+    myjd_response = app_client.get("/settings/myjdownloader")
+    assert myjd_response.status_code == 200
+    assert 'name="myjd_email"' in myjd_response.text
+    assert 'formaction="/api/settings/test-myjdownloader"' in myjd_response.text

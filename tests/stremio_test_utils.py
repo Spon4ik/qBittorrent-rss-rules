@@ -25,6 +25,32 @@ def create_stremio_local_storage(
     return storage_path
 
 
+def create_chromium_stremio_local_storage(
+    root: Path,
+    *,
+    auth_key: str = "0123456789abcdef0123456789abcdef0123456789a=",
+    user_id: str = "0123456789abcdef",
+) -> Path:
+    storage_path = (
+        root
+        / "stremio-shell-ng.exe.WebView2"
+        / "EBWebView"
+        / "Default"
+        / "Local Storage"
+        / "leveldb"
+    )
+    storage_path.mkdir(parents=True, exist_ok=True)
+    payload = (
+        '\x00record{"auth":\x03\x00 key\x00\x00i"'
+        + auth_key
+        + '","user":\x00{"_id":"'
+        + user_id
+        + '"}}\x00tail'
+    )
+    (storage_path / "000002.ldb").write_bytes(payload.encode("utf-8"))
+    return storage_path
+
+
 def stremio_library_item(
     item_id: str,
     title: str,

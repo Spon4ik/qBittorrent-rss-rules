@@ -1191,7 +1191,8 @@ def main() -> int:
                 route_specs = [
                     ("/", "rules"),
                     ("/rules/new", "new-rule"),
-                    ("/settings", "settings"),
+                    ("/settings", "settings-hub"),
+                    ("/settings/stremio", "settings-stremio"),
                     ("/taxonomy", "taxonomy"),
                     ("/search", "search"),
                 ]
@@ -1284,7 +1285,7 @@ def main() -> int:
 
             def check_phase_r5_profile_matrix_interactions() -> None:
                 page.goto(
-                    f"{app_base_url}/settings",
+                    f"{app_base_url}/settings/all",
                     wait_until="networkidle",
                     timeout=args.timeout_ms,
                 )

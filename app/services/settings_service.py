@@ -17,7 +17,16 @@ from app.config import (
     reveal_secret,
 )
 from app.models import AppSettings, MetadataProvider, QualityProfile
-from app.schemas import SettingsFormPayload
+from app.schemas import (
+    JackettSettingsPayload,
+    JellyfinSettingsPayload,
+    MetadataSettingsPayload,
+    MyJDownloaderSettingsPayload,
+    QbSettingsPayload,
+    RealDebridSettingsPayload,
+    SettingsFormPayload,
+    StremioSettingsPayload,
+)
 from app.services.metadata import normalize_omdb_api_key
 from app.services.quality_filters import (
     DEFAULT_QUALITY_PROFILE_RULES,
@@ -812,6 +821,87 @@ class SettingsService:
             normalized_omdb_api_key = normalize_omdb_api_key(payload.omdb_api_key)
             if normalized_omdb_api_key:
                 settings.omdb_api_key_encrypted = obfuscate_secret(normalized_omdb_api_key)
+        return settings
+
+    @staticmethod
+    def apply_jellyfin_payload(
+        settings: AppSettings, payload: JellyfinSettingsPayload
+    ) -> AppSettings:
+        settings.jellyfin_db_path = payload.jellyfin_db_path or None
+        settings.jellyfin_user_name = payload.jellyfin_user_name or None
+        settings.jellyfin_server_url = payload.jellyfin_server_url or None
+        settings.jellyfin_auto_sync_enabled = payload.jellyfin_auto_sync_enabled
+        settings.jellyfin_auto_sync_interval_seconds = (
+            payload.jellyfin_auto_sync_interval_seconds
+        )
+        if payload.jellyfin_api_key:
+            settings.jellyfin_api_key_encrypted = obfuscate_secret(payload.jellyfin_api_key)
+        return settings
+
+    @staticmethod
+    def apply_stremio_payload(
+        settings: AppSettings, payload: StremioSettingsPayload
+    ) -> AppSettings:
+        settings.stremio_local_storage_path = payload.stremio_local_storage_path or None
+        settings.stremio_auto_sync_enabled = payload.stremio_auto_sync_enabled
+        settings.stremio_auto_sync_interval_seconds = (
+            payload.stremio_auto_sync_interval_seconds
+        )
+        return settings
+
+    @staticmethod
+    def apply_myjd_payload(
+        settings: AppSettings, payload: MyJDownloaderSettingsPayload
+    ) -> AppSettings:
+        settings.myjd_enabled = bool(payload.myjd_enabled)
+        settings.myjd_email = payload.myjd_email or None
+        settings.myjd_device_id = payload.myjd_device_id or None
+        settings.myjd_device_name = payload.myjd_device_name or None
+        if payload.myjd_password:
+            settings.myjd_password_encrypted = obfuscate_secret(payload.myjd_password)
+        return settings
+
+    @staticmethod
+    def apply_qb_payload(settings: AppSettings, payload: QbSettingsPayload) -> AppSettings:
+        settings.qb_base_url = payload.qb_base_url or None
+        settings.qb_username = payload.qb_username or None
+        if payload.qb_password:
+            settings.qb_password_encrypted = obfuscate_secret(payload.qb_password)
+        return settings
+
+    @staticmethod
+    def apply_jackett_payload(
+        settings: AppSettings, payload: JackettSettingsPayload
+    ) -> AppSettings:
+        settings.jackett_api_url = payload.jackett_api_url or None
+        settings.jackett_qb_url = payload.jackett_qb_url or None
+        settings.jackett_language_overrides = _parse_jackett_language_overrides(
+            payload.jackett_language_overrides_text
+        )
+        if payload.jackett_api_key:
+            settings.jackett_api_key_encrypted = obfuscate_secret(payload.jackett_api_key)
+        return settings
+
+    @staticmethod
+    def apply_real_debrid_payload(
+        settings: AppSettings, payload: RealDebridSettingsPayload
+    ) -> AppSettings:
+        settings.real_debrid_enabled = bool(payload.real_debrid_enabled)
+        settings.real_debrid_webseed_base_url = payload.real_debrid_webseed_base_url.rstrip("/")
+        settings.real_debrid_metadata_wait_seconds = (
+            normalize_real_debrid_metadata_wait_seconds(payload.real_debrid_metadata_wait_seconds)
+        )
+        return settings
+
+    @staticmethod
+    def apply_metadata_payload(
+        settings: AppSettings, payload: MetadataSettingsPayload
+    ) -> AppSettings:
+        settings.metadata_provider = payload.metadata_provider
+        if payload.omdb_api_key:
+            normalized_key = normalize_omdb_api_key(payload.omdb_api_key)
+            if normalized_key:
+                settings.omdb_api_key_encrypted = obfuscate_secret(normalized_key)
         return settings
 
     @staticmethod

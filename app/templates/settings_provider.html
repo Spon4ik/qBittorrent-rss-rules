@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel-head">
+  <div>
+    <p class="eyebrow"><a href="/settings">Settings</a> / {{ provider_title }}</p>
+    <h2>{{ provider_title }} settings</h2>
+    <p class="helper-text">Only {{ provider_title }} fields are submitted from this screen.</p>
+  </div>
+</section>
+
+{% if errors %}<section class="status-panel error" role="alert"><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></section>{% endif %}
+{% if message %}<section class="status-panel {{ message_level }}"><p>{{ message }}</p></section>{% endif %}
+
+<form class="stack" method="post" action="/api/settings/{{ provider }}/save">
+  <section class="form-grid">
+    {% if provider == "qbittorrent" %}
+    <label>Base URL<input type="url" name="qb_base_url" value="{{ form_data.qb_base_url }}" placeholder="http://127.0.0.1:8080" /></label>
+    <label>Username<input type="text" name="qb_username" value="{{ form_data.qb_username }}" autocomplete="username" /></label>
+    <label>Password<input type="password" name="qb_password" autocomplete="current-password" placeholder="{% if form_data.has_saved_qb_password %}Saved locally{% else %}Not set{% endif %}" /></label>
+    {% elif provider == "jackett" %}
+    <label>App URL<input type="url" name="jackett_api_url" value="{{ form_data.jackett_api_url }}" /></label>
+    <label>qBittorrent URL<input type="url" name="jackett_qb_url" value="{{ form_data.jackett_qb_url }}" /></label>
+    <label>API key<input type="password" name="jackett_api_key" placeholder="{% if form_data.has_saved_jackett_key %}Saved locally{% else %}Not set{% endif %}" /></label>
+    <label class="full-span">Indexer language overrides<textarea name="jackett_language_overrides_text" rows="6">{{ form_data.jackett_language_overrides_text }}</textarea></label>
+    {% elif provider == "real-debrid" %}
+    <label class="toggle"><input type="checkbox" name="real_debrid_enabled" {% if form_data.real_debrid_enabled %}checked{% endif %} /><span>Enable search and acceleration</span></label>
+    <label>qBittorrent-reachable web-seed URL<input type="url" name="real_debrid_webseed_base_url" value="{{ form_data.real_debrid_webseed_base_url }}" /></label>
+    <label>Metadata wait (seconds)<input type="number" name="real_debrid_metadata_wait_seconds" min="30" max="900" value="{{ form_data.real_debrid_metadata_wait_seconds }}" /></label>
+    <div><strong>Connection</strong><p class="helper-text">{{ form_data.real_debrid_connection_status or "disconnected" }}{% if form_data.real_debrid_account_username %} as {{ form_data.real_debrid_account_username }}{% endif %}</p>{% if form_data.real_debrid_connection_message %}<p class="helper-text">{{ form_data.real_debrid_connection_message }}</p>{% endif %}</div>
+    {% elif provider == "myjdownloader" %}
+    <label class="toggle"><input type="checkbox" name="myjd_enabled" {% if form_data.myjd_enabled %}checked{% endif %} /><span>Enable fallback</span></label>
+    <label>Email<input type="email" name="myjd_email" value="{{ form_data.myjd_email }}" autocomplete="username" /></label>
+    <label>Password<input type="password" name="myjd_password" autocomplete="current-password" placeholder="{% if form_data.has_saved_myjd_password %}Saved encrypted password{% else %}Not set{% endif %}" /></label>
+    <label>Device ID<input type="text" name="myjd_device_id" value="{{ form_data.myjd_device_id }}" /><input type="hidden" name="myjd_device_name" value="{{ form_data.myjd_device_name }}" /></label>
+    {% elif provider == "jellyfin" %}
+    <label>Database path<input type="text" name="jellyfin_db_path" value="{{ form_data.jellyfin_db_path }}" /></label>
+    <label>Username<input type="text" name="jellyfin_user_name" value="{{ form_data.jellyfin_user_name }}" /></label>
+    <label>Server URL<input type="url" name="jellyfin_server_url" value="{{ form_data.jellyfin_server_url }}" /></label>
+    <label>API key<input type="password" name="jellyfin_api_key" placeholder="{% if form_data.has_saved_jellyfin_key %}Saved key is set{% else %}Not set{% endif %}" /></label>
+    <label class="toggle"><input type="checkbox" name="jellyfin_auto_sync_enabled" {% if form_data.jellyfin_auto_sync_enabled %}checked{% endif %} /><span>Enable automatic sync</span></label>
+    <label>Check interval (seconds)<input type="number" name="jellyfin_auto_sync_interval_seconds" min="5" max="3600" value="{{ form_data.jellyfin_auto_sync_interval_seconds }}" /></label>
+    {% elif provider == "stremio" %}
+    <label class="full-span">Desktop Local Storage LevelDB path<input type="text" name="stremio_local_storage_path" value="{{ form_data.stremio_local_storage_path }}" /><span class="helper-text">Point to the WebView2 <code>Local Storage\leveldb</code> directory. Current Chromium and historical JSON record formats are supported.</span></label>
+    <label class="toggle"><input type="checkbox" name="stremio_auto_sync_enabled" {% if form_data.stremio_auto_sync_enabled %}checked{% endif %} /><span>Enable automatic sync</span></label>
+    <label>Check interval (seconds)<input type="number" name="stremio_auto_sync_interval_seconds" min="5" max="3600" value="{{ form_data.stremio_auto_sync_interval_seconds }}" /></label>
+    {% elif provider == "metadata" %}
+    <label>Provider<select name="metadata_provider">{% for choice in metadata_choices %}<option value="{{ choice }}" {% if form_data.metadata_provider == choice %}selected{% endif %}>{{ choice }}</option>{% endfor %}</select></label>
+    <label>OMDb API key<input type="password" name="omdb_api_key" placeholder="{% if form_data.has_saved_omdb_key %}Saved locally{% else %}Not set{% endif %}" /></label>
+    {% endif %}
+  </section>
+
+  <div class="card-actions">
+    <button type="submit">Save {{ provider_title }}</button>
+    {% if provider == "qbittorrent" %}<button type="submit" formaction="/api/settings/test-qb">Test qBittorrent</button>{% endif %}
+    {% if provider == "jackett" %}<button type="submit" formaction="/api/settings/test-jackett">Test Jackett</button>{% endif %}
+    {% if provider == "real-debrid" %}<button type="submit" formaction="/api/settings/real-debrid/connect">Connect Real-Debrid</button>{% endif %}
+    {% if provider == "real-debrid" and form_data.has_saved_real_debrid_connection %}<button type="submit" formaction="/api/settings/real-debrid/disconnect">Disconnect</button>{% endif %}
+    {% if provider == "myjdownloader" %}<button type="submit" formaction="/api/settings/test-myjdownloader">Test MyJDownloader</button>{% endif %}
+    {% if provider == "jellyfin" %}<button type="submit" formaction="/api/settings/test-jellyfin">Test Jellyfin</button><button type="submit" formaction="/api/settings/sync-jellyfin">Save + Sync Jellyfin</button><button type="submit" formaction="/api/settings/sync-watch-progress">Sync Watch Progress</button>{% endif %}
+    {% if provider == "stremio" %}<button type="submit" formaction="/api/settings/test-stremio">Test Stremio</button><button type="submit" formaction="/api/settings/sync-stremio">Save + Sync Stremio</button>{% endif %}
+    {% if provider == "metadata" %}<button type="submit" formaction="/api/settings/test-metadata">Test Metadata</button>{% endif %}
+  </div>
+</form>
+{% if provider == "real-debrid" and form_data.real_debrid_device_flow %}
+<section class="status-panel" data-real-debrid-device-flow data-poll-url="{{ form_data.real_debrid_device_flow.poll_url }}" data-poll-interval="{{ form_data.real_debrid_device_flow.interval_seconds }}">
+  <div><strong>Authorization code</strong><p><code>{{ form_data.real_debrid_device_flow.user_code }}</code></p></div>
+  <div><a class="button-link" href="{{ form_data.real_debrid_device_flow.direct_verification_url }}" target="_blank" rel="noopener noreferrer">Open Real-Debrid authorization</a><p class="helper-text" data-real-debrid-device-status>Waiting for authorization...</p></div>
+</section>
+{% endif %}
+{% endblock %}

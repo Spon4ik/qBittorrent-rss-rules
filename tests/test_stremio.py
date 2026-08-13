@@ -12,7 +12,11 @@ from app.services.stremio import StremioService, StremioSessionDoesNotExistError
 from app.services.stremio_sync_ops import execute_stremio_sync
 from app.services.watch_progress_sync import WatchProgressSyncSummary
 from app.services.watch_state import WatchProgressRecord
-from tests.stremio_test_utils import create_stremio_local_storage, stremio_library_item
+from tests.stremio_test_utils import (
+    create_chromium_stremio_local_storage,
+    create_stremio_local_storage,
+    stremio_library_item,
+)
 
 
 def _install_stremio_api(
@@ -146,6 +150,29 @@ def test_stremio_service_discovers_auth_from_local_storage(monkeypatch, tmp_path
     assert summary.user_id == "fedcba9876543210"
     assert summary.total_item_count == 1
     assert summary.active_item_count == 1
+
+
+def test_stremio_service_discovers_auth_from_chromium_leveldb_record(
+    monkeypatch, tmp_path
+) -> None:
+    storage_path = create_chromium_stremio_local_storage(
+        tmp_path,
+        auth_key="0123456789abcdef0123456789abcdef0123456789a=",
+        user_id="fedcba9876543210",
+    )
+    _install_stremio_api(
+        monkeypatch,
+        items=[stremio_library_item("tt13016388", "3 Body Problem")],
+    )
+
+    summary = StremioService(
+        AppSettings(id="default", stremio_local_storage_path=str(storage_path))
+    ).test_connection()
+
+    assert summary.auth_source == "local storage"
+    assert summary.local_storage_path == str(storage_path.resolve())
+    assert summary.user_id == "fedcba9876543210"
+    assert summary.total_item_count == 1
 
 
 def test_stremio_collect_watch_progress_reads_movie_and_episode_positions(monkeypatch) -> None:

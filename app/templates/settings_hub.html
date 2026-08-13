@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel-head">
+  <div>
+    <p class="eyebrow">Settings</p>
+    <h2>Choose a feature</h2>
+    <p class="helper-text">Each feature saves and validates only its own fields. Credentials and paths from other integrations are never submitted from these screens.</p>
+  </div>
+</section>
+
+{% if message %}<section class="status-panel {{ message_level }}"><p>{{ message }}</p></section>{% endif %}
+
+<section class="card-grid" aria-label="Feature settings">
+  {% for key, title, description in settings_providers %}
+  <article class="result-card">
+    <h3>{{ title }}</h3>
+    <p class="helper-text">{{ description }}</p>
+    <div class="card-actions"><a class="button-link" href="/settings/{{ key }}">Open {{ title }} settings</a></div>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="status-panel">
+  <div>
+    <strong>Defaults and quality profiles</strong>
+    <p class="helper-text">The legacy combined screen remains available for non-integration defaults while those controls are split in a later cleanup.</p>
+  </div>
+  <a class="button-link" href="/settings/all">Open advanced defaults</a>
+</section>
+{% endblock %}

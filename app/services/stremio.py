@@ -54,9 +54,13 @@ WATCH_PROGRESS_EPISODE_KEY_RE = re.compile(
     r"^(?P<imdb>tt\d{5,12}):S(?P<season>\d{1,2})E(?P<episode>\d{1,2})$",
     re.IGNORECASE,
 )
-STREMIO_AUTH_KEY_RE = re.compile(
+STREMIO_JSON_AUTH_KEY_RE = re.compile(
     r'"auth"\s*:\s*\{.*?"key"\s*:\s*"([^"]+)"',
     re.IGNORECASE | re.DOTALL,
+)
+STREMIO_LEVELDB_AUTH_KEY_RE = re.compile(
+    r'"auth"\s*:\s*key\s*[A-Za-z]?"([A-Za-z0-9_=-]{20,256})"',
+    re.IGNORECASE,
 )
 STREMIO_USER_ID_RE = re.compile(
     r'"auth".*?"user".*?_id.*?([0-9a-f]{16,})',
@@ -505,19 +509,20 @@ class StremioService:
                 continue
             user_match = STREMIO_USER_ID_RE.search(normalized_text)
             user_id = str(user_match.group(1) or "").strip() if user_match else None
-            for auth_match in STREMIO_AUTH_KEY_RE.finditer(normalized_text):
-                auth_key = str(auth_match.group(1) or "").strip()
-                if not auth_key or auth_key in seen_auth_keys:
-                    continue
-                seen_auth_keys.add(auth_key)
-                contexts.append(
-                    StremioAuthContext(
-                        auth_key=auth_key,
-                        source="local storage",
-                        local_storage_path=str(storage_path),
-                        user_id=user_id or None,
+            for auth_pattern in (STREMIO_JSON_AUTH_KEY_RE, STREMIO_LEVELDB_AUTH_KEY_RE):
+                for auth_match in auth_pattern.finditer(normalized_text):
+                    auth_key = str(auth_match.group(1) or "").strip()
+                    if not auth_key or auth_key in seen_auth_keys:
+                        continue
+                    seen_auth_keys.add(auth_key)
+                    contexts.append(
+                        StremioAuthContext(
+                            auth_key=auth_key,
+                            source="local storage",
+                            local_storage_path=str(storage_path),
+                            user_id=user_id or None,
+                        )
                     )
-                )
         if contexts:
             return contexts
         raise StremioError(

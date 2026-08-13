@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
@@ -2316,6 +2316,30 @@ def settings_page(request: Request, session: Session = Depends(get_db_session)) 
         {
             "form_data": SettingsService.to_form_dict(settings),
             "errors": [],
+            "settings_providers": [
+                ("qbittorrent", "qBittorrent", "Connection and queue credentials"),
+                ("jackett", "Jackett", "Search endpoints, API key, and languages"),
+                ("real-debrid", "Real-Debrid", "Cloud search and HTTP acceleration"),
+                ("myjdownloader", "MyJDownloader", "No-metadata fallback device"),
+                ("jellyfin", "Jellyfin", "Database, API, user, and sync"),
+                ("stremio", "Stremio", "Desktop session and library sync"),
+                ("metadata", "Metadata", "OMDb lookup provider"),
+            ],
+        }
+    )
+    return templates.TemplateResponse(request, "settings_hub.html", context)
+
+
+@router.get("/settings/all", response_class=HTMLResponse)
+def all_settings_page(
+    request: Request, session: Session = Depends(get_db_session)
+) -> HTMLResponse:
+    settings = SettingsService.get_or_create(session)
+    context = _base_context(request, "Advanced settings")
+    context.update(
+        {
+            "form_data": SettingsService.to_form_dict(settings),
+            "errors": [],
             "profile_1080p_label": quality_profile_label(QualityProfile.HD_1080P),
             "profile_2160p_hdr_label": quality_profile_label(QualityProfile.UHD_2160P_HDR),
             "quality_choices": quality_profile_choices(),
@@ -2325,6 +2349,38 @@ def settings_page(request: Request, session: Session = Depends(get_db_session)) 
         }
     )
     return templates.TemplateResponse(request, "settings.html", context)
+
+
+@router.get("/settings/{provider}", response_class=HTMLResponse)
+def provider_settings_page(
+    provider: str,
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> HTMLResponse:
+    provider_titles = {
+        "qbittorrent": "qBittorrent",
+        "jackett": "Jackett",
+        "real-debrid": "Real-Debrid",
+        "myjdownloader": "MyJDownloader",
+        "jellyfin": "Jellyfin",
+        "stremio": "Stremio",
+        "metadata": "Metadata",
+    }
+    title = provider_titles.get(provider)
+    if title is None:
+        raise HTTPException(status_code=404, detail="Unknown settings provider.")
+    settings = SettingsService.get_or_create(session)
+    context = _base_context(request, f"{title} settings")
+    context.update(
+        {
+            "provider": provider,
+            "provider_title": title,
+            "form_data": SettingsService.to_form_dict(settings),
+            "errors": [],
+            "metadata_choices": ["omdb", "disabled"],
+        }
+    )
+    return templates.TemplateResponse(request, "settings_provider.html", context)
 
 
 @router.get("/taxonomy", response_class=HTMLResponse)

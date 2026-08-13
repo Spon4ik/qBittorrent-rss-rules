@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented and live-validated as the `v1.4.12` patch candidate.
+Implemented, live-validated, and published as `v1.4.12` on 2026-08-13.
 
 ## Problem
 
@@ -46,7 +46,7 @@ signed-in auth key exists even while Stremio is signed in.
 - [x] The live signed-in Stremio storage passes Test Stremio from Docker.
 - [x] Browser QA proves provider isolation and useful error/success rendering.
 - [x] Full gate, desktop build, Docker rebuild, and `/health` version readback pass.
-- [ ] Phase/status documentation and the patch release are complete.
+- [x] Phase/status documentation and the patch release are complete.
 
 ## Validation evidence
 
@@ -66,3 +66,5 @@ signed-in auth key exists even while Stremio is signed in.
   success message and no Stremio fields. A stale SQLite WAL/SHM state exposed by
   the final overlapping rebuild was moved aside recoverably; `PRAGMA quick_check`
   is `ok`, all `355` rules remain, and Docker health is green.
+- PR `#37` is merged; annotated tag `v1.4.12` is pushed; and the GitHub Release
+  is published.

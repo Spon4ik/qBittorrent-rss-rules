@@ -99,7 +99,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.15"
+    assert payload["app_version"] == "1.4.16"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -156,18 +156,23 @@ def test_acceleration_operations_are_rule_linked_and_finished_hidden_by_default(
     db_session.add_all([error_job, finished_job])
     db_session.commit()
 
-    payload = app_client.get("/api/operations/status").json()
+    global_payload = app_client.get("/api/operations/status").json()
+    assert not [
+        item for item in global_payload["operations"]
+        if item["type"] == "download_acceleration"
+    ]
+    assert global_payload["acceleration_problem_count"] == 1
 
-    acceleration = [item for item in payload["operations"] if item["type"] == "download_acceleration"]
+    payload = app_client.get("/api/acceleration/jobs?status=problems").json()
+
+    acceleration = payload["items"]
     assert len(acceleration) == 1
     assert acceleration[0]["label"] == "Reacher - Real-Debrid acceleration"
     assert acceleration[0]["reference"] == "a" * 12
     assert acceleration[0]["subject"] == ""
     assert acceleration[0]["context_url"] == f"/rules/{rule.id}"
-    assert payload["hidden_finished_count"] == 1
-
-    history = app_client.get("/api/operations/status?show_history=true").json()
-    assert len([item for item in history["operations"] if item["type"] == "download_acceleration"]) == 2
+    history = app_client.get("/api/acceleration/jobs?status=all").json()
+    assert len(history["items"]) == 2
 
 
 def test_acceleration_notification_dismiss_and_codex_maintenance_queue(
@@ -209,7 +214,7 @@ def test_acceleration_notification_dismiss_and_codex_maintenance_queue(
     assert len(list((tmp_path / "requests").glob("*.json"))) == 1
     status_item = next(
         item
-        for item in app_client.get("/api/operations/status").json()["operations"]
+        for item in app_client.get("/api/acceleration/jobs?status=all").json()["items"]
         if item.get("id") == job.id
     )
     assert status_item["codex_request_status"] == "pending"
@@ -218,7 +223,7 @@ def test_acceleration_notification_dismiss_and_codex_maintenance_queue(
     assert dismissed.status_code == 200
     assert not [
         item
-        for item in app_client.get("/api/operations/status").json()["operations"]
+        for item in app_client.get("/api/acceleration/jobs?status=all").json()["items"]
         if item.get("id") == job.id
     ]
 

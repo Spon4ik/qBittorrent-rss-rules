@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="stack acceleration-console" data-acceleration-console>
+  <div class="page-heading-row">
+    <div>
+      <p class="eyebrow">Operations</p>
+      <h2>Real-Debrid acceleration</h2>
+      <p class="helper-text">Torrent-level acceleration history and maintenance. References identify the exact torrent; they are not rule names.</p>
+    </div>
+    <a class="button-link muted" href="/settings/real-debrid">Real-Debrid settings</a>
+  </div>
+  <div class="toolbar acceleration-console-toolbar">
+    <label>Status
+      <select data-acceleration-status-filter>
+        <option value="problems">Needs attention</option>
+        <option value="active">In progress</option>
+        <option value="finished">Finished</option>
+        <option value="all">All</option>
+      </select>
+    </label>
+    <label>Find torrent
+      <input type="search" placeholder="Torrent name or hash" data-acceleration-search />
+    </label>
+    <button type="button" class="button-link muted" data-acceleration-refresh>Refresh</button>
+  </div>
+  <p class="helper-text" data-acceleration-summary>Loading acceleration jobs...</p>
+  <div class="table-wrap">
+    <table class="acceleration-table">
+      <thead><tr><th>Torrent</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+      <tbody data-acceleration-jobs></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

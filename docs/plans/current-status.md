@@ -2,6 +2,15 @@
 
 ## Current focus
 
+- Phase 44 is in implementation
+  (`docs/plans/phase-44-acceleration-operations-console.md`). The global background
+  strip is being narrowed to active progress plus a compact acceleration-problem
+  count; `/acceleration` now centralizes searchable torrent-level history/actions;
+  and exact-infohash variant rows show acceleration state/actions. Focused tests
+  and live 2048x1150 Docker smoke checks pass; Ruff/mypy and all `549` tests
+  pass, and WinUI builds with zero warnings/errors. A real `Ask Codex` request is
+  persisted but remained pending while this task was active, so automatic heartbeat
+  pickup/status readback is explicitly not yet considered validated.
 - Phase 43 background-work lifecycle and rule-workspace density is implemented
   and release-validated for `v1.4.15`
   (`docs/plans/phase-43-background-work-and-variants-density.md`). Real-Debrid

@@ -55,12 +55,13 @@ def test_queue_ui_exposes_only_rule_and_one_time_pause_overrides() -> None:
 
 def test_background_work_ui_has_maintenance_and_message_lifecycle_controls() -> None:
     base_template = BASE_TEMPLATE_PATH.read_text(encoding="utf-8")
+    acceleration_template = (BASE_TEMPLATE_PATH.parent / "acceleration.html").read_text(encoding="utf-8")
     rule_template = RULE_FORM_TEMPLATE_PATH.read_text(encoding="utf-8")
     js = APP_JS_PATH.read_text(encoding="utf-8")
 
-    assert "data-operation-show-history" in base_template
-    assert "data-operation-dismiss-finished" in base_template
-    assert "Ask Codex to fix" in js
+    assert "data-acceleration-problem-link" in base_template
+    assert "data-acceleration-jobs" in acceleration_template
+    assert "Ask Codex" in js
     assert "/ask-codex" in js
     assert "Remove acceleration" in js
     assert "Dismiss" in js
@@ -110,14 +111,29 @@ def test_global_operation_progress_shell_assets_are_present() -> None:
     assert " hidden" not in shell_open_tag
     assert ".operation-progress-shell" in css
     assert "function initOperationProgress" in js
-    assert 'fetch(`/api/operations/status?show_history=' in js
+    assert 'fetch("/api/operations/status"' in js
+    assert 'data-acceleration-problem-link' in template
     assert "/api/acceleration/jobs/" in js
     assert "The torrent and downloaded files will be kept" in js
-    assert 'titleElement.textContent = "Background work finished"' in js
-    assert '"No active operations"' in js
+    assert 'titleElement.textContent = "Background work"' in js
+    assert '"No active progress"' in js
     assert '"operation-progress-starting"' in js
     assert 'data-operation-start-label' in index_template
     assert 'data-operation-start-label' in rule_form_template
+
+
+def test_acceleration_console_and_variant_actions_are_present() -> None:
+    template = (BASE_TEMPLATE_PATH.parent / "acceleration.html").read_text(encoding="utf-8")
+    js = APP_JS_PATH.read_text(encoding="utf-8")
+    css = APP_CSS_PATH.read_text(encoding="utf-8")
+
+    assert 'data-acceleration-console' in template
+    assert 'data-acceleration-status-filter' in template
+    assert 'data-acceleration-jobs' in template
+    assert "function initAccelerationConsole" in js
+    assert "function initVariantAcceleration" in js
+    assert "Ask Codex" in js
+    assert ".acceleration-console-toolbar" in css
 
 
 def test_app_shell_declares_compact_operational_console_contract() -> None:

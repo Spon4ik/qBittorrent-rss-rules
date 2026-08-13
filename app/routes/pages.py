@@ -2330,6 +2330,13 @@ def settings_page(request: Request, session: Session = Depends(get_db_session)) 
     return templates.TemplateResponse(request, "settings_hub.html", context)
 
 
+@router.get("/acceleration", response_class=HTMLResponse)
+def acceleration_page(request: Request) -> HTMLResponse:
+    context = _base_context(request, "Acceleration operations")
+    context.update({"shell_layout": "wide", "content_layout": "wide"})
+    return templates.TemplateResponse(request, "acceleration.html", context)
+
+
 @router.get("/settings/all")
 def legacy_all_settings_page() -> RedirectResponse:
     return RedirectResponse(url="/settings/defaults", status_code=308)

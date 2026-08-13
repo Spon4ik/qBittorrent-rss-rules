@@ -2330,8 +2330,13 @@ def settings_page(request: Request, session: Session = Depends(get_db_session)) 
     return templates.TemplateResponse(request, "settings_hub.html", context)
 
 
-@router.get("/settings/all", response_class=HTMLResponse)
-def all_settings_page(
+@router.get("/settings/all")
+def legacy_all_settings_page() -> RedirectResponse:
+    return RedirectResponse(url="/settings/defaults", status_code=308)
+
+
+@router.get("/settings/defaults", response_class=HTMLResponse)
+def defaults_settings_page(
     request: Request, session: Session = Depends(get_db_session)
 ) -> HTMLResponse:
     settings = SettingsService.get_or_create(session)
@@ -2346,6 +2351,7 @@ def all_settings_page(
             "quality_options": quality_option_choices(),
             "quality_option_groups": quality_option_groups(),
             "metadata_choices": ["omdb", "disabled"],
+            "show_legacy_integrations": False,
         }
     )
     return templates.TemplateResponse(request, "settings.html", context)

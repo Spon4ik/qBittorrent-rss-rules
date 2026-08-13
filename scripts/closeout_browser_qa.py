@@ -1185,6 +1185,98 @@ def main() -> int:
 
             phase7_context: dict[str, str] = {}
 
+            def check_phase_41_persistent_dark_mode() -> None:
+                theme_context = browser.new_context(
+                    viewport={"width": 1180, "height": 900},
+                    color_scheme="dark",
+                )
+                theme_page = theme_context.new_page()
+                try:
+                    theme_page.goto(app_base_url, wait_until="networkidle")
+                    _expect(
+                        theme_page.locator("html").get_attribute("data-theme-preference") == "system",
+                        "Default theme preference should be System.",
+                    )
+                    _expect(
+                        theme_page.locator("html").get_attribute("data-theme") == "dark",
+                        "System theme should follow a dark operating-system preference.",
+                    )
+
+                    toggle = theme_page.locator("[data-theme-toggle]")
+                    _expect(toggle.is_visible(), "Theme control should be visible in the global header.")
+                    toggle.click()
+                    _expect(
+                        theme_page.evaluate("localStorage.getItem('qb-rss-theme')") == "light",
+                        "Light preference should be persisted after the first activation.",
+                    )
+                    toggle.click()
+                    _expect(
+                        theme_page.locator("html").get_attribute("data-theme") == "dark",
+                        "Second activation should select dark mode.",
+                    )
+                    _expect(
+                        theme_page.evaluate("localStorage.getItem('qb-rss-theme')") == "dark",
+                        "Dark preference should be persisted.",
+                    )
+
+                    theme_page.goto(f"{app_base_url}/settings", wait_until="networkidle")
+                    _expect(
+                        theme_page.locator("html").get_attribute("data-theme") == "dark",
+                        "Dark mode should survive navigation and a full document load.",
+                    )
+                    _expect(
+                        theme_page.locator("[data-theme-label]").inner_text() == "Dark",
+                        "Theme control should announce the persisted Dark preference.",
+                    )
+
+                    contrast = theme_page.evaluate(
+                        """
+                        () => {
+                          const rgb = (value) => {
+                            const parts = value.match(/[\\d.]+/g).slice(0, 3).map(Number);
+                            return parts.map((channel) => {
+                              const normalized = channel / 255;
+                              return normalized <= 0.04045
+                                ? normalized / 12.92
+                                : Math.pow((normalized + 0.055) / 1.055, 2.4);
+                            });
+                          };
+                          const luminance = (value) => {
+                            const channels = rgb(value);
+                            return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+                          };
+                          const ratio = (foreground, background) => {
+                            const first = luminance(foreground);
+                            const second = luminance(background);
+                            return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+                          };
+                          const card = getComputedStyle(document.querySelector('.content-card'));
+                          const button = getComputedStyle(document.querySelector('.settings-card .button-link'));
+                          return {
+                            content: ratio(card.color, card.backgroundColor),
+                            action: ratio(button.color, button.backgroundColor),
+                          };
+                        }
+                        """
+                    )
+                    _expect(
+                        contrast["content"] >= 4.5,
+                        f"Dark content contrast should be at least 4.5:1; got {contrast['content']:.2f}:1.",
+                    )
+                    _expect(
+                        contrast["action"] >= 4.5,
+                        f"Dark action contrast should be at least 4.5:1; got {contrast['action']:.2f}:1.",
+                    )
+
+                    for width in (390, 1180, 1720):
+                        theme_page.set_viewport_size({"width": width, "height": 900})
+                        overflow = theme_page.evaluate(
+                            "document.documentElement.scrollWidth - document.documentElement.clientWidth"
+                        )
+                        _expect(overflow <= 1, f"Dark settings layout overflowed at {width}px by {overflow}px.")
+                finally:
+                    theme_context.close()
+
             def check_phase_r4_responsive_layout_foundations() -> None:
                 nonlocal r4_layout_artifacts
 
@@ -1554,6 +1646,14 @@ def main() -> int:
                     """
                 )
                 page.wait_for_timeout(260)
+
+            run_check(
+                "P41-01",
+                "Phase 41",
+                "System, light, and dark themes persist with readable responsive surfaces",
+                check_phase_41_persistent_dark_mode,
+                page=page,
+            )
 
             run_check(
                 "R4-01",

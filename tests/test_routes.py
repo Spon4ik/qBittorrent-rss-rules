@@ -98,7 +98,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.12"
+    assert payload["app_version"] == "1.4.13"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -1365,6 +1365,37 @@ def test_rules_page_filter_state_persists_locally_in_app_js() -> None:
     assert "window.localStorage.removeItem(FILTER_STORAGE_KEY);" in app_js_source
     assert 'window.sessionStorage.setItem(FILTER_RESTORE_FLAG_KEY, "1");' in app_js_source
     assert "filterForm.requestSubmit();" in app_js_source
+
+
+def test_base_shell_exposes_persistent_theme_control(app_client) -> None:
+    response = app_client.get("/settings")
+
+    assert response.status_code == 200
+    assert 'data-theme-toggle' in response.text
+    assert 'data-theme-label>System</span>' in response.text
+    assert 'const storageKey = "qb-rss-theme";' in response.text
+    assert 'document.documentElement.dataset.theme = resolved;' in response.text
+
+
+def test_dark_mode_assets_support_persistence_and_semantic_palette() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    app_js_source = (project_root / "app" / "static" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    app_css_source = (project_root / "app" / "static" / "app.css").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'const THEME_STORAGE_KEY = "qb-rss-theme";' in app_js_source
+    assert 'const THEME_PREFERENCES = ["system", "light", "dark"];' in app_js_source
+    assert 'window.localStorage.setItem(THEME_STORAGE_KEY, normalized);' in app_js_source
+    assert 'media.addEventListener("change"' in app_js_source
+    assert 'initThemeControl();' in app_js_source
+    assert ':root[data-theme="dark"] {' in app_css_source
+    assert 'color-scheme: dark;' in app_css_source
+    assert ':root[data-theme="dark"] input' in app_css_source
+    assert ':root[data-theme="dark"] .rules-data-grid th' in app_css_source
+    assert ':root[data-theme="dark"] .quality-profile-matrix-wrap' in app_css_source
 
 
 def test_inline_local_filters_enforce_query_and_imdb_parity() -> None:
@@ -5282,14 +5313,14 @@ def test_settings_uses_taxonomy_bundle_labels_for_builtin_profiles(
     taxonomy_path.write_text(json.dumps(payload), encoding="utf-8")
     quality_filters._clear_quality_taxonomy_cache()
 
-    response = app_client.get("/settings/all")
+    response = app_client.get("/settings/defaults")
 
     assert response.status_code == 200
     assert "<th>At Least Full HD</th>" in response.text
 
 
 def test_settings_page_renders_quality_profile_matrix(app_client) -> None:
-    response = app_client.get("/settings/all")
+    response = app_client.get("/settings/defaults")
 
     assert response.status_code == 200
     assert 'data-quality-profile-matrix="true"' in response.text
@@ -5301,6 +5332,50 @@ def test_settings_page_renders_quality_profile_matrix(app_client) -> None:
     assert 'name="profile_2160p_hdr_exclude_tokens"' in response.text
     assert 'data-quality-selector="profile-1080-include"' not in response.text
     assert 'data-quality-selector="profile-2160-exclude"' not in response.text
+
+
+def test_defaults_settings_excludes_provider_controls_and_legacy_url_redirects(app_client) -> None:
+    response = app_client.get("/settings/defaults")
+
+    assert response.status_code == 200
+    assert "Defaults and quality profiles" in response.text
+    assert "Manage preset quality filters" in response.text
+    assert 'name="qb_base_url"' not in response.text
+    assert 'name="jellyfin_db_path"' not in response.text
+    assert 'name="stremio_local_storage_path"' not in response.text
+
+    legacy_response = app_client.get("/settings/all", follow_redirects=False)
+    assert legacy_response.status_code == 308
+    assert legacy_response.headers["location"] == "/settings/defaults"
+
+
+def test_saving_defaults_preserves_provider_settings(app_client, db_session) -> None:
+    settings = SettingsService.get_or_create(db_session)
+    settings.qb_base_url = "http://qb-preserved:8080"
+    settings.jellyfin_db_path = r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db"
+    settings.stremio_local_storage_path = r"C:\Users\test\Stremio\leveldb"
+    db_session.commit()
+
+    response = app_client.post(
+        "/api/settings/defaults",
+        data={
+            "series_category_template": "TV/{title}",
+            "movie_category_template": "Films/{title}",
+            "save_path_template": "{media_type}/{title}",
+            "default_enabled": "on",
+            "default_quality_profile": "1080p",
+            "profile_1080p_include_tokens": ["full_hd"],
+            "profile_2160p_hdr_include_tokens": ["ultra_hd"],
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.refresh(settings)
+    assert settings.series_category_template == "TV/{title}"
+    assert settings.qb_base_url == "http://qb-preserved:8080"
+    assert settings.jellyfin_db_path == r"C:\ProgramData\Jellyfin\Server\data\jellyfin.db"
+    assert settings.stremio_local_storage_path == r"C:\Users\test\Stremio\leveldb"
 
 
 def test_settings_page_renders_jellyfin_controls(app_client) -> None:

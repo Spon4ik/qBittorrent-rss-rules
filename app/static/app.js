@@ -2,6 +2,55 @@ function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+const THEME_STORAGE_KEY = "qb-rss-theme";
+const THEME_PREFERENCES = ["system", "light", "dark"];
+const THEME_LABELS = { system: "System", light: "Light", dark: "Dark" };
+const THEME_ICONS = { system: "◐", light: "☀", dark: "☾" };
+
+function resolvedTheme(preference) {
+  if (preference === "dark" || preference === "light") return preference;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyThemePreference(preference, { persist = false } = {}) {
+  const normalized = THEME_PREFERENCES.includes(preference) ? preference : "system";
+  document.documentElement.dataset.themePreference = normalized;
+  document.documentElement.dataset.theme = resolvedTheme(normalized);
+  if (persist) {
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, normalized);
+    } catch (_error) {
+      // Keep the in-memory theme when storage is unavailable.
+    }
+  }
+  const control = document.querySelector("[data-theme-toggle]");
+  if (!control) return;
+  const label = THEME_LABELS[normalized];
+  const icon = control.querySelector("[data-theme-icon]");
+  const labelElement = control.querySelector("[data-theme-label]");
+  if (icon) icon.textContent = THEME_ICONS[normalized];
+  if (labelElement) labelElement.textContent = label;
+  control.setAttribute("aria-label", `Theme: ${label}. Activate to switch theme.`);
+  control.setAttribute("title", `Theme: ${label}`);
+}
+
+function initThemeControl() {
+  const control = document.querySelector("[data-theme-toggle]");
+  if (!control) return;
+  applyThemePreference(document.documentElement.dataset.themePreference || "system");
+  control.addEventListener("click", () => {
+    const current = document.documentElement.dataset.themePreference || "system";
+    const nextIndex = (THEME_PREFERENCES.indexOf(current) + 1) % THEME_PREFERENCES.length;
+    applyThemePreference(THEME_PREFERENCES[nextIndex], { persist: true });
+  });
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  media.addEventListener("change", () => {
+    if (document.documentElement.dataset.themePreference === "system") {
+      applyThemePreference("system");
+    }
+  });
+}
+
 function buildTitleRegexFragment(value) {
   const tokens = (value || "").toLocaleLowerCase().match(/\w+/gu);
   if (!tokens || tokens.length === 0) {
@@ -5702,6 +5751,7 @@ function initRulesPage(container) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  initThemeControl();
   initOperationProgress(document);
   initResultQueueActions(document);
 

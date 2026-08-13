@@ -57,7 +57,7 @@
 <section class="panel-head">
   <div>
     <p class="eyebrow">Settings</p>
-    <h2>Connections and defaults</h2>
+    <h2>Defaults and quality profiles</h2>
   </div>
 </section>
 
@@ -79,9 +79,10 @@
 <form
   class="stack"
   method="post"
-  action="/api/settings"
+  action="/api/settings/defaults"
   data-settings-form
 >
+  {% if show_legacy_integrations %}
   <section class="form-grid">
     <label>
       qBittorrent base URL
@@ -343,6 +344,7 @@
       <span class="helper-text">Music and audiobook providers are selected from the rule form and do not need a saved API key in this phase.</span>
     </label>
   </section>
+  {% endif %}
 
   <section class="stack">
     <label>
@@ -449,11 +451,12 @@
   </section>
 
   <div class="card-actions">
-    <button type="submit">Save Settings</button>
+    <button type="submit">Save defaults and quality profiles</button>
+    {% if show_legacy_integrations %}
     <button type="submit" formaction="/api/settings/test-qb">Test qBittorrent</button>
     <button type="submit" formaction="/api/settings/test-jackett">Test Jackett</button>
     <button type="submit" formaction="/api/settings/test-metadata">Test Metadata</button>
+    {% endif %}
   </div>
-  <p class="helper-text">`Test ...` buttons validate the form values temporarily but do not save them. Rule sync uses the saved settings.</p>
 </form>
 {% endblock %}

@@ -2,6 +2,20 @@
 
 ## Current focus
 
+- Phase 41 persistent dark mode and defaults-page isolation is implemented and
+  live-validated as the `v1.4.13` patch candidate
+  (`docs/plans/phase-41-persistent-dark-mode.md`). The global header now cycles
+  System, Light, and Dark, stores the browser preference, applies it before the
+  stylesheet loads, and follows operating-system changes in System mode. Dark
+  semantic palettes cover forms, tables, cards, status surfaces, navigation,
+  focus states, and the quality-profile matrix. The settings hub now opens a
+  dedicated `/settings/defaults` page containing templates, queue defaults, and
+  `Manage preset quality filters`; legacy `/settings/all` redirects there, and
+  defaults saves preserve every provider-owned field. Ruff/mypy and all `542`
+  tests pass; live Docker serves `v1.4.13`; Playwright confirms theme persistence,
+  the corrected destination, no provider fields, and no horizontal overflow at
+  390/1180/1720px. The WinUI build passes with zero warnings/errors and the final
+  Docker rebuild is healthy. Release publication remains in progress.
 - Phase 40 provider-isolated settings and Stremio auth discovery is implemented,
   live-validated, and published as `v1.4.12`
   (`docs/plans/phase-40-provider-isolated-settings-and-stremio-auth-discovery.md`).

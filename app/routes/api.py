@@ -2089,11 +2089,77 @@ async def move_taxonomy_option_route(
     )
 
 
-@router.post("/settings", response_class=HTMLResponse)
-async def save_settings(
+@router.post("/settings/defaults", response_class=HTMLResponse)
+async def save_default_settings(
     request: Request,
     session: Session = Depends(get_db_session),
 ) -> Response:
+    form = await request.form()
+    settings = SettingsService.get_or_create(session)
+    raw_form = SettingsService.to_form_dict(settings)
+    raw_form.update(
+        {
+            "series_category_template": form.get("series_category_template"),
+            "movie_category_template": form.get("movie_category_template"),
+            "save_path_template": form.get("save_path_template", ""),
+            "default_add_paused": _bool_from_form(form, "default_add_paused"),
+            "default_sequential_download": _bool_from_form(form, "default_sequential_download"),
+            "default_first_last_piece_prio": _bool_from_form(
+                form, "default_first_last_piece_prio"
+            ),
+            "default_enabled": _bool_from_form(form, "default_enabled"),
+            "profile_1080p_include_tokens": form.getlist("profile_1080p_include_tokens"),
+            "profile_1080p_exclude_tokens": form.getlist("profile_1080p_exclude_tokens"),
+            "profile_2160p_hdr_include_tokens": form.getlist(
+                "profile_2160p_hdr_include_tokens"
+            ),
+            "profile_2160p_hdr_exclude_tokens": form.getlist(
+                "profile_2160p_hdr_exclude_tokens"
+            ),
+            "default_quality_profile": form.get("default_quality_profile", "plain"),
+        }
+    )
+    try:
+        payload = SettingsFormPayload.model_validate(raw_form)
+    except ValidationError as exc:
+        return _render_settings_page(
+            request,
+            form_data=raw_form,
+            errors=[error["msg"] for error in exc.errors()],
+        )
+
+    settings.series_category_template = payload.series_category_template
+    settings.movie_category_template = payload.movie_category_template
+    settings.save_path_template = payload.save_path_template
+    settings.default_add_paused = payload.default_add_paused
+    settings.default_sequential_download = payload.default_sequential_download
+    settings.default_first_last_piece_prio = payload.default_first_last_piece_prio
+    settings.default_enabled = payload.default_enabled
+    settings.quality_profile_rules = {
+        QualityProfile.HD_1080P.value: {
+            "include_tokens": payload.profile_1080p_include_tokens,
+            "exclude_tokens": payload.profile_1080p_exclude_tokens,
+        },
+        QualityProfile.UHD_2160P_HDR.value: {
+            "include_tokens": payload.profile_2160p_hdr_include_tokens,
+            "exclude_tokens": payload.profile_2160p_hdr_exclude_tokens,
+        },
+    }
+    settings.default_quality_profile = payload.default_quality_profile
+    session.add(settings)
+    session.commit()
+    return RedirectResponse(
+        url="/settings/defaults?message=Defaults%20and%20quality%20profiles%20saved.&level=success",
+        status_code=303,
+    )
+
+
+@router.post("/settings", response_class=HTMLResponse)
+async def save_legacy_combined_settings(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> Response:
+    """Keep API compatibility for older desktop builds without linking this form in the UI."""
     form = await request.form()
     raw_form = _raw_settings_form_data(form)
     try:
@@ -2104,13 +2170,12 @@ async def save_settings(
             form_data=raw_form,
             errors=[error["msg"] for error in exc.errors()],
         )
-
     settings = SettingsService.get_or_create(session)
     SettingsService.apply_payload(settings, payload)
     session.add(settings)
     session.commit()
     return RedirectResponse(
-        url="/settings/all?message=Settings saved.&level=success",
+        url="/settings/defaults?message=Settings%20saved.&level=success",
         status_code=303,
     )
 

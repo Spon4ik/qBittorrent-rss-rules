@@ -8,6 +8,14 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.13] - 2026-08-13
+
+- Add a persistent global Light, Dark, and System theme control that applies the
+  selected palette before page rendering and follows operating-system changes.
+- Introduce accessible dark palettes for forms, tables, cards, navigation,
+  status surfaces, sticky controls, and responsive layouts.
+- Replace the legacy combined settings destination with a dedicated defaults
+  and quality-profiles screen that cannot overwrite integration settings.
 ## [1.4.12] - 2026-08-13
 
 - Split integration settings into dedicated qBittorrent, Jackett, Real-Debrid,

@@ -4,6 +4,24 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ page_title }} | qBittorrent RSS Rule Manager</title>
+    <script>
+      (() => {
+        const storageKey = "qb-rss-theme";
+        const allowed = new Set(["light", "dark", "system"]);
+        let preference = "system";
+        try {
+          const stored = window.localStorage.getItem(storageKey);
+          if (allowed.has(stored)) preference = stored;
+        } catch (_error) {
+          // Storage can be unavailable in privacy-restricted WebViews.
+        }
+        const resolved = preference === "system"
+          ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+          : preference;
+        document.documentElement.dataset.themePreference = preference;
+        document.documentElement.dataset.theme = resolved;
+      })();
+    </script>
     {% set static_asset_version = static_asset_version | default(request.app.version, true) %}
     <link rel="stylesheet" href="{{ request.url_for('static', path='app.css') }}?v={{ static_asset_version }}" />
   </head>
@@ -26,6 +44,16 @@
           <a href="/import">Import</a>
           <a href="/settings">Settings</a>
           <a href="/taxonomy">Taxonomy</a>
+          <button
+            type="button"
+            class="theme-toggle"
+            data-theme-toggle
+            aria-label="Theme: System. Activate to switch theme."
+            title="Theme: System"
+          >
+            <span data-theme-icon aria-hidden="true">◐</span>
+            <span data-theme-label>System</span>
+          </button>
         </nav>
       </header>
 

@@ -10,7 +10,8 @@
   acceleration pages. Ruff/mypy and all `549` tests pass; the WinUI build has
   zero warnings/errors; Docker `/health` serves `v1.4.17`; and 1180/2048px
   browser checks show zero page overflow with unchanged toolbar height when a
-  menu opens. Release closeout is in progress.
+  menu opens. PR `#42` is merged; annotated tag `v1.4.17` is pushed; and the
+  GitHub Release is published.
 - Phase 44 is in implementation
   (`docs/plans/phase-44-acceleration-operations-console.md`). The global background
   strip is being narrowed to active progress plus a compact acceleration-problem

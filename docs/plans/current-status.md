@@ -2,6 +2,15 @@
 
 ## Current focus
 
+- The `v1.4.17` dark-results UI patch is implemented and live-smoke-tested.
+  Filtered result rows now use the dark palette's readable muted foreground;
+  the Result controls form one responsive toolbar; and indexer/category menus
+  open as floating dark panels without increasing the section height. Before
+  and after screenshots cover the rule results, open menu, Search, and
+  acceleration pages. Ruff/mypy and all `549` tests pass; the WinUI build has
+  zero warnings/errors; Docker `/health` serves `v1.4.17`; and 1180/2048px
+  browser checks show zero page overflow with unchanged toolbar height when a
+  menu opens. Release closeout is in progress.
 - Phase 44 is in implementation
   (`docs/plans/phase-44-acceleration-operations-console.md`). The global background
   strip is being narrowed to active progress plus a compact acceleration-problem

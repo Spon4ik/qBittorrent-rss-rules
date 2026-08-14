@@ -32,6 +32,13 @@ compact Retry/Ask Codex actions. Category or title inference is forbidden.
 
 ## Validation status
 
+- Follow-up `v1.4.17` UI hardening restores readable dark-mode filtered-result
+  text, aligns the rule Result controls responsively, and makes result indexer/
+  category menus overlay the table instead of expanding the sticky toolbar.
+  Live Docker screenshots cover the closed toolbar, open overlay, visible
+  filtered rows, Search page, and acceleration page. The final 1180/2048px
+  checks have zero page overflow and opening a menu leaves the toolbar height
+  unchanged; the full `549`-test gate and zero-warning WinUI build pass.
 - Ruff/mypy and all 549 tests pass; the WinUI build is zero-warning.
 - Live Docker `/acceleration` has zero horizontal overflow at 2048x1150 and renders
   centralized problem rows/actions.

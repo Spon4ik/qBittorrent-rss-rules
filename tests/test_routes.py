@@ -99,7 +99,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.16"
+    assert payload["app_version"] == "1.4.17"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -1496,6 +1496,9 @@ def test_dark_mode_assets_support_persistence_and_semantic_palette() -> None:
     assert 'color-scheme: dark;' in app_css_source
     assert ':root[data-theme="dark"] input' in app_css_source
     assert ':root[data-theme="dark"] .rules-data-grid th' in app_css_source
+    assert ':root[data-theme="dark"] .search-row-filter-blocked td' in app_css_source
+    assert ':root[data-theme="dark"] .search-multiselect-panel' in app_css_source
+    assert 'position: absolute;' in app_css_source
     assert ':root[data-theme="dark"] .quality-profile-matrix-wrap' in app_css_source
 
 

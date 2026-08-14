@@ -10,8 +10,8 @@
   layout height. Left criteria cards and menus now use readable dark surfaces.
   Closed/open screenshots cover every affected control at 1180, 1440, 1720,
   and 2048px. Ruff/mypy and all `549` tests pass; WinUI builds with zero
-  warnings/errors; and Docker `/health` serves `v1.4.18`. Release closeout is
-  in progress.
+  warnings/errors; and Docker `/health` serves `v1.4.18`. PR `#43` is merged;
+  annotated tag `v1.4.18` is pushed; and the GitHub Release is published.
 - The `v1.4.17` dark-results UI patch is implemented and live-smoke-tested.
   Filtered result rows now use the dark palette's readable muted foreground;
   the Result controls form one responsive toolbar; and indexer/category menus

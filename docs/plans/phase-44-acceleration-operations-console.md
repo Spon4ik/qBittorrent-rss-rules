@@ -38,7 +38,8 @@ compact Retry/Ask Codex actions. Category or title inference is forbidden.
   rail. Live measurements show identical indexer/category/queue dropdown Y
   coordinates, unchanged toolbar height with each menu open, zero downstream
   field shift when Language opens, and zero page overflow. Ruff/mypy and all
-  `549` tests pass, WinUI is zero-warning, and Docker serves `v1.4.18`.
+  `549` tests pass, WinUI is zero-warning, and Docker serves `v1.4.18`. PR
+  `#43`, annotated tag `v1.4.18`, and the GitHub Release are published.
 - Follow-up `v1.4.17` UI hardening restores readable dark-mode filtered-result
   text, aligns the rule Result controls responsively, and makes result indexer/
   category menus overlay the table instead of expanding the sticky toolbar.

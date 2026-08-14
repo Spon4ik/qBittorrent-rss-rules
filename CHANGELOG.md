@@ -8,6 +8,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.18] - 2026-08-14
+
+- Merge result filtering and queue defaults into one aligned desktop toolbar.
+- Shorten the paused queue control and restyle Queue options as a normal-case
+  floating disclosure aligned with the indexer and category dropdowns.
+- Apply readable dark surfaces and non-expanding floating menus to the left
+  rule-settings criteria, language, and feed controls.
 ## [1.4.17] - 2026-08-14
 
 - Restore readable dark-mode foregrounds for filtered search-result rows.

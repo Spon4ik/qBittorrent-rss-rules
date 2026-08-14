@@ -290,6 +290,9 @@
 </section>
 {% endif %}
 
+<div class="result-toolbar-row">
+{% set unified_rows = search_run.unified_raw_results or [] %}
+{{ result_view_panel('Unified query results') }}
 <section class="summary-strip" data-result-queue-options>
   <div>
     <p class="eyebrow">Queue to qBittorrent</p>
@@ -299,11 +302,13 @@
   <div class="search-queue-options-grid search-queue-options-grid--compact">
     <label class="toggle">
       <input type="checkbox" data-result-queue-option="paused" {% if queue_defaults.add_paused %}checked{% endif %} />
-      <span>Add paused (uncheck for this Queue only)</span>
+      <span>Queue paused</span>
     </label>
-    <details class="search-queue-advanced">
-      <summary class="search-queue-advanced-summary">Advanced queue options</summary>
-      <div class="search-queue-advanced-grid">
+    <div class="queue-options-field">
+      <span>Queue</span>
+      <details class="search-queue-advanced">
+        <summary class="search-queue-advanced-summary">Queue options</summary>
+        <div class="search-queue-advanced-grid">
         <label class="toggle">
           <input type="checkbox" data-result-queue-option="sequential" {% if queue_defaults.sequential_download %}checked{% endif %} />
           <span>Sequential download</span>
@@ -312,14 +317,13 @@
           <input type="checkbox" data-result-queue-option="first_last_piece_prio" {% if queue_defaults.first_last_piece_prio %}checked{% endif %} />
           <span>First and last pieces first</span>
         </label>
-      </div>
-    </details>
+        </div>
+      </details>
+    </div>
   </div>
   <p class="helper-text" data-result-queue-status aria-live="polite"></p>
 </section>
-
-{% set unified_rows = search_run.unified_raw_results or [] %}
-{{ result_view_panel('Unified query results') }}
+</div>
 <section class="summary-strip search-summary" data-search-summary="combined">
   <div>
     <p class="eyebrow">Unified query results</p>

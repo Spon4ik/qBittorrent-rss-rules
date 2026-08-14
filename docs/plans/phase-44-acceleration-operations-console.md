@@ -32,6 +32,13 @@ compact Retry/Ask Codex actions. Category or title inference is forbidden.
 
 ## Validation status
 
+- Follow-up `v1.4.18` consolidates the result and queue controls into one
+  aligned wide-desktop toolbar, uses compact normal-case queue labels, and
+  extends readable non-expanding dark disclosures to the left rule-settings
+  rail. Live measurements show identical indexer/category/queue dropdown Y
+  coordinates, unchanged toolbar height with each menu open, zero downstream
+  field shift when Language opens, and zero page overflow. Ruff/mypy and all
+  `549` tests pass, WinUI is zero-warning, and Docker serves `v1.4.18`.
 - Follow-up `v1.4.17` UI hardening restores readable dark-mode filtered-result
   text, aligns the rule Result controls responsively, and makes result indexer/
   category menus overlay the table instead of expanding the sticky toolbar.

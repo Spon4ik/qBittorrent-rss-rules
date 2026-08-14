@@ -8,6 +8,12 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.17] - 2026-08-14
+
+- Restore readable dark-mode foregrounds for filtered search-result rows.
+- Align the rule workspace result controls into a deliberate responsive toolbar.
+- Render indexer and category multiselect menus as readable floating panels so
+  opening a menu does not resize the results workspace.
 ## [1.4.16] - 2026-08-14
 
 - Release prep in progress.

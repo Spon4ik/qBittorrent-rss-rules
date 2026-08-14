@@ -2,6 +2,16 @@
 
 ## Current focus
 
+- The `v1.4.18` result-toolbar and left-rail dark-mode follow-up is implemented
+  and live-validated. Result filtering, both local-scope dropdowns, Save sort,
+  `Queue paused`, and `Queue options` now share one wide-desktop row; all three
+  dropdown buttons have the same measured Y coordinate. Queue, indexer,
+  category, language, and feed menus float without changing their containing
+  layout height. Left criteria cards and menus now use readable dark surfaces.
+  Closed/open screenshots cover every affected control at 1180, 1440, 1720,
+  and 2048px. Ruff/mypy and all `549` tests pass; WinUI builds with zero
+  warnings/errors; and Docker `/health` serves `v1.4.18`. Release closeout is
+  in progress.
 - The `v1.4.17` dark-results UI patch is implemented and live-smoke-tested.
   Filtered result rows now use the dark palette's readable muted foreground;
   the Result controls form one responsive toolbar; and indexer/category menus

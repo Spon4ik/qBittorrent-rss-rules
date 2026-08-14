@@ -99,7 +99,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.17"
+    assert payload["app_version"] == "1.4.18"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -1498,6 +1498,7 @@ def test_dark_mode_assets_support_persistence_and_semantic_palette() -> None:
     assert ':root[data-theme="dark"] .rules-data-grid th' in app_css_source
     assert ':root[data-theme="dark"] .search-row-filter-blocked td' in app_css_source
     assert ':root[data-theme="dark"] .search-multiselect-panel' in app_css_source
+    assert ':root[data-theme="dark"] .checkbox-dropdown-menu' in app_css_source
     assert 'position: absolute;' in app_css_source
     assert ':root[data-theme="dark"] .quality-profile-matrix-wrap' in app_css_source
 
@@ -3122,7 +3123,9 @@ def test_edit_rule_page_can_render_inline_search_results(
     assert "data-initial-feed-urls=" in response.text
     assert "Shrinking S01E01" in response.text
     assert "Queue via Rule" in response.text
-    assert "Advanced queue options" in response.text
+    assert "Queue paused" in response.text
+    assert "Queue options" in response.text
+    assert "Advanced queue options" not in response.text
     assert 'data-search-table-wrap="combined"' in response.text
     assert 'data-search-table-sort-field="title"' in response.text
     assert "data-search-view-mode" not in response.text

@@ -49,8 +49,10 @@ def test_queue_ui_exposes_only_rule_and_one_time_pause_overrides() -> None:
 
     assert 'name="default_add_paused"' not in settings_template
     assert "Add paused by default for this rule" in rule_template
-    assert "Add paused (uncheck for this Queue only)" in rule_template
-    assert "Add paused (uncheck for this Queue only)" in search_template
+    assert "Queue paused" in rule_template
+    assert "Queue paused" in search_template
+    assert 'data-result-queue-option="paused"' in rule_template
+    assert 'data-result-queue-option="paused"' in search_template
 
 
 def test_background_work_ui_has_maintenance_and_message_lifecycle_controls() -> None:

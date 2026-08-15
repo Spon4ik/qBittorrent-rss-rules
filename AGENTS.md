@@ -73,7 +73,7 @@ Before ending a meaningful work session:
 
 ## Docker backend runtime
 
-After any code edit, make sure the Docker qBittorrent RSS Rules backend is rebuilt, up to date, and running from the shared Docker Compose file:
+After completing a coherent backend code change, and before considering the task validated or handing it off, make sure the Docker qBittorrent RSS Rules backend is rebuilt, up to date, and running from the shared Docker Compose file. Do not rebuild Docker after every intermediate edit when a targeted local check can validate the current debugging step; rebuild earlier only when reproducing the issue requires the Docker runtime:
 
 ```powershell
 & 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' compose -f C:\Users\nucc\docker-config\docker-compose.yml up --build -d qb-rss-rules

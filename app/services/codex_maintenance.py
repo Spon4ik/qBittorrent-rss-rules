@@ -58,6 +58,8 @@ def queue_acceleration_maintenance_request(
     payload: dict[str, object] = {
         "id": request_id,
         "status": "pending",
+        "mode": "incident",
+        "route": "incident_lead",
         "kind": "real_debrid_acceleration",
         "created_at": created_at,
         "updated_at": created_at,
@@ -69,9 +71,11 @@ def queue_acceleration_maintenance_request(
         "rule_name": rule.rule_name if rule else None,
         "error": redact_sensitive_text(job.last_error),
         "instruction": (
-            "Read AGENTS.md first. Inspect this acceleration job, its linked rule, "
-            "relevant redacted logs, provider/qB runtime state, and downstream effects. "
-            "Diagnose and fix the root cause safely, validate the affected runtime/UI, "
+            "MODE: INCIDENT. Read AGENTS.md first. This request is already classified; "
+            "route it to `incident_lead` and pass this structured payload unchanged as the "
+            "incident evidence. Use deterministic evidence first. Diagnose and fix routine/local "
+            "causes safely. Escalate to `deep_debugger` only through a compact escalation packet "
+            "when material unresolved causal ambiguity remains. Validate the affected runtime/UI, "
             "then update this request with status and result."
         ),
     }

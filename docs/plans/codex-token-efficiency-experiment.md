@@ -52,9 +52,9 @@ Useful result states are `solved`, `design_complete`, `needs_architect`, `needs_
 
 - `scripts/test.sh` and `scripts/test.bat` capture full pytest output in `logs/tests/pytest-last.log` and print a compact JUnit-derived summary by default.
 - `QB_TEST_VERBOSE=1` restores full pytest output only when explicitly needed.
-- From PowerShell, run `& ".\Finalize Backend.cmd" --no-pause` as the backend completion gate: Ruff -> mypy -> pytest -> Docker rebuild -> `/health`. Docker is not rebuilt if deterministic validation fails.
-- PowerShell requires `&` plus a quoted path because `Finalize Backend.cmd` contains spaces.
-- `Update Docker.cmd` remains the independent human double-click / on-demand Docker-only updater; from PowerShell its non-interactive form is `& ".\Update Docker.cmd" --no-pause`.
+- `Finalize-Backend.cmd --no-pause` is the canonical shell-safe backend completion gate: Ruff -> mypy -> pytest -> Docker rebuild -> `/health`. Docker is not rebuilt if deterministic validation fails.
+- `Finalize Backend.cmd` remains the human-friendly underlying entrypoint; the hyphenated wrapper avoids PowerShell quoting/call-operator requirements.
+- `Update-Docker.cmd` is the canonical shell-safe Docker-only updater. `Update Docker.cmd` remains available for direct human double-click use.
 
 ## A/B test protocol
 

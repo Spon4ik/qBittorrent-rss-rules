@@ -11,6 +11,7 @@ $ErrorActionPreference = "Stop"
 $DockerExe = "C:\Program Files\Docker\Docker\resources\bin\docker.exe"
 $DockerDesktopExe = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+$ComposeEnvFile = Join-Path (Split-Path -Parent $ComposeFile) ".env"
 $LogDir = Join-Path $RepoRoot "logs\docker"
 $LogFile = Join-Path $LogDir "update-docker-last.log"
 
@@ -20,6 +21,7 @@ Set-Content -LiteralPath $LogFile -Encoding UTF8 -Value @(
     "Started: $([DateTime]::Now.ToString('s'))",
     "Repository: $RepoRoot",
     "Compose: $ComposeFile",
+    "Environment: $ComposeEnvFile",
     "Service: $Service",
     ""
 )
@@ -78,6 +80,12 @@ try {
         throw "Dockerfile not found in repository '$RepoRoot'."
     }
 
+    $composeBaseArgs = @("compose")
+    if (Test-Path -LiteralPath $ComposeEnvFile) {
+        $composeBaseArgs += @("--env-file", $ComposeEnvFile)
+    }
+    $composeBaseArgs += @("-f", $ComposeFile)
+
     $branch = Get-GitValue -GitArguments @("branch", "--show-current")
     $commit = Get-GitValue -GitArguments @("rev-parse", "--short", "HEAD")
     $gitLabel = if ($branch -and $commit) { "$branch @ $commit" } elseif ($commit) { $commit } else { "unknown" }
@@ -85,6 +93,9 @@ try {
     Write-Host "Updating Docker service '$Service'..."
     Write-Host "Git: $gitLabel"
     Write-Host "Compose: $ComposeFile"
+    if (Test-Path -LiteralPath $ComposeEnvFile) {
+        Write-Host "Environment: $ComposeEnvFile"
+    }
     Add-Log "Git: $gitLabel"
 
     if (-not (Test-DockerEngine)) {
@@ -110,7 +121,8 @@ try {
     }
 
     # Safety check: the shared Compose file must build this checkout, not another clone.
-    $configOutput = & $DockerExe compose -f $ComposeFile config --format json 2>> $LogFile
+    $configArgs = $composeBaseArgs + @("config", "--format", "json")
+    $configOutput = & $DockerExe @configArgs 2>> $LogFile
     if ($LASTEXITCODE -ne 0) {
         throw "Docker Compose configuration validation failed."
     }
@@ -143,9 +155,8 @@ try {
     }
 
     Write-Host "Building and restarting only '$Service' (full output is captured to the log)..."
-    $composeExit = Invoke-DockerLogged -DockerArguments @(
-        "compose", "-f", $ComposeFile, "up", "--build", "-d", $Service
-    )
+    $upArgs = $composeBaseArgs + @("up", "--build", "-d", $Service)
+    $composeExit = Invoke-DockerLogged -DockerArguments $upArgs
     if ($composeExit -ne 0) {
         throw "Docker Compose build/start failed with exit code $composeExit."
     }
@@ -170,7 +181,8 @@ try {
 
     if ($null -eq $healthResponse) {
         Add-Log "Health check timed out: $lastHealthError"
-        [void](Invoke-DockerLogged -DockerArguments @("compose", "-f", $ComposeFile, "ps", $Service))
+        $psArgs = $composeBaseArgs + @("ps", $Service)
+        [void](Invoke-DockerLogged -DockerArguments $psArgs)
         Add-Log "docker logs --tail 80 $Service"
         & $DockerExe logs --tail 80 $Service *>> $LogFile
         throw "Backend did not become healthy at '$HealthUrl' within $HealthTimeoutSeconds seconds."

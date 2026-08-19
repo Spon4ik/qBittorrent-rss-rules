@@ -42,18 +42,22 @@ The WinUI shell (`QbRssRulesDesktop`) embeds `RequiredDesktopBackendAppVersion` 
 - Pass conclusions plus minimal supporting evidence between agents, not the same raw logs or repository dumps repeatedly.
 - Prefer DOM/API/state assertions over screenshots for behavior. Use vision only for genuinely visual defects.
 
-## Subagent routing
+## Model routing and task ownership
 
-Subagents consume extra tokens; delegate only when specialization is cheaper than continuing in the parent.
+Subagents consume extra tokens. Prefer one task owner over a fixed multi-agent pipeline, and do not delegate when the current parent already has the right capability and can finish the task without duplicated context.
 
-- Never run a fixed agent pipeline. Escalate only when the current layer cannot answer the next material question.
-- Use at most two concurrent subagents and parallelize only independent, mostly read-only work.
-- `test_triage` (Luna/low, read-only): classify compact failures and request the smallest next evidence.
-- `explorer` (Terra/medium, read-only): map ownership/execution path only when unclear.
-- `fixer` (Terra/medium): apply the smallest fix after the failure mode is understood; validate narrowly first.
-- `debugger` (GPT-5.6/high, read-only): reserve for unresolved competing hypotheses, non-local causality, or subtle state interactions. It diagnoses; the parent or `fixer` implements.
-- Give subagents distilled handoffs: exact failure, relevant assertion, known code path, unresolved question. Do not ask them to rediscover established facts.
-- Project custom agents must not recursively delegate. If the current Codex surface does not load them, follow the same evidence/escalation policy in the parent thread.
+- **Known task type beats classification.** An application maintenance request with `mode=incident` or `route=incident_lead` is already classified: delegate it once to `incident_lead` and pass the structured payload unchanged.
+- **Human-reported wrong or unexpected existing behavior:** the normal owner is Terra/medium. A Terra/medium-or-stronger parent should own the investigation directly; a cheaper parent should delegate once to `investigator`.
+- **Clear, sufficiently specified feature/change:** the normal owner is Terra/medium. A suitable parent should implement directly; otherwise delegate once to `builder`.
+- **Open-ended product/UX/feature-concept/architecture work:** the normal owner is GPT-5.6/high. If the parent is below that capability, pass the user's original request verbatim to `architect`; the architect designs and a Terra owner normally implements afterward.
+- **Exceptional unresolved debugging:** use `deep_debugger` only when the current owner can state a concrete unresolved question, competing hypotheses, non-local causality, or contradictory evidence. One failed attempt is not sufficient reason to escalate.
+- Do not route routine compact test output through another model merely to classify PASS/FAIL or an obvious local failure; the parent or current owner can consume the deterministic summary directly.
+- Do not paraphrase the user's original request into a speculative diagnosis before handing work to a more capable agent. Send the original request plus only established constraints/evidence.
+- No fixed `triage -> explore -> fix -> debug` ladder. Agents own tasks end to end where safe; use at most two concurrent subagents and parallelize only genuinely independent work.
+- Handoffs should be compact decision packets using the applicable fields: `status` (`solved`, `design_complete`, `needs_architect`, `needs_deep_debugger`, `blocked`), `confidence`, established evidence, decision/root cause, change surface, validation, unresolved question, and escalation reason.
+- Project custom agents must not recursively delegate. The parent performs any justified next dispatch after reading the compact packet.
+
+Practical parent defaults: application-generated incident automation may use Luna/low because classification is explicit; normal human coding/behavior sessions should normally start Terra/medium; long interactive product or architecture discussions should normally start GPT-5.6/high.
 
 ## Ambiguity and Planning
 

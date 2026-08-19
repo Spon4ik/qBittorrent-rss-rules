@@ -72,7 +72,10 @@ function Invoke-DockerNative {
                 & $DockerExe @DockerArguments 1> $null 2> $null
             }
             default {
-                & $DockerExe @DockerArguments 1>> $LogFile 2>> $LogFile
+                # Use one file handle for native output. Redirect stderr into stdout instead
+                # of opening the same log independently for stream 1 and stream 2; Windows
+                # can reject the latter with a sharing violation.
+                & $DockerExe @DockerArguments >> $LogFile 2>&1
             }
         }
         $exitCode = $LASTEXITCODE

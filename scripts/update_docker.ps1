@@ -98,6 +98,19 @@ function Test-DockerEngine {
     return ($result.ExitCode -eq 0)
 }
 
+function Wait-DockerEngine {
+    param([int]$TimeoutSeconds = 120)
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if (Test-DockerEngine) {
+            return $true
+        }
+        Start-Sleep -Seconds 2
+    }
+    return (Test-DockerEngine)
+}
+
 function Invoke-DockerLogged {
     param([Parameter(Mandatory = $true)][string[]]$DockerArguments)
 
@@ -105,6 +118,38 @@ function Invoke-DockerLogged {
     $result = Invoke-DockerNative -DockerArguments $DockerArguments -OutputMode "Log"
     Add-Log "docker exit code: $($result.ExitCode)"
     return $result.ExitCode
+}
+
+function Test-KnownDesktopMountStateFailure {
+    if (-not (Test-Path -LiteralPath $LogFile)) {
+        return $false
+    }
+
+    $tailText = ((Get-Content -LiteralPath $LogFile -Tail 120) -join "`n")
+    return (
+        $tailText -match "error while creating mount source path '/run/desktop/mnt/host/" -and
+        $tailText -match "mkdir /run/desktop/mnt/host/.+: file exists"
+    )
+}
+
+function Restart-DockerDesktopForMountRecovery {
+    Write-Host "Detected a stale Docker Desktop host-mount state; restarting Docker Desktop once..."
+    Add-Log "Detected known Docker Desktop host-mount state failure; attempting one Docker Desktop restart."
+
+    # `docker desktop restart` is Docker Desktop's supported CLI restart operation.
+    $restartResult = Invoke-DockerNative -DockerArguments @("desktop", "restart", "--timeout", "120") -OutputMode "Log"
+    Add-Log "docker desktop restart exit code: $($restartResult.ExitCode)"
+    if ($restartResult.ExitCode -ne 0) {
+        return $false
+    }
+
+    if (-not (Wait-DockerEngine -TimeoutSeconds 120)) {
+        Add-Log "Docker engine did not become ready after Docker Desktop restart."
+        return $false
+    }
+
+    Add-Log "Docker engine is ready after Docker Desktop restart."
+    return $true
 }
 
 function Get-GitValue {
@@ -160,15 +205,7 @@ try {
         Add-Log "Docker engine unavailable; starting Docker Desktop."
         Start-Process -FilePath $DockerDesktopExe | Out-Null
 
-        $dockerDeadline = [DateTime]::UtcNow.AddSeconds(120)
-        while ([DateTime]::UtcNow -lt $dockerDeadline) {
-            Start-Sleep -Seconds 2
-            if (Test-DockerEngine) {
-                break
-            }
-        }
-
-        if (-not (Test-DockerEngine)) {
+        if (-not (Wait-DockerEngine -TimeoutSeconds 120)) {
             throw "Docker engine did not become ready within 120 seconds."
         }
     }
@@ -213,6 +250,15 @@ try {
     Write-Host "Building and restarting only '$Service' (full output is captured to the log)..."
     $upArgs = $composeBaseArgs + @("up", "--build", "-d", $Service)
     $composeExit = Invoke-DockerLogged -DockerArguments $upArgs
+
+    if ($composeExit -ne 0 -and (Test-KnownDesktopMountStateFailure)) {
+        if (Restart-DockerDesktopForMountRecovery) {
+            Write-Host "Retrying Docker Compose once after Docker Desktop restart..."
+            Add-Log "Retrying Compose up once after Docker Desktop restart."
+            $composeExit = Invoke-DockerLogged -DockerArguments $upArgs
+        }
+    }
+
     if ($composeExit -ne 0) {
         throw "Docker Compose build/start failed with exit code $composeExit."
     }

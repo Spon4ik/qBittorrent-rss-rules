@@ -52,8 +52,9 @@ Useful result states are `solved`, `design_complete`, `needs_architect`, `needs_
 
 - `scripts/test.sh` and `scripts/test.bat` capture full pytest output in `logs/tests/pytest-last.log` and print a compact JUnit-derived summary by default.
 - `QB_TEST_VERBOSE=1` restores full pytest output only when explicitly needed.
-- `Finalize Backend.cmd --no-pause` is the backend completion gate: Ruff -> mypy -> pytest -> Docker rebuild -> `/health`. Docker is not rebuilt if deterministic validation fails.
-- `Update Docker.cmd` remains the independent human double-click / on-demand Docker-only updater.
+- From PowerShell, run `& ".\Finalize Backend.cmd" --no-pause` as the backend completion gate: Ruff -> mypy -> pytest -> Docker rebuild -> `/health`. Docker is not rebuilt if deterministic validation fails.
+- PowerShell requires `&` plus a quoted path because `Finalize Backend.cmd` contains spaces.
+- `Update Docker.cmd` remains the independent human double-click / on-demand Docker-only updater; from PowerShell its non-interactive form is `& ".\Update Docker.cmd" --no-pause`.
 
 ## A/B test protocol
 

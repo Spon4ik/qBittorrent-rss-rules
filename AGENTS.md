@@ -95,21 +95,31 @@ Before ending a meaningful work session:
 
 ## Docker backend runtime
 
-After completing a coherent backend code change, and before considering the task validated or handing it off, make sure the Docker qBittorrent RSS Rules backend is rebuilt, up to date, and running from the shared Docker Compose file. Do not rebuild Docker after every intermediate edit when a targeted local check can validate the current debugging step; rebuild earlier only when reproducing the issue requires the Docker runtime:
+After completing a coherent backend code change, and before considering the task validated or handing it off, refresh the Docker qBittorrent RSS Rules backend with the repository's canonical updater. Do not reconstruct the Docker Compose command manually during routine development.
+
+From Codex or another non-interactive shell, run exactly:
 
 ```powershell
-& 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' compose -f C:\Users\nucc\docker-config\docker-compose.yml up --build -d qb-rss-rules
+.\Update Docker.cmd --no-pause
 ```
 
-Then verify the running container serves the current backend:
+For a human on the Docker host, `Update Docker.cmd` can be launched directly from File Explorer; without `--no-pause` it keeps the window open so the result can be read.
 
-```powershell
-Invoke-WebRequest http://127.0.0.1:8000/health
-```
+The updater:
+
+- uses `C:\Users\nucc\docker-config\docker-compose.yml` and rebuilds/restarts only `qb-rss-rules`;
+- uses the known-good Docker Desktop CLI path rather than relying on `PATH`;
+- starts Docker Desktop automatically when the engine is not ready;
+- verifies that the Compose build context points at the checkout from which the updater is running, preventing an accidental rebuild of another clone;
+- captures verbose Docker output in `logs\docker\update-docker-last.log` instead of flooding the model context;
+- waits for `http://127.0.0.1:8000/health` and returns non-zero on build, startup, configuration, or health failure;
+- prints only a concise success result, or a bounded failure tail plus the full log path.
+
+Do not rebuild Docker after every intermediate edit when a targeted local check can validate the current debugging step. Run the updater after a coherent backend change is ready for Docker validation, or earlier only when reproducing the issue requires Docker runtime behavior.
 
 - The shared Compose file path is `C:\Users\nucc\docker-config\docker-compose.yml`; do not create or rely on a repo-local `docker-compose.yml` for this project.
-- Use the full Docker executable path above on this machine because `C:\Windows\System32\docker` may appear earlier in `PATH` and is not the working Docker CLI.
-- If Docker is unavailable or the refresh/health check fails, document the blocker in the session closeout and in `docs/plans/current-status.md`.
+- If the updater reports that the Compose build context does not match the current checkout, update the shared Compose file intentionally before retrying; do not bypass the safety check.
+- If Docker is unavailable or the updater/health check fails, document the blocker in the session closeout and in `docs/plans/current-status.md`.
 
 ## Database location
 

@@ -93,21 +93,31 @@ Before ending a meaningful work session:
 2. Update the active phase plan with completion state, follow-up work, or changed assumptions.
 3. Update `ROADMAP.md` only when phase scope, ordering, or long-term direction changes.
 
-## Docker backend runtime
+## Backend completion gate and Docker runtime
 
-After completing a coherent backend code change, and before considering the task validated or handing it off, refresh the Docker qBittorrent RSS Rules backend with the repository's canonical updater. Do not reconstruct the Docker Compose command manually during routine development.
+After a coherent backend code change is ready for final validation, do not run the local checks and Docker refresh as separate remembered steps. Use the repository's deterministic backend finalizer.
 
 From Codex or another non-interactive shell, run exactly:
 
 ```powershell
-.\Update Docker.cmd --no-pause
+.\Finalize Backend.cmd --no-pause
 ```
 
-For a human on the Docker host, `Update Docker.cmd` can be launched directly from File Explorer; without `--no-pause` it keeps the window open so the result can be read.
+A backend-affecting task is not complete unless this command exits with code 0. The finalizer provides the mechanical chain:
 
-The updater:
+1. runs `scripts\check.bat` (`ruff` -> `mypy` -> pytest);
+2. stops immediately if any deterministic check fails, without rebuilding Docker;
+3. only after all checks pass, runs `Update Docker.cmd --no-pause`;
+4. the Docker updater rebuilds/restarts `qb-rss-rules`, waits for `/health`, and returns non-zero if build, startup, configuration, or health validation fails.
+
+During iterative debugging, continue to run the narrowest targeted tests needed; do **not** run the finalizer after every intermediate edit. Run it once the backend change appears complete and is ready for final validation.
+
+`Update Docker.cmd` remains the canonical on-demand Docker-only command. A human may double-click it after syncing Git on the Docker host, and Codex may use `Update Docker.cmd --no-pause` earlier only when reproducing or validating Docker-specific runtime behavior before the final gate. Do not use the Docker-only updater as a substitute for the finalizer when closing a backend code task.
+
+The Docker updater:
 
 - uses `C:\Users\nucc\docker-config\docker-compose.yml` and rebuilds/restarts only `qb-rss-rules`;
+- uses the shared Compose `.env` file when present;
 - uses the known-good Docker Desktop CLI path rather than relying on `PATH`;
 - starts Docker Desktop automatically when the engine is not ready;
 - verifies that the Compose build context points at the checkout from which the updater is running, preventing an accidental rebuild of another clone;
@@ -115,11 +125,9 @@ The updater:
 - waits for `http://127.0.0.1:8000/health` and returns non-zero on build, startup, configuration, or health failure;
 - prints only a concise success result, or a bounded failure tail plus the full log path.
 
-Do not rebuild Docker after every intermediate edit when a targeted local check can validate the current debugging step. Run the updater after a coherent backend change is ready for Docker validation, or earlier only when reproducing the issue requires Docker runtime behavior.
-
 - The shared Compose file path is `C:\Users\nucc\docker-config\docker-compose.yml`; do not create or rely on a repo-local `docker-compose.yml` for this project.
 - If the updater reports that the Compose build context does not match the current checkout, update the shared Compose file intentionally before retrying; do not bypass the safety check.
-- If Docker is unavailable or the updater/health check fails, document the blocker in the session closeout and in `docs/plans/current-status.md`.
+- If Docker is unavailable or the finalizer/updater/health check fails, document the blocker in the session closeout and in `docs/plans/current-status.md`.
 
 ## Database location
 

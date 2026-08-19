@@ -101,22 +101,24 @@ Before ending a meaningful work session:
 
 After a coherent backend code change is ready for final validation, do not run the local checks and Docker refresh as separate remembered steps. Use the repository's deterministic backend finalizer.
 
-From Codex or another non-interactive shell, run exactly:
+From PowerShell, Codex, or another PowerShell-based non-interactive shell, run exactly:
 
 ```powershell
-.\Finalize Backend.cmd --no-pause
+& ".\Finalize Backend.cmd" --no-pause
 ```
+
+PowerShell requires the call operator (`&`) when invoking a quoted executable/script path that contains spaces. Do not use the unquoted form `./Finalize Backend.cmd ...` or `.\Finalize Backend.cmd ...`.
 
 A backend-affecting task is not complete unless this command exits with code 0. The finalizer provides the mechanical chain:
 
 1. runs `scripts\check.bat` (`ruff` -> `mypy` -> pytest);
 2. stops immediately if any deterministic check fails, without rebuilding Docker;
-3. only after all checks pass, runs `Update Docker.cmd --no-pause`;
+3. only after all checks pass, invokes `Update Docker.cmd --no-pause` internally;
 4. the Docker updater rebuilds/restarts `qb-rss-rules`, waits for `/health`, and returns non-zero if build, startup, configuration, or health validation fails.
 
 During iterative debugging, continue to run the narrowest targeted tests needed; do **not** run the finalizer after every intermediate edit. Run it once the backend change appears complete and is ready for final validation.
 
-`Update Docker.cmd` remains the canonical on-demand Docker-only command. A human may double-click it after syncing Git on the Docker host, and Codex may use `Update Docker.cmd --no-pause` earlier only when reproducing or validating Docker-specific runtime behavior before the final gate. Do not use the Docker-only updater as a substitute for the finalizer when closing a backend code task.
+`Update Docker.cmd` remains the canonical on-demand Docker-only command. A human may double-click it after syncing Git on the Docker host. From PowerShell/Codex, invoke it as `& ".\Update Docker.cmd" --no-pause` when reproducing or validating Docker-specific runtime behavior before the final gate. Do not use the Docker-only updater as a substitute for the finalizer when closing a backend code task.
 
 The Docker updater:
 

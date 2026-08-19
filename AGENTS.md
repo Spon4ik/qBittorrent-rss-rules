@@ -33,6 +33,28 @@ The WinUI shell (`QbRssRulesDesktop`) embeds `RequiredDesktopBackendAppVersion` 
 - Do not broaden scope unless required for correctness, safety, or explicit user request.
 - Identify the likely edit surface before making broader changes.
 
+## Token-efficient debugging
+
+- Prefer deterministic evidence over model interpretation: assertions, exit codes, JUnit, API/DB/DOM/state checks, and small diagnostic scripts.
+- Run the narrowest relevant test first; broaden only after the targeted check passes or cannot explain the failure.
+- Prefer `scripts\test.bat` (Windows) or `scripts/test.sh` (Linux/WSL). They keep full pytest output in `logs/tests/` and print a compact summary. Use `QB_TEST_VERBOSE=1` only when full output is necessary.
+- Do not read full logs to determine PASS/FAIL. If the summary is insufficient, inspect only the relevant failure, stack frames, or filtered log region; deduplicate repeated errors.
+- Pass conclusions plus minimal supporting evidence between agents, not the same raw logs or repository dumps repeatedly.
+- Prefer DOM/API/state assertions over screenshots for behavior. Use vision only for genuinely visual defects.
+
+## Subagent routing
+
+Subagents consume extra tokens; delegate only when specialization is cheaper than continuing in the parent.
+
+- Never run a fixed agent pipeline. Escalate only when the current layer cannot answer the next material question.
+- Use at most two concurrent subagents and parallelize only independent, mostly read-only work.
+- `test_triage` (Luna/low, read-only): classify compact failures and request the smallest next evidence.
+- `explorer` (Terra/medium, read-only): map ownership/execution path only when unclear.
+- `fixer` (Terra/medium): apply the smallest fix after the failure mode is understood; validate narrowly first.
+- `debugger` (GPT-5.6/high, read-only): reserve for unresolved competing hypotheses, non-local causality, or subtle state interactions. It diagnoses; the parent or `fixer` implements.
+- Give subagents distilled handoffs: exact failure, relevant assertion, known code path, unresolved question. Do not ask them to rediscover established facts.
+- Project custom agents must not recursively delegate. If the current Codex surface does not load them, follow the same evidence/escalation policy in the parent thread.
+
 ## Ambiguity and Planning
 
 - If the request is materially ambiguous, underspecified, or has multiple valid implementations, do not start coding immediately.

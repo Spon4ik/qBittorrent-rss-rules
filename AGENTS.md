@@ -101,24 +101,24 @@ Before ending a meaningful work session:
 
 After a coherent backend code change is ready for final validation, do not run the local checks and Docker refresh as separate remembered steps. Use the repository's deterministic backend finalizer.
 
-From PowerShell, Codex, or another PowerShell-based non-interactive shell, run exactly:
+The canonical PowerShell/Codex command is intentionally shell-safe and contains no spaces:
 
 ```powershell
-& ".\Finalize Backend.cmd" --no-pause
+.\Finalize-Backend.cmd --no-pause
 ```
 
-PowerShell requires the call operator (`&`) when invoking a quoted executable/script path that contains spaces. Do not use the unquoted form `./Finalize Backend.cmd ...` or `.\Finalize Backend.cmd ...`.
+`Finalize-Backend.cmd` is a thin compatibility wrapper around the human-friendly `Finalize Backend.cmd`; both execute the same deterministic finalizer. Prefer the hyphenated entrypoint from shells and automation so no quoting or PowerShell call operator is required.
 
 A backend-affecting task is not complete unless this command exits with code 0. The finalizer provides the mechanical chain:
 
 1. runs `scripts\check.bat` (`ruff` -> `mypy` -> pytest);
 2. stops immediately if any deterministic check fails, without rebuilding Docker;
-3. only after all checks pass, invokes `Update Docker.cmd --no-pause` internally;
+3. only after all checks pass, invokes the Docker updater internally;
 4. the Docker updater rebuilds/restarts `qb-rss-rules`, waits for `/health`, and returns non-zero if build, startup, configuration, or health validation fails.
 
 During iterative debugging, continue to run the narrowest targeted tests needed; do **not** run the finalizer after every intermediate edit. Run it once the backend change appears complete and is ready for final validation.
 
-`Update Docker.cmd` remains the canonical on-demand Docker-only command. A human may double-click it after syncing Git on the Docker host. From PowerShell/Codex, invoke it as `& ".\Update Docker.cmd" --no-pause` when reproducing or validating Docker-specific runtime behavior before the final gate. Do not use the Docker-only updater as a substitute for the finalizer when closing a backend code task.
+`Update-Docker.cmd` is the canonical shell/automation Docker-only command. A human may also double-click either `Update-Docker.cmd` or the human-friendly `Update Docker.cmd` after syncing Git on the Docker host. From Codex or PowerShell, use `\.\Update-Docker.cmd --no-pause` only when reproducing or validating Docker-specific runtime behavior before the final gate. Do not use the Docker-only updater as a substitute for the finalizer when closing a backend code task.
 
 The Docker updater:
 

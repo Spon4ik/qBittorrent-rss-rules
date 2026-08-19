@@ -41,17 +41,67 @@ function Show-FailureTail {
     Write-Host "Full log: $LogFile"
 }
 
+function Invoke-DockerNative {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$DockerArguments,
+        [ValidateSet("Log", "Capture", "Discard")][string]$OutputMode = "Log"
+    )
+
+    # Docker/Compose writes ordinary progress messages to stderr. With the script-wide
+    # ErrorActionPreference=Stop, PowerShell can turn those messages into terminating
+    # NativeCommandError records before LASTEXITCODE is inspected. At this boundary,
+    # native stdout/stderr are data; the process exit code is authoritative.
+    $previousErrorActionPreference = $ErrorActionPreference
+    $nativePreferenceVariable = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
+    $hadNativePreference = $null -ne $nativePreferenceVariable
+    $previousNativePreference = if ($hadNativePreference) { $nativePreferenceVariable.Value } else { $null }
+    $stdout = @()
+    $exitCode = 1
+
+    try {
+        $ErrorActionPreference = "Continue"
+        if ($hadNativePreference) {
+            Set-Variable -Name PSNativeCommandUseErrorActionPreference -Value $false
+        }
+
+        switch ($OutputMode) {
+            "Capture" {
+                $stdout = @(& $DockerExe @DockerArguments 2>> $LogFile)
+            }
+            "Discard" {
+                & $DockerExe @DockerArguments 1> $null 2> $null
+            }
+            default {
+                & $DockerExe @DockerArguments 1>> $LogFile 2>> $LogFile
+            }
+        }
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        if ($hadNativePreference) {
+            Set-Variable -Name PSNativeCommandUseErrorActionPreference -Value $previousNativePreference
+        }
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    return [pscustomobject]@{
+        ExitCode = [int]$exitCode
+        StdOut = $stdout
+    }
+}
+
 function Test-DockerEngine {
-    & $DockerExe info --format "{{.ServerVersion}}" *> $null
-    return ($LASTEXITCODE -eq 0)
+    $result = Invoke-DockerNative -DockerArguments @("info", "--format", "{{.ServerVersion}}") -OutputMode "Discard"
+    return ($result.ExitCode -eq 0)
 }
 
 function Invoke-DockerLogged {
     param([Parameter(Mandatory = $true)][string[]]$DockerArguments)
 
     Add-Log ("docker " + ($DockerArguments -join " "))
-    & $DockerExe @DockerArguments *>> $LogFile
-    return $LASTEXITCODE
+    $result = Invoke-DockerNative -DockerArguments $DockerArguments -OutputMode "Log"
+    Add-Log "docker exit code: $($result.ExitCode)"
+    return $result.ExitCode
 }
 
 function Get-GitValue {
@@ -122,11 +172,14 @@ try {
 
     # Safety check: the shared Compose file must build this checkout, not another clone.
     $configArgs = $composeBaseArgs + @("config", "--format", "json")
-    $configOutput = & $DockerExe @configArgs 2>> $LogFile
-    if ($LASTEXITCODE -ne 0) {
-        throw "Docker Compose configuration validation failed."
+    Add-Log ("docker " + ($configArgs -join " "))
+    $configResult = Invoke-DockerNative -DockerArguments $configArgs -OutputMode "Capture"
+    Add-Log "docker config exit code: $($configResult.ExitCode)"
+    if ($configResult.ExitCode -ne 0) {
+        throw "Docker Compose configuration validation failed with exit code $($configResult.ExitCode)."
     }
 
+    $configOutput = @($configResult.StdOut)
     $composeConfig = (($configOutput -join "`n") | ConvertFrom-Json)
     $serviceProperty = $composeConfig.services.PSObject.Properties[$Service]
     if ($null -eq $serviceProperty) {
@@ -183,8 +236,7 @@ try {
         Add-Log "Health check timed out: $lastHealthError"
         $psArgs = $composeBaseArgs + @("ps", $Service)
         [void](Invoke-DockerLogged -DockerArguments $psArgs)
-        Add-Log "docker logs --tail 80 $Service"
-        & $DockerExe logs --tail 80 $Service *>> $LogFile
+        [void](Invoke-DockerLogged -DockerArguments @("logs", "--tail", "80", $Service))
         throw "Backend did not become healthy at '$HealthUrl' within $HealthTimeoutSeconds seconds."
     }
 

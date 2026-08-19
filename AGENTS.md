@@ -118,7 +118,7 @@ A backend-affecting task is not complete unless this command exits with code 0. 
 
 During iterative debugging, continue to run the narrowest targeted tests needed; do **not** run the finalizer after every intermediate edit. Run it once the backend change appears complete and is ready for final validation.
 
-`Update-Docker.cmd` is the canonical shell/automation Docker-only command. A human may also double-click either `Update-Docker.cmd` or the human-friendly `Update Docker.cmd` after syncing Git on the Docker host. From Codex or PowerShell, use `\.\Update-Docker.cmd --no-pause` only when reproducing or validating Docker-specific runtime behavior before the final gate. Do not use the Docker-only updater as a substitute for the finalizer when closing a backend code task.
+`Update-Docker.cmd` is the canonical shell/automation Docker-only command. A human may also double-click either `Update-Docker.cmd` or the human-friendly `Update Docker.cmd` after syncing Git on the Docker host. From Codex or PowerShell, use `.\Update-Docker.cmd --no-pause` only when reproducing or validating Docker-specific runtime behavior before the final gate. Do not use the Docker-only updater as a substitute for the finalizer when closing a backend code task.
 
 The Docker updater:
 

@@ -37,6 +37,7 @@
 ### Current phase track
 
 - Phase 44: acceleration operations console and variant context (in implementation; functional/UI validation passes, automatic `Ask Codex` heartbeat pickup/status readback still pending; `docs/plans/phase-44-acceleration-operations-console.md`)
+- Phase 45: central authoritative backend and multi-PC access (planned only; implementation starts after `experiment/codex-token-efficiency` is merged into `main` and the planning branch is rebased; `docs/plans/phase-45-central-authoritative-backend-multi-pc.md`)
 - Phase 39: Real-Debrid live acceleration hardening (published in `v1.4.11`;
   `docs/plans/phase-39-real-debrid-live-acceleration-hardening.md`)
 - Phase 36: Real-Debrid search and qBittorrent HTTP acceleration (published in `v1.4.0`; authenticated account smoke remains a post-connection check; `docs/plans/phase-36-real-debrid-search-and-qbittorrent-http-acceleration.md`)
@@ -157,6 +158,41 @@ After the three priorities above are established, evaluate these at a higher lev
 - **Property/fuzz coverage for matching rules:** use generated inputs for title normalization, episode/range parsing, quality taxonomy aliases, and pattern generation where combinatorial edge cases are more valuable than additional hand-written examples.
 - **Documentation/context hygiene:** keep active status and phase handoffs compact, move durable architectural invariants into ADRs/contracts, and avoid forcing future agents to reread long release history to understand current work.
 
+### Planned Phase 45 - Central authoritative backend and multi-PC access
+
+Keep code in the public repository but make the always-on NUC/Docker backend the single authority for private rules, SQLite state, schedulers, and provider operations. Other PCs connect as clients over the backend API/Web UI instead of synchronizing `qb_rules.db` or its WAL/SHM files.
+
+Sequencing and branch discipline:
+
+- Do not implement this inside `experiment/codex-token-efficiency`; that branch remains scoped to the current experiment and Phase 44 closeout.
+- The dedicated planning branch `roadmap/central-backend-multi-pc` is intentionally stacked on the experiment because that branch contains the current roadmap. After the experiment is merged, rebase the planning branch onto the updated `main` before starting implementation.
+- Preserve current local-managed-backend behavior as the default/supported single-PC mode; remote-authoritative mode is opt-in.
+
+Implementation direction:
+
+- Promote the already-supported `QB_RSS_DESKTOP_URL` HTTP/HTTPS override into a first-class desktop connection mode with desktop-local persisted endpoint configuration.
+- Separate **local managed backend** and **remote authoritative backend** lifecycle semantics. When a configured remote backend is unreachable, fail closed and report the remote failure; never try to launch a local Python process using the remote hostname.
+- In remote mode, disable local source-freshness watching and local Start/Restart/Shut Down Engine actions. Provider synchronization, schedulers, acceleration, snapshots, and all writes remain owned by the authoritative host.
+- Keep `/health` contract/version/capability validation before the WinUI WebView loads so stale/incompatible clients cannot silently attach to an incompatible server.
+- Use a private network/overlay such as Tailscale or WireGuard, or equivalent firewall-restricted transport, for the initial deployment. Do not make unauthenticated public Internet exposure or router port-forwarding a supported default.
+- Treat server filesystem paths as paths on the authoritative host; remote clients must not imply that client-local Stremio/Jellyfin paths are readable by the server.
+- Keep backup separate from live access. If cloud/NAS/Resilio/Syncthing backup is added, generate a consistent SQLite snapshot first and sync only completed backup artifacts, never the live database files.
+- A later private-Git logical rules/config export may be useful for versioned portability, but it is not the live synchronization mechanism and secrets must stay out of plaintext Git history.
+
+Acceptance criteria:
+
+- PC/client A can create/edit/delete a test rule and PC/client B observes the same persisted authoritative state through ordinary backend requests with no file-copy step;
+- only the NUC/backend owns `qb_rules.db`, provider schedulers, and background operations; remote clients neither create a local database nor duplicate backend jobs;
+- simultaneous client reads and representative writes remain safe because SQLite concurrency stays inside one backend host;
+- a remote outage/reconnect cannot fork state and cannot trigger a local-backend fallback;
+- incompatible backend contract/version/capability checks still fail closed;
+- no credentials or private provider payloads are exposed through client diagnostics;
+- the recommended deployment is not reachable from unintended public interfaces;
+- existing local-managed mode and its startup/shutdown/reconnect behavior remain regression-tested;
+- full backend, WinUI, browser, and live Docker validation gates pass.
+
+Detailed design, safety contract, implementation slices, non-goals, and deterministic validation are tracked in `docs/plans/phase-45-central-authoritative-backend-multi-pc.md`.
+
 Phase 44 detail pointer:
 - Current implementation status, safety contract, UI/API decisions, and the remaining automatic heartbeat acceptance proof are tracked in `docs/plans/phase-44-acceleration-operations-console.md`.
 
@@ -170,7 +206,7 @@ Phase 22 detail pointer:
 - Dated checklist, variant-retention decisions, and validation evidence for the completed `v0.8.2` Stremio patch slice live in `docs/plans/phase-22-stremio-variant-parity-and-local-marking.md`.
 
 Phase 21 detail pointer:
-- Dated checklist, ranking/local-playback decisions, and validation evidence for the current Stremio follow-up slice live in `docs/plans/phase-21-stremio-stream-ordering-and-local-playback.md`.
+- Dated checklist, ranking/local-playback decisions, and validation evidence for the current Stremio follow-up slice live in `docs/plans/phase-21-stremio-stream-ordering-and-qb-backed-local-playback.md`.
 
 Phase 20 detail pointer:
 - Dated checklist, discovery decisions, Stremio-managed rule contract, native addon decisions, and validation evidence are tracked in `docs/plans/phase-20-stremio-library-rule-sync.md`.
@@ -270,7 +306,7 @@ Phase 6 detail pointer:
 - Added a native qB RSS Stremio addon served from the local backend, including manifest delivery, movie/series search catalogs, and IMDb-backed stream lookups powered by the app's own metadata and Jackett search stack.
 - Fixed the final desktop-only addon acceptance issue by simplifying qB RSS stream payloads to the Stremio-compatible contract proven by the real desktop smoke harness, so qB RSS rows now render in the Stremio desktop client for episodes such as `tt33517752:1:1` and `tt33517752:1:4`.
 - Hardened the live addon path by avoiding long-lived caching of empty stream responses, so transient Jackett misses no longer leave the running backend looking broken until a manual restart.
-- Revalidated the slice with `scripts\check.bat` (`262 passed`, `1 skipped`), `scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260328T140235Z/`), `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`), addon HTTP/service smokes, and real Stremio desktop smoke artifacts under `logs/qa/stremio-desktop-smoke-20260328T140625Z/` and `logs/qa/stremio-desktop-smoke-20260328T140706Z/`.
+- Revalidated the slice with `scripts\check.bat` (`262 passed`, `1 skipped`), `scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260328T140235Z/`), `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`), addon HTTP/service smokes, and real Stremio desktop smoke artifacts under `logs/qa/stremio-desktop-smoke-20260328T140625Z/` and `logs/qa/stremio-desktop-smoke-20260328T140706Z/`).
 
 ## Recently released: v0.7.4 (2026-03-27)
 

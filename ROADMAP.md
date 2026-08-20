@@ -23,7 +23,7 @@
 - Phase 25 is now closed and published in `v1.1.3`: qBittorrent RSS Rules no longer hosts the native Stremio addon surface and keeps only Stremio library/watch-progress synchronization, because addon hosting moved to `jackett-stremio-fork`.
 - The `v1.1.3` release published the post-`v1.1.2` contract-roadmap guardrails and qB enforcement-parity diagnostics after the existing `v1.1.2` taxonomy/profile tag.
 - Phase 23 is now closed and release-validated in `v0.9.0` as the Stremio cross-addon aggregation slice, including persisted provider manifests, live Torrentio-compatible provider ingestion inside the local addon, exact-first desktop/result-contract precursors, and real desktop smoke proof for merged provider ordering.
-- Phase 24 remains closed and release-validated in `v0.8.3` as the hotfix for long-running series like `Death in Paradise` and related qB-side search/visibility precursors.
+- Phase 24 remains closed and release-validated in `v0.8.3` as the hotfix for long-running Stremio series lookups that were over-constrained by the original series year, along with early phase 23 qB-side precursors for visibility and search precision.
 - Phase 22 is now closed and release-validated in `v0.8.2` as the Stremio patch slice covering full qB RSS variant retention, global quality-first ordering, and exact-variant local playback marking after the `v0.8.1` release still suppressed rows too aggressively.
 - Phase 21 is now closed and release-validated in `v0.8.1` as the Stremio playback follow-up slice covering qB RSS stream ordering and qB-backed local playback acceleration so predownloaded torrents materially improve Stremio playback.
 - Phase 20 is now closed and release-validated in `v0.8.0` as the Stremio library sync and native addon parity slice, including real desktop proof that qB RSS rows render in Stremio for known items such as `The Beauty`.
@@ -60,7 +60,7 @@
 - Phase 16: desktop build portability and NuGet source cleanup (implemented and release-validated; `docs/plans/phase-16-desktop-build-portability-and-nuget-source-cleanup.md`)
 - Phase 15: repo-local backend startup portability maintenance (implemented and manually validated; `docs/plans/phase-15-repo-local-backend-startup-portability.md`)
 - Phase 14: `v0.7.2` template warning cleanup and release push (implemented and release-validated; `docs/plans/phase-14-v0-7-2-template-warning-cleanup-and-release-push.md`)
-- Phase 13: `v0.7.1` desktop freshness and engine shutdown controls (implemented and release-validated; `docs/plans/phase-13-v0-7-1-desktop-freshness-and-shutdown.md`)
+- Phase 13: `v0.7.1` desktop freshness and engine shutdown controls (implemented and release-validated; `docs/plans/phase-13-v0-7-1-desktop-freshness-and-engine-shutdown.md`)
 - Phase 12: `v0.7.0` catalog-aware Jellyfin floors and missing-only queue selection (implemented and release-validated; `docs/plans/phase-12-v0-7-0-catalog-aware-jellyfin-and-missing-only-queue.md`)
 - Phase 11: `v0.6.1` stabilization and desktop hardening (implemented and release-validated; `docs/plans/phase-11-v0-6-1-stabilization-and-desktop-hardening.md`)
 - Phase 10: WinUI desktop bootstrap baseline + next-version planning (implemented and release-validated in `v0.6.0`)
@@ -291,7 +291,7 @@ Phase 6 detail pointer:
 
 - Shipped the phase-22 Stremio variant-parity follow-up so qB RSS now keeps the broader viable variant set instead of collapsing back to a tiny local-first subset.
 - qB RSS stream rows now sort by quality first and seeds second while exact locally available variants are upgraded in-place to fast local-playback rows instead of hiding the broader fallback set.
-- Revalidated the patch with `scripts\check.bat` (`270 passed`, `1 skipped`), `scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260328T163220Z/`), `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`), addon service/http smokes, and real desktop smoke artifacts under `logs/qa/stremio-desktop-smoke-20260328T162948Z/` and `logs/qa/stremio-desktop-smoke-20260328T163111Z/`).
+- Revalidated the patch with `scripts\check.bat` (`270 passed`, `1 skipped`), `scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260328T163220Z/`), `scripts\run_dev.bat desktop-build` (`0 Warning(s)`, `0 Error(s)`), addon service/http smokes, and real desktop smoke artifacts under `logs/qa/stremio-desktop-smoke-20260328T162948Z/` and `logs/qa/stremio-desktop-smoke-20260328T163111Z/`
 
 ## Release-validated: v0.8.1 (2026-03-28)
 

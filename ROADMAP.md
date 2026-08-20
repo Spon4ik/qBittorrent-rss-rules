@@ -1,9 +1,11 @@
 # Roadmap
 
-## Current release state: v1.4.11 published; Phase 39 complete
+## Current release state: v1.4.18 published; Phase 44 in implementation
 
 ### Validated locally
 
+- Phase 44 acceleration operations console and exact-infohash variant context is implemented and live-smoke-tested; automatic `Ask Codex` heartbeat pickup/status readback remains the final pending end-to-end validation before the phase can close (`docs/plans/phase-44-acceleration-operations-console.md`).
+- `v1.4.18` is published with the result-toolbar and left-rail dark-mode follow-up. Live browser measurements confirm aligned result/queue dropdown controls, non-reflowing dropdown overlays, readable dark surfaces, and zero horizontal overflow across the validated desktop viewport matrix.
 - Phase 39 hardens the first authenticated Real-Debrid acceleration run by
   bounding and prioritizing scheduler work, falling back from rejected public
   metainfo to a tracker-free magnet, committing web-seed mappings before
@@ -34,6 +36,7 @@
 
 ### Current phase track
 
+- Phase 44: acceleration operations console and variant context (in implementation; functional/UI validation passes, automatic `Ask Codex` heartbeat pickup/status readback still pending; `docs/plans/phase-44-acceleration-operations-console.md`)
 - Phase 39: Real-Debrid live acceleration hardening (published in `v1.4.11`;
   `docs/plans/phase-39-real-debrid-live-acceleration-hardening.md`)
 - Phase 36: Real-Debrid search and qBittorrent HTTP acceleration (published in `v1.4.0`; authenticated account smoke remains a post-connection check; `docs/plans/phase-36-real-debrid-search-and-qbittorrent-http-acceleration.md`)
@@ -66,6 +69,96 @@
 - Phase 6: Jackett-backed active search workspace (implemented and release-validated in v0.2.0; follow-up polish completed, deeper persistence still deferred)
 - Phase 4: feed selection UX improvements (implemented, automated closeout validated)
 - Phase 5: media-aware rule form and multi-provider metadata lookup (implemented, automated closeout validated)
+
+### Near-term engineering improvements (after Phase 44 closeout)
+
+Do not bypass the remaining Phase 44 acceptance work to start these. First prove the real automatic `Ask Codex` heartbeat pickup/status-readback path end to end, then take the following improvements one at a time in priority order.
+
+#### 1. Automatic UI invariants
+
+Turn recurring visual/layout checks into deterministic browser assertions so geometry regressions fail locally without requiring a human or an LLM to inspect screenshots.
+
+Implementation direction:
+
+- Build reusable Playwright helpers for element geometry and layout invariants using `getBoundingClientRect()`, computed styles, visibility/state, `scrollWidth/clientWidth`, and before/after measurements.
+- Start with the `v1.4.18` result toolbar because its intended behavior is already known and manually/live measured:
+  - controls that share a row must have the same top coordinate within a small tolerance;
+  - controls intended to share a height must remain equal-height within tolerance;
+  - opening indexer/category/queue dropdowns must not change toolbar height;
+  - opening an overlay must not move the following content block;
+  - no affected viewport may gain horizontal page overflow.
+- Run the invariant set across the relevant responsive matrix. Desktop row-alignment assertions should apply only where the responsive layout is expected to remain a row; mobile/wrapped layouts should have their own invariants rather than forcing desktop geometry.
+- On failure, save a compact JSON metrics artifact plus a screenshot and, where useful, a crop of the affected region.
+- Use Pillow/OpenCV or pixel-diff checks only for properties that DOM geometry/state cannot prove reliably, such as unexpected color/theme rendering, clipping artifacts, or image-level regressions. Do not use computer vision as the primary alignment detector when browser geometry is authoritative.
+- Integrate the reusable assertions into the existing browser QA tooling rather than creating a parallel screenshot framework.
+- Update `docs/testing.md` when the invariant layer becomes a maintained release gate.
+
+Acceptance criteria:
+
+- the `v1.4.18` toolbar/dropdown behavior has permanent regression coverage;
+- a deliberate 2-3 px alignment/reflow regression fails deterministically without image interpretation;
+- failures produce bounded machine-readable metrics and useful visual evidence;
+- the same assertion helpers can be reused by later UI fixes without copying large blocks of Playwright code.
+
+#### 2. Modularize `closeout_browser_qa.py`
+
+Reduce maintenance and model-context cost by splitting the existing large browser closeout harness along stable responsibilities while preserving its current behavior, CLI entry point, reports, and artifacts.
+
+Implementation direction:
+
+- Keep `scripts/closeout_browser_qa.py` as a thin compatibility entry point while extracting reusable modules incrementally; do not rewrite the whole harness at once.
+- Prefer a structure equivalent to:
+  - runner/reporting orchestration;
+  - reusable assertions (`geometry`, `overflow`, `overlays`, later selective visual checks);
+  - service fixtures/mocks for qBittorrent and Jackett;
+  - page/workspace helpers for rules, search, acceleration, and shared navigation;
+  - scenario modules for cohesive workflows such as result-toolbar layout, dark mode, hover overlays, and search-to-rule handoff.
+- Extract code when it is touched by new work so each step stays small and reviewable.
+- Preserve deterministic IDs, exit semantics, report JSON/Markdown shape, and existing failure artifacts unless a deliberate migration is planned.
+- Add focused tests for extracted helpers where a pure/unit-level contract is possible, especially geometry comparison, tolerance handling, artifact naming, and report aggregation.
+- Avoid building a generic test framework beyond the project's needs; the goal is reusable project QA, not abstraction for its own sake.
+
+Acceptance criteria:
+
+- the existing closeout command remains backward compatible;
+- the main script becomes primarily orchestration rather than containing all fixtures, assertions, and scenarios inline;
+- new UI regression coverage can normally be added through a small scenario plus reusable assertions;
+- browser QA failures remain easy to locate from the report without reading the entire harness or raw logs.
+
+#### 3. Structured evidence for the automatic debugger / `Ask Codex`
+
+Move recurring diagnostic reduction into deterministic application/tooling code so Codex receives a compact evidence bundle instead of spending model context rediscovering basic facts from raw logs.
+
+Implementation direction:
+
+- Define a versioned structured evidence schema for maintenance requests. Include only fields that materially help diagnosis, such as failure class, component/operation, app version, relevant entity identity, expected vs observed state, bounded recent events, deterministic probe results, suggested reproduction/tests, and redaction metadata.
+- Run cheap deterministic probes before dispatch whenever possible: provider reachability, persisted job state, mapping existence, qB/webseed state, recent operation status, relevant configuration presence, and other failure-class-specific checks.
+- Keep full logs as referenced artifacts when needed, but send bounded excerpts or normalized events by default rather than bulk log text.
+- Preserve Phase 44's existing redaction, deduplication, and exact-scope safety contracts. Use a stable failure fingerprint so repeated equivalent failures can deduplicate without collapsing materially different incidents.
+- Add explicit payload-size budgets and tests that secrets/credentials/private payloads cannot leak into the evidence bundle.
+- Store the generated evidence in a form that can be inspected independently of the LLM request so a developer can reproduce what Codex actually received.
+- Measure whether recurring incidents can be diagnosed from the bundle without reading broad application logs; escalate to additional evidence only when the compact bundle is insufficient.
+
+Acceptance criteria:
+
+- equivalent recurring failures generate bounded, stable, redacted evidence bundles;
+- no credential or private provider payload is included in normal dispatch evidence;
+- common incidents reach Codex with enough deterministic state to start at hypothesis/fix work rather than log triage;
+- raw-log reading becomes an escalation path rather than the default debugging input.
+
+### Further engineering improvements
+
+After the three priorities above are established, evaluate these at a higher level rather than starting them all at once:
+
+- **Tiered/affected validation:** map changed areas to fast targeted checks, then retain the full release gate for closeout; avoid running expensive browser/provider coverage when a deterministic smaller gate is sufficient.
+- **Selective visual regression:** add stable pixel/image baselines only for genuinely visual surfaces such as dark-theme colors, clipping, and rendering artifacts; mask dynamic content and keep tolerances explicit.
+- **QA artifact index:** generate one compact machine-readable summary linking failed assertions, metrics, screenshots, logs, videos, and runtime/version metadata so both humans and agents can navigate evidence without scanning directories.
+- **Performance budgets:** add bounded timing/size budgets for high-cost browser flows, snapshot rendering, provider calls, and background operations to catch regressions before they become behavioral complaints.
+- **Property/fuzz coverage for matching rules:** use generated inputs for title normalization, episode/range parsing, quality taxonomy aliases, and pattern generation where combinatorial edge cases are more valuable than additional hand-written examples.
+- **Documentation/context hygiene:** keep active status and phase handoffs compact, move durable architectural invariants into ADRs/contracts, and avoid forcing future agents to reread long release history to understand current work.
+
+Phase 44 detail pointer:
+- Current implementation status, safety contract, UI/API decisions, and the remaining automatic heartbeat acceptance proof are tracked in `docs/plans/phase-44-acceleration-operations-console.md`.
 
 Phase 24 detail pointer:
 - Dated checklist, regression evidence, and scope for the active `v0.8.3` long-running series hotfix live in `docs/plans/phase-24-stremio-long-running-series-year-hotfix.md`.

@@ -32,6 +32,7 @@ def configured_app_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("QB_RULES_JELLYFIN_USER_NAME", raising=False)
     monkeypatch.delenv("QB_RULES_OMDB_API_KEY", raising=False)
     monkeypatch.setenv("QB_RULES_ENABLE_RULE_FETCH_SCHEDULER", "0")
+    monkeypatch.setenv("QB_RULES_ENABLE_FUNCTIONAL_WATCHDOG", "0")
     monkeypatch.setenv("QB_RULES_ENABLE_JELLYFIN_AUTO_SYNC_SCHEDULER", "0")
     monkeypatch.setenv("QB_RULES_ENABLE_STREMIO_AUTO_SYNC_SCHEDULER", "0")
 

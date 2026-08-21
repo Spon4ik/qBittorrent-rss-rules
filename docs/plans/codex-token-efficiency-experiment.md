@@ -83,6 +83,8 @@ During iteration, rerun only the relevant focused check/phase. After it passes, 
 
 The current quarantine is deliberately narrow. It covers legacy checks whose August 2026 failures are mechanically stale (for example selectors waiting on controls that are present but intentionally hidden, or a removed handoff action). Result-count and other semantic P5/P6 failures are not automatically excused; they remain actionable until separately audited or replaced.
 
+Live Windows validation on 2026-08-21 confirmed the wrapper selected the repository environment and executed only `P44-03`: `PASS P44-03 (2297 ms): OK`. The focused run wrote `logs/qa/browser-focus-20260821T101956Z/browser-qa-report.json` and did not invoke the legacy broad suite. This is the baseline behavior expected for future UI-debugging iterations.
+
 ## A/B test protocol
 
 Compare `main` with `experiment/codex-token-efficiency`. Use fresh Codex chats and the same starting repository state for comparable runs.

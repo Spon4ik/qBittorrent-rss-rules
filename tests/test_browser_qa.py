@@ -8,6 +8,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import browser_qa  # noqa: E402
+import ui_suite_qa  # noqa: E402
 
 WINDOWS_WRAPPER = SCRIPTS_DIR / "browser_qa.bat"
 SHELL_WRAPPER = SCRIPTS_DIR / "browser_qa.sh"
@@ -41,6 +42,10 @@ def test_selection_expands_dependencies_in_registry_order() -> None:
     assert browser_qa.resolve_selection(
         check_ids=["NEXT-01"], phases=None, specs=specs
     ) == ["BASE-01", "NEXT-01"]
+
+
+def test_ui_suite_registers_generic_interaction_check() -> None:
+    assert list(ui_suite_qa.UI_CHECK_SPECS) == ["UI-01", "UI-02", "UI-03", "UI-04"]
 
 
 def test_legacy_classifier_marks_dependency_cascades_blocked() -> None:

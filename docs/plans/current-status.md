@@ -2,14 +2,18 @@
 
 ## Current focus
 
-- The `v1.4.19` Result controls toolbar regression is implemented and browser
-  validated. Indexer scope, Media category, and Queue options now share one
-  dismissal contract: outside click, Escape, and opening a sibling menu close
-  the active menu. A broad grid-placement selector had overlaid Sequential
-  download with First and last pieces first; the paused-toggle placement is
-  now explicitly scoped, so both options remain visible and functional.
-  Deterministic Playwright checks cover state dismissal, desktop alignment,
-  no menu-induced layout reflow, both queue options, and narrow-screen overflow.
+- The `v1.4.20` qB diagnostics rule-header repair is implemented and UI-QA
+  validated. Opening the diagnostics disclosure had removed it from the
+  rule-header flex flow, letting `space-between` move the unrelated command
+  bar by 573px at 1720px and 901px at 2048px. The disclosure now retains its
+  flex slot while only its contents overlay; the maintained UI suite passes
+  all four checks. WinUI builds with zero warnings/errors. Release closeout is
+  currently blocked by unrelated full-suite test isolation: two fresh
+  finalizer runs each had 571 passing tests but failed different route tests
+  with stale unique `rules.rule_name` / `app_settings.id` rows; either failing
+  test passes alone, and a late queued test sync also attempted to decrypt a
+  secret after fixture cleanup. Do not publish `v1.4.20` until that
+  scheduler/fixture-state leak is repaired and the finalizer passes.
 - The `v1.4.18` result-toolbar and left-rail dark-mode follow-up is implemented
   and live-validated. Result filtering, both local-scope dropdowns, Save sort,
   `Queue paused`, and `Queue options` now share one wide-desktop row; all three

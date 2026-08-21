@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import ui_invariants as ui
-
 
 DEDICATED_SURFACE_SELECTORS: tuple[str, ...] = (
     ".rule-diagnostics-disclosure",

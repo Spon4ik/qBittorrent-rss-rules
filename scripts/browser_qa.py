@@ -7,11 +7,12 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -26,7 +27,7 @@ class CheckSpec:
     phase: str
     title: str
     dependencies: tuple[str, ...]
-    handler: Callable[["FocusedRuntime"], None]
+    handler: Callable[[FocusedRuntime], None]
 
 
 @dataclass(slots=True)

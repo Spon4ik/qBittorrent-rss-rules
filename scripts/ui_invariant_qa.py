@@ -6,12 +6,10 @@ import shutil
 import sys
 from typing import Any
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
-
 import browser_qa as core
 import ui_invariants as ui
-
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 
 CORE_PAGE_MATRIX: tuple[tuple[str, str], ...] = (
     ("rules", "/"),

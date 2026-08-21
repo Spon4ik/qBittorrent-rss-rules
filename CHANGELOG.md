@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.20] - 2026-08-21
+
+- Keep qB diagnostics open as an overlay without shifting rule-header actions
+  horizontally on wide desktop layouts.
 ## [1.4.19] - 2026-08-20
 
 - Fix Result controls menus so outside click, Escape, and opening a sibling

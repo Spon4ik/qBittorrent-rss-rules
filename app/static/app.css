@@ -861,10 +861,10 @@ h3 {
     cursor: pointer;
   }
 
-  .rule-diagnostics-disclosure[open] {
+  .rule-diagnostics-disclosure[open] .rule-diagnostics-panel {
     position: absolute;
-    right: 0.55rem;
-    top: calc(100% - 0.25rem);
+    right: 0;
+    top: calc(100% + 0.25rem);
     z-index: 70;
     max-width: min(42rem, 60vw);
     padding: 0.65rem;

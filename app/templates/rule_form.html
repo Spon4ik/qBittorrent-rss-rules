@@ -103,6 +103,7 @@
 {% if mode == 'edit' and rule_sync_diagnostics %}
   <details class="rule-diagnostics-disclosure" aria-label="qB enforcement diagnostics">
     <summary>qB diagnostics</summary>
+    <div class="rule-diagnostics-panel">
     {% if rule_sync_diagnostics.drift_message %}
     <p class="rules-sync-error"><strong>Remote drift detected:</strong> {{ rule_sync_diagnostics.drift_message }}</p>
     {% else %}
@@ -120,6 +121,7 @@
       <pre class="debug-json">{{ rule_sync_diagnostics.last_remote_must_contain }}</pre>
     </details>
     {% endif %}
+    </div>
   </details>
 {% endif %}
 </section>

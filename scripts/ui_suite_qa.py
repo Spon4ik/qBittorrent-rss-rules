@@ -9,7 +9,6 @@ import ui_interactions as interactions
 import ui_invariant_qa as base
 import ui_invariants as ui
 
-
 INTERACTIVE_VIEWPORTS: tuple[tuple[int, int], ...] = (
     (390, 844),
     (1720, 1040),

@@ -32,6 +32,14 @@ compact Retry/Ask Codex actions. Category or title inference is forbidden.
 
 ## Validation status
 
+- Follow-up `v1.4.20` fixes the deterministic `UI-02` rule-header contract:
+  opening qB diagnostics had made the whole disclosure absolute, removing its
+  flex slot and shifting the command bar by 573px at 1720px and 901px at
+  2048px. The disclosure now keeps its stable header slot while its expanded
+  panel overlays. `scripts\\browser_qa.bat --suite ui` passes UI-01 through
+  UI-04 without screenshot review. The release finalizer remains blocked by a
+  separate cross-test scheduler/fixture-state leak (571 passed plus a unique
+  test-data row failure on each of two runs); do not release until it passes.
 - The experiment branch now also has a reusable deterministic UI-invariants audit,
   implemented early by explicit user request before the next UI-fix task. This is
   QA infrastructure only and does not change Phase 44 product behavior or waive

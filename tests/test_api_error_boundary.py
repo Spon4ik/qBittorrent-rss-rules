@@ -36,3 +36,5 @@ def test_unhandled_api_exception_returns_bounded_json_and_records_diagnostics(ap
         "path": "/api/__test__/unhandled-error",
         "error_type": "RuntimeError",
     }
+    assert diagnostics["invariants"]["F-03"]["status"] == "fail"
+    assert diagnostics["invariants"]["F-03"]["metrics"]["last_error_id"] == payload["error_id"]

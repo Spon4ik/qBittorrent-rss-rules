@@ -152,6 +152,21 @@ Reject or revise the experiment if:
 - local validation is repeatedly conflated with deployed-runtime state;
 - reliability or design quality decreases.
 
+## F-01 scheduled-fetch incident result (2026-08-21)
+
+The experiment handled the deployed F-01 failure without a screenshot or a
+subagent. The compact runtime report first established a scheduler-level
+`JSONDecodeError`; a read-only SQLite `json_valid` check then identified one
+truncated `RuleSearchSnapshot.inline_search` value. The exact escape boundary
+was `_prioritize_fetch_rules`: materializing complete ORM snapshots decoded
+every JSON payload before `execute_rule_fetch()` could isolate a failing rule.
+
+The minimal repair selects only `rule_id` and `fetched_at` for prioritization.
+A focused regression persists malformed snapshot JSON with raw SQL and verifies
+that the batch still schedules an unrelated healthy rule. No full logs or
+screenshots were consumed, and no deep-debugger/subagent was needed. The full
+deterministic gate and deployed F-01 were subsequently run for closeout.
+
 ## Manual verbose override
 
 Windows:

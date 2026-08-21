@@ -1328,27 +1328,31 @@ def execute_rule_fetch(
 
 def _rule_snapshot_fetch_sort_value(
     rule: Rule,
-    snapshot_by_rule_id: dict[str, RuleSearchSnapshot],
+    fetched_at_by_rule_id: dict[str, datetime | None],
 ) -> tuple[int, datetime, str]:
-    snapshot = snapshot_by_rule_id.get(rule.id)
-    if snapshot is None:
+    fetched_at = fetched_at_by_rule_id.get(rule.id)
+    if fetched_at is None:
         return (0, datetime.min.replace(tzinfo=UTC), rule.rule_name.casefold())
-    fetched_at = snapshot.fetched_at or datetime.min.replace(tzinfo=UTC)
     return (1, fetched_at, rule.rule_name.casefold())
 
 
 def _prioritize_fetch_rules(session: Session, rules: list[Rule]) -> list[Rule]:
     if not rules:
         return []
-    snapshots = session.scalars(
-        select(RuleSearchSnapshot).where(
+    snapshot_rows = session.execute(
+        select(RuleSearchSnapshot.rule_id, RuleSearchSnapshot.fetched_at).where(
             RuleSearchSnapshot.rule_id.in_([rule.id for rule in rules])
         )
     ).all()
-    snapshot_by_rule_id = {snapshot.rule_id: snapshot for snapshot in snapshots}
+    # Batch ordering needs only these scalar fields.  Do not materialize the
+    # snapshot JSON payload here: a legacy malformed snapshot must become one
+    # rule's failed fetch, not abort every unrelated rule before execution.
+    fetched_at_by_rule_id = {
+        rule_id: fetched_at for rule_id, fetched_at in snapshot_rows
+    }
     return sorted(
         rules,
-        key=lambda rule: _rule_snapshot_fetch_sort_value(rule, snapshot_by_rule_id),
+        key=lambda rule: _rule_snapshot_fetch_sort_value(rule, fetched_at_by_rule_id),
     )
 
 

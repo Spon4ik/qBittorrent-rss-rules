@@ -5,6 +5,8 @@ import threading
 import time
 from datetime import timedelta
 
+from sqlalchemy import text
+
 from app.config import obfuscate_secret
 from app.models import AppSettings, MediaType, QualityProfile, Rule, RuleSearchSnapshot, utcnow
 from app.schemas import JackettSearchRun
@@ -294,6 +296,67 @@ def test_rules_page_skips_poster_backfill_on_filtered_requests(
 
     assert response.status_code == 200
     assert called is False
+
+
+def test_rules_fetch_batch_isolates_malformed_snapshot_json_from_other_rules(
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+        rules_fetch_parallelism=1,
+    )
+    corrupt_rule = Rule(
+        rule_name="Corrupt Snapshot",
+        content_name="Corrupt Snapshot",
+        normalized_title="Corrupt Snapshot",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    healthy_rule = Rule(
+        rule_name="Healthy Snapshot",
+        content_name="Healthy Snapshot",
+        normalized_title="Healthy Snapshot",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add_all([settings, corrupt_rule, healthy_rule])
+    db_session.flush()
+    db_session.execute(
+        text(
+            "INSERT INTO rule_search_snapshots "
+            "(rule_id, payload, inline_search, fetched_at, created_at, updated_at) "
+            "VALUES (:rule_id, '{}', '{\"truncated\":', :now, :now, :now)"
+        ),
+        {"rule_id": corrupt_rule.id, "now": utcnow()},
+    )
+    db_session.commit()
+
+    fetched_rule_names: list[str] = []
+
+    def fake_execute_rule_fetch(session, *, rule, feed_urls_override=None):
+        fetched_rule_names.append(rule.rule_name)
+        return {
+            "rule_id": rule.id,
+            "rule_name": rule.rule_name,
+            "success": True,
+            "state": "no_matches",
+            "rank": 3,
+            "filtered_count": 0,
+            "fetched_count": 0,
+            "warnings": [],
+            "notices": [],
+            "error": "",
+        }
+
+    monkeypatch.setattr(rule_fetch_ops, "execute_rule_fetch", fake_execute_rule_fetch)
+
+    result = rule_fetch_ops.run_rules_fetch_batch(db_session, run_all=True)
+
+    assert result["status"] == "ok"
+    assert fetched_rule_names == ["Healthy Snapshot", "Corrupt Snapshot"]
 
 
 def test_rules_fetch_batch_fetches_missing_then_oldest_snapshots(

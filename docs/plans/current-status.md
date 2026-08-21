@@ -2,6 +2,17 @@
 
 ## Current focus
 
+- The scheduled-fetch F-01 runtime invariant repair is implemented on
+  `experiment/codex-token-efficiency`. A legacy malformed
+  `rule_search_snapshots.inline_search` JSON value caused SQLAlchemy JSON
+  deserialization during batch-wide snapshot prioritization, before the
+  existing per-rule failure boundary could run. Prioritization now selects only
+  `rule_id` and `fetched_at`, so corrupt payload JSON is isolated to its own
+  rule execution and unrelated scheduled rules continue. The focused rule-fetch
+  module tests pass, the deterministic project gate passes (`596 passed`),
+  Docker is current on `v1.4.20`, and post-recovery F-01 passes with an advanced
+  `last_run_at` and future `next_run_at`. A clean finalizer invocation passed;
+  commit/push and release decision remain to be recorded.
 - The `v1.4.20` qB diagnostics rule-header repair and its unrelated full-suite
   isolation repair are implemented and deployed. The maintained UI suite
   passes UI-01 through UI-04. The isolation failure was caused by application-

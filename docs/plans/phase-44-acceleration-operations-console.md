@@ -32,6 +32,17 @@ compact Retry/Ask Codex actions. Category or title inference is forbidden.
 
 ## Validation status
 
+- The experiment branch now also has a reusable deterministic UI-invariants audit,
+  implemented early by explicit user request before the next UI-fix task. This is
+  QA infrastructure only and does not change Phase 44 product behavior or waive
+  the remaining automatic heartbeat acceptance criterion. The canonical Windows
+  command is `scripts\browser_qa.bat --suite ui`. It checks representative core
+  responsive pages for document-level overflow, the qB-diagnostics closed/open
+  rule-header transition for overlap/containment/unexpected desktop horizontal
+  movement, and the existing Result-toolbar interaction/reflow contract. The
+  suite records DOM metrics and uses screenshots only as failure evidence. Known
+  deterministic UI failures are allowed to remain red until the later UI-fix task;
+  they are not quarantined merely to make the audit pass.
 - Browser-QA iteration now has venv-aware wrappers. On Windows,
   `scripts\browser_qa.bat --check P44-03` runs only the maintained Result-toolbar
   regression and `scripts\browser_qa.bat --phase 44` selects all maintained Phase

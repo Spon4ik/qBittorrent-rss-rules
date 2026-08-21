@@ -38,6 +38,9 @@ The WinUI shell (`QbRssRulesDesktop`) embeds `RequiredDesktopBackendAppVersion` 
 - Prefer deterministic evidence over model interpretation: assertions, exit codes, JUnit, API/DB/DOM/state checks, and small diagnostic scripts.
 - Run the narrowest relevant test first; broaden only after the targeted check passes or cannot explain the failure.
 - Prefer `scripts\test.bat` (Windows) or `scripts/test.sh` (Linux/WSL). They keep full pytest output in `logs/tests/` and print a compact summary. Use `QB_TEST_VERBOSE=1` only when full output is necessary.
+- For iterative browser/UI work, prefer `python scripts/browser_qa.py --check <ID>` or `python scripts/browser_qa.py --phase <N>` instead of repeatedly running the legacy broad browser harness. The maintained focused registry currently includes `P44-03`.
+- Run `python scripts/browser_qa.py --full` at most once for browser-wide closeout when that coverage is warranted. Read its `codex-summary.json` / `codex-summary.md` before opening the raw legacy report, logs, or screenshots; dependency cascades are reported as `blocked`, and only explicitly audited stale contracts are `quarantined`.
+- Keep `scripts/closeout_browser_qa.py` as the raw compatibility/audit path, not the normal iterative loop for one focused UI defect.
 - Do not read full logs to determine PASS/FAIL. If the summary is insufficient, inspect only the relevant failure, stack frames, or filtered log region; deduplicate repeated errors.
 - Pass conclusions plus minimal supporting evidence between agents, not the same raw logs or repository dumps repeatedly.
 - Prefer DOM/API/state assertions over screenshots for behavior. Use vision only for genuinely visual defects.

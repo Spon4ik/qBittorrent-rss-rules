@@ -57,7 +57,7 @@ def test_rule_fetch_scheduler_telemetry_records_tick_success_and_failure(monkeyp
     assert sessions[-1].closed is True
 
 
-def test_rule_fetch_scheduler_reports_thread_liveness(monkeypatch) -> None:
+def test_rule_fetch_scheduler_reports_thread_liveness_and_start_time(monkeypatch) -> None:
     tick_seen = threading.Event()
 
     def fake_tick(session):
@@ -72,7 +72,9 @@ def test_rule_fetch_scheduler_reports_thread_liveness(monkeypatch) -> None:
     scheduler.start()
     try:
         assert tick_seen.wait(timeout=1.0)
-        assert scheduler.status()["running"] is True
+        status = scheduler.status()
+        assert status["running"] is True
+        assert status["started_at"] is not None
     finally:
         scheduler.stop()
 
@@ -100,6 +102,7 @@ def test_runtime_diagnostics_endpoint_exposes_schedule_overdue_and_runtime_switc
             "created": False,
             "running": False,
             "poll_interval_seconds": None,
+            "started_at": None,
             "tick_in_progress": False,
             "last_tick_started_at": None,
             "last_tick_completed_at": None,
@@ -111,8 +114,15 @@ def test_runtime_diagnostics_endpoint_exposes_schedule_overdue_and_runtime_switc
     response = app_client.get("/api/diagnostics/runtime")
 
     assert response.status_code == 200
-    component = response.json()["components"]["scheduled_rule_fetch"]
+    payload = response.json()
+    component = payload["components"]["scheduled_rule_fetch"]
+    assert payload["runtime"]["instance_id"]
+    assert payload["runtime"]["started_at"]
     assert component["runtime_enabled"] is False
     assert component["schedule"]["enabled"] is True
     assert component["overdue_seconds"] > 6 * 24 * 60 * 60
     assert component["scheduler"]["running"] is False
+    assert component["readiness"]["jackett_app_ready"] is False
+    assert payload["invariants"]["F-01"]["status"] == "fail"
+    assert payload["invariants"]["F-02"]["status"] == "fail"
+    assert payload["functional_watchdog"]["created"] is False

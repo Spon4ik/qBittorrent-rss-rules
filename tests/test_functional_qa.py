@@ -27,21 +27,37 @@ def _payload(
     error_type: str | None = None,
     next_run_at: str | None = "2026-08-22T12:00:00+00:00",
     overdue_seconds: float = 0.0,
+    runtime_started_at: str = "2026-08-21T12:30:00+00:00",
+    last_run_at: str | None = "2026-08-21T12:00:00+00:00",
+    last_status: str = "ok",
+    last_message: str = "",
+    jackett_ready: bool = True,
 ) -> dict[str, object]:
     return {
+        "runtime": {
+            "instance_id": "runtime-test",
+            "started_at": runtime_started_at,
+        },
         "components": {
             "scheduled_rule_fetch": {
                 "runtime_enabled": runtime_enabled,
                 "overdue_seconds": overdue_seconds,
+                "readiness": {
+                    "jackett_app_ready": jackett_ready,
+                    "error_type": None,
+                },
                 "schedule": {
                     "enabled": schedule_enabled,
                     "interval_minutes": 1440,
-                    "last_run_at": "2026-08-21T12:00:00+00:00",
+                    "last_run_at": last_run_at,
                     "next_run_at": next_run_at,
+                    "last_status": last_status,
+                    "last_message": last_message,
                 },
                 "scheduler": {
                     "created": running,
                     "running": running,
+                    "started_at": runtime_started_at if running else None,
                     "poll_interval_seconds": 30,
                     "tick_in_progress": tick_in_progress,
                     "last_tick_started_at": started_at,
@@ -50,7 +66,7 @@ def _payload(
                     "last_tick_error_type": error_type,
                 },
             }
-        }
+        },
     }
 
 
@@ -136,6 +152,48 @@ def test_f01_fails_for_excessively_long_active_tick() -> None:
 
     assert result.status == "fail"
     assert "tick has been running" in result.summary
+
+
+def test_f02_fails_when_current_runtime_prerequisite_is_not_ready() -> None:
+    result = functional_qa.evaluate_scheduled_fetch_effectiveness(
+        _payload(jackett_ready=False),
+        NOW,
+    )
+
+    assert result.status == "fail"
+    assert result.metrics["effectiveness_state"] == "unhealthy_readiness"
+
+
+def test_f02_fails_for_error_recorded_by_current_runtime() -> None:
+    result = functional_qa.evaluate_scheduled_fetch_effectiveness(
+        _payload(
+            runtime_started_at="2026-08-21T12:30:00+00:00",
+            last_run_at="2026-08-21T12:45:00+00:00",
+            last_status="error",
+            last_message="provider failed",
+        ),
+        NOW,
+    )
+
+    assert result.status == "fail"
+    assert result.metrics["effectiveness_state"] == "unhealthy_current_run"
+
+
+def test_f02_reconciles_historical_jackett_error_when_current_runtime_is_ready() -> None:
+    result = functional_qa.evaluate_scheduled_fetch_effectiveness(
+        _payload(
+            runtime_started_at="2026-08-21T12:30:00+00:00",
+            last_run_at="2026-08-21T12:29:30+00:00",
+            last_status="error",
+            last_message="Jackett app search is not configured in Settings.",
+            jackett_ready=True,
+        ),
+        NOW,
+    )
+
+    assert result.status == "pass"
+    assert result.metrics["effectiveness_state"] == "recovered_historical"
+    assert result.metrics["historical_run"] is True
 
 
 def test_runner_rechecks_pending_state_until_it_settles(tmp_path, monkeypatch) -> None:

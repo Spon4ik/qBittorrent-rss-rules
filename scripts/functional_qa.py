@@ -5,7 +5,7 @@ import json
 import sys
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -15,6 +15,9 @@ from urllib.request import urlopen
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_TIMEOUT_SECONDS = 5.0
+DEFAULT_SETTLE_TIMEOUT_SECONDS = 600.0
+DEFAULT_POLL_SECONDS = 5.0
+MAX_ACTIVE_TICK_SECONDS = 1800.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,11 +65,7 @@ def evaluate_scheduled_fetch_liveness(
 ) -> CheckResult:
     observed_at = (now or datetime.now(UTC)).astimezone(UTC)
     components = payload.get("components") if isinstance(payload, dict) else None
-    component = (
-        components.get("scheduled_rule_fetch")
-        if isinstance(components, dict)
-        else None
-    )
+    component = components.get("scheduled_rule_fetch") if isinstance(components, dict) else None
     if not isinstance(component, dict):
         return CheckResult(
             check_id="F-01",
@@ -135,32 +134,50 @@ def evaluate_scheduled_fetch_liveness(
         failures.append("persisted schedule is enabled but the runtime scheduler feature is disabled")
     if not scheduler_running:
         failures.append("runtime scheduler thread is not running")
+
+    if tick_in_progress:
+        if last_tick_started_at is None:
+            failures.append("scheduler reports a tick in progress without a start timestamp")
+        elif active_tick_age_seconds is not None and active_tick_age_seconds > MAX_ACTIVE_TICK_SECONDS:
+            failures.append(
+                f"scheduler tick has been running for {active_tick_age_seconds:.0f}s "
+                f"(limit {MAX_ACTIVE_TICK_SECONDS:.0f}s)"
+            )
+        if failures:
+            return CheckResult(
+                check_id="F-01",
+                title="Scheduled fetch liveness",
+                status="fail",
+                summary="; ".join(failures) + ".",
+                metrics=metrics,
+            )
+        return CheckResult(
+            check_id="F-01",
+            title="Scheduled fetch liveness",
+            status="pending",
+            summary="Scheduler is executing a tick; awaiting a settled result.",
+            metrics=metrics,
+        )
+
     if last_tick_result == "error" or last_tick_error_type:
         failures.append(
             "last scheduler tick failed"
             + (f" with {last_tick_error_type}" if last_tick_error_type else "")
         )
-
-    if tick_in_progress:
-        if last_tick_started_at is None:
-            failures.append("scheduler reports a tick in progress without a start timestamp")
+    if last_tick_completed_at is None:
+        failures.append("scheduler has no completed tick evidence")
     else:
-        if last_tick_completed_at is None:
-            failures.append("scheduler has no completed tick evidence")
-        else:
-            max_tick_age = max(120.0, poll_interval * 4.0)
-            if tick_age_seconds is not None and tick_age_seconds > max_tick_age:
-                failures.append(
-                    f"last scheduler tick is stale ({tick_age_seconds:.0f}s old; limit {max_tick_age:.0f}s)"
-                )
-
-        overdue_grace = max(60.0, poll_interval * 2.0)
-        if overdue_seconds > overdue_grace:
+        max_tick_age = max(120.0, poll_interval * 4.0)
+        if tick_age_seconds is not None and tick_age_seconds > max_tick_age:
             failures.append(
-                f"next scheduled run is overdue by {overdue_seconds:.0f}s"
+                f"last scheduler tick is stale ({tick_age_seconds:.0f}s old; limit {max_tick_age:.0f}s)"
             )
-        elif next_run_at is None:
-            failures.append("enabled schedule has no next_run_at")
+
+    overdue_grace = max(60.0, poll_interval * 2.0)
+    if overdue_seconds > overdue_grace:
+        failures.append(f"next scheduled run is overdue by {overdue_seconds:.0f}s")
+    elif next_run_at is None:
+        failures.append("enabled schedule has no next_run_at")
 
     if failures:
         return CheckResult(
@@ -171,15 +188,11 @@ def evaluate_scheduled_fetch_liveness(
             metrics=metrics,
         )
 
-    if tick_in_progress:
-        summary = "Scheduler is alive and currently executing a tick."
-    else:
-        summary = "Scheduler is alive, ticking recently, and the next run is not overdue."
     return CheckResult(
         check_id="F-01",
         title="Scheduled fetch liveness",
         status="pass",
-        summary=summary,
+        summary="Scheduler is alive, ticking recently, and the next run is not overdue.",
         metrics=metrics,
     )
 
@@ -229,22 +242,17 @@ def _default_output_dir() -> Path:
     return PROJECT_DIR / "logs" / "qa" / f"functional-{stamp}"
 
 
-def run(
+def _evaluate_specs(
+    specs: list[CheckSpec],
     *,
-    base_url: str,
-    check_id: str | None,
-    suite: str | None,
+    diagnostics_url: str,
     timeout_seconds: float,
-    output_dir: Path | None,
-) -> int:
-    specs = _selected_checks(check_id=check_id, suite=suite)
-    diagnostics_url = f"{base_url.rstrip('/')}/api/diagnostics/runtime"
+) -> list[CheckResult]:
     observed_at = datetime.now(UTC)
-    started = time.perf_counter()
     try:
         payload = _fetch_json(diagnostics_url, timeout_seconds=timeout_seconds)
     except RuntimeError as exc:
-        results = [
+        return [
             CheckResult(
                 check_id=spec.check_id,
                 title=spec.title,
@@ -254,21 +262,72 @@ def run(
             )
             for spec in specs
         ]
-    else:
-        results = []
-        for spec in specs:
-            check_started = time.perf_counter()
-            result = spec.evaluator(payload, observed_at)
-            results.append(
-                CheckResult(
-                    check_id=result.check_id,
-                    title=result.title,
-                    status=result.status,
-                    summary=result.summary,
-                    metrics=result.metrics,
-                    duration_ms=int((time.perf_counter() - check_started) * 1000),
-                )
+
+    results: list[CheckResult] = []
+    for spec in specs:
+        check_started = time.perf_counter()
+        result = spec.evaluator(payload, observed_at)
+        results.append(replace(result, duration_ms=int((time.perf_counter() - check_started) * 1000)))
+    return results
+
+
+def _timeout_pending_results(
+    results: list[CheckResult],
+    *,
+    settle_timeout_seconds: float,
+) -> list[CheckResult]:
+    return [
+        replace(
+            item,
+            status="fail",
+            summary=(
+                f"{item.summary.rstrip('.')} did not settle within "
+                f"{settle_timeout_seconds:.0f}s."
+            ),
+        )
+        if item.status == "pending"
+        else item
+        for item in results
+    ]
+
+
+def run(
+    *,
+    base_url: str,
+    check_id: str | None,
+    suite: str | None,
+    timeout_seconds: float,
+    output_dir: Path | None,
+    settle_timeout_seconds: float = DEFAULT_SETTLE_TIMEOUT_SECONDS,
+    poll_seconds: float = DEFAULT_POLL_SECONDS,
+    observe_only: bool = False,
+) -> int:
+    specs = _selected_checks(check_id=check_id, suite=suite)
+    diagnostics_url = f"{base_url.rstrip('/')}/api/diagnostics/runtime"
+    started = time.perf_counter()
+    settle_started = time.monotonic()
+    attempts = 0
+
+    while True:
+        attempts += 1
+        results = _evaluate_specs(
+            specs,
+            diagnostics_url=diagnostics_url,
+            timeout_seconds=timeout_seconds,
+        )
+        if not any(item.status == "pending" for item in results):
+            break
+        if observe_only or settle_timeout_seconds <= 0:
+            break
+        elapsed = time.monotonic() - settle_started
+        if elapsed >= settle_timeout_seconds:
+            results = _timeout_pending_results(
+                results,
+                settle_timeout_seconds=settle_timeout_seconds,
             )
+            break
+        remaining = settle_timeout_seconds - elapsed
+        time.sleep(min(max(0.0, poll_seconds), remaining))
 
     destination = output_dir or _default_output_dir()
     destination.mkdir(parents=True, exist_ok=True)
@@ -278,26 +337,40 @@ def run(
         "base_url": base_url,
         "diagnostics_url": diagnostics_url,
         "duration_ms": int((time.perf_counter() - started) * 1000),
+        "attempts": attempts,
+        "observe_only": observe_only,
+        "settle_timeout_seconds": settle_timeout_seconds,
         "results": [asdict(item) for item in results],
     }
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     for result in results:
         print(f"{result.status.upper()} {result.check_id}: {result.summary}")
-        if result.status == "fail" and result.metrics:
+        if result.status in {"fail", "pending"} and result.metrics:
             compact = json.dumps(result.metrics, sort_keys=True, separators=(",", ":"))
             print(f"  metrics: {compact}")
     print(f"Saved functional QA report: {report_path}")
-    return 1 if any(item.status == "fail" for item in results) else 0
+    if observe_only:
+        return 0
+    return 1 if any(item.status in {"fail", "pending"} for item in results) else 0
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run deterministic deployed-runtime functional invariants.")
+    parser = argparse.ArgumentParser(
+        description="Run deterministic deployed-runtime functional invariants."
+    )
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--check", help="Run one functional invariant, for example F-01.")
     selection.add_argument("--suite", choices=sorted(SUITES), help="Run a maintained functional suite.")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--settle-timeout", type=float, default=DEFAULT_SETTLE_TIMEOUT_SECONDS)
+    parser.add_argument("--poll-seconds", type=float, default=DEFAULT_POLL_SECONDS)
+    parser.add_argument(
+        "--observe-only",
+        action="store_true",
+        help="Capture and report invariant state without failing the caller.",
+    )
     parser.add_argument("--output-dir", type=Path)
     return parser
 
@@ -311,6 +384,9 @@ def main(argv: list[str] | None = None) -> int:
             suite=args.suite,
             timeout_seconds=max(0.1, args.timeout),
             output_dir=args.output_dir,
+            settle_timeout_seconds=max(0.0, args.settle_timeout),
+            poll_seconds=max(0.0, args.poll_seconds),
+            observe_only=bool(args.observe_only),
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)

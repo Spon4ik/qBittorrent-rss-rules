@@ -18,7 +18,7 @@ def record_unhandled_api_error(
 ) -> dict[str, Any]:
     """Record bounded, secret-free evidence for one unhandled API exception."""
     global _error_count, _last_error
-    event = {
+    event: dict[str, Any] = {
         "id": f"api-{uuid.uuid4().hex[:12]}",
         "occurred_at": datetime.now(UTC).isoformat(),
         "method": str(method or "").strip().upper(),

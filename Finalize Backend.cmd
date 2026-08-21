@@ -9,7 +9,15 @@ pushd "%PROJECT_ROOT%" >nul
 
 echo Finalizing backend change...
 echo.
-echo [1/4] Running deterministic project checks...
+echo [1/5] Capturing pre-deploy functional baseline ^(non-gating^)...
+call "scripts\functional_qa.bat" --suite core --observe-only --settle-timeout 0
+set "PREDEPLOY_EXIT=%ERRORLEVEL%"
+if not "%PREDEPLOY_EXIT%"=="0" (
+  echo [WARN] Pre-deploy functional baseline could not be captured cleanly. Continuing because this step is evidence-only.
+)
+
+echo.
+echo [2/5] Running deterministic project checks...
 call "scripts\check.bat"
 set "CHECK_EXIT=%ERRORLEVEL%"
 if not "%CHECK_EXIT%"=="0" (
@@ -23,7 +31,7 @@ if not "%CHECK_EXIT%"=="0" (
 )
 
 echo.
-echo [2/4] Deterministic validation passed. Rebuilding and validating Docker...
+echo [3/5] Deterministic validation passed. Rebuilding and validating Docker...
 call "Update Docker.cmd" --no-pause
 set "DOCKER_EXIT=%ERRORLEVEL%"
 if not "%DOCKER_EXIT%"=="0" (
@@ -37,7 +45,7 @@ if not "%DOCKER_EXIT%"=="0" (
 )
 
 echo.
-echo [3/4] Verifying the deployed runtime matches the checkout version...
+echo [4/5] Verifying the deployed runtime matches the checkout version...
 call "scripts\runtime_state.bat" --require-runtime-current
 set "STATE_EXIT=%ERRORLEVEL%"
 if not "%STATE_EXIT%"=="0" (
@@ -48,7 +56,7 @@ if not "%STATE_EXIT%"=="0" (
 )
 
 echo.
-echo [4/4] Running deployed-runtime functional invariants...
+echo [5/5] Running deployed-runtime functional invariants...
 call "scripts\functional_qa.bat" --suite core
 set "FUNCTIONAL_EXIT=%ERRORLEVEL%"
 if not "%FUNCTIONAL_EXIT%"=="0" (

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.config import ensure_runtime_dirs, get_environment_settings
@@ -13,6 +15,7 @@ from app.routes.api import compat_router as api_compat_router
 from app.routes.api import router as api_router
 from app.routes.diagnostics import router as diagnostics_router
 from app.routes.pages import router as pages_router
+from app.services.api_error_registry import record_unhandled_api_error
 from app.services.download_acceleration_scheduler import (
     start_download_acceleration_scheduler,
     stop_download_acceleration_scheduler,
@@ -70,6 +73,42 @@ def create_app() -> FastAPI:
     app.state.static_asset_version = compute_static_asset_version(static_dir) or app.version
     app.state.desktop_backend_contract = DESKTOP_BACKEND_CONTRACT
     app.state.desktop_capabilities = DESKTOP_BACKEND_CAPABILITIES
+
+    @app.middleware("http")
+    async def _api_json_error_boundary(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            if not request.url.path.startswith("/api/"):
+                raise
+            event = record_unhandled_api_error(
+                method=request.method,
+                path=request.url.path,
+                error_type=type(exc).__name__,
+            )
+            LOGGER.exception(
+                "Unhandled API request failed ref=%s method=%s path=%s error_type=%s",
+                event["id"],
+                event["method"],
+                event["path"],
+                event["error_type"],
+            )
+            message = (
+                f"Internal server error ({event['error_type']}). "
+                f"Reference {event['id']}."
+            )
+            return JSONResponse(
+                {
+                    "error": message,
+                    "message": message,
+                    "error_type": event["error_type"],
+                    "error_id": event["id"],
+                },
+                status_code=500,
+            )
 
     app.mount(
         "/static",

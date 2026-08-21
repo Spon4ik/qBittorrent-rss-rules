@@ -89,6 +89,17 @@ Three consecutive failures activate an incident. A later non-failing observation
 
 Automatic Codex dispatch is deliberately not part of this step. Phase 44 still requires end-to-end heartbeat pickup/status readback proof before persistent functional incidents should be allowed to create autonomous maintenance work.
 
+## Live validation - 2026-08-21
+
+The first end-to-end deployment on `experiment/codex-token-efficiency` validated the intended historical-error reconciliation contract against the real Jackett incident. Before deployment, the observation-only functional baseline preserved the old container's state: F-01 passed while F-02 failed with `effectiveness_state=unhealthy_readiness`, `jackett_app_ready=false`, and no runtime identity fields because that container predated the new diagnostics.
+
+After the deterministic project gate passed (`603 passed`, Ruff clean, mypy clean), `Finalize-Backend.cmd --no-pause` rebuilt only `qb-rss-rules`, verified `/health` on `v1.4.20`, confirmed the deployed runtime matched checkout commit `107fc6a0`, and then ran the live core functional suite. The post-deploy result was:
+
+- `PASS F-01`: scheduler alive, recent ticks, non-overdue next run;
+- `PASS F-02`: the previous-runtime Jackett-readiness error was retained as historical evidence while the current runtime resolved Jackett successfully and had not reproduced the failure.
+
+This proves the key operational distinction: a stale persisted error can be automatically reclassified from current failure to recovered historical state using deterministic runtime evidence, without deleting the original error or invoking Codex. The periodic watchdog and UI reconciliation are therefore live-validated on the Docker runtime for this incident shape. Persistent current-runtime failures still require the configured consecutive-failure threshold before becoming watchdog incidents.
+
 ## Extension contract
 
 Future functional checks should use IDs `F-03`, `F-04`, ... and be registered in `app/services/functional_invariants.py`. Prefer subsystem-level contracts over symptom-specific assertions. Good candidates include:

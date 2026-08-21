@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.config import get_environment_settings
+from app.services.api_error_registry import api_error_status
 from app.services.rule_fetch_ops import schedule_payload
 from app.services.rule_fetch_scheduler import rule_fetch_scheduler_status
 from app.services.runtime_identity import runtime_identity_payload
@@ -46,6 +47,9 @@ def runtime_diagnostics_payload(
         "generated_at": generated_at.isoformat(),
         "runtime": runtime_identity_payload(),
         "components": {
+            "api": {
+                "unhandled_errors": api_error_status(),
+            },
             "scheduled_rule_fetch": {
                 "runtime_enabled": bool(environment.enable_rule_fetch_scheduler),
                 "schedule": schedule,
@@ -55,6 +59,6 @@ def runtime_diagnostics_payload(
                     "jackett_app_ready": jackett_ready,
                     "error_type": readiness_error_type,
                 },
-            }
+            },
         },
     }

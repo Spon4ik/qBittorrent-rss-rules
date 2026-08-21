@@ -8,6 +8,16 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.20] - 2026-08-21
+
+- Keep qB diagnostics open as an overlay without shifting rule-header actions
+  horizontally on wide desktop layouts.
+## [1.4.19] - 2026-08-20
+
+- Fix Result controls menus so outside click, Escape, and opening a sibling
+  menu dismiss the active toolbar menu without reflowing results.
+- Restore the visible, independently selectable Sequential download option in
+  Queue options and add deterministic wide/narrow browser regression coverage.
 ## [1.4.18] - 2026-08-14
 
 - Merge result filtering and queue defaults into one aligned desktop toolbar.

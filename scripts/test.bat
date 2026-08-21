@@ -6,6 +6,7 @@ set "PROJECT_DIR=%SCRIPT_DIR%.."
 set "LOG_DIR=%PROJECT_DIR%\logs\tests"
 set "LOG_FILE=%LOG_DIR%\pytest-last.log"
 set "XML_FILE=%LOG_DIR%\pytest-last.xml"
+set "SUMMARY_SCRIPT=%SCRIPT_DIR%test_summary.py"
 
 pushd "%PROJECT_DIR%" >nul
 
@@ -39,10 +40,17 @@ if not exist "%XML_FILE%" (
 >> "%LOG_FILE%" echo Text log: %LOG_FILE%
 >> "%LOG_FILE%" echo JUnit XML: %XML_FILE%
 
-type "%LOG_FILE%"
-echo.
-echo Text log: "%LOG_FILE%"
-echo JUnit XML: "%XML_FILE%"
+call "%PYTHON_EXE%" "%SUMMARY_SCRIPT%" "%XML_FILE%" --log "%LOG_FILE%"
+if errorlevel 1 (
+  echo.
+  echo Compact summary generation failed. Inspect "%LOG_FILE%".
+)
+
+if "%QB_TEST_VERBOSE%"=="1" (
+  echo.
+  echo QB_TEST_VERBOSE=1; full captured pytest log follows:
+  type "%LOG_FILE%"
+)
 
 popd >nul
 exit /b %EXIT_CODE%

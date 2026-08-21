@@ -3670,6 +3670,47 @@ function initResultQueueActions(root = document) {
   }
 }
 
+function initResultToolbarMenus(root = document) {
+  const menus = Array.from(root.querySelectorAll("[data-result-toolbar-menu]"));
+  if (menus.length === 0) {
+    return;
+  }
+
+  const closeMenusExcept = (activeMenu = null) => {
+    for (const menu of menus) {
+      if (menu !== activeMenu) {
+        menu.open = false;
+      }
+    }
+  };
+
+  for (const menu of menus) {
+    const summary = menu.querySelector("summary");
+    summary?.addEventListener("click", () => {
+      closeMenusExcept(menu);
+    });
+    menu.addEventListener("toggle", () => {
+      if (menu.open) {
+        closeMenusExcept(menu);
+      }
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element) || event.target.closest("[data-result-toolbar-menu]")) {
+      return;
+    }
+    closeMenusExcept();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") {
+      return;
+    }
+    closeMenusExcept();
+  });
+}
+
 function initRuleForm(form) {
   const qualityOptions = parseJsonData(form.dataset.qualityOptions, []);
   const qualityPatternMap = buildQualityPatternMap(qualityOptions);
@@ -5941,6 +5982,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initThemeControl();
   initOperationProgress(document);
   initResultQueueActions(document);
+  initResultToolbarMenus(document);
   initAccelerationConsole(document);
   initVariantAcceleration(document);
 

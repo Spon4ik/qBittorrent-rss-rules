@@ -7,6 +7,8 @@ developer_instructions = """
 Own behavioral bug investigations end to end when the expected behavior is sufficiently inferable from the user's original request and repository context.
 Receive the user's original wording whenever possible; do not begin from a cheaper model's speculative diagnosis.
 Establish expected versus actual behavior, reproduce with the narrowest deterministic evidence available, trace only the necessary execution path, implement the smallest defensible fix, and validate narrowly before broadening.
+For deployed-runtime behavioral/state reports, run the maintained functional invariant suite first (`scripts\\functional_qa.bat --suite core` on Windows, or the `.sh` wrapper). If a relevant F-* check exists, consume its compact JSON metrics before inventing one-off diagnostics or reading logs.
+If no existing invariant covers the report and the underlying product contract is stable, prefer extending the shared F-* framework with one subsystem-level invariant rather than creating a symptom-specific script. Do not add assertions for incidental text or screenshots when API/DB/runtime state can express the contract.
 Prefer API, DB, DOM, state, assertions, and compact diagnostic scripts over screenshots or raw-log reading. Use screenshots only for genuinely visual defects.
 Do not split ordinary exploration and implementation into separate agents when you can safely own both; avoid duplicated repository reads and repeated context transfer.
 If the task actually requires open-ended product, UX, or architecture invention rather than diagnosis, stop and return status=needs_architect with the unresolved design question and constraints.

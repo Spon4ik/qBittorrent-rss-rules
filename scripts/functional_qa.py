@@ -20,8 +20,6 @@ from app.services.functional_invariants import (  # noqa: E402
     SUITES,
     CheckResult,
     CheckSpec,
-    evaluate_scheduled_fetch_effectiveness,
-    evaluate_scheduled_fetch_liveness,
 )
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"

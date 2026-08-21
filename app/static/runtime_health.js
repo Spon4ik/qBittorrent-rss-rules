@@ -6,6 +6,15 @@ function scheduleStatusParts(status, message, schedule) {
   return parts.join(" ");
 }
 
+function persistentScheduledFetchIncident(payload) {
+  const checks = payload?.functional_watchdog?.checks || {};
+  for (const checkId of ["F-01", "F-02"]) {
+    const check = checks?.[checkId];
+    if (check?.incident_active) return check;
+  }
+  return null;
+}
+
 function reconcileScheduledFetchStatus(payload) {
   const statusElement = document.querySelector("[data-rules-schedule-status]");
   if (!statusElement) return;
@@ -14,6 +23,17 @@ function reconcileScheduledFetchStatus(payload) {
   const invariant = payload?.invariants?.["F-02"];
   const schedule = component?.schedule;
   if (!schedule || !invariant) return;
+
+  const incident = persistentScheduledFetchIncident(payload);
+  if (incident) {
+    statusElement.dataset.functionalState = "persistent_failure";
+    statusElement.textContent = scheduleStatusParts(
+      "runtime problem",
+      `Automatic functional QA detected a persistent ${incident.check_id} failure: ${incident.summary}`,
+      schedule,
+    );
+    return;
+  }
 
   const state = String(invariant?.metrics?.effectiveness_state || "unknown");
   statusElement.dataset.functionalState = state;

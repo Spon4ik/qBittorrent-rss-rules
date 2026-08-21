@@ -112,6 +112,90 @@ def capture_layout(
     return result
 
 
+def capture_action_groups(page: Any) -> list[dict[str, Any]]:
+    """Discover common action/tool groups and record direct-child geometry.
+
+    Viewport containment is intentionally waived for groups inside a genuine
+    horizontal scroller (for example a wide result table); sibling overlap is
+    still actionable there.
+    """
+
+    result = page.evaluate(
+        """
+        () => {
+          const metric = (element) => {
+            const rect = element.getBoundingClientRect();
+            const style = window.getComputedStyle(element);
+            const opacity = Number.parseFloat(style.opacity || "1");
+            return {
+              tag: element.tagName.toLowerCase(),
+              id: element.id || "",
+              classes: String(element.className || ""),
+              text: String(element.innerText || element.textContent || "").trim().slice(0, 160),
+              left: rect.left,
+              top: rect.top,
+              right: rect.right,
+              bottom: rect.bottom,
+              width: rect.width,
+              height: rect.height,
+              visible: (
+                element.getClientRects().length > 0
+                && rect.width > 0
+                && rect.height > 0
+                && style.display !== "none"
+                && style.visibility !== "hidden"
+                && !Number.isNaN(opacity)
+                && opacity > 0
+              ),
+            };
+          };
+
+          const selectors = [
+            '[class*="actions"]',
+            '[role="group"]',
+            '[data-rule-edit-command-bar]',
+            '.rules-utility-strip',
+            '.rules-schedule-strip',
+          ];
+          const seen = new Set();
+          const containers = [];
+          for (const selector of selectors) {
+            for (const element of document.querySelectorAll(selector)) {
+              if (!seen.has(element)) {
+                seen.add(element);
+                containers.push(element);
+              }
+            }
+          }
+
+          const hasHorizontalScroller = (element) => {
+            let current = element.parentElement;
+            while (current && current !== document.body) {
+              const style = window.getComputedStyle(current);
+              if (
+                ['auto', 'scroll'].includes(style.overflowX)
+                && current.scrollWidth > current.clientWidth + 1
+              ) return true;
+              current = current.parentElement;
+            }
+            return false;
+          };
+
+          return containers
+            .map((container) => ({
+              container: metric(container),
+              insideHorizontalScroller: hasHorizontalScroller(container),
+              children: Array.from(container.children).map(metric),
+            }))
+            .filter((group) => group.container.visible && group.children.some((item) => item.visible));
+        }
+        """
+    )
+    if not isinstance(result, list):
+        raise UIInvariantError("Action-group probe did not return a list.")
+    return [item for item in result if isinstance(item, dict)]
+
+
 def write_metrics(path: Path, payload: Mapping[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
@@ -258,6 +342,14 @@ def assert_group_no_overlap(
     tolerance: float = 0.5,
 ) -> None:
     items = [item for item in _group(snapshot, name) if bool(item.get("visible"))]
+    failures = _overlap_failures(items, tolerance=tolerance)
+    if failures:
+        raise UIInvariantError(f"{name} contains overlapping controls: " + "; ".join(failures[:6]))
+
+
+def _overlap_failures(
+    items: Sequence[Mapping[str, Any]], *, tolerance: float
+) -> list[str]:
     failures = []
     for left_index, left_item in enumerate(items):
         for right_index in range(left_index + 1, len(items)):
@@ -282,8 +374,7 @@ def assert_group_no_overlap(
                     f"#{right_index} {_rect_label(right_item)} "
                     f"({overlap_x:.1f}x{overlap_y:.1f}px)"
                 )
-    if failures:
-        raise UIInvariantError(f"{name} contains overlapping controls: " + "; ".join(failures[:6]))
+    return failures
 
 
 def assert_group_within_viewport_horizontally(
@@ -310,3 +401,43 @@ def assert_group_within_viewport_horizontally(
         raise UIInvariantError(
             f"{name} contains controls outside the viewport: " + "; ".join(failures[:6])
         )
+
+
+def assert_action_groups_safe(
+    groups: Sequence[Mapping[str, Any]],
+    *,
+    viewport_width: float,
+    overlap_tolerance: float = 0.5,
+    viewport_tolerance: float = 1.0,
+) -> None:
+    """Reject overlap/off-screen action groups while respecting table scrollers."""
+
+    failures: list[str] = []
+    for group_index, group in enumerate(groups):
+        container = group.get("container")
+        raw_children = group.get("children")
+        if not isinstance(container, Mapping) or not isinstance(raw_children, list):
+            failures.append(f"group #{group_index}: malformed geometry")
+            continue
+        children = [
+            item
+            for item in raw_children
+            if isinstance(item, Mapping) and bool(item.get("visible"))
+        ]
+        container_label = _rect_label(container)
+        for overlap in _overlap_failures(children, tolerance=overlap_tolerance):
+            failures.append(f"{container_label}: {overlap}")
+
+        if bool(group.get("insideHorizontalScroller")):
+            continue
+        for child_index, item in enumerate(children):
+            left = float(item.get("left") or 0)
+            right = float(item.get("right") or 0)
+            if left < -viewport_tolerance or right > viewport_width + viewport_tolerance:
+                failures.append(
+                    f"{container_label}: child #{child_index} {_rect_label(item)} escapes viewport "
+                    f"(left={left:.1f}, right={right:.1f}, viewport={viewport_width:.1f})"
+                )
+    if failures:
+        suffix = "" if len(failures) <= 8 else f"; +{len(failures) - 8} more"
+        raise UIInvariantError("Unsafe action groups: " + "; ".join(failures[:8]) + suffix)

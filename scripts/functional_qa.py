@@ -15,19 +15,19 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from app.services.functional_invariants import (  # noqa: E402
-    CHECKS,
-    SUITES,
-    CheckResult,
-    CheckSpec,
-    evaluate_scheduled_fetch_effectiveness as _evaluate_scheduled_fetch_effectiveness,
-    evaluate_scheduled_fetch_liveness as _evaluate_scheduled_fetch_liveness,
-)
+from app.services import functional_invariants as _functional_invariants  # noqa: E402
+
+CHECKS = _functional_invariants.CHECKS
+SUITES = _functional_invariants.SUITES
+CheckResult = _functional_invariants.CheckResult
+CheckSpec = _functional_invariants.CheckSpec
 
 # Preserve the CLI module's existing evaluator seam for tests and external callers while
 # keeping the canonical implementation in app.services.functional_invariants.
-evaluate_scheduled_fetch_effectiveness = _evaluate_scheduled_fetch_effectiveness
-evaluate_scheduled_fetch_liveness = _evaluate_scheduled_fetch_liveness
+evaluate_scheduled_fetch_effectiveness = (
+    _functional_invariants.evaluate_scheduled_fetch_effectiveness
+)
+evaluate_scheduled_fetch_liveness = _functional_invariants.evaluate_scheduled_fetch_liveness
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_TIMEOUT_SECONDS = 5.0

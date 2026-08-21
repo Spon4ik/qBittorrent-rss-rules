@@ -56,6 +56,17 @@ def _rect(
     }
 
 
+def _action_group(
+    *children: dict[str, object],
+    inside_horizontal_scroller: bool = False,
+) -> dict[str, object]:
+    return {
+        "container": _rect(x=0, width=100, text="Actions"),
+        "insideHorizontalScroller": inside_horizontal_scroller,
+        "children": list(children),
+    }
+
+
 def test_horizontal_overflow_tolerance_is_deterministic() -> None:
     ui.assert_no_page_horizontal_overflow(_snapshot(width=100, scroll_width=101))
 
@@ -132,3 +143,24 @@ def test_group_viewport_contract_rejects_clipped_controls() -> None:
 
     with pytest.raises(ui.UIInvariantError, match="outside the viewport"):
         ui.assert_group_within_viewport_horizontally(clipped, "actions")
+
+
+def test_action_group_audit_catches_overlap_and_viewport_escape() -> None:
+    overlap = [_action_group(_rect(x=5, width=20, text="Save"), _rect(x=24, width=20, text="Sync"))]
+    with pytest.raises(ui.UIInvariantError, match="overlaps"):
+        ui.assert_action_groups_safe(overlap, viewport_width=100)
+
+    escaped = [_action_group(_rect(x=96, width=10, text="Delete"))]
+    with pytest.raises(ui.UIInvariantError, match="escapes viewport"):
+        ui.assert_action_groups_safe(escaped, viewport_width=100)
+
+
+def test_action_group_viewport_escape_is_allowed_inside_real_horizontal_scroller() -> None:
+    scrolled_table_actions = [
+        _action_group(
+            _rect(x=120, width=10, text="Edit"),
+            inside_horizontal_scroller=True,
+        )
+    ]
+
+    ui.assert_action_groups_safe(scrolled_table_actions, viewport_width=100)

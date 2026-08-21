@@ -16,7 +16,88 @@ INTERACTIVE_VIEWPORTS: tuple[tuple[int, int], ...] = (
 )
 
 MAX_INTERACTIONS_PER_PAGE = 8
-MIN_DISCOVERED_INTERACTIONS = 3
+MIN_EXERCISED_INTERACTIONS = 3
+INTERACTION_ACTION_TIMEOUT_MS = 3000
+
+
+def _surface_selector(surface_id: str) -> str:
+    escaped = surface_id.replace("\\", "\\\\").replace('"', '\\"')
+    return f'[data-ui-qa-surface-id="{escaped}"]'
+
+
+def _surface_actionability(page: Any, surface_id: str) -> dict[str, Any]:
+    result = page.evaluate(
+        """
+        (surfaceId) => {
+          const details = document.querySelector(
+            `[data-ui-qa-surface-id="${CSS.escape(surfaceId)}"]`
+          );
+          if (!(details instanceof HTMLDetailsElement)) {
+            return {actionable: false, reason: "surface unavailable"};
+          }
+          const summary = details.querySelector(":scope > summary");
+          if (!(summary instanceof HTMLElement)) {
+            return {actionable: false, reason: "summary unavailable"};
+          }
+          const style = window.getComputedStyle(summary);
+          const disabledAncestor = summary.closest('[disabled], [aria-disabled="true"]');
+          if (disabledAncestor) {
+            return {actionable: false, reason: "disabled"};
+          }
+          if (style.pointerEvents === "none") {
+            return {actionable: false, reason: "pointer-events none"};
+          }
+          if (
+            summary.getClientRects().length === 0
+            || style.display === "none"
+            || style.visibility === "hidden"
+          ) {
+            return {actionable: false, reason: "not visible"};
+          }
+          return {actionable: true, reason: ""};
+        }
+        """,
+        arg=surface_id,
+    )
+    if not isinstance(result, dict):
+        raise ui.UIInvariantError("Interactive actionability probe did not return structured data.")
+    return result
+
+
+def _open_actionable_surface(
+    page: Any,
+    surface_id: str,
+    *,
+    timeout_ms: int,
+) -> tuple[bool, str]:
+    actionability = _surface_actionability(page, surface_id)
+    if not bool(actionability.get("actionable")):
+        return False, str(actionability.get("reason") or "not actionable")
+
+    selector = _surface_selector(surface_id)
+    action_timeout_ms = min(max(1, timeout_ms), INTERACTION_ACTION_TIMEOUT_MS)
+    summary = page.locator(f"{selector} > summary")
+    summary.click(timeout=action_timeout_ms)
+    page.wait_for_function(
+        """
+        (surfaceId) => {
+          const details = document.querySelector(
+            `[data-ui-qa-surface-id="${CSS.escape(surfaceId)}"]`
+          );
+          return details instanceof HTMLDetailsElement && details.open === true;
+        }
+        """,
+        arg=surface_id,
+        timeout=action_timeout_ms,
+    )
+    page.evaluate(
+        """
+        () => new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        })
+        """
+    )
+    return True, ""
 
 
 def check_ui_04(runtime: core.FocusedRuntime) -> None:
@@ -27,6 +108,8 @@ def check_ui_04(runtime: core.FocusedRuntime) -> None:
     records: list[dict[str, Any]] = []
     failures: list[str] = []
     total_discovered = 0
+    total_exercised = 0
+    total_skipped = 0
     failure_path = runtime.run_dir / "ui-04-failure.png"
     captured_failure = False
 
@@ -85,14 +168,31 @@ def check_ui_04(runtime: core.FocusedRuntime) -> None:
 
                     try:
                         interactions.set_surface_open(page, surface_id, False)
+                        actionability = _surface_actionability(page, surface_id)
+                        surface_record["actionability"] = actionability
+                        if not bool(actionability.get("actionable")):
+                            surface_record["status"] = "skipped"
+                            surface_record["skip_reason"] = str(
+                                actionability.get("reason") or "not actionable"
+                            )
+                            total_skipped += 1
+                            continue
+
                         before = interactions.capture_surface_state(page, surface_id)
                         surface_record["before"] = before
 
-                        interactions.open_surface(
+                        opened, skip_reason = _open_actionable_surface(
                             page,
                             surface_id,
                             timeout_ms=runtime.timeout_ms,
                         )
+                        if not opened:
+                            surface_record["status"] = "skipped"
+                            surface_record["skip_reason"] = skip_reason
+                            total_skipped += 1
+                            continue
+
+                        total_exercised += 1
                         after = interactions.capture_surface_state(page, surface_id)
                         surface_record["after"] = after
 
@@ -136,11 +236,11 @@ def check_ui_04(runtime: core.FocusedRuntime) -> None:
         finally:
             context.close()
 
-    if total_discovered < MIN_DISCOVERED_INTERACTIONS:
+    if total_exercised < MIN_EXERCISED_INTERACTIONS:
         failures.append(
-            "coverage: discovered only "
-            f"{total_discovered} generic interactive surface(s); "
-            f"expected at least {MIN_DISCOVERED_INTERACTIONS}."
+            "coverage: exercised only "
+            f"{total_exercised} actionable generic interactive surface(s); "
+            f"expected at least {MIN_EXERCISED_INTERACTIONS}."
         )
 
     ui.write_metrics(
@@ -162,11 +262,14 @@ def check_ui_04(runtime: core.FocusedRuntime) -> None:
                     for name, path in page_matrix
                 ],
                 "max_interactions_per_page": MAX_INTERACTIONS_PER_PAGE,
+                "interaction_action_timeout_ms": INTERACTION_ACTION_TIMEOUT_MS,
                 "dedicated_scenarios_excluded": list(
                     interactions.DEDICATED_SURFACE_SELECTORS
                 ),
             },
             "discovered_interactions": total_discovered,
+            "exercised_interactions": total_exercised,
+            "skipped_interactions": total_skipped,
             "records": records,
             "failures": failures,
         },

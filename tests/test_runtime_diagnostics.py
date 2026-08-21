@@ -126,3 +126,10 @@ def test_runtime_diagnostics_endpoint_exposes_schedule_overdue_and_runtime_switc
     assert payload["invariants"]["F-01"]["status"] == "fail"
     assert payload["invariants"]["F-02"]["status"] == "fail"
     assert payload["functional_watchdog"]["created"] is False
+
+
+def test_rules_page_loads_runtime_health_reconciler(app_client) -> None:
+    response = app_client.get("/")
+
+    assert response.status_code == 200
+    assert "runtime_health.js" in response.text

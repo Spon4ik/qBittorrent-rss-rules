@@ -75,7 +75,7 @@ def _seed_rule_id(runtime: core.FocusedRuntime, *, diagnostics: bool = False) ->
 
 
 def check_ui_01(runtime: core.FocusedRuntime) -> None:
-    """Representative core pages must not create document-level horizontal overflow."""
+    """Audit core responsive pages for overflow and unsafe action groups."""
 
     records: list[dict[str, Any]] = []
     failures: list[str] = []
@@ -100,15 +100,18 @@ def check_ui_01(runtime: core.FocusedRuntime) -> None:
                             f"HTTP {response.status} for {relative_url}."
                         )
                     snapshot = ui.capture_layout(page)
+                    action_groups = ui.capture_action_groups(page)
                     records.append(
                         {
                             "page": page_name,
                             "path": relative_url,
                             "viewport": {"width": width, "height": height},
                             "snapshot": snapshot,
+                            "action_groups": action_groups,
                         }
                     )
                     ui.assert_no_page_horizontal_overflow(snapshot)
+                    ui.assert_action_groups_safe(action_groups, viewport_width=float(width))
                 except Exception as exc:  # noqa: BLE001
                     _record_failure(failures, label=label, exc=exc)
                     if not captured_failure:
@@ -121,7 +124,10 @@ def check_ui_01(runtime: core.FocusedRuntime) -> None:
         runtime.run_dir / "ui-01-metrics.json",
         {
             "check": "UI-01",
-            "contract": "core pages have no document-level horizontal overflow",
+            "contract": (
+                "core pages avoid document-level horizontal overflow and common "
+                "action/tool groups avoid overlap or viewport escape"
+            ),
             "records": records,
             "failures": failures,
         },
@@ -257,7 +263,7 @@ UI_CHECK_SPECS: dict[str, core.CheckSpec] = {
     "UI-01": core.CheckSpec(
         check_id="UI-01",
         phase="UI",
-        title="Core responsive pages avoid document-level horizontal overflow",
+        title="Core responsive pages avoid overflow, action overlap, and viewport escape",
         dependencies=(),
         handler=check_ui_01,
     ),

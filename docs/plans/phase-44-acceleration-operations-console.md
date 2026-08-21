@@ -33,8 +33,10 @@ compact Retry/Ask Codex actions. Category or title inference is forbidden.
 ## Validation status
 
 - The `v1.4.20` qB-diagnostics repair is now persisted on the established
-  `experiment/codex-token-efficiency` branch, but it is not released and must not
-  be described as deployed until the Docker runtime is rebuilt and verified. The
+  `experiment/codex-token-efficiency` branch and Docker runtime is verified at
+  `v1.4.20`. The deterministic isolation repair joins startup/queue work before
+  fixture teardown; two full gates pass with `581` tests. No tag or GitHub
+  Release has been published for this experiment-branch closeout. The
   deterministic closeout contract now separates implementation, focused validation,
   GitHub persistence, Docker deployment, and release/tag state. `scripts\\runtime_state.bat`
   (or `scripts/runtime_state.sh`) reports checkout/upstream/runtime freshness and
@@ -46,9 +48,9 @@ compact Retry/Ask Codex actions. Category or title inference is forbidden.
   flex slot and shifting the command bar by 573px at 1720px and 901px at
   2048px. The disclosure now keeps its stable header slot while its expanded
   panel overlays. `scripts\\browser_qa.bat --suite ui` passes UI-01 through
-  UI-04 without screenshot review. The release finalizer remains blocked by a
-  separate cross-test scheduler/fixture-state leak (571 passed plus a unique
-  test-data row failure on each of two runs); do not release until it passes.
+  UI-04 without screenshot review. The previous cross-test scheduler/fixture-
+  state leak is repaired: route fixtures stop/join the app-global queues, app
+  shutdown owns the same queue lifecycle, and the startup sync thread is joined.
 - The experiment branch now also has a reusable deterministic UI-invariants audit,
   implemented early by explicit user request before the next UI-fix task. This is
   QA infrastructure only and does not change Phase 44 product behavior or waive

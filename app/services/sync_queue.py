@@ -25,6 +25,7 @@ _TOTAL_FAILED = 0
 _ACTIVE_TASKS = 0
 _EXECUTOR: concurrent.futures.ThreadPoolExecutor | None = None
 _WORKER_THREAD: threading.Thread | None = None
+_STOP_EVENT = threading.Event()
 _QUEUE_OPERATION_ID: str | None = None
 _QUEUE_FEEDS_PREPARED = False
 _QUEUE_FEEDS_PREPARING = False
@@ -54,6 +55,31 @@ class RuleSyncOutcome:
     should_backoff: bool = False
 
 
+def start_rule_sync_queue() -> None:
+    """Allow the application-owned qB sync queue to accept work."""
+    _STOP_EVENT.clear()
+
+
+def stop_rule_sync_queue() -> None:
+    """Drain active work and release all queue threads during app shutdown."""
+    global _EXECUTOR, _WORKER_THREAD, _QUEUE_OPERATION_ID
+    with _QUEUE_CONDITION:
+        _STOP_EVENT.set()
+        _QUEUED_RULE_IDS.clear()
+        _QUEUED_RULE_ID_SET.clear()
+        worker = _WORKER_THREAD
+        _QUEUE_CONDITION.notify_all()
+    if worker is not None and worker is not threading.current_thread():
+        worker.join()
+    executor = _EXECUTOR
+    if executor is not None:
+        executor.shutdown(wait=True)
+    with _QUEUE_CONDITION:
+        _EXECUTOR = None
+        _WORKER_THREAD = None
+        _QUEUE_OPERATION_ID = None
+
+
 def enqueue_rule_sync(rule_id: str) -> dict[str, Any]:
     global _QUEUE_FEEDS_PREPARED, _QUEUE_FEEDS_PREPARING, _QUEUE_OPERATION_ID
     global _QUEUE_RECONCILE_PER_RULE
@@ -63,6 +89,8 @@ def enqueue_rule_sync(rule_id: str) -> dict[str, Any]:
         return {"enqueued": False, "duplicate": False, "queue_depth": len(_QUEUED_RULE_IDS)}
 
     with _QUEUE_CONDITION:
+        if _STOP_EVENT.is_set():
+            return {"enqueued": False, "duplicate": False, "queue_depth": 0}
         if not _QUEUED_RULE_IDS and _ACTIVE_TASKS == 0:
             _TOTAL_ENQUEUED = 0
             _TOTAL_COMPLETED = 0
@@ -123,10 +151,7 @@ def _update_queue_operation_locked() -> None:
     if _QUEUE_OPERATION_ID is None:
         return
     if _TOTAL_FAILED:
-        message = (
-            f"qB sync {_TOTAL_COMPLETED}/{_TOTAL_ENQUEUED} completed; "
-            f"{_TOTAL_FAILED} failed."
-        )
+        message = f"qB sync {_TOTAL_COMPLETED}/{_TOTAL_ENQUEUED} completed; {_TOTAL_FAILED} failed."
     elif _QUEUE_FEEDS_PREPARING:
         message = "Preparing qB RSS feeds before parallel rule sync."
     elif _ACTIVE_TASKS or _QUEUED_RULE_IDS:
@@ -160,6 +185,12 @@ def _sync_worker_loop() -> None:
     while True:
         prepare_rule_ids: list[str] | None = None
         with _QUEUE_CONDITION:
+            if _STOP_EVENT.is_set():
+                if _ACTIVE_TASKS == 0:
+                    _WORKER_THREAD = None
+                    return
+                _QUEUE_CONDITION.wait()
+                continue
             if not _QUEUED_RULE_IDS and _ACTIVE_TASKS == 0:
                 _WORKER_THREAD = None
                 return
@@ -193,11 +224,7 @@ def _sync_worker_loop() -> None:
 
 def _dispatch_next_rule_sync_locked() -> bool:
     global _ACTIVE_TASKS
-    if (
-        _EXECUTOR is None
-        or not _QUEUED_RULE_IDS
-        or _ACTIVE_TASKS >= _ADAPTIVE_WORKER_LIMIT
-    ):
+    if _EXECUTOR is None or not _QUEUED_RULE_IDS or _ACTIVE_TASKS >= _ADAPTIVE_WORKER_LIMIT:
         return False
     rule_id = _QUEUED_RULE_IDS.popleft()
     _QUEUED_RULE_ID_SET.discard(rule_id)
@@ -321,16 +348,16 @@ def _is_backoff_error(exc: Exception) -> bool:
 
 
 def _prepare_queued_rule_syncs(rule_ids: list[str]) -> None:
-    cleaned_rule_ids = [str(rule_id or "").strip() for rule_id in rule_ids if str(rule_id or "").strip()]
+    cleaned_rule_ids = [
+        str(rule_id or "").strip() for rule_id in rule_ids if str(rule_id or "").strip()
+    ]
     if not cleaned_rule_ids:
         return
     session_factory = get_session_factory()
     session = session_factory()
     try:
         rules = [
-            rule
-            for rule_id in cleaned_rule_ids
-            if (rule := session.get(Rule, rule_id)) is not None
+            rule for rule_id in cleaned_rule_ids if (rule := session.get(Rule, rule_id)) is not None
         ]
         if not rules:
             return

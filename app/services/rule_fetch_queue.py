@@ -13,6 +13,28 @@ _CONDITION = threading.Condition()
 _RULE_IDS: deque[str] = deque()
 _RULE_ID_SET: set[str] = set()
 _WORKER: threading.Thread | None = None
+_STOP_EVENT = threading.Event()
+
+
+def start_rule_fetch_queue() -> None:
+    """Allow the application-owned initial-fetch queue to accept work."""
+    _STOP_EVENT.clear()
+
+
+def stop_rule_fetch_queue() -> None:
+    """Finish the active fetch and join the worker before its app shuts down."""
+    global _WORKER
+    with _CONDITION:
+        _STOP_EVENT.set()
+        _RULE_IDS.clear()
+        _RULE_ID_SET.clear()
+        worker = _WORKER
+        _CONDITION.notify_all()
+    if worker is not None and worker is not threading.current_thread():
+        worker.join()
+    with _CONDITION:
+        if _WORKER is worker and (worker is None or not worker.is_alive()):
+            _WORKER = None
 
 
 def enqueue_rule_fetch(rule_id: str) -> bool:
@@ -21,6 +43,8 @@ def enqueue_rule_fetch(rule_id: str) -> bool:
     if not normalized:
         return False
     with _CONDITION:
+        if _STOP_EVENT.is_set():
+            return False
         if normalized in _RULE_ID_SET:
             return False
         _RULE_IDS.append(normalized)
@@ -39,6 +63,11 @@ def _worker_loop() -> None:
     global _WORKER
     while True:
         with _CONDITION:
+            if _STOP_EVENT.is_set():
+                _RULE_IDS.clear()
+                _RULE_ID_SET.clear()
+                _WORKER = None
+                return
             if not _RULE_IDS:
                 _WORKER = None
                 return
@@ -59,7 +88,7 @@ def _worker_loop() -> None:
         finally:
             session.close()
         with _CONDITION:
-            if retry:
+            if retry and not _STOP_EVENT.is_set():
                 _RULE_IDS.append(rule_id)
                 _CONDITION.wait(timeout=1.0)
             else:

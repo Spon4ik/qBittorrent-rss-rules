@@ -49,10 +49,18 @@ def configured_app_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 @pytest.fixture()
 def app_client(configured_app_env: Path) -> TestClient:
     from app.main import create_app
+    from app.services.rule_fetch_queue import start_rule_fetch_queue, stop_rule_fetch_queue
+    from app.services.sync_queue import start_rule_sync_queue, stop_rule_sync_queue
 
+    start_rule_sync_queue()
+    start_rule_fetch_queue()
     client = TestClient(create_app())
-    yield client
-    client.close()
+    try:
+        yield client
+    finally:
+        client.close()
+        stop_rule_fetch_queue()
+        stop_rule_sync_queue()
 
 
 @pytest.fixture()

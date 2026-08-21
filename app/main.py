@@ -25,6 +25,7 @@ from app.services.qb_recovery_scheduler import (
     start_qb_recovery_scheduler,
     stop_qb_recovery_scheduler,
 )
+from app.services.rule_fetch_queue import start_rule_fetch_queue, stop_rule_fetch_queue
 from app.services.rule_fetch_scheduler import (
     start_rule_fetch_scheduler,
     stop_rule_fetch_scheduler,
@@ -36,6 +37,7 @@ from app.services.stremio_auto_sync import (
     stop_stremio_auto_sync_service,
 )
 from app.services.sync import SyncService
+from app.services.sync_queue import start_rule_sync_queue, stop_rule_sync_queue
 
 DESKTOP_BACKEND_CONTRACT = "2026-08-03"
 DESKTOP_BACKEND_CAPABILITIES = (
@@ -74,6 +76,16 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
 
     @app.on_event("startup")
+    def _start_background_queues() -> None:  # pragma: no cover - startup hook
+        start_rule_sync_queue()
+        start_rule_fetch_queue()
+
+    @app.on_event("shutdown")
+    def _stop_background_queues() -> None:  # pragma: no cover - shutdown hook
+        stop_rule_fetch_queue()
+        stop_rule_sync_queue()
+
+    @app.on_event("startup")
     def _start_download_acceleration() -> None:  # pragma: no cover - startup hook
         start_download_acceleration_scheduler(session_factory=get_session_factory())
 
@@ -90,6 +102,7 @@ def create_app() -> FastAPI:
         stop_qb_recovery_scheduler()
 
     if env_settings.sync_rules_on_startup:
+        startup_sync_thread: threading.Thread | None = None
 
         def _run_startup_rule_sync() -> None:
             session = get_session_factory()()
@@ -106,11 +119,22 @@ def create_app() -> FastAPI:
 
         @app.on_event("startup")
         def _sync_rules_on_startup() -> None:  # pragma: no cover - startup hook
-            threading.Thread(
+            nonlocal startup_sync_thread
+            if startup_sync_thread is not None and startup_sync_thread.is_alive():
+                return
+            startup_sync_thread = threading.Thread(
                 target=_run_startup_rule_sync,
                 daemon=True,
                 name="startup-rule-sync",
-            ).start()
+            )
+            startup_sync_thread.start()
+
+        @app.on_event("shutdown")
+        def _join_startup_rule_sync() -> None:  # pragma: no cover - startup hook
+            nonlocal startup_sync_thread
+            if startup_sync_thread is not None:
+                startup_sync_thread.join()
+                startup_sync_thread = None
 
     if env_settings.enable_rule_fetch_scheduler:
 

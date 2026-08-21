@@ -337,6 +337,21 @@ def evaluate_unhandled_api_errors(
     now: datetime | None = None,
 ) -> CheckResult:
     del now
+    raw_capabilities = payload.get("diagnostic_capabilities")
+    capabilities = (
+        {str(item) for item in raw_capabilities}
+        if isinstance(raw_capabilities, list)
+        else set()
+    )
+    if "unhandled_api_error_telemetry" not in capabilities:
+        return CheckResult(
+            check_id="F-03",
+            title="Unhandled API errors",
+            status="skip",
+            summary="Runtime predates unhandled API error telemetry; F-03 is not supported here.",
+            metrics={"telemetry_supported": False},
+        )
+
     components = _mapping(payload.get("components"))
     api_component = _mapping(components.get("api"))
     if "unhandled_errors" not in api_component:
@@ -344,14 +359,15 @@ def evaluate_unhandled_api_errors(
             check_id="F-03",
             title="Unhandled API errors",
             status="fail",
-            summary="Runtime diagnostics did not include unhandled API error telemetry.",
-            metrics={},
+            summary="Runtime advertises API error telemetry but did not provide it.",
+            metrics={"telemetry_supported": True},
         )
 
     error_status = _mapping(api_component.get("unhandled_errors"))
     last_error = _mapping(error_status.get("last"))
     count = max(0, int(_number(error_status.get("count"))))
     metrics: dict[str, Any] = {
+        "telemetry_supported": True,
         "unhandled_error_count": count,
         "last_error_id": last_error.get("id"),
         "last_error_at": last_error.get("occurred_at"),

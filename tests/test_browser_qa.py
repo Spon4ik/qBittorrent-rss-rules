@@ -101,11 +101,20 @@ def test_p5_media_failure_is_blocked_when_p9_setup_failed() -> None:
     assert by_id["P5-01"]["status"] == "blocked"
 
 
-def test_browser_qa_wrappers_prefer_repo_virtualenv() -> None:
+def test_browser_qa_wrappers_prefer_repo_virtualenv_and_route_ui_suite() -> None:
     windows = WINDOWS_WRAPPER.read_text(encoding="utf-8")
     shell = SHELL_WRAPPER.read_text(encoding="utf-8")
 
     assert ".venv\\Scripts\\python.exe" in windows
-    assert "scripts\\browser_qa.py" in windows
+    assert 'set "QA_SCRIPT=browser_qa.py"' in windows
+    assert '"--suite"' in windows
+    assert '"ui"' in windows
+    assert '"UI-"' in windows
+    assert 'set "QA_SCRIPT=ui_invariant_qa.py"' in windows
+
     assert ".venv/bin/python" in shell
-    assert "scripts/browser_qa.py" in shell
+    assert 'QA_SCRIPT="browser_qa.py"' in shell
+    assert '"--suite"' in shell
+    assert '"ui"' in shell
+    assert "UI-*" in shell
+    assert 'QA_SCRIPT="ui_invariant_qa.py"' in shell

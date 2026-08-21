@@ -11,6 +11,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 import ui_interactions as interactions  # noqa: E402
 import ui_invariants as ui  # noqa: E402
+import ui_suite_qa as suite  # noqa: E402
 
 
 def _container(
@@ -112,3 +113,78 @@ def test_overlay_context_reflow_is_reported() -> None:
 def test_dedicated_surfaces_are_not_reaudited_by_generic_layer() -> None:
     assert ".rule-diagnostics-disclosure" in interactions.DEDICATED_SURFACE_SELECTORS
     assert "[data-result-toolbar-menu]" in interactions.DEDICATED_SURFACE_SELECTORS
+
+
+class _FakeLocator:
+    def __init__(self, page: _FakePage) -> None:
+        self.page = page
+
+    def click(self, *, timeout: int) -> None:
+        self.page.clicked = True
+        self.page.click_timeout = timeout
+
+
+class _FakePage:
+    def __init__(self, *, actionable: bool) -> None:
+        self.actionable = actionable
+        self.clicked = False
+        self.click_timeout: int | None = None
+        self.wait_arg: str | None = None
+        self.wait_timeout: int | None = None
+        self.locator_requested = False
+        self.evaluate_calls = 0
+
+    def evaluate(self, _expression: str, *, arg: object | None = None) -> object:
+        self.evaluate_calls += 1
+        if self.evaluate_calls == 1:
+            return {
+                "actionable": self.actionable,
+                "reason": "" if self.actionable else "disabled",
+            }
+        return None
+
+    def locator(self, _selector: str) -> _FakeLocator:
+        self.locator_requested = True
+        return _FakeLocator(self)
+
+    def wait_for_function(
+        self,
+        _expression: str,
+        *,
+        arg: object | None = None,
+        timeout: int | None = None,
+    ) -> None:
+        self.wait_arg = str(arg) if arg is not None else None
+        self.wait_timeout = timeout
+
+
+def test_generic_surface_open_uses_keyword_arg_and_caps_action_timeout() -> None:
+    page = _FakePage(actionable=True)
+
+    opened, reason = suite._open_actionable_surface(
+        page,
+        "ui-surface-7",
+        timeout_ms=25000,
+    )
+
+    assert opened is True
+    assert reason == ""
+    assert page.clicked is True
+    assert page.wait_arg == "ui-surface-7"
+    assert page.click_timeout == suite.INTERACTION_ACTION_TIMEOUT_MS
+    assert page.wait_timeout == suite.INTERACTION_ACTION_TIMEOUT_MS
+
+
+def test_disabled_generic_surface_skips_without_click_or_wait() -> None:
+    page = _FakePage(actionable=False)
+
+    opened, reason = suite._open_actionable_surface(
+        page,
+        "ui-surface-2",
+        timeout_ms=25000,
+    )
+
+    assert opened is False
+    assert reason == "disabled"
+    assert page.locator_requested is False
+    assert page.wait_arg is None

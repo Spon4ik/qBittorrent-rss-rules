@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 MAX_ACTIVE_TICK_SECONDS = 1800.0
 KNOWN_RECOVERABLE_READINESS_ERRORS = frozenset(
@@ -47,15 +47,19 @@ def parse_datetime(value: object | None) -> datetime | None:
 
 def _number(value: object | None, *, default: float = 0.0) -> float:
     try:
-        return float(value) if value is not None else default
+        return float(cast(Any, value)) if value is not None else default
     except (TypeError, ValueError):
         return default
 
 
+def _mapping(value: object | None) -> dict[str, Any]:
+    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+
+
 def _scheduled_component(payload: dict[str, Any]) -> dict[str, Any] | None:
-    components = payload.get("components") if isinstance(payload, dict) else None
-    component = components.get("scheduled_rule_fetch") if isinstance(components, dict) else None
-    return component if isinstance(component, dict) else None
+    components = _mapping(payload.get("components"))
+    component = components.get("scheduled_rule_fetch")
+    return cast(dict[str, Any], component) if isinstance(component, dict) else None
 
 
 def evaluate_scheduled_fetch_liveness(
@@ -73,8 +77,8 @@ def evaluate_scheduled_fetch_liveness(
             metrics={},
         )
 
-    schedule = component.get("schedule") if isinstance(component.get("schedule"), dict) else {}
-    scheduler = component.get("scheduler") if isinstance(component.get("scheduler"), dict) else {}
+    schedule = _mapping(component.get("schedule"))
+    scheduler = _mapping(component.get("scheduler"))
     schedule_enabled = bool(schedule.get("enabled"))
     runtime_enabled = bool(component.get("runtime_enabled"))
     scheduler_running = bool(scheduler.get("running"))
@@ -211,9 +215,9 @@ def evaluate_scheduled_fetch_effectiveness(
             metrics={},
         )
 
-    schedule = component.get("schedule") if isinstance(component.get("schedule"), dict) else {}
-    readiness = component.get("readiness") if isinstance(component.get("readiness"), dict) else {}
-    runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
+    schedule = _mapping(component.get("schedule"))
+    readiness = _mapping(component.get("readiness"))
+    runtime = _mapping(payload.get("runtime"))
     schedule_enabled = bool(schedule.get("enabled"))
     jackett_ready = bool(readiness.get("jackett_app_ready"))
     last_status = str(schedule.get("last_status") or "idle").strip().casefold() or "idle"

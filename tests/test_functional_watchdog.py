@@ -15,6 +15,12 @@ def _payload(*, jackett_ready: bool) -> dict[str, object]:
             "started_at": "2026-08-21T12:30:00+00:00",
         },
         "components": {
+            "api": {
+                "unhandled_errors": {
+                    "count": 0,
+                    "last": None,
+                }
+            },
             "scheduled_rule_fetch": {
                 "runtime_enabled": True,
                 "overdue_seconds": 0.0,
@@ -41,7 +47,7 @@ def _payload(*, jackett_ready: bool) -> dict[str, object]:
                     "last_tick_result": "not_due",
                     "last_tick_error_type": None,
                 },
-            }
+            },
         },
     }
 

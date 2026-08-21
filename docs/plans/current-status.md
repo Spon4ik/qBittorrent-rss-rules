@@ -2,6 +2,14 @@
 
 ## Current focus
 
+- The `v1.4.19` Result controls toolbar regression is implemented and browser
+  validated. Indexer scope, Media category, and Queue options now share one
+  dismissal contract: outside click, Escape, and opening a sibling menu close
+  the active menu. A broad grid-placement selector had overlaid Sequential
+  download with First and last pieces first; the paused-toggle placement is
+  now explicitly scoped, so both options remain visible and functional.
+  Deterministic Playwright checks cover state dismissal, desktop alignment,
+  no menu-induced layout reflow, both queue options, and narrow-screen overflow.
 - The `v1.4.18` result-toolbar and left-rail dark-mode follow-up is implemented
   and live-validated. Result filtering, both local-scope dropdowns, Save sort,
   `Queue paused`, and `Queue options` now share one wide-desktop row; all three

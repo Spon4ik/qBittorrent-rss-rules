@@ -3503,6 +3503,205 @@ def main() -> int:
                 page=page,
             )
 
+            def check_result_toolbar_menu_behavior() -> None:
+                from sqlalchemy import create_engine, select
+                from sqlalchemy.orm import Session
+
+                from app.models import Rule
+
+                engine = create_engine(
+                    f"sqlite:///{db_path.as_posix()}",
+                    connect_args={"check_same_thread": False, "timeout": 30},
+                    future=True,
+                )
+                try:
+                    with Session(engine) as session:
+                        rule_id = str(
+                            session.scalar(
+                                select(Rule.id).where(Rule.rule_name == "QA P19 Inline Search Profile")
+                            )
+                            or ""
+                        )
+                finally:
+                    engine.dispose()
+                _expect(bool(rule_id), "Expected the pre-seeded toolbar QA rule to exist.")
+                inline_rule_url = f"{app_base_url}/rules/{rule_id}?run_search=1"
+                toolbar_context = browser.new_context(viewport={"width": 1720, "height": 1040})
+                toolbar_page = toolbar_context.new_page()
+                try:
+                    toolbar_page.goto(str(inline_rule_url), wait_until="networkidle", timeout=args.timeout_ms)
+                    toolbar_page.wait_for_selector(
+                        '#inline-search-results .result-toolbar-row',
+                        timeout=args.timeout_ms,
+                    )
+                    indexer_menu = toolbar_page.locator(
+                        '#inline-search-results [data-search-multiselect="indexers"]'
+                    )
+                    category_menu = toolbar_page.locator(
+                        '#inline-search-results [data-search-multiselect="categories"]'
+                    )
+                    queue_menu = toolbar_page.locator(
+                        '#inline-search-results [data-result-toolbar-menu].search-queue-advanced'
+                    )
+                    _expect(indexer_menu.count() == 1, "Expected one inline indexer-scope menu.")
+                    _expect(category_menu.count() == 1, "Expected one inline media-category menu.")
+                    _expect(queue_menu.count() == 1, "Expected one inline queue-options menu.")
+
+                    baseline = toolbar_page.evaluate(
+                        """
+                        () => {
+                          const toolbar = document.querySelector("#inline-search-results .result-toolbar-row");
+                          const table = document.querySelector('#inline-search-results [data-search-table-wrap="combined"]');
+                          const indexer = document.querySelector('[data-search-multiselect="indexers"] > summary');
+                          const category = document.querySelector('[data-search-multiselect="categories"] > summary');
+                          const queue = document.querySelector('.search-queue-advanced > summary');
+                          if (!toolbar || !table || !indexer || !category || !queue) return null;
+                          return {
+                            toolbarHeight: toolbar.getBoundingClientRect().height,
+                            tableDocumentTop: table.getBoundingClientRect().top + window.scrollY,
+                            indexerY: indexer.getBoundingClientRect().y,
+                            categoryY: category.getBoundingClientRect().y,
+                            queueY: queue.getBoundingClientRect().y,
+                          };
+                        }
+                        """
+                    )
+                    _expect(baseline is not None, "Missing result-toolbar baseline geometry.")
+                    _expect(
+                        max(
+                            abs(float(baseline["indexerY"]) - float(baseline["categoryY"])),
+                            abs(float(baseline["indexerY"]) - float(baseline["queueY"])),
+                        ) <= 1,
+                        f"Wide-toolbar menu summaries are not aligned: {baseline}",
+                    )
+
+                    indexer_menu.locator("summary").click()
+                    _expect(indexer_menu.get_attribute("open") is not None, "Indexer menu did not open.")
+                    category_menu.locator("summary").click()
+                    _expect(category_menu.get_attribute("open") is not None, "Category menu did not open.")
+                    _expect(indexer_menu.get_attribute("open") is None, "Opening category left indexer menu open.")
+                    toolbar_page.keyboard.press("Escape")
+                    _expect(category_menu.get_attribute("open") is None, "Escape did not close the active toolbar menu.")
+
+                    queue_menu.locator("summary").click()
+                    queue_metrics = toolbar_page.evaluate(
+                        """
+                        () => {
+                          const toolbar = document.querySelector("#inline-search-results .result-toolbar-row");
+                          const table = document.querySelector('#inline-search-results [data-search-table-wrap="combined"]');
+                          const sequential = document.querySelector('[data-result-queue-option="sequential"]');
+                          const firstLast = document.querySelector('[data-result-queue-option="first_last_piece_prio"]');
+                          if (!toolbar || !table || !sequential || !firstLast) return null;
+                          const sequentialRect = sequential.closest("label")?.getBoundingClientRect();
+                          const firstLastRect = firstLast.closest("label")?.getBoundingClientRect();
+                          if (!sequentialRect || !firstLastRect) return null;
+                          return {
+                            toolbarHeight: toolbar.getBoundingClientRect().height,
+                            tableDocumentTop: table.getBoundingClientRect().top + window.scrollY,
+                            scrollWidth: document.documentElement.scrollWidth,
+                            clientWidth: document.documentElement.clientWidth,
+                            sequentialVisible: Boolean(sequential.offsetParent),
+                            firstLastVisible: Boolean(firstLast.offsetParent),
+                            itemsOverlap: sequentialRect.bottom > firstLastRect.top && firstLastRect.bottom > sequentialRect.top,
+                          };
+                        }
+                        """
+                    )
+                    _expect(queue_metrics is not None, "Missing open queue-menu geometry.")
+                    _expect(bool(queue_metrics["sequentialVisible"]), f"Sequential download is not visible: {queue_metrics}")
+                    _expect(bool(queue_metrics["firstLastVisible"]), f"First/last pieces option is not visible: {queue_metrics}")
+                    _expect(not bool(queue_metrics["itemsOverlap"]), f"Queue options overlap: {queue_metrics}")
+                    _expect(
+                        abs(float(queue_metrics["toolbarHeight"]) - float(baseline["toolbarHeight"])) <= 1
+                        and abs(float(queue_metrics["tableDocumentTop"]) - float(baseline["tableDocumentTop"])) <= 1,
+                        f"Opening queue options reflowed surrounding layout: baseline={baseline}, open={queue_metrics}",
+                    )
+                    _expect(
+                        int(queue_metrics["scrollWidth"]) <= int(queue_metrics["clientWidth"]),
+                        f"Queue menu introduced horizontal page overflow: {queue_metrics}",
+                    )
+                    toolbar_page.mouse.click(8, 8)
+                    _expect(queue_menu.get_attribute("open") is None, "Outside click did not close the queue menu.")
+                finally:
+                    toolbar_context.close()
+
+                narrow_context = browser.new_context(viewport={"width": 390, "height": 844})
+                narrow_page = narrow_context.new_page()
+                try:
+                    narrow_page.goto(str(inline_rule_url), wait_until="networkidle", timeout=args.timeout_ms)
+                    narrow_page.wait_for_selector(
+                        '#inline-search-results .result-toolbar-row',
+                        timeout=args.timeout_ms,
+                    )
+                    narrow_queue_menu = narrow_page.locator(
+                        '#inline-search-results [data-result-toolbar-menu].search-queue-advanced'
+                    )
+                    _expect(narrow_queue_menu.count() == 1, "Expected one responsive queue-options menu.")
+                    narrow_baseline = narrow_page.evaluate(
+                        """
+                        () => {
+                          const toolbar = document.querySelector("#inline-search-results .result-toolbar-row");
+                          const table = document.querySelector('#inline-search-results [data-search-table-wrap="combined"]');
+                          if (!toolbar || !table) return null;
+                          return {
+                            toolbarHeight: toolbar.getBoundingClientRect().height,
+                            tableDocumentTop: table.getBoundingClientRect().top + window.scrollY,
+                            scrollWidth: document.documentElement.scrollWidth,
+                            clientWidth: document.documentElement.clientWidth,
+                          };
+                        }
+                        """
+                    )
+                    _expect(narrow_baseline is not None, "Missing responsive toolbar baseline geometry.")
+                    _expect(
+                        int(narrow_baseline["scrollWidth"]) <= int(narrow_baseline["clientWidth"]),
+                        f"Responsive toolbar has horizontal overflow before opening a menu: {narrow_baseline}",
+                    )
+                    narrow_queue_menu.locator("summary").click()
+                    narrow_open = narrow_page.evaluate(
+                        """
+                        () => {
+                          const toolbar = document.querySelector("#inline-search-results .result-toolbar-row");
+                          const table = document.querySelector('#inline-search-results [data-search-table-wrap="combined"]');
+                          const sequential = document.querySelector('[data-result-queue-option="sequential"]');
+                          const firstLast = document.querySelector('[data-result-queue-option="first_last_piece_prio"]');
+                          if (!toolbar || !table || !sequential || !firstLast) return null;
+                          return {
+                            toolbarHeight: toolbar.getBoundingClientRect().height,
+                            tableDocumentTop: table.getBoundingClientRect().top + window.scrollY,
+                            scrollWidth: document.documentElement.scrollWidth,
+                            clientWidth: document.documentElement.clientWidth,
+                            sequentialVisible: Boolean(sequential.offsetParent),
+                            firstLastVisible: Boolean(firstLast.offsetParent),
+                          };
+                        }
+                        """
+                    )
+                    _expect(narrow_open is not None, "Missing open responsive queue-menu geometry.")
+                    _expect(
+                        bool(narrow_open["sequentialVisible"]) and bool(narrow_open["firstLastVisible"]),
+                        f"Responsive queue menu hid an option: {narrow_open}",
+                    )
+                    _expect(
+                        abs(float(narrow_open["toolbarHeight"]) - float(narrow_baseline["toolbarHeight"])) <= 1
+                        and abs(float(narrow_open["tableDocumentTop"]) - float(narrow_baseline["tableDocumentTop"])) <= 1,
+                        f"Responsive queue menu reflowed surrounding layout: baseline={narrow_baseline}, open={narrow_open}",
+                    )
+                    _expect(
+                        int(narrow_open["scrollWidth"]) <= int(narrow_open["clientWidth"]),
+                        f"Responsive queue menu introduced horizontal overflow: {narrow_open}",
+                    )
+                finally:
+                    narrow_context.close()
+
+            run_check(
+                "P44-03",
+                "Phase 44",
+                "Result-toolbar menus close predictably without reflow or hidden queue options",
+                check_result_toolbar_menu_behavior,
+                page=page,
+            )
+
             def check_phase33_hidden_rows_keep_table_usable() -> None:
                 inline_rule_url = phase7_context.get("inline_rule_url")
                 _expect(

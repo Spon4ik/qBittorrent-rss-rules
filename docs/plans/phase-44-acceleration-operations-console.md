@@ -32,6 +32,12 @@ compact Retry/Ask Codex actions. Category or title inference is forbidden.
 
 ## Validation status
 
+- Follow-up `v1.4.19` fixes Result controls menu interaction and queue-option
+  visibility. The toolbar's three menu-style controls close on outside click,
+  Escape, and sibling opening; Queue options no longer overlays Sequential
+  download with First and last pieces first. The deterministic P44-03 browser
+  check asserts those state transitions plus desktop alignment, no layout
+  movement, and narrow-screen overflow invariants.
 - Follow-up `v1.4.18` consolidates the result and queue controls into one
   aligned wide-desktop toolbar, uses compact normal-case queue labels, and
   extends readable non-expanding dark disclosures to the left rule-settings

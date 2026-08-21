@@ -213,6 +213,8 @@ def _fetch_json(url: str, *, timeout_seconds: float) -> dict[str, Any]:
             raw = response.read().decode("utf-8")
     except HTTPError as exc:
         raise RuntimeError(f"HTTP {exc.code} from {url}") from exc
+    except TimeoutError as exc:
+        raise RuntimeError(f"Timed out reading {url} after {timeout_seconds:g}s") from exc
     except URLError as exc:
         raise RuntimeError(f"Unable to reach {url}: {exc.reason}") from exc
     try:

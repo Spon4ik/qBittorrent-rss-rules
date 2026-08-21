@@ -151,17 +151,22 @@ def create_app() -> FastAPI:
                 poll_interval_seconds=env_settings.rule_fetch_scheduler_poll_seconds,
             )
 
+        @app.on_event("shutdown")
+        def _stop_background_rule_fetch_scheduler() -> None:  # pragma: no cover - shutdown hook
+            stop_rule_fetch_scheduler()
+
+    if env_settings.enable_functional_watchdog:
+
         @app.on_event("startup")
         def _start_runtime_functional_watchdog() -> None:  # pragma: no cover - startup hook
-            start_functional_watchdog(session_factory=get_session_factory())
+            start_functional_watchdog(
+                session_factory=get_session_factory(),
+                interval_seconds=env_settings.functional_watchdog_interval_seconds,
+            )
 
         @app.on_event("shutdown")
         def _stop_runtime_functional_watchdog() -> None:  # pragma: no cover - shutdown hook
             stop_functional_watchdog()
-
-        @app.on_event("shutdown")
-        def _stop_background_rule_fetch_scheduler() -> None:  # pragma: no cover - shutdown hook
-            stop_rule_fetch_scheduler()
 
     if env_settings.enable_jellyfin_auto_sync_scheduler:
 

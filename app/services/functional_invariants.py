@@ -332,6 +332,59 @@ def evaluate_scheduled_fetch_effectiveness(
     )
 
 
+def evaluate_unhandled_api_errors(
+    payload: dict[str, Any],
+    now: datetime | None = None,
+) -> CheckResult:
+    del now
+    components = _mapping(payload.get("components"))
+    api_component = _mapping(components.get("api"))
+    if "unhandled_errors" not in api_component:
+        return CheckResult(
+            check_id="F-03",
+            title="Unhandled API errors",
+            status="fail",
+            summary="Runtime diagnostics did not include unhandled API error telemetry.",
+            metrics={},
+        )
+
+    error_status = _mapping(api_component.get("unhandled_errors"))
+    last_error = _mapping(error_status.get("last"))
+    count = max(0, int(_number(error_status.get("count"))))
+    metrics: dict[str, Any] = {
+        "unhandled_error_count": count,
+        "last_error_id": last_error.get("id"),
+        "last_error_at": last_error.get("occurred_at"),
+        "last_error_method": last_error.get("method"),
+        "last_error_path": last_error.get("path"),
+        "last_error_type": last_error.get("error_type"),
+    }
+
+    if count > 0:
+        method = str(last_error.get("method") or "API").strip()
+        path = str(last_error.get("path") or "request").strip()
+        error_type = str(last_error.get("error_type") or "Exception").strip()
+        error_id = str(last_error.get("id") or "unknown").strip()
+        return CheckResult(
+            check_id="F-03",
+            title="Unhandled API errors",
+            status="fail",
+            summary=(
+                f"Current runtime recorded {count} unhandled API exception(s); latest "
+                f"{method} {path} failed with {error_type} ({error_id})."
+            ),
+            metrics=metrics,
+        )
+
+    return CheckResult(
+        check_id="F-03",
+        title="Unhandled API errors",
+        status="pass",
+        summary="Current runtime has recorded no unhandled API exceptions.",
+        metrics=metrics,
+    )
+
+
 CHECKS: dict[str, CheckSpec] = {
     "F-01": CheckSpec(
         check_id="F-01",
@@ -343,5 +396,10 @@ CHECKS: dict[str, CheckSpec] = {
         title="Scheduled fetch effectiveness",
         evaluator=evaluate_scheduled_fetch_effectiveness,
     ),
+    "F-03": CheckSpec(
+        check_id="F-03",
+        title="Unhandled API errors",
+        evaluator=evaluate_unhandled_api_errors,
+    ),
 }
-SUITES: dict[str, tuple[str, ...]] = {"core": ("F-01", "F-02")}
+SUITES: dict[str, tuple[str, ...]] = {"core": ("F-01", "F-02", "F-03")}

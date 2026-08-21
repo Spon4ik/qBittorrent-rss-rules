@@ -17,6 +17,10 @@ from app.services.download_acceleration_scheduler import (
     start_download_acceleration_scheduler,
     stop_download_acceleration_scheduler,
 )
+from app.services.functional_watchdog import (
+    start_functional_watchdog,
+    stop_functional_watchdog,
+)
 from app.services.jellyfin_auto_sync import (
     start_jellyfin_auto_sync_service,
     stop_jellyfin_auto_sync_service,
@@ -146,6 +150,14 @@ def create_app() -> FastAPI:
                 session_factory=get_session_factory(),
                 poll_interval_seconds=env_settings.rule_fetch_scheduler_poll_seconds,
             )
+
+        @app.on_event("startup")
+        def _start_runtime_functional_watchdog() -> None:  # pragma: no cover - startup hook
+            start_functional_watchdog(session_factory=get_session_factory())
+
+        @app.on_event("shutdown")
+        def _stop_runtime_functional_watchdog() -> None:  # pragma: no cover - shutdown hook
+            stop_functional_watchdog()
 
         @app.on_event("shutdown")
         def _stop_background_rule_fetch_scheduler() -> None:  # pragma: no cover - shutdown hook

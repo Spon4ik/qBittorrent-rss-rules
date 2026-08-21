@@ -9,6 +9,9 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 import browser_qa  # noqa: E402
 
+WINDOWS_WRAPPER = SCRIPTS_DIR / "browser_qa.bat"
+SHELL_WRAPPER = SCRIPTS_DIR / "browser_qa.sh"
+
 
 def _noop(_runtime: browser_qa.FocusedRuntime) -> None:
     return None
@@ -96,3 +99,13 @@ def test_p5_media_failure_is_blocked_when_p9_setup_failed() -> None:
 
     assert by_id["P9-01"]["status"] == "fail"
     assert by_id["P5-01"]["status"] == "blocked"
+
+
+def test_browser_qa_wrappers_prefer_repo_virtualenv() -> None:
+    windows = WINDOWS_WRAPPER.read_text(encoding="utf-8")
+    shell = SHELL_WRAPPER.read_text(encoding="utf-8")
+
+    assert ".venv\\Scripts\\python.exe" in windows
+    assert "scripts\\browser_qa.py" in windows
+    assert ".venv/bin/python" in shell
+    assert "scripts/browser_qa.py" in shell

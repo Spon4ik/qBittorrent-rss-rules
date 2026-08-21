@@ -9,7 +9,7 @@ pushd "%PROJECT_ROOT%" >nul
 
 echo Finalizing backend change...
 echo.
-echo [1/3] Running deterministic project checks...
+echo [1/4] Running deterministic project checks...
 call "scripts\check.bat"
 set "CHECK_EXIT=%ERRORLEVEL%"
 if not "%CHECK_EXIT%"=="0" (
@@ -23,7 +23,7 @@ if not "%CHECK_EXIT%"=="0" (
 )
 
 echo.
-echo [2/3] Deterministic validation passed. Rebuilding and validating Docker...
+echo [2/4] Deterministic validation passed. Rebuilding and validating Docker...
 call "Update Docker.cmd" --no-pause
 set "DOCKER_EXIT=%ERRORLEVEL%"
 if not "%DOCKER_EXIT%"=="0" (
@@ -37,7 +37,7 @@ if not "%DOCKER_EXIT%"=="0" (
 )
 
 echo.
-echo [3/3] Verifying the deployed runtime matches the checkout version...
+echo [3/4] Verifying the deployed runtime matches the checkout version...
 call "scripts\runtime_state.bat" --require-runtime-current
 set "STATE_EXIT=%ERRORLEVEL%"
 if not "%STATE_EXIT%"=="0" (
@@ -48,7 +48,19 @@ if not "%STATE_EXIT%"=="0" (
 )
 
 echo.
-echo [OK] Backend finalization completed: local checks passed and the deployed runtime is current and healthy.
+echo [4/4] Running deployed-runtime functional invariants...
+call "scripts\functional_qa.bat" --suite core
+set "FUNCTIONAL_EXIT=%ERRORLEVEL%"
+if not "%FUNCTIONAL_EXIT%"=="0" (
+  echo.
+  echo [FAIL] The deployed runtime is current, but functional runtime QA FAILED.
+  echo Docker deployment is CURRENT; application behavior still has an actionable invariant failure.
+  set "EXIT_CODE=%FUNCTIONAL_EXIT%"
+  goto :finish
+)
+
+echo.
+echo [OK] Backend finalization completed: local checks passed, the deployed runtime is current and healthy, and core functional invariants pass.
 set "EXIT_CODE=0"
 
 :finish

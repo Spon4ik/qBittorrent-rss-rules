@@ -38,11 +38,14 @@ def configured_app_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     from app.config import get_environment_settings
     from app.db import reset_db_caches
+    from app.services.api_error_registry import reset_api_error_registry_for_tests
 
     get_environment_settings.cache_clear()
     reset_db_caches()
+    reset_api_error_registry_for_tests()
     yield database_path
 
+    reset_api_error_registry_for_tests()
     get_environment_settings.cache_clear()
     reset_db_caches()
 

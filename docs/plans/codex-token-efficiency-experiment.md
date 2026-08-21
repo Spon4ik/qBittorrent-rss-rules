@@ -52,9 +52,31 @@ Useful result states are `solved`, `design_complete`, `needs_architect`, `needs_
 
 - `scripts/test.sh` and `scripts/test.bat` capture full pytest output in `logs/tests/pytest-last.log` and print a compact JUnit-derived summary by default.
 - `QB_TEST_VERBOSE=1` restores full pytest output only when explicitly needed.
+- `scripts/browser_qa.py` is the maintained browser-QA entrypoint for iterative UI work. Use `--check <ID>` for the smallest relevant deterministic scenario or `--phase <N>` for the maintained focused checks in one phase. The first extracted scenario is `P44-03`.
+- Use `python scripts/browser_qa.py --full` only once at browser closeout. It runs the legacy broad harness once, preserves the raw report, and emits `codex-summary.json` / `codex-summary.md` that distinguish actionable failures from dependency cascades and explicitly quarantined stale contracts.
+- Dependency-caused checks are reported as `blocked` in the compact evidence instead of being presented as additional root failures. Mechanically stale legacy checks are quarantined conservatively; uncertain semantic failures remain actionable until audited.
+- The raw `scripts/closeout_browser_qa.py` command remains available as a compatibility/audit path, but it should not be the iterative debugging loop for a focused UI defect.
 - `Finalize-Backend.cmd --no-pause` is the canonical shell-safe backend completion gate: Ruff -> mypy -> pytest -> Docker rebuild -> `/health`. Docker is not rebuilt if deterministic validation fails.
 - `Finalize Backend.cmd` remains the human-friendly underlying entrypoint; the hyphenated wrapper avoids PowerShell quoting/call-operator requirements.
 - `Update-Docker.cmd` is the canonical shell-safe Docker-only updater. `Update Docker.cmd` remains available for direct human double-click use.
+
+## Browser-QA experiment finding
+
+The first real `v1.4.19` Result-controls experiment exposed a tooling bottleneck rather than a model-routing failure: one focused P44 regression caused the monolithic browser harness to run four times, repeatedly exercising unrelated legacy scenarios and screenshot matrices. The new focused runner makes the efficient path explicit:
+
+```powershell
+python scripts/browser_qa.py --check P44-03
+```
+
+or, for all maintained focused checks in the phase:
+
+```powershell
+python scripts/browser_qa.py --phase 44
+```
+
+During iteration, rerun only the relevant focused check/phase. After it passes, run the normal deterministic code gate and, when browser-wide regression coverage is warranted, run `python scripts/browser_qa.py --full` once. Consume the compact summary before opening raw logs or screenshots.
+
+The current quarantine is deliberately narrow. It covers legacy checks whose August 2026 failures are mechanically stale (for example selectors waiting on controls that are present but intentionally hidden, or a removed handoff action). Result-count and other semantic P5/P6 failures are not automatically excused; they remain actionable until separately audited or replaced.
 
 ## A/B test protocol
 

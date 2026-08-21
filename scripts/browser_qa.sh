@@ -17,4 +17,11 @@ else
   exit 127
 fi
 
-exec "$PYTHON_EXE" "$PROJECT_DIR/scripts/browser_qa.py" "$@"
+QA_SCRIPT="browser_qa.py"
+if [[ "${1:-}" == "--suite" && "${2:-}" == "ui" ]]; then
+  QA_SCRIPT="ui_invariant_qa.py"
+elif [[ "${1:-}" == "--check" && "${2:-}" == UI-* ]]; then
+  QA_SCRIPT="ui_invariant_qa.py"
+fi
+
+exec "$PYTHON_EXE" "$PROJECT_DIR/scripts/$QA_SCRIPT" "$@"

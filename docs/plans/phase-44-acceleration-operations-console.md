@@ -32,6 +32,14 @@ compact Retry/Ask Codex actions. Category or title inference is forbidden.
 
 ## Validation status
 
+- Browser-QA iteration now has a focused entrypoint: `python scripts/browser_qa.py
+  --check P44-03` runs only the maintained Result-toolbar regression, while
+  `--phase 44` selects all maintained Phase 44 focused checks. Browser-wide
+  legacy coverage is reserved for one `--full` closeout run, which preserves the
+  raw report and emits compact dependency/quarantine-aware evidence for Codex.
+  Dependency cascades such as P7/P33 after P6-05 are classified as blocked; only
+  mechanically audited stale legacy contracts are quarantined, while uncertain
+  semantic P5/P6 failures stay actionable.
 - Follow-up `v1.4.19` fixes Result controls menu interaction and queue-option
   visibility. The toolbar's three menu-style controls close on outside click,
   Escape, and sibling opening; Queue options no longer overlays Sequential

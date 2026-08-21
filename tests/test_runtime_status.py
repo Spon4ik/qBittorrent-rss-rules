@@ -3,7 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = PROJECT_DIR / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -100,5 +101,22 @@ def test_runtime_state_distinguishes_unreachable_and_missing_version() -> None:
 
 
 def test_checkout_version_is_read_from_project_metadata() -> None:
-    project_dir = Path(__file__).resolve().parents[1]
-    assert runtime_status.read_checkout_version(project_dir) == "1.4.20"
+    assert runtime_status.read_checkout_version(PROJECT_DIR) == "1.4.20"
+
+
+def test_backend_finalizer_reports_not_attempted_and_requires_current_runtime() -> None:
+    finalizer = (PROJECT_DIR / "Finalize Backend.cmd").read_text(encoding="utf-8")
+
+    assert "Docker deployment was NOT ATTEMPTED" in finalizer
+    assert 'call "scripts\\runtime_state.bat"' in finalizer
+    assert "--require-runtime-current" in finalizer
+    assert "deployed runtime is current and healthy" in finalizer
+
+
+def test_docker_wrapper_requires_runtime_freshness_before_success() -> None:
+    wrapper = (PROJECT_DIR / "Update Docker.cmd").read_text(encoding="utf-8")
+
+    assert "EnableDelayedExpansion" in wrapper
+    assert "--require-runtime-current" in wrapper
+    assert "deployed runtime matches the checkout version" in wrapper
+    assert "Docker update failed or the deployed runtime is stale" in wrapper

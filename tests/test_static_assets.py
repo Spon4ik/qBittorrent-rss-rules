@@ -55,6 +55,26 @@ def test_queue_ui_exposes_only_rule_and_one_time_pause_overrides() -> None:
     assert 'data-result-queue-option="paused"' in search_template
 
 
+def test_result_toolbar_uses_shared_non_reflowing_menu_contract() -> None:
+    rule_template = RULE_FORM_TEMPLATE_PATH.read_text(encoding="utf-8")
+    search_template = SEARCH_TEMPLATE_PATH.read_text(encoding="utf-8")
+    css = APP_CSS_PATH.read_text(encoding="utf-8")
+    js = APP_JS_PATH.read_text(encoding="utf-8")
+    harness = CLOSEOUT_BROWSER_QA_PATH.read_text(encoding="utf-8")
+
+    assert rule_template.count("data-result-toolbar-menu") == 3
+    assert search_template.count("data-result-toolbar-menu") == 1
+    assert "queue-paused-field" in rule_template
+    assert "queue-paused-field" in search_template
+    assert ".result-toolbar-row .queue-paused-field" in css
+    assert "function initResultToolbarMenus" in js
+    assert "event.key !== \"Escape\"" in js
+    assert "closeMenusExcept(menu)" in js
+    assert "P44-03" in harness
+    assert "itemsOverlap" in harness
+    assert "Opening queue options reflowed surrounding layout" in harness
+
+
 def test_background_work_ui_has_maintenance_and_message_lifecycle_controls() -> None:
     base_template = BASE_TEMPLATE_PATH.read_text(encoding="utf-8")
     acceleration_template = (BASE_TEMPLATE_PATH.parent / "acceleration.html").read_text(encoding="utf-8")

@@ -33,6 +33,19 @@ The WinUI shell (`QbRssRulesDesktop`) embeds `RequiredDesktopBackendAppVersion` 
 - Do not broaden scope unless required for correctness, safety, or explicit user request.
 - Identify the likely edit surface before making broader changes.
 
+## Deterministic debugging and UI QA
+
+- Prefer deterministic evidence over model interpretation: assertions, exit codes, JUnit, API/DB/DOM/state checks, and small diagnostic scripts.
+- Run the narrowest relevant test first; broaden only after the targeted check passes or cannot explain the failure.
+- Prefer `scripts\test.bat` on Windows or `scripts/test.sh` on Linux/WSL. They keep full pytest output in `logs/tests/` and print a compact summary. Use `QB_TEST_VERBOSE=1` only when full output is necessary.
+- For iterative browser/UI work, use `scripts\browser_qa.bat --check <ID>` on Windows or `scripts/browser_qa.sh --check <ID>` on Linux/WSL. Use `--suite ui` for the maintained deterministic UI-invariants audit before spending model context on screenshots or one-off visual inspection.
+- The UI suite uses DOM geometry/state for representative responsive overflow, action-group safety, rule-header stability, Result-toolbar behavior, and bounded generic disclosure/menu interactions. Consume the JSON report and `UI-*-metrics.json` first. Screenshots are failure evidence only and should not be opened unless deterministic metrics are insufficient.
+- Focused browser QA starts an isolated temporary app process from the checkout. A focused/UI-suite PASS proves checkout behavior only; it is **not** evidence that the Docker runtime the user is viewing was rebuilt or updated.
+- Use `scripts\runtime_state.bat` on Windows or `scripts/runtime_state.sh` on Linux/WSL to report checkout version/HEAD, worktree and tracked-upstream persistence state, and deployed `/health` version. `--require-runtime-current` is the deterministic deployment-freshness gate; `--require-upstream-synced` is available when pushed persistence is required.
+- Run `scripts\browser_qa.bat --full` or `scripts/browser_qa.sh --full` at most once for browser-wide closeout when that coverage is warranted. Read `codex-summary.json` / `codex-summary.md` before raw legacy reports, logs, or screenshots.
+- Do not read full logs to determine PASS/FAIL. If a compact summary is insufficient, inspect only the relevant failure, stack frames, or filtered log region; deduplicate repeated errors.
+- Prefer DOM/API/state assertions over screenshots for behavior. Use vision only for genuinely visual defects that deterministic checks cannot establish reliably.
+
 ## Ambiguity and Planning
 
 - If the request is materially ambiguous, underspecified, or has multiple valid implementations, do not start coding immediately.
@@ -70,24 +83,52 @@ Before ending a meaningful work session:
 1. Update `docs/plans/current-status.md`.
 2. Update the active phase plan with completion state, follow-up work, or changed assumptions.
 3. Update `ROADMAP.md` only when phase scope, ordering, or long-term direction changes.
+4. Run `scripts\runtime_state.bat` (or `scripts/runtime_state.sh`) when the task changes deployable application code or deployment/persistence status is relevant.
+5. Report these states separately when applicable:
+   - **Implementation:** PASS / FAIL / BLOCKED.
+   - **Focused validation:** PASS / FAIL / NOT RUN, with the relevant deterministic checks.
+   - **GitHub persistence:** PUSHED/SYNCED with branch+commit, LOCAL ONLY/UNPUSHED, or NOT APPLICABLE.
+   - **Docker deployment:** CURRENT with running version, STALE with running-vs-checkout versions, NOT ATTEMPTED, FAILED, or NOT APPLICABLE.
+   - **Release/tag:** PUBLISHED, NOT PUBLISHED, NOT REQUESTED, or BLOCKED.
 
-## Docker backend runtime
+If the finalizer stops before Docker rebuild, say explicitly that deployment was **not attempted** and that the currently running UI/runtime may still be the previous version. Do not ask the user to visually validate a fix in that runtime until deployment state is CURRENT.
 
-After completing a coherent backend code change, and before considering the task validated or handing it off, make sure the Docker qBittorrent RSS Rules backend is rebuilt, up to date, and running from the shared Docker Compose file. Do not rebuild Docker after every intermediate edit when a targeted local check can validate the current debugging step; rebuild earlier only when reproducing the issue requires the Docker runtime:
+## Backend completion gate and Docker runtime
+
+After a coherent backend code change is ready for final validation, use the repository's deterministic finalizer rather than remembering local checks and Docker refresh as separate steps:
 
 ```powershell
-& 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' compose -f C:\Users\nucc\docker-config\docker-compose.yml up --build -d qb-rss-rules
+.\Finalize-Backend.cmd --no-pause
 ```
 
-Then verify the running container serves the current backend:
+`Finalize-Backend.cmd` is a shell-safe wrapper around the human-friendly `Finalize Backend.cmd`.
 
-```powershell
-Invoke-WebRequest http://127.0.0.1:8000/health
-```
+A backend-affecting task is not deployment-complete unless this command exits with code 0. The finalizer:
+
+1. runs `scripts\check.bat` (`ruff` -> `mypy` -> pytest);
+2. if deterministic checks fail, stops immediately, labels Docker deployment **NOT ATTEMPTED**, and prints checkout/upstream/runtime state;
+3. only after all checks pass, invokes the Docker updater;
+4. the updater rebuilds/restarts `qb-rss-rules` and waits for `/health`;
+5. final runtime-state validation returns non-zero unless `/health.app_version` matches the checkout `pyproject.toml` version.
+
+During iterative debugging, run the narrowest targeted tests needed; do **not** run the finalizer after every intermediate edit.
+
+`Update-Docker.cmd` is the canonical shell/automation Docker-only command. `Update Docker.cmd` remains available for human double-click use. From Codex or PowerShell, use `.\Update-Docker.cmd --no-pause` only when reproducing or validating Docker-specific runtime behavior before the final gate; do not use it as a substitute for the finalizer when closing a backend code task. The Docker-only wrapper also requires the runtime version check before reporting success.
+
+The Docker updater:
+
+- uses `C:\Users\nucc\docker-config\docker-compose.yml` and rebuilds/restarts only `qb-rss-rules`;
+- uses the shared Compose `.env` file when present;
+- uses the known-good Docker Desktop CLI path rather than relying on `PATH`;
+- starts Docker Desktop automatically when the engine is not ready;
+- verifies that the Compose build context points at the checkout from which the updater is running;
+- captures verbose Docker output in `logs\docker\update-docker-last.log` instead of flooding model context;
+- waits for `http://127.0.0.1:8000/health` and returns non-zero on build, startup, configuration, health, or deployed-version freshness failure;
+- prints only a concise success result, or a bounded failure tail plus the full log path.
 
 - The shared Compose file path is `C:\Users\nucc\docker-config\docker-compose.yml`; do not create or rely on a repo-local `docker-compose.yml` for this project.
-- Use the full Docker executable path above on this machine because `C:\Windows\System32\docker` may appear earlier in `PATH` and is not the working Docker CLI.
-- If Docker is unavailable or the refresh/health check fails, document the blocker in the session closeout and in `docs/plans/current-status.md`.
+- If the updater reports that the Compose build context does not match the current checkout, update the shared Compose file intentionally before retrying; do not bypass the safety check.
+- If Docker is unavailable or the finalizer/updater/health check fails, document the blocker in the session closeout and in `docs/plans/current-status.md`.
 
 ## Database location
 

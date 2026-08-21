@@ -2,6 +2,18 @@
 
 ## Current focus
 
+- The `v1.4.20` qB diagnostics rule-header repair and its unrelated full-suite
+  isolation repair are implemented and deployed. The maintained UI suite
+  passes UI-01 through UI-04. The isolation failure was caused by application-
+  global initial-fetch/sync queues and the startup qB sync escaping the owning
+  test/client lifecycle, then resolving reset DB/secret caches in a later test.
+  Queue workers are now explicitly started/stopped with the app, shutdown joins
+  active workers, the startup sync is joined, and route test fixtures own the
+  queues without starting unrelated schedulers. Focused lifecycle/repeated-route
+  coverage and two deterministic gates pass (`581 passed`); `Finalize-Backend`
+  rebuilt Docker and `runtime_state --require-runtime-current` confirms running
+  `v1.4.20` equals checkout `v1.4.20`. No tag or GitHub Release has been
+  published for this experiment-branch closeout.
 - The `v1.4.18` result-toolbar and left-rail dark-mode follow-up is implemented
   and live-validated. Result filtering, both local-scope dropdowns, Save sort,
   `Queue paused`, and `Queue options` now share one wide-desktop row; all three

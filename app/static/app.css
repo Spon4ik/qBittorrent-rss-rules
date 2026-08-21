@@ -726,7 +726,7 @@ h3 {
     display: none;
   }
 
-  #inline-search-results .result-toolbar-row [data-result-queue-options] .toggle {
+  #inline-search-results .result-toolbar-row .queue-paused-field {
     grid-column: 5;
     grid-row: 1;
     min-height: 34px;
@@ -861,10 +861,10 @@ h3 {
     cursor: pointer;
   }
 
-  .rule-diagnostics-disclosure[open] {
+  .rule-diagnostics-disclosure[open] .rule-diagnostics-panel {
     position: absolute;
-    right: 0.55rem;
-    top: calc(100% - 0.25rem);
+    right: 0;
+    top: calc(100% + 0.25rem);
     z-index: 70;
     max-width: min(42rem, 60vw);
     padding: 0.65rem;
@@ -2560,7 +2560,7 @@ td {
     grid-column: 3;
   }
 
-  #inline-search-results .result-toolbar-row [data-result-queue-options] .toggle {
+  #inline-search-results .result-toolbar-row .queue-paused-field {
     grid-column: 2;
     grid-row: 2;
   }

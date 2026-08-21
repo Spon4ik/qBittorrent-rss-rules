@@ -29,7 +29,7 @@
     <label class="result-view-local-field">
       Indexer scope
       <input type="hidden" name="filter_indexers" value="" data-search-multiselect-storage="indexers" />
-      <details class="search-multiselect" data-search-multiselect="indexers">
+      <details class="search-multiselect" data-search-multiselect="indexers" data-result-toolbar-menu>
         <summary class="search-multiselect-summary" data-search-multiselect-summary="indexers">All visible indexers</summary>
         <div class="search-multiselect-panel">
           <div class="search-multiselect-actions">
@@ -50,7 +50,7 @@
     <label class="result-view-local-field">
       Media category
       <input type="hidden" name="filter_category_ids" value="" data-search-multiselect-storage="categories" />
-      <details class="search-multiselect" data-search-multiselect="categories">
+      <details class="search-multiselect" data-search-multiselect="categories" data-result-toolbar-menu>
         <summary class="search-multiselect-summary" data-search-multiselect-summary="categories">All categories</summary>
         <div class="search-multiselect-panel">
           <div class="search-multiselect-actions">
@@ -103,6 +103,7 @@
 {% if mode == 'edit' and rule_sync_diagnostics %}
   <details class="rule-diagnostics-disclosure" aria-label="qB enforcement diagnostics">
     <summary>qB diagnostics</summary>
+    <div class="rule-diagnostics-panel">
     {% if rule_sync_diagnostics.drift_message %}
     <p class="rules-sync-error"><strong>Remote drift detected:</strong> {{ rule_sync_diagnostics.drift_message }}</p>
     {% else %}
@@ -120,6 +121,7 @@
       <pre class="debug-json">{{ rule_sync_diagnostics.last_remote_must_contain }}</pre>
     </details>
     {% endif %}
+    </div>
   </details>
 {% endif %}
 </section>
@@ -628,13 +630,13 @@
         <p class="helper-text">Queue uses this rule defaults for category/save path when present.</p>
       </div>
       <div class="search-queue-options-grid search-queue-options-grid--compact">
-        <label class="toggle">
+        <label class="toggle queue-paused-field">
           <input type="checkbox" data-result-queue-option="paused" {% if inline_queue_defaults.add_paused %}checked{% endif %} />
           <span>Queue paused</span>
         </label>
-        <div class="queue-options-field">
-          <span>Queue</span>
-          <details class="search-queue-advanced">
+        <div class="queue-options-field result-toolbar-menu-field">
+          <span>Queue options</span>
+          <details class="search-queue-advanced" data-result-toolbar-menu>
             <summary class="search-queue-advanced-summary">Queue options</summary>
             <div class="search-queue-advanced-grid">
             <label class="toggle">

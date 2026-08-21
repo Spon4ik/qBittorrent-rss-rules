@@ -6,6 +6,7 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOG_DIR="${PROJECT_DIR}/logs/tests"
 LOG_FILE="${LOG_DIR}/pytest-last.log"
 XML_FILE="${LOG_DIR}/pytest-last.xml"
+SUMMARY_SCRIPT="${SCRIPT_DIR}/test_summary.py"
 
 mkdir -p "${LOG_DIR}"
 
@@ -31,8 +32,9 @@ elif command -v python3 >/dev/null 2>&1; then
 elif command -v python >/dev/null 2>&1; then
   PYTHON_EXE="$(command -v python)"
 else
-  printf "No Python interpreter found.\n" | tee "${LOG_FILE}"
+  printf "No Python interpreter found.\n" > "${LOG_FILE}"
   write_fallback_junit_xml
+  cat "${LOG_FILE}"
   exit 127
 fi
 
@@ -65,8 +67,8 @@ fi
 } > "${LOG_FILE}"
 
 set +e
-"${PYTHON_EXE}" -m pytest --junitxml "${XML_FILE}" "${CAPTURE_ARG[@]}" "$@" 2>&1 | tee -a "${LOG_FILE}"
-EXIT_CODE=${PIPESTATUS[0]}
+"${PYTHON_EXE}" -m pytest --junitxml "${XML_FILE}" "${CAPTURE_ARG[@]}" "$@" >> "${LOG_FILE}" 2>&1
+EXIT_CODE=$?
 set -e
 
 if [[ ! -f "${XML_FILE}" ]]; then
@@ -79,6 +81,16 @@ fi
   printf "Finished: %s\n" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   printf "Text log: %s\n" "${LOG_FILE}"
   printf "JUnit XML: %s\n" "${XML_FILE}"
-} | tee -a "${LOG_FILE}"
+} >> "${LOG_FILE}"
+
+if ! "${PYTHON_EXE}" "${SUMMARY_SCRIPT}" "${XML_FILE}" --log "${LOG_FILE}"; then
+  printf "\nSummary generation failed; showing the last 40 log lines only.\n"
+  tail -n 40 "${LOG_FILE}"
+fi
+
+if [[ "${QB_TEST_VERBOSE:-0}" == "1" ]]; then
+  printf "\nQB_TEST_VERBOSE=1; full captured pytest log follows:\n"
+  cat "${LOG_FILE}"
+fi
 
 exit "${EXIT_CODE}"

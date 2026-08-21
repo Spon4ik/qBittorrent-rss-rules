@@ -110,11 +110,11 @@ def test_browser_qa_wrappers_prefer_repo_virtualenv_and_route_ui_suite() -> None
     assert '"--suite"' in windows
     assert '"ui"' in windows
     assert '"UI-"' in windows
-    assert 'set "QA_SCRIPT=ui_invariant_qa.py"' in windows
+    assert 'set "QA_SCRIPT=ui_suite_qa.py"' in windows
 
     assert ".venv/bin/python" in shell
     assert 'QA_SCRIPT="browser_qa.py"' in shell
     assert '"--suite"' in shell
     assert '"ui"' in shell
     assert "UI-*" in shell
-    assert 'QA_SCRIPT="ui_invariant_qa.py"' in shell
+    assert 'QA_SCRIPT="ui_suite_qa.py"' in shell

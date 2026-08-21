@@ -25,6 +25,7 @@ class RuleFetchScheduler:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._state_lock = threading.Lock()
+        self._started_at: datetime | None = None
         self._tick_in_progress = False
         self._last_tick_started_at: datetime | None = None
         self._last_tick_completed_at: datetime | None = None
@@ -35,6 +36,7 @@ class RuleFetchScheduler:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop_event.clear()
+        self._started_at = datetime.now(UTC)
         self._thread = threading.Thread(
             target=self._run_loop,
             name="rule-fetch-scheduler",
@@ -59,6 +61,7 @@ class RuleFetchScheduler:
                 "created": True,
                 "running": bool(thread is not None and thread.is_alive()),
                 "poll_interval_seconds": self._poll_interval_seconds,
+                "started_at": _iso(self._started_at),
                 "tick_in_progress": self._tick_in_progress,
                 "last_tick_started_at": _iso(self._last_tick_started_at),
                 "last_tick_completed_at": _iso(self._last_tick_completed_at),
@@ -137,6 +140,7 @@ def rule_fetch_scheduler_status() -> dict[str, Any]:
             "created": False,
             "running": False,
             "poll_interval_seconds": None,
+            "started_at": None,
             "tick_in_progress": False,
             "last_tick_started_at": None,
             "last_tick_completed_at": None,

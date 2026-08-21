@@ -21,11 +21,11 @@ if exist "%PROJECT_DIR%\.venv\Scripts\python.exe" (
 
 set "QA_SCRIPT=browser_qa.py"
 if /I "%~1"=="--suite" (
-  if /I "%~2"=="ui" set "QA_SCRIPT=ui_invariant_qa.py"
+  if /I "%~2"=="ui" set "QA_SCRIPT=ui_suite_qa.py"
 )
 if /I "%~1"=="--check" (
   set "CHECK_ID=%~2"
-  if /I "!CHECK_ID:~0,3!"=="UI-" set "QA_SCRIPT=ui_invariant_qa.py"
+  if /I "!CHECK_ID:~0,3!"=="UI-" set "QA_SCRIPT=ui_suite_qa.py"
 )
 
 "!PYTHON_EXE!" "%PROJECT_DIR%\scripts\!QA_SCRIPT!" %*

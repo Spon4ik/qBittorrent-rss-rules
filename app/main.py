@@ -89,7 +89,7 @@ def create_app() -> FastAPI:
                 path=request.url.path,
                 error_type=type(exc).__name__,
             )
-            LOGGER.exception(
+            LOGGER.error(
                 "Unhandled API request failed ref=%s method=%s path=%s error_type=%s",
                 event["id"],
                 event["method"],

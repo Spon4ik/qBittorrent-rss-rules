@@ -57,7 +57,8 @@ def _seed_rule_id(runtime: core.FocusedRuntime, *, diagnostics: bool = False) ->
             rule = session.scalar(
                 select(Rule).where(Rule.rule_name == "QA P19 Inline Search Profile")
             )
-            core.legacy._expect(rule is not None, "Expected the pre-seeded UI QA rule to exist.")
+            if rule is None:
+                raise ui.UIInvariantError("Expected the pre-seeded UI QA rule to exist.")
             if diagnostics:
                 rule.last_synced_rule_payload = {
                     "mustContain": "(?i)qa-ui-invariants",
@@ -168,6 +169,11 @@ def check_ui_02(runtime: core.FocusedRuntime) -> None:
                 )
 
                 before = ui.capture_layout(page, elements=elements, groups=groups)
+                record: dict[str, Any] = {
+                    "viewport": {"width": width, "height": height},
+                    "before": before,
+                }
+                records.append(record)
                 ui.assert_no_page_horizontal_overflow(before)
                 ui.assert_elements_visible(before, ("command_bar", "diagnostics"))
                 ui.assert_elements_within_viewport_horizontally(
@@ -178,9 +184,11 @@ def check_ui_02(runtime: core.FocusedRuntime) -> None:
 
                 page.locator(".rule-diagnostics-disclosure > summary").click()
                 page.wait_for_function(
-                    "() => document.querySelector('.rule-diagnostics-disclosure')?.open === true"
+                    "() => document.querySelector('.rule-diagnostics-disclosure')?.open === true",
+                    timeout=runtime.timeout_ms,
                 )
                 after = ui.capture_layout(page, elements=elements, groups=groups)
+                record["after"] = after
                 ui.assert_no_page_horizontal_overflow(after)
                 ui.assert_elements_visible(after, ("command_bar", "diagnostics"))
                 ui.assert_elements_within_viewport_horizontally(
@@ -207,14 +215,6 @@ def check_ui_02(runtime: core.FocusedRuntime) -> None:
                         axes=("x",),
                         tolerance=1.0,
                     )
-
-                records.append(
-                    {
-                        "viewport": {"width": width, "height": height},
-                        "before": before,
-                        "after": after,
-                    }
-                )
             except Exception as exc:  # noqa: BLE001
                 _record_failure(failures, label=label, exc=exc)
                 if not captured_failure:

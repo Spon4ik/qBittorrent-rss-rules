@@ -4,8 +4,7 @@ import argparse
 import json
 import sys
 import time
-from collections.abc import Callable
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -13,198 +12,22 @@ from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
+from app.services.functional_invariants import (  # noqa: E402
+    CHECKS,
+    SUITES,
+    CheckResult,
+    CheckSpec,
+    evaluate_scheduled_fetch_effectiveness,
+    evaluate_scheduled_fetch_liveness,
+)
+
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_TIMEOUT_SECONDS = 5.0
 DEFAULT_SETTLE_TIMEOUT_SECONDS = 600.0
 DEFAULT_POLL_SECONDS = 5.0
-MAX_ACTIVE_TICK_SECONDS = 1800.0
-
-
-@dataclass(frozen=True, slots=True)
-class CheckResult:
-    check_id: str
-    title: str
-    status: str
-    summary: str
-    metrics: dict[str, Any]
-    duration_ms: int = 0
-
-
-@dataclass(frozen=True, slots=True)
-class CheckSpec:
-    check_id: str
-    title: str
-    evaluator: Callable[[dict[str, Any], datetime], CheckResult]
-
-
-def _parse_datetime(value: object | None) -> datetime | None:
-    cleaned = str(value or "").strip()
-    if not cleaned:
-        return None
-    if cleaned.endswith("Z"):
-        cleaned = f"{cleaned[:-1]}+00:00"
-    try:
-        parsed = datetime.fromisoformat(cleaned)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
-def _number(value: object | None, *, default: float = 0.0) -> float:
-    try:
-        return float(value) if value is not None else default
-    except (TypeError, ValueError):
-        return default
-
-
-def evaluate_scheduled_fetch_liveness(
-    payload: dict[str, Any],
-    now: datetime | None = None,
-) -> CheckResult:
-    observed_at = (now or datetime.now(UTC)).astimezone(UTC)
-    components = payload.get("components") if isinstance(payload, dict) else None
-    component = components.get("scheduled_rule_fetch") if isinstance(components, dict) else None
-    if not isinstance(component, dict):
-        return CheckResult(
-            check_id="F-01",
-            title="Scheduled fetch liveness",
-            status="fail",
-            summary="Runtime diagnostics did not include scheduled_rule_fetch state.",
-            metrics={},
-        )
-
-    schedule = component.get("schedule") if isinstance(component.get("schedule"), dict) else {}
-    scheduler = component.get("scheduler") if isinstance(component.get("scheduler"), dict) else {}
-    schedule_enabled = bool(schedule.get("enabled"))
-    runtime_enabled = bool(component.get("runtime_enabled"))
-    scheduler_running = bool(scheduler.get("running"))
-    tick_in_progress = bool(scheduler.get("tick_in_progress"))
-    poll_interval = max(0.0, _number(scheduler.get("poll_interval_seconds")))
-    overdue_seconds = max(0.0, _number(component.get("overdue_seconds")))
-    last_tick_completed_at = _parse_datetime(scheduler.get("last_tick_completed_at"))
-    last_tick_started_at = _parse_datetime(scheduler.get("last_tick_started_at"))
-    last_tick_result = str(scheduler.get("last_tick_result") or "").strip()
-    last_tick_error_type = str(scheduler.get("last_tick_error_type") or "").strip()
-    next_run_at = _parse_datetime(schedule.get("next_run_at"))
-
-    tick_age_seconds = (
-        max(0.0, (observed_at - last_tick_completed_at).total_seconds())
-        if last_tick_completed_at is not None
-        else None
-    )
-    active_tick_age_seconds = (
-        max(0.0, (observed_at - last_tick_started_at).total_seconds())
-        if tick_in_progress and last_tick_started_at is not None
-        else None
-    )
-    metrics = {
-        "schedule_enabled": schedule_enabled,
-        "runtime_enabled": runtime_enabled,
-        "interval_minutes": schedule.get("interval_minutes"),
-        "last_run_at": schedule.get("last_run_at"),
-        "next_run_at": schedule.get("next_run_at"),
-        "overdue_seconds": round(overdue_seconds, 3),
-        "scheduler_created": bool(scheduler.get("created")),
-        "scheduler_running": scheduler_running,
-        "poll_interval_seconds": poll_interval or None,
-        "tick_in_progress": tick_in_progress,
-        "last_tick_started_at": scheduler.get("last_tick_started_at"),
-        "last_tick_completed_at": scheduler.get("last_tick_completed_at"),
-        "last_tick_result": last_tick_result,
-        "last_tick_error_type": last_tick_error_type or None,
-        "tick_age_seconds": round(tick_age_seconds, 3) if tick_age_seconds is not None else None,
-        "active_tick_age_seconds": (
-            round(active_tick_age_seconds, 3) if active_tick_age_seconds is not None else None
-        ),
-    }
-
-    if not schedule_enabled:
-        return CheckResult(
-            check_id="F-01",
-            title="Scheduled fetch liveness",
-            status="skip",
-            summary="Scheduled fetch is intentionally disabled.",
-            metrics=metrics,
-        )
-
-    failures: list[str] = []
-    if not runtime_enabled:
-        failures.append("persisted schedule is enabled but the runtime scheduler feature is disabled")
-    if not scheduler_running:
-        failures.append("runtime scheduler thread is not running")
-
-    if tick_in_progress:
-        if last_tick_started_at is None:
-            failures.append("scheduler reports a tick in progress without a start timestamp")
-        elif active_tick_age_seconds is not None and active_tick_age_seconds > MAX_ACTIVE_TICK_SECONDS:
-            failures.append(
-                f"scheduler tick has been running for {active_tick_age_seconds:.0f}s "
-                f"(limit {MAX_ACTIVE_TICK_SECONDS:.0f}s)"
-            )
-        if failures:
-            return CheckResult(
-                check_id="F-01",
-                title="Scheduled fetch liveness",
-                status="fail",
-                summary="; ".join(failures) + ".",
-                metrics=metrics,
-            )
-        return CheckResult(
-            check_id="F-01",
-            title="Scheduled fetch liveness",
-            status="pending",
-            summary="Scheduler is executing a tick; awaiting a settled result.",
-            metrics=metrics,
-        )
-
-    if last_tick_result == "error" or last_tick_error_type:
-        failures.append(
-            "last scheduler tick failed"
-            + (f" with {last_tick_error_type}" if last_tick_error_type else "")
-        )
-    if last_tick_completed_at is None:
-        failures.append("scheduler has no completed tick evidence")
-    else:
-        max_tick_age = max(120.0, poll_interval * 4.0)
-        if tick_age_seconds is not None and tick_age_seconds > max_tick_age:
-            failures.append(
-                f"last scheduler tick is stale ({tick_age_seconds:.0f}s old; limit {max_tick_age:.0f}s)"
-            )
-
-    overdue_grace = max(60.0, poll_interval * 2.0)
-    if overdue_seconds > overdue_grace:
-        failures.append(f"next scheduled run is overdue by {overdue_seconds:.0f}s")
-    elif next_run_at is None:
-        failures.append("enabled schedule has no next_run_at")
-
-    if failures:
-        return CheckResult(
-            check_id="F-01",
-            title="Scheduled fetch liveness",
-            status="fail",
-            summary="; ".join(failures) + ".",
-            metrics=metrics,
-        )
-
-    return CheckResult(
-        check_id="F-01",
-        title="Scheduled fetch liveness",
-        status="pass",
-        summary="Scheduler is alive, ticking recently, and the next run is not overdue.",
-        metrics=metrics,
-    )
-
-
-CHECKS: dict[str, CheckSpec] = {
-    "F-01": CheckSpec(
-        check_id="F-01",
-        title="Scheduled fetch liveness",
-        evaluator=evaluate_scheduled_fetch_liveness,
-    )
-}
-SUITES: dict[str, tuple[str, ...]] = {"core": ("F-01",)}
 
 
 def _fetch_json(url: str, *, timeout_seconds: float) -> dict[str, Any]:

@@ -10,6 +10,7 @@ BASE_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "app" / "templates" /
 RULE_FORM_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "app" / "templates" / "rule_form.html"
 SEARCH_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "app" / "templates" / "search.html"
 APP_JS_PATH = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+RUNTIME_HEALTH_JS_PATH = Path(__file__).resolve().parents[1] / "app" / "static" / "runtime_health.js"
 CLOSEOUT_BROWSER_QA_PATH = Path(__file__).resolve().parents[1] / "scripts" / "closeout_browser_qa.py"
 
 
@@ -18,14 +19,19 @@ def test_compute_static_asset_version_tracks_app_asset_mtime(tmp_path) -> None:
     static_dir.mkdir()
     css_path = static_dir / "app.css"
     js_path = static_dir / "app.js"
+    runtime_health_path = static_dir / "runtime_health.js"
     css_path.write_text("body { color: #111; }\n", encoding="utf-8")
     js_path.write_text("console.log('initial');\n", encoding="utf-8")
+    runtime_health_path.write_text("console.log('runtime');\n", encoding="utf-8")
 
     initial_version = compute_static_asset_version(static_dir)
     assert initial_version
 
-    bumped_mtime_ns = js_path.stat().st_mtime_ns + 1_000_000_000
-    os.utime(js_path, ns=(js_path.stat().st_atime_ns, bumped_mtime_ns))
+    bumped_mtime_ns = runtime_health_path.stat().st_mtime_ns + 1_000_000_000
+    os.utime(
+        runtime_health_path,
+        ns=(runtime_health_path.stat().st_atime_ns, bumped_mtime_ns),
+    )
 
     updated_version = compute_static_asset_version(static_dir)
 
@@ -267,3 +273,13 @@ def test_rule_edit_page_uses_full_width_console_results_contract() -> None:
     assert "displayStatusElement" in js
     assert "const displayedEntryCount" in js
     assert "state.tableWrap.hidden = !tableMode || displayedEntryCount === 0;" in js
+
+
+def test_runtime_health_reconciler_is_versioned_and_loaded() -> None:
+    template = BASE_TEMPLATE_PATH.read_text(encoding="utf-8")
+    runtime_js = RUNTIME_HEALTH_JS_PATH.read_text(encoding="utf-8")
+
+    assert "runtime_health.js" in template
+    assert "/api/diagnostics/runtime" in runtime_js
+    assert "recovered_historical" in runtime_js
+    assert "historical error" in runtime_js

@@ -7,7 +7,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-import browser_qa
+import browser_qa  # noqa: E402
 
 
 def _noop(_runtime: browser_qa.FocusedRuntime) -> None:

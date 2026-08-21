@@ -107,6 +107,8 @@ class EnvironmentSettings:
     save_secrets_to_db: bool
     enable_rule_fetch_scheduler: bool
     rule_fetch_scheduler_poll_seconds: float
+    enable_functional_watchdog: bool
+    functional_watchdog_interval_seconds: float
     sync_rules_on_startup: bool
     windows_host_mount_root: str
     jackett_language_overrides: dict[str, list[str]]
@@ -150,6 +152,12 @@ def get_environment_settings() -> EnvironmentSettings:
         ),
         rule_fetch_scheduler_poll_seconds=float(
             os.getenv("QB_RULES_RULE_FETCH_SCHEDULER_POLL_SECONDS", "30")
+        ),
+        enable_functional_watchdog=_get_bool(
+            os.getenv("QB_RULES_ENABLE_FUNCTIONAL_WATCHDOG"), True
+        ),
+        functional_watchdog_interval_seconds=float(
+            os.getenv("QB_RULES_FUNCTIONAL_WATCHDOG_INTERVAL_SECONDS", "300")
         ),
         sync_rules_on_startup=_get_bool(os.getenv("QB_RULES_SYNC_RULES_ON_STARTUP"), True),
         windows_host_mount_root=os.getenv("QB_RULES_WINDOWS_HOST_MOUNT_ROOT", "/host").strip()

@@ -54,16 +54,18 @@ Useful result states are `solved`, `design_complete`, `needs_architect`, `needs_
 - `QB_TEST_VERBOSE=1` restores full pytest output only when explicitly needed.
 - `scripts/browser_qa.bat` (Windows) and `scripts/browser_qa.sh` (Linux/WSL) are the maintained browser-QA entrypoints. They prefer the repository virtual environment before falling back to a system interpreter.
 - `--check <ID>` runs the smallest maintained focused scenario; `--phase <N>` keeps phase-scoped checks available; `--suite ui` runs the reusable deterministic UI-invariants audit without requiring screenshots or LLM vision.
-- The UI suite is deliberately class-based rather than screenshot exhaustive. `UI-01` checks representative core pages for document-level horizontal overflow across narrow/medium/wide viewports; `UI-02` checks the rule-header qB-diagnostics closed/open transition for containment, overlap, and unexpected desktop horizontal movement; `UI-03` reuses the maintained Result-toolbar interaction/reflow regression.
-- `scripts/ui_invariants.py` provides reusable DOM/browser assertions for page overflow, element/group visibility and viewport containment, pairwise overlap, and before/after geometry stability. Synthetic unit coverage proves a 1px tolerance passes while a deliberate 3px movement fails deterministically.
+- The UI suite is deliberately class-based rather than screenshot exhaustive. `UI-01` checks representative core pages for document-level horizontal overflow and common action-group safety; `UI-02` checks the rule-header qB-diagnostics closed/open transition for containment, overlap, and unexpected desktop horizontal movement; `UI-03` reuses the maintained Result-toolbar interaction/reflow regression; `UI-04` discovers a bounded set of actionable generic disclosure/menu surfaces across representative pages and checks their closed/open state transitions without re-auditing the stronger dedicated scenarios.
+- `scripts/ui_invariants.py` provides reusable DOM/browser assertions for page overflow, element/group visibility and viewport containment, pairwise overlap, action-group safety, and before/after geometry stability. Synthetic unit coverage proves a 1px tolerance passes while a deliberate 3px movement fails deterministically.
 - Each general UI scenario records bounded `UI-*-metrics.json` evidence. Screenshots are generated only as failure artifacts for human review and are not the pass/fail oracle. Codex should consume the structured report/metrics before opening an image.
+- Focused browser QA runs an isolated temporary application process from the checkout. Its PASS state validates source behavior but does not prove that the user's Docker runtime was rebuilt.
+- `scripts/runtime_state.bat` / `scripts/runtime_state.sh` report checkout version/HEAD, worktree and tracked-upstream persistence state, plus deployed `/health` version in `logs/qa/runtime-state.json`. `--require-runtime-current` returns non-zero when the deployed version differs from the checkout; `--require-upstream-synced` is available when pushed persistence is a required closeout condition.
 - Use `scripts\browser_qa.bat --full` on Windows or `scripts/browser_qa.sh --full` on Linux/WSL only once at browser closeout. It runs the legacy broad harness once, preserves the raw report, and emits `codex-summary.json` / `codex-summary.md` that distinguish actionable failures from dependency cascades and explicitly quarantined stale contracts.
 - Direct Python invocation remains available only when the correct project environment is deliberately activated; automation and Codex should prefer the wrappers so a global Python cannot silently bypass repo dependencies.
 - Dependency-caused checks are reported as `blocked` in compact legacy evidence instead of being presented as additional root failures. Mechanically stale legacy checks are quarantined conservatively; uncertain semantic failures remain actionable until audited.
 - The raw `scripts/closeout_browser_qa.py` command remains available as a compatibility/audit path, but it should not be the iterative debugging loop for a focused UI defect.
-- `Finalize-Backend.cmd --no-pause` is the canonical shell-safe backend completion gate: Ruff -> mypy -> pytest -> Docker rebuild -> `/health`. Docker is not rebuilt if deterministic validation fails.
+- `Finalize-Backend.cmd --no-pause` is the canonical shell-safe backend completion gate: Ruff -> mypy -> pytest -> Docker rebuild -> runtime freshness verification. If deterministic validation fails, Docker deployment is explicitly `NOT ATTEMPTED` and the checkout/upstream/runtime state is printed instead of implying that a local fix is deployed.
 - `Finalize Backend.cmd` remains the human-friendly underlying entrypoint; the hyphenated wrapper avoids PowerShell quoting/call-operator requirements.
-- `Update-Docker.cmd` is the canonical shell-safe Docker-only updater. `Update Docker.cmd` remains available for direct human double-click use.
+- `Update-Docker.cmd` is the canonical shell-safe Docker-only updater. `Update Docker.cmd` remains available for direct human double-click use, but it now requires the same deployed-version freshness check before reporting success.
 
 ## Browser-QA experiment finding
 
@@ -89,7 +91,11 @@ The current quarantine is deliberately narrow. It covers legacy checks whose Aug
 
 Live Windows validation on 2026-08-21 confirmed the focused wrapper selected the repository environment and executed only `P44-03`: `PASS P44-03 (2297 ms): OK`. The focused run wrote `logs/qa/browser-focus-20260821T101956Z/browser-qa-report.json` and did not invoke the legacy broad suite. This is the baseline behavior expected for future UI-debugging iterations.
 
-The general UI-invariants suite was then implemented on the experiment branch before the next visual-fix task, by explicit user request. It intentionally includes the known qB-diagnostics movement as a deterministic seed regression but does not change application CSS/layout. Therefore the first live `--suite ui` run may return non-zero: that is useful discovery evidence, not a QA-infrastructure failure, provided the report identifies the measured layout violations without image interpretation.
+The general UI-invariants suite was then implemented and calibrated on Windows before the next visual-fix task. The final calibration produced `PASS UI-01`, the expected deterministic `FAIL UI-02` with measured qB-diagnostics movement of `+572.8px` at 1720px and `+900.8px` at 2048px, `PASS UI-03`, and `PASS UI-04`. The generic interaction audit was tuned from an initial 104-second QA-infrastructure failure to roughly 6-7 seconds by using Playwright's own actionability semantics and skipping disabled controls without waiting on click timeouts.
+
+The first screenshot-free broad UI repair then used the deterministic suite as the source of truth. Codex discovered only `UI-02`, identified the flex-flow root cause, fixed the checkout, and completed the final four-check UI suite in about 10.9 seconds without screenshot or LLM-vision use. The user's displayed weekly allowance moved from about 95% remaining to 93% remaining during this task. That ~2 percentage-point change is useful directional evidence but not a controlled A/B result because the compared UI tasks were not identical and the product meter is coarse.
+
+That run also exposed a separate closeout flaw: the focused/UI suite validated an isolated checkout process, while the release finalizer later stopped on unrelated pytest isolation failures before Docker rebuild. The user's running Docker container therefore remained stale even though Codex summarized the UI repair as complete. The experiment now treats implementation, focused validation, GitHub persistence, Docker deployment, and release/tag as separate states. A blocked release does not imply that validated work should remain uncommitted; conversely, a local UI PASS must never be presented as deployed-runtime evidence.
 
 ## A/B test protocol
 
@@ -121,6 +127,9 @@ Record:
 | Test/tool calls | | |
 | Unnecessary files read | | |
 | Final completion gate passed | | |
+| GitHub persistence state | | |
+| Docker deployment state | | |
+| Release/tag state | | |
 | Wall-clock time | | |
 
 ## Acceptance criteria
@@ -140,6 +149,7 @@ Reject or revise the experiment if:
 - `deep_debugger` is invoked without a concrete unresolved question;
 - compact summaries hide evidence often enough to force repeated full-log reads;
 - the UI suite produces enough false positives that models must repeatedly inspect screenshots to understand normal responsive behavior;
+- local validation is repeatedly conflated with deployed-runtime state;
 - reliability or design quality decreases.
 
 ## Manual verbose override

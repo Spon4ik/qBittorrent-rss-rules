@@ -26,42 +26,25 @@ def _surface_selector(surface_id: str) -> str:
 
 
 def _surface_actionability(page: Any, surface_id: str) -> dict[str, Any]:
-    result = page.evaluate(
-        """
-        (surfaceId) => {
-          const details = document.querySelector(
-            `[data-ui-qa-surface-id="${CSS.escape(surfaceId)}"]`
-          );
-          if (!(details instanceof HTMLDetailsElement)) {
-            return {actionable: false, reason: "surface unavailable"};
-          }
-          const summary = details.querySelector(":scope > summary");
-          if (!(summary instanceof HTMLElement)) {
-            return {actionable: false, reason: "summary unavailable"};
-          }
-          const style = window.getComputedStyle(summary);
-          const disabledAncestor = summary.closest('[disabled], [aria-disabled="true"]');
-          if (disabledAncestor) {
-            return {actionable: false, reason: "disabled"};
-          }
-          if (style.pointerEvents === "none") {
-            return {actionable: false, reason: "pointer-events none"};
-          }
-          if (
-            summary.getClientRects().length === 0
-            || style.display === "none"
-            || style.visibility === "hidden"
-          ) {
-            return {actionable: false, reason: "not visible"};
-          }
-          return {actionable: true, reason: ""};
-        }
-        """,
-        arg=surface_id,
+    """Use Playwright's own actionability semantics before attempting a click.
+
+    This deliberately avoids duplicating browser/Playwright enabled-state rules in
+    JavaScript. The probe is immediate; it must never inherit the long click timeout.
+    """
+
+    selector = _surface_selector(surface_id)
+    summary = page.locator(f"{selector} > summary")
+    if not summary.is_visible():
+        return {"actionable": False, "reason": "not visible"}
+    if not summary.is_enabled():
+        return {"actionable": False, "reason": "disabled"}
+
+    pointer_events = summary.evaluate(
+        "(element) => window.getComputedStyle(element).pointerEvents"
     )
-    if not isinstance(result, dict):
-        raise ui.UIInvariantError("Interactive actionability probe did not return structured data.")
-    return result
+    if pointer_events == "none":
+        return {"actionable": False, "reason": "pointer-events none"}
+    return {"actionable": True, "reason": ""}
 
 
 def _open_actionable_surface(

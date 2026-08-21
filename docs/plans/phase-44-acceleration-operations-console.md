@@ -32,10 +32,14 @@ compact Retry/Ask Codex actions. Category or title inference is forbidden.
 
 ## Validation status
 
-- Browser-QA iteration now has a focused entrypoint: `python scripts/browser_qa.py
-  --check P44-03` runs only the maintained Result-toolbar regression, while
-  `--phase 44` selects all maintained Phase 44 focused checks. Browser-wide
-  legacy coverage is reserved for one `--full` closeout run, which preserves the
+- Browser-QA iteration now has venv-aware wrappers. On Windows,
+  `scripts\browser_qa.bat --check P44-03` runs only the maintained Result-toolbar
+  regression and `scripts\browser_qa.bat --phase 44` selects all maintained Phase
+  44 focused checks. The wrapper follows the repository's existing interpreter
+  contract by preferring `.venv\Scripts\python.exe`; direct global-Python execution
+  is not the canonical path because it can miss project dependencies. Linux/WSL
+  uses `scripts/browser_qa.sh` with the equivalent behavior. Browser-wide legacy
+  coverage is reserved for one wrapper `--full` closeout run, which preserves the
   raw report and emits compact dependency/quarantine-aware evidence for Codex.
   Dependency cascades such as P7/P33 after P6-05 are classified as blocked; only
   mechanically audited stale legacy contracts are quarantined, while uncertain

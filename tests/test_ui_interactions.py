@@ -119,32 +119,51 @@ class _FakeLocator:
     def __init__(self, page: _FakePage) -> None:
         self.page = page
 
+    def is_visible(self) -> bool:
+        self.page.visible_checks += 1
+        return self.page.visible
+
+    def is_enabled(self) -> bool:
+        self.page.enabled_checks += 1
+        return self.page.enabled
+
+    def evaluate(self, _expression: str) -> object:
+        self.page.locator_evaluate_calls += 1
+        return "auto"
+
     def click(self, *, timeout: int) -> None:
         self.page.clicked = True
         self.page.click_timeout = timeout
 
 
 class _FakePage:
-    def __init__(self, *, actionable: bool) -> None:
-        self.actionable = actionable
+    def __init__(
+        self,
+        *,
+        actionable: bool | None = None,
+        visible: bool = True,
+        enabled: bool | None = None,
+    ) -> None:
+        if enabled is None:
+            enabled = True if actionable is None else actionable
+        self.visible = visible
+        self.enabled = enabled
         self.clicked = False
         self.click_timeout: int | None = None
         self.wait_arg: str | None = None
         self.wait_timeout: int | None = None
-        self.locator_requested = False
+        self.locator_requests = 0
+        self.visible_checks = 0
+        self.enabled_checks = 0
+        self.locator_evaluate_calls = 0
         self.evaluate_calls = 0
 
     def evaluate(self, _expression: str, *, arg: object | None = None) -> object:
         self.evaluate_calls += 1
-        if self.evaluate_calls == 1:
-            return {
-                "actionable": self.actionable,
-                "reason": "" if self.actionable else "disabled",
-            }
         return None
 
     def locator(self, _selector: str) -> _FakeLocator:
-        self.locator_requested = True
+        self.locator_requests += 1
         return _FakeLocator(self)
 
     def wait_for_function(
@@ -173,10 +192,12 @@ def test_generic_surface_open_uses_keyword_arg_and_caps_action_timeout() -> None
     assert page.wait_arg == "ui-surface-7"
     assert page.click_timeout == suite.INTERACTION_ACTION_TIMEOUT_MS
     assert page.wait_timeout == suite.INTERACTION_ACTION_TIMEOUT_MS
+    assert page.visible_checks == 1
+    assert page.enabled_checks == 1
 
 
-def test_disabled_generic_surface_skips_without_click_or_wait() -> None:
-    page = _FakePage(actionable=False)
+def test_disabled_generic_surface_uses_playwright_enabled_state_and_skips_immediately() -> None:
+    page = _FakePage(enabled=False)
 
     opened, reason = suite._open_actionable_surface(
         page,
@@ -186,5 +207,9 @@ def test_disabled_generic_surface_skips_without_click_or_wait() -> None:
 
     assert opened is False
     assert reason == "disabled"
-    assert page.locator_requested is False
+    assert page.locator_requests == 1
+    assert page.visible_checks == 1
+    assert page.enabled_checks == 1
+    assert page.locator_evaluate_calls == 0
+    assert page.clicked is False
     assert page.wait_arg is None

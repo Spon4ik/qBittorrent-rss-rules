@@ -109,19 +109,30 @@ class FunctionalWatchdog:
                 previous_failures = int(previous.get("consecutive_failures") or 0)
                 previous_first_failure = previous.get("first_failure_at")
                 previous_incident = bool(previous.get("incident_active"))
+                first_failure_at: str | None
+                last_failure_at: str | None
+                recovered_at: str | None
                 if result.status == "fail":
                     consecutive_failures = previous_failures + 1
-                    first_failure_at = previous_first_failure or observed_at.isoformat()
+                    first_failure_at = (
+                        str(previous_first_failure)
+                        if previous_first_failure
+                        else observed_at.isoformat()
+                    )
                     last_failure_at = observed_at.isoformat()
                     recovered_at = None
                 else:
                     consecutive_failures = 0
                     first_failure_at = None
-                    last_failure_at = previous.get("last_failure_at")
+                    previous_last_failure = previous.get("last_failure_at")
+                    last_failure_at = (
+                        str(previous_last_failure) if previous_last_failure else None
+                    )
+                    previous_recovered = previous.get("recovered_at")
                     recovered_at = (
                         observed_at.isoformat()
                         if previous_failures > 0 or previous_incident
-                        else previous.get("recovered_at")
+                        else (str(previous_recovered) if previous_recovered else None)
                     )
                 incident_active = (
                     result.status == "fail"

@@ -68,6 +68,26 @@ def test_jackett_language_overrides_parse_assignment_list(monkeypatch) -> None:
     }
 
 
+def test_functional_watchdog_defaults_and_overrides(monkeypatch) -> None:
+    monkeypatch.delenv("QB_RULES_ENABLE_FUNCTIONAL_WATCHDOG", raising=False)
+    monkeypatch.delenv("QB_RULES_FUNCTIONAL_WATCHDOG_INTERVAL_SECONDS", raising=False)
+    get_environment_settings.cache_clear()
+
+    try:
+        defaults = get_environment_settings()
+        assert defaults.enable_functional_watchdog is True
+        assert defaults.functional_watchdog_interval_seconds == 300.0
+
+        monkeypatch.setenv("QB_RULES_ENABLE_FUNCTIONAL_WATCHDOG", "0")
+        monkeypatch.setenv("QB_RULES_FUNCTIONAL_WATCHDOG_INTERVAL_SECONDS", "45")
+        get_environment_settings.cache_clear()
+        overridden = get_environment_settings()
+        assert overridden.enable_functional_watchdog is False
+        assert overridden.functional_watchdog_interval_seconds == 45.0
+    finally:
+        get_environment_settings.cache_clear()
+
+
 def test_windows_host_path_translates_to_container_mount_root() -> None:
     resolved_path = resolve_runtime_path(
         r"C:\Users\nucc\AppData\Local\Programs\Stremio\leveldb",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-STATIC_ASSET_FILENAMES: tuple[str, ...] = ("app.css", "app.js")
+STATIC_ASSET_FILENAMES: tuple[str, ...] = ("app.css", "app.js", "runtime_health.js")
 STATIC_ASSET_DIR = Path(__file__).resolve().parent.parent / "static"
 
 

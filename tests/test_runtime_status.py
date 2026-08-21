@@ -100,8 +100,13 @@ def test_runtime_state_distinguishes_unreachable_and_missing_version() -> None:
     )
 
 
-def test_checkout_version_is_read_from_project_metadata() -> None:
-    assert runtime_status.read_checkout_version(PROJECT_DIR) == "1.4.20"
+def test_checkout_version_is_read_from_project_metadata(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "qa-fixture"\nversion = "9.8.7"\n',
+        encoding="utf-8",
+    )
+
+    assert runtime_status.read_checkout_version(tmp_path) == "9.8.7"
 
 
 def test_backend_finalizer_reports_not_attempted_and_requires_current_runtime() -> None:

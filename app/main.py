@@ -11,6 +11,7 @@ from app.config import ensure_runtime_dirs, get_environment_settings
 from app.db import get_session_factory, init_db
 from app.routes.api import compat_router as api_compat_router
 from app.routes.api import router as api_router
+from app.routes.diagnostics import router as diagnostics_router
 from app.routes.pages import router as pages_router
 from app.services.download_acceleration_scheduler import (
     start_download_acceleration_scheduler,
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(pages_router)
     app.include_router(api_compat_router)
     app.include_router(api_router)
+    app.include_router(diagnostics_router)
 
     @app.on_event("startup")
     def _start_background_queues() -> None:  # pragma: no cover - startup hook

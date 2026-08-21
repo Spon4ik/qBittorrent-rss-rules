@@ -20,7 +20,14 @@ from app.services.functional_invariants import (  # noqa: E402
     SUITES,
     CheckResult,
     CheckSpec,
+    evaluate_scheduled_fetch_effectiveness as _evaluate_scheduled_fetch_effectiveness,
+    evaluate_scheduled_fetch_liveness as _evaluate_scheduled_fetch_liveness,
 )
+
+# Preserve the CLI module's existing evaluator seam for tests and external callers while
+# keeping the canonical implementation in app.services.functional_invariants.
+evaluate_scheduled_fetch_effectiveness = _evaluate_scheduled_fetch_effectiveness
+evaluate_scheduled_fetch_liveness = _evaluate_scheduled_fetch_liveness
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_TIMEOUT_SECONDS = 5.0

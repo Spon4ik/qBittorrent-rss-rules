@@ -98,5 +98,6 @@
     </div>
 
     <script src="{{ request.url_for('static', path='app.js') }}?v={{ static_asset_version }}" defer></script>
+    <script src="{{ request.url_for('static', path='runtime_health.js') }}?v={{ static_asset_version }}" defer></script>
   </body>
 </html>

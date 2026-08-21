@@ -12,6 +12,8 @@ from app.services.rule_fetch_scheduler import rule_fetch_scheduler_status
 from app.services.runtime_identity import runtime_identity_payload
 from app.services.settings_service import SettingsService
 
+RUNTIME_DIAGNOSTIC_CAPABILITIES = ("unhandled_api_error_telemetry",)
+
 
 def _as_utc(value: datetime | None) -> datetime | None:
     if value is None:
@@ -46,6 +48,7 @@ def runtime_diagnostics_payload(
     return {
         "generated_at": generated_at.isoformat(),
         "runtime": runtime_identity_payload(),
+        "diagnostic_capabilities": list(RUNTIME_DIAGNOSTIC_CAPABILITIES),
         "components": {
             "api": {
                 "unhandled_errors": api_error_status(),

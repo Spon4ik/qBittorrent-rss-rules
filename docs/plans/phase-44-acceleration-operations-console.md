@@ -32,6 +32,15 @@ compact Retry/Ask Codex actions. Category or title inference is forbidden.
 
 ## Validation status
 
+- The `v1.4.20` qB-diagnostics repair is now persisted on the established
+  `experiment/codex-token-efficiency` branch, but it is not released and must not
+  be described as deployed until the Docker runtime is rebuilt and verified. The
+  deterministic closeout contract now separates implementation, focused validation,
+  GitHub persistence, Docker deployment, and release/tag state. `scripts\\runtime_state.bat`
+  (or `scripts/runtime_state.sh`) reports checkout/upstream/runtime freshness and
+  writes `logs/qa/runtime-state.json`; the backend finalizer labels Docker
+  `NOT ATTEMPTED` when project checks fail and requires `/health.app_version` to
+  match the checkout before deployment can be reported CURRENT.
 - Follow-up `v1.4.20` fixes the deterministic `UI-02` rule-header contract:
   opening qB diagnostics had made the whole disclosure absolute, removing its
   flex slot and shifting the command bar by 573px at 1720px and 901px at
@@ -47,10 +56,11 @@ compact Retry/Ask Codex actions. Category or title inference is forbidden.
   command is `scripts\browser_qa.bat --suite ui`. It checks representative core
   responsive pages for document-level overflow, the qB-diagnostics closed/open
   rule-header transition for overlap/containment/unexpected desktop horizontal
-  movement, and the existing Result-toolbar interaction/reflow contract. The
-  suite records DOM metrics and uses screenshots only as failure evidence. Known
-  deterministic UI failures are allowed to remain red until the later UI-fix task;
-  they are not quarantined merely to make the audit pass.
+  movement, the maintained Result-toolbar interaction/reflow contract, and a
+  bounded generic interactive-surface audit. The suite records DOM metrics and
+  uses screenshots only as failure evidence. Known deterministic UI failures are
+  allowed to remain red until the later UI-fix task; they are not quarantined
+  merely to make the audit pass.
 - Browser-QA iteration now has venv-aware wrappers. On Windows,
   `scripts\browser_qa.bat --check P44-03` runs only the maintained Result-toolbar
   regression and `scripts\browser_qa.bat --phase 44` selects all maintained Phase

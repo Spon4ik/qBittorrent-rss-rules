@@ -12,9 +12,10 @@ A new bug should not require inventing a new testing mechanism. New coverage sho
 
 1. **Unit/integration contracts** - pytest proves local algorithms, routes, persistence, and lifecycle behavior in isolated test state.
 2. **Deployed-runtime invariants** - `scripts/functional_qa.bat --suite core` (or `.sh`) reads bounded, secret-free runtime diagnostics and proves important live state contracts without screenshots or raw logs.
-3. **Post-deploy gate** - `Finalize-Backend.cmd --no-pause` runs the core functional suite after Docker is rebuilt and runtime-version freshness passes. A current Docker deployment can therefore still fail closeout when live functional behavior is wrong.
-4. **Periodic production watchdog** - planned follow-up. Run the same read-only core suite on a cadence independent of deployments and surface persistent failures as structured incidents. This is the step that removes the remaining dependence on a human noticing long-lived drift between deployments.
-5. **Safe synthetic provider probes** - add only where a real external-provider contract cannot be inferred from internal state. Probes must be read-only or explicitly non-destructive and must respect provider quotas.
+3. **Pre-deploy evidence capture** - `Finalize-Backend.cmd --no-pause` first runs the core suite in non-gating observation mode before it changes Docker. This preserves evidence from the currently running runtime so a restart cannot erase the defect being investigated.
+4. **Post-deploy gate** - after Docker rebuild and runtime-version freshness, the finalizer runs the core functional suite as a gate. A current Docker deployment can therefore still fail closeout when live functional behavior is wrong.
+5. **Periodic production watchdog** - planned follow-up. Run the same read-only core suite on a cadence independent of deployments and surface persistent failures as structured incidents. This is the step that removes the remaining dependence on a human noticing long-lived drift between deployments.
+6. **Safe synthetic provider probes** - add only where a real external-provider contract cannot be inferred from internal state. Probes must be read-only or explicitly non-destructive and must respect provider quotas.
 
 ## F-01 - Scheduled fetch liveness
 
@@ -40,10 +41,14 @@ The invariant behaves as follows:
 - swallowed scheduler exception -> `FAIL`;
 - no/recently stale tick evidence -> `FAIL`;
 - next run overdue beyond a bounded polling grace -> `FAIL`;
-- an overdue run while a scheduler tick is actively executing -> allowed as live in-progress work;
-- recent healthy tick with a non-overdue next run -> `PASS`.
+- an active scheduler tick -> `PENDING`, never an immediate `PASS`;
+- a tick running longer than the bounded active-work limit -> `FAIL`;
+- post-deploy runner polls `PENDING` checks until they settle or the settle timeout expires;
+- recent healthy completed tick with a non-overdue next run -> `PASS`.
 
 The endpoint and runner are read-only. F-01 does not trigger a fetch or mutate schedule state.
+
+The first live calibration exposed why this distinction matters: rebuilding Docker restarted the overdue scheduler and the initial implementation reported PASS merely because the catch-up tick was active. That was too weak; a hung tick would also have passed. The runner now treats active work as provisional and the finalizer captures the pre-rebuild runtime before restart.
 
 ## Extension contract
 
@@ -63,6 +68,8 @@ Do not add an invariant merely because a particular string or screenshot changed
 ## Output contract
 
 The runner prints one compact line per invariant and writes `logs/qa/functional-*/functional-qa-report.json` containing exact bounded metrics. On failure, Codex should consume this JSON before reading full logs or requesting screenshots.
+
+`--observe-only --settle-timeout 0` captures the instantaneous state without failing the caller. Normal post-deploy execution waits for provisional checks to settle and fails if they remain unresolved beyond the configured timeout.
 
 A functional-suite failure after Docker rebuild means:
 

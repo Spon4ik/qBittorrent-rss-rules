@@ -61,7 +61,23 @@ def _scheduled_snapshot_freshness(
         session.scalar(
             select(func.count())
             .select_from(joined)
-            .where(*filters, RuleSearchSnapshot.rule_id.is_(None))
+            .where(
+                *filters,
+                RuleSearchSnapshot.rule_id.is_(None),
+                Rule.created_at < stale_cutoff,
+            )
+        )
+        or 0
+    )
+    pending_snapshots = int(
+        session.scalar(
+            select(func.count())
+            .select_from(joined)
+            .where(
+                *filters,
+                RuleSearchSnapshot.rule_id.is_(None),
+                Rule.created_at >= stale_cutoff,
+            )
         )
         or 0
     )
@@ -100,9 +116,13 @@ def _scheduled_snapshot_freshness(
     return {
         "scope": scope,
         "total_rules": total_rules,
-        "fresh_snapshots": max(0, total_rules - missing_snapshots - stale_snapshots),
+        "fresh_snapshots": max(
+            0,
+            total_rules - missing_snapshots - pending_snapshots - stale_snapshots,
+        ),
         "stale_snapshots": stale_snapshots,
         "missing_snapshots": missing_snapshots,
+        "pending_snapshots": pending_snapshots,
         "freshness_limit_seconds": freshness_limit_seconds,
         "stale_cutoff": stale_cutoff.isoformat(),
         "oldest_snapshot_at": oldest_snapshot_at.isoformat() if oldest_snapshot_at else None,

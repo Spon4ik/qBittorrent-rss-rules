@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import get_environment_settings
 from app.models import Rule
 from app.services.api_error_registry import api_error_status
+from app.services.operation_status import operations_status_payload
 from app.services.rule_fetch_ops import schedule_payload
 from app.services.rule_fetch_scheduler import rule_fetch_scheduler_status
 from app.services.runtime_identity import runtime_identity_payload
@@ -17,6 +18,7 @@ from app.services.settings_service import SettingsService
 RUNTIME_DIAGNOSTIC_CAPABILITIES = (
     "unhandled_api_error_telemetry",
     "scheduled_snapshot_freshness",
+    "scheduled_fetch_progress",
 )
 SNAPSHOT_FRESHNESS_INTERVAL_MULTIPLIER = 2.0
 
@@ -27,6 +29,29 @@ def _as_utc(value: datetime | None) -> datetime | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _scheduled_fetch_operation_progress() -> dict[str, Any] | None:
+    operations = operations_status_payload(recent_seconds=0).get("operations")
+    if not isinstance(operations, list):
+        return None
+    active = [
+        item
+        for item in operations
+        if isinstance(item, dict)
+        and str(item.get("type") or "").strip() == "jackett_fetch"
+        and str(item.get("status") or "").strip().casefold() in {"queued", "running"}
+    ]
+    if not active:
+        return None
+    operation = max(active, key=lambda item: str(item.get("started_at") or ""))
+    return {
+        "current": max(0, int(operation.get("current") or 0)),
+        "total": max(0, int(operation.get("total") or 0)),
+        "percent": operation.get("percent"),
+        "started_at": operation.get("started_at"),
+        "updated_at": operation.get("updated_at"),
+    }
 
 
 def _scheduled_snapshot_freshness(
@@ -177,6 +202,7 @@ def runtime_diagnostics_payload(
                 "runtime_enabled": bool(environment.enable_rule_fetch_scheduler),
                 "schedule": schedule,
                 "scheduler": rule_fetch_scheduler_status(),
+                "operation_progress": _scheduled_fetch_operation_progress(),
                 "overdue_seconds": overdue_seconds,
                 "readiness": {
                     "jackett_app_ready": jackett_ready,

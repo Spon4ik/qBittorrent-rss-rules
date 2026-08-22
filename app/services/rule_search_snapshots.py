@@ -5,7 +5,8 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import String, cast as sql_cast, select, update
+from sqlalchemy import String, select, update
+from sqlalchemy import cast as sql_cast
 from sqlalchemy.orm import Session
 
 from app.models import RuleSearchSnapshot, utcnow

@@ -396,10 +396,10 @@ def _family_hashes(path: Path) -> dict[str, str]:
 
 def _assert_target_matches_bundle(target: Path, bundle: Path) -> None:
     verification = verify_bundle(bundle)
+    files = cast(list[dict[str, object]], verification["files"])
     expected = {
         str(item["suffix"]): str(item["sha256"])
-        for item in verification["files"]
-        if isinstance(item, dict)
+        for item in files
     }
     actual = _family_hashes(target)
     if actual != expected:

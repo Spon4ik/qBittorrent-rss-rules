@@ -6,18 +6,68 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
-- No entries yet.
+### Added
+
+- Add experimental project-scoped Codex task owners and model routing for known
+  incidents, behavioral investigation, implementation, architecture, and
+  exceptional deep debugging, with bounded subagent concurrency and compact
+  evidence handoffs.
+- Add deployed-runtime functional QA at `/api/diagnostics/runtime` with shared
+  `F-01` scheduled-fetch liveness, `F-02` scheduled-fetch effectiveness, and
+  `F-03` unhandled-API-error invariants that can be exercised by the CLI,
+  finalizer, browser status reconciliation, and the in-app watchdog.
+- Add an independent periodic functional watchdog that tracks consecutive
+  failures and recovery and promotes persistent failures to structured runtime
+  incidents without rewriting credentials, schedules, or historical evidence.
+- Add process/runtime identity and scheduler-start telemetry so persisted errors
+  can be attributed to the runtime generation that actually produced them.
+- Add bounded, secret-free unhandled API exception telemetry with generated
+  reference IDs and JSON error responses for unexpected `/api/*` failures.
+
+### Changed
+
+- Extend `Finalize-Backend.cmd` to capture a non-gating pre-deploy functional
+  baseline before Docker replacement and to gate closeout on the same functional
+  invariants after deterministic checks, rebuild, and runtime-freshness proof.
+- Reconcile known previous-runtime Jackett-readiness failures on the Rules page
+  as historical/recovered when the current runtime deterministically resolves
+  Jackett successfully, while retaining the original persisted failure record.
+- Mark application-generated maintenance requests as explicit incident work so
+  low-cost Codex routing can skip redundant task classification.
+
+### Fixed
+
+- Prevent one legacy malformed `rule_search_snapshots.inline_search` JSON value
+  from aborting an entire scheduled batch during prioritization; batch ordering
+  now selects only the scalar `rule_id` and `fetched_at` fields it requires.
+- Prevent unexpected API failures from degrading into browser errors such as
+  `Unexpected token 'I' ... is not valid JSON`; unhandled API exceptions now
+  preserve deterministic route/type/reference evidence in a bounded JSON
+  contract for subsequent diagnosis.
 
 ## [1.4.20] - 2026-08-21
 
 - Keep qB diagnostics open as an overlay without shifting rule-header actions
   horizontally on wide desktop layouts.
+- Add focused browser-QA wrappers and reusable `UI-*` DOM/state invariants for
+  responsive overflow, action-group safety, rule-header stability, Result-menu
+  interaction/reflow, and bounded generic disclosure checks, using screenshots
+  only as failure evidence.
+- Add compact JUnit-derived pytest summaries, checkout/upstream/runtime-state
+  diagnostics, and shell-safe backend/Docker finalizers that stop before deploy
+  when deterministic checks fail and verify the running `/health` version before
+  reporting deployment current.
+- Own rule-sync/rule-fetch queue startup and shutdown explicitly and join startup
+  sync work so repeated app/test lifecycles cannot leak background workers into
+  later sessions.
+
 ## [1.4.19] - 2026-08-20
 
 - Fix Result controls menus so outside click, Escape, and opening a sibling
   menu dismiss the active toolbar menu without reflowing results.
 - Restore the visible, independently selectable Sequential download option in
   Queue options and add deterministic wide/narrow browser regression coverage.
+
 ## [1.4.18] - 2026-08-14
 
 - Merge result filtering and queue defaults into one aligned desktop toolbar.
@@ -25,18 +75,37 @@ The format is based on Keep a Changelog and the project follows Semantic Version
   floating disclosure aligned with the indexer and category dropdowns.
 - Apply readable dark surfaces and non-expanding floating menus to the left
   rule-settings criteria, language, and feed controls.
+
 ## [1.4.17] - 2026-08-14
 
 - Restore readable dark-mode foregrounds for filtered search-result rows.
 - Align the rule workspace result controls into a deliberate responsive toolbar.
 - Render indexer and category multiselect menus as readable floating panels so
   opening a menu does not resize the results workspace.
+
 ## [1.4.16] - 2026-08-14
 
-- Release prep in progress.
+- Narrow the global background-work strip to currently active progress plus a
+  compact acceleration-problem count instead of using it as persistent history.
+- Add the `/acceleration` operations console with problem/active/finished/all
+  filters, torrent-name/hash search, provider state/error context, and explicit
+  Retry, Ask Codex, Dismiss, and Remove acceleration actions.
+- Correlate rule-search variants with acceleration jobs only by exact infohash
+  and expose matching acceleration state/actions without inferring ownership
+  from category or title text.
+
 ## [1.4.15] - 2026-08-14
 
-- Release prep in progress.
+- Make acceleration notifications understandable and non-destructive: surface
+  torrent/rule names where safely known, hide finished history by default,
+  support notification-only dismissal, and clarify Retry versus Remove
+  acceleration semantics while retaining torrents and downloaded files.
+- Add redacted, deduplicated `Ask Codex to fix` maintenance requests for scoped
+  acceleration failures without persisting provider credentials or sensitive
+  query values.
+- Collapse verbose rule-search notices by default and reclaim rule-edit workspace
+  height for the release-variants table.
+
 ## [1.4.14] - 2026-08-13
 
 - Make every no-rule qBittorrent Queue action add paused by default, regardless
@@ -46,6 +115,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
   controls on rule and Queue surfaces.
 - Align deterministic browser closeout checks with the current defaults page and
   settings-hub markup.
+
 ## [1.4.13] - 2026-08-13
 
 - Add a persistent global Light, Dark, and System theme control that applies the
@@ -54,6 +124,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
   status surfaces, sticky controls, and responsive layouts.
 - Replace the legacy combined settings destination with a dedicated defaults
   and quality-profiles screen that cannot overwrite integration settings.
+
 ## [1.4.12] - 2026-08-13
 
 - Split integration settings into dedicated qBittorrent, Jackett, Real-Debrid,
@@ -63,10 +134,12 @@ The format is based on Keep a Changelog and the project follows Semantic Version
   different integration.
 - Read signed-in Stremio auth from current Chromium LevelDB records as well as
   the historical JSON storage representation.
+
 ## [1.4.11] - 2026-08-13
 
-- Release prep in progress.
-  active downloads so an existing managed backlog cannot starve a newly queued torrent.
+- Bound acceleration scheduler fan-out to at most five jobs per tick and
+  prioritize the newest actively downloading torrents so an existing managed
+  backlog cannot starve a newly queued torrent.
 - Fall back to a tracker-free magnet when Real-Debrid rejects safe exported
   qBittorrent metainfo as invalid.
 - Commit HTTP-source mappings before qBittorrent's first request and stop reading
@@ -81,6 +154,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
   tracker download quotas from being consumed without an explicit Queue action.
 - Keep feed reachability and XML validation while preserving explicit Queue,
   search, snapshot fetching, and qB RSS rule behavior.
+
 ## [1.4.9] - 2026-08-07
 
 - Keep broad title-only rows such as `The Ridiculous 6` hidden for an
@@ -94,31 +168,38 @@ The format is based on Keep a Changelog and the project follows Semantic Version
   again, without retry-looping configuration or authentication failures.
 - Queue both qBittorrent sync and a fresh Jackett snapshot after a new rule is
   created, including rules initially saved as disabled.
+
 ## [1.4.7] - 2026-08-07
 
 - Treat Jellyfin movies as completed only when the selected user's `Played` flag
   is set; a nonzero `PlayCount` by itself now remains unseen and cannot disable
   the corresponding RSS rule.
+
 ## [1.4.6] - 2026-08-07
 
 - Reconcile every active unseen Stremio-linked rule to the configured enabled and
   managed quality defaults, including rules created or linked before the current
   sync, while preserving completion-based auto-disablement for watched titles.
+
 ## [1.4.5] - 2026-08-07
 
 - Treat Stremio episode progress as safely skipped when the corresponding exact
   Jellyfin episode is not in the library, while continuing to sync other exact
   episodes in the same series instead of reporting a watch-progress error.
+
 ## [1.4.4] - 2026-08-06
 
 - Tighten the managed 1080p preset to require Full HD or higher, preventing 720p releases such as the reported Ghosts Kinozal row from remaining visible, queueable, or eligible for qBittorrent RSS import.
 - Migrate settings that still match the former built-in HD-or-better preset while preserving customized and manual quality profiles.
+
 ## [1.4.3] - 2026-08-04
 
 - Continue saved-indexer IMDb-backed searches through exact-title fallback when none of the selected trackers advertises IMDb-enforced search, allowing scheduled refreshes to replace stale snapshots instead of failing the rule.
+
 ## [1.4.2] - 2026-08-04
 
 - Restore taxonomy defaults when a saved managed HD/UHD quality preset is empty, preventing the edit-page browser filter from promoting backend-hidden quality failures to visible, queueable results.
+
 ## [1.4.1] - 2026-08-03
 
 - Preserve manually edited rule titles during automatic Stremio library sync; provider titles now refresh only when the user explicitly presses Metadata Lookup.
@@ -133,6 +214,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Added a pinned MyJDownloader adapter for metadata-less torrent and standalone Real-Debrid-history fallback, preserving qBittorrent save paths and relative parent folders while stopping and retaining qB placeholders.
 - Added explicit adoption, retry, cleanup, and operation-status controls without deleting downloaded files or exposing provider links and credentials.
 - Replaced reversible base64 secret storage with versioned Fernet authenticated encryption while retaining one-time legacy secret migration.
+
 ## [1.3.4] - 2026-08-03
 
 - Made saved Jackett search indexers remotely authoritative: scoped searches now call only the selected direct indexer endpoints instead of querying the aggregate `all` endpoint first.
@@ -146,11 +228,13 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - Fixed per-rule snapshot refreshes reporting background work as idle by registering the real Jackett fetch in the shared operation-progress service.
 - Stopped retrying each timed-out Jackett request surface three times; refreshes now keep healthy-indexer results and move on after one bounded timeout, avoiding multi-minute retry cascades.
+
 ## [1.3.1] - 2026-08-02
 
 - Fixed IMDb-backed searches silently missing selected trackers when Jackett's aggregate endpoint returned results from only part of the configured scope.
 - Added a bounded parallel direct-indexer completeness pass while preserving successful aggregate and sibling-indexer results.
 - Normalized Jackett indexer display names during scope filtering so labels such as `RuTracker.org` match the saved `rutracker` indexer slug.
+
 ## [1.3.0] - 2026-08-01
 
 - Added a compact rules operations workbench, shared background-operation progress feedback, and consistent rule/search workspace layouts with resilient inline result scrolling and filtering.
@@ -161,41 +245,53 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Improved IMDb-backed Jackett precision and latency with concurrent capable-indexer probes, first-success query fallback, and consistent saved-snapshot identity filtering.
 - Kept successful multi-indexer results when sibling trackers fail, bounded feed-health probes, and removed API-key-bearing request URLs from persisted warnings.
 - Kept series packs when any episode in their explicit range is new, independently of `Keep unseen`, while continuing to hide packs containing only existing episodes.
+
 ## [1.2.18] - 2026-07-14
 
 - Fixed inline search result lists disappearing behind the empty-state panel on rule edit and advanced search workspaces. Showing hidden fetched rows now replaces the empty state, reports the displayed/filtered counts, bounds verbose search notices, and always reserves a scrollable table area.
+
 ## [1.2.17] - 2026-06-02
 
 - Fixed finished-series auto-disable for continuing shows: Cinemeta `status=Continuing`, scheduled videos, or open-ended release years now prevent and clear watch-state auto-disable even when the latest known episode has been watched and no next season is listed yet.
 - Death in Paradise-style rules can now be re-enabled by running Stremio or Jellyfin sync after the patch, without spending OMDb quota.
+
 ## [1.2.16] - 2026-06-02
 
 - Added quota-safe finished-series completion proof that uses Stremio/Cinemeta IMDb-backed episode inventory before OMDb, keeps still-open series enabled when future episodes or seasons are known, and re-enables watch-state-disabled series when revived-season evidence appears.
 - Shared the series catalog path across Jellyfin and Stremio sync so background checks no longer need OMDb quota to avoid false finished-series disablement.
+
 ## [1.2.15] - 2026-06-02
 
 - Release prep in progress.
+
 ## [1.2.14] - 2026-06-02
 
 - Release prep in progress.
+
 ## [1.2.13] - 2026-06-02
 
 - Release prep in progress.
+
 ## [1.2.12] - 2026-06-02
 
 - Release prep in progress.
+
 ## [1.2.11] - 2026-06-02
 
 - Release prep in progress.
+
 ## [1.2.10] - 2026-06-02
 
 - Release prep in progress.
+
 ## [1.2.9] - 2026-06-01
 
 - Release prep in progress.
+
 ## [1.2.8] - 2026-06-01
 
 - Release prep in progress.
+
 ## [1.2.7] - 2026-06-01
 
 - Further tightened inline result controls and queue options so short edit-page result sets keep the table inside the first desktop viewport.
@@ -239,6 +335,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Fixed same-release Jackett result grouping so obvious no-hash tracker rows are merged into a known-infohash sibling when release title, pack shape, quality, year, and size match closely, without fetching torrent files or spending tracker download quota.
 - Added a visible magnet-icon action for known-infohash search results that copies or opens one merged magnet link with all already-known grouped tracker hints.
 - Tightened the rule edit page inline results layout so wide screens wrap result content/actions instead of forcing horizontal table scrolling.
+
 ## [1.1.7] - 2026-05-25
 
 - Fixed qB RSS drift diagnostics so a successful repair sync clears the active remote-drift banner and timestamp instead of leaving stale "next sync rewrites qB" copy after qB has already been rewritten from local rule semantics.
@@ -249,14 +346,17 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Added persisted rule-level Jackett `search_indexers` so saved active search and rule snapshot fetches use explicit search scope instead of reparsing passive qB RSS `feed_urls`.
 - Kept qB RSS sync payloads anchored to `feed_urls`, with regressions proving qB `affectedFeeds` semantics remain unchanged when active-search scope differs.
 - Added rule-page scope diagnostics that show passive qB feed scope, active Jackett search scope, and whether active search scope is explicit or legacy-inferred.
+
 ## [1.1.5] - 2026-05-07
 
 - Added structured music and audiobook fields to the active Jackett search form, wiring artist, album, track, label, book title, author, publisher, and genre into the existing native Torznab audio-search request schema.
 - Added route regressions proving submitted structured audio fields reach `JackettClient.search` and remain visible in the rendered search form.
+
 ## [1.1.4] - 2026-05-07
 
 - Fixed structured Jackett music and audiobook searches so native `t=music` / `t=book` direct-indexer probes honor explicit indexer and feed-derived `filter_indexers` scope instead of fanning out to every capable configured indexer.
 - Added focused regressions proving scoped structured audio searches keep direct Jackett requests aligned with the operator-visible search/feed scope while preserving the existing broad fallback path.
+
 ## [1.1.3] - 2026-05-07
 
 - Completed the contract-roadmap guardrail package across R1.5-R8, adding qB settings precedence coverage, qB WebUI auth compatibility coverage, runtime-taxonomy test isolation, responsive/layout foundations, preset/profile UX contracts, search diagnostics, queue refresh resiliency, and qB rule-enforcement parity diagnostics.
@@ -274,12 +374,14 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Fixed Stremio local-storage auth discovery so the app extracts the real auth key, retries older discovered local sessions when the newest key is stale, and no longer stops at `Stremio API datastoreGet failed: Session does not exist` when a valid signed-in session is still present.
 - Hardened quality tag filtering so quality/source tokens match release-token boundaries instead of ordinary title substrings, while keeping `HDCAM`, `CAMRip`, `HDTS`, and similar release tags detectable.
 - Added focused Stremio auth fallback, Python quality-filter, and browser-side quality-filter regressions for the escaped failures.
+
 ## [1.1.0] - 2026-04-20
 
 - Added a rule-level language selector that resolves matching Jackett-backed qB RSS feeds under the hood, so qBittorrent RSS auto-downloader scope can now follow the chosen language without manually picking indexers first.
 - Updated the rule form UX to expose live language options discovered from configured Jackett indexers, explain the language-managed feed behavior clearly, and disable manual feed editing while language mode is active.
 - Revalidated the feature with focused route/builder pytest coverage, Ruff on the touched Python surfaces, live local Jackett/qB inspection proving the current `he`/`ru` feed groups, and Playwright captures of the real `/rules/new` form before and after selecting `ru`.
 - Fixed a stale-Jackett-link retry bug in `/api/search/queue` that surfaced during the broader route regression sweep for this release.
+
 ## [1.0.0] - 2026-04-19
 
 - Removed the native Stremio add-on host, provider-ingestion surface, local-playback route, and Stremio queue bridge from qBittorrent RSS Rules now that addon ownership moved to `jackett-stremio-fork`.
@@ -292,12 +394,14 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Cleaned local machine-generated repo noise by removing stray `*-DESKTOP-*` Python backup copies that were no longer part of the tracked application.
 - Ignored the accidental repo-root `app.db` artifact so the app’s real SQLite datastore remains the intended `data/qb_rules.db` without extra release noise.
 - Revalidated the cleanup with focused pytest coverage across release/versioning, routes, Stremio addon, queueing, and settings flows, plus Ruff across `app`, `tests`, and `scripts`.
+
 ## [0.9.1] - 2026-04-17
 
 - Added release-prep automation so patch/minor/major version bumps can synchronize repo touchpoints and scaffold changelog entries from one script-driven path.
 - Added an exact-variant Stremio-to-qB queue bridge so a chosen Stremio stream can be turned into a magnet, queued in qBittorrent, and optionally prioritized to the exact `fileIdx` once metadata is available.
 - Hardened OMDb handling by normalizing pasted OMDb URLs down to raw API keys, auto-healing previously saved URL-shaped secrets, and preventing background Stremio/Jellyfin sync plus passive rules-page loads from silently consuming OMDb quota.
 - Improved qB/Stremio queueing and search parity by keeping grouped same-hash metadata, merging newly discovered trackers into existing qB torrents, and preserving the merged `v0.9.0` follow-up work in a clean post-release patch.
+
 ## [0.9.0] - 2026-04-11
 
 - Completed the phase-23 cross-addon Stremio aggregation release so the local addon can merge qB RSS rows with Torrentio-compatible provider manifests into one globally ranked stream response instead of relying on Stremio's per-addon grouping.
@@ -371,7 +475,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 ## [0.7.3] - 2026-03-27
 
 - Hardened `scripts\\run_dev.bat` so a copied repo-local `.venv` with a stale interpreter path now fails fast with concrete recreate commands instead of the generic `No Python at ...` launcher error.
-- Removed the machine-specific Visual Studio offline NuGet source from `NuGet.config`, so WinUI restore and build now work from a fresh machine without `C:\Program Files (x86)\Microsoft SDKs\NuGetPackages\`.
+- Removed the machine-specific Visual Studio offline NuGet source from `NuGet.config`, so WinUI restore and build now work from a fresh machine without `C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\`.
 - Revalidated the portability patch with `scripts\\check.bat`, `scripts\\closeout_qa.bat`, and `scripts\\run_dev.bat desktop-build`.
 - Published the `v0.7.3` maintenance release after cross-machine validation.
 

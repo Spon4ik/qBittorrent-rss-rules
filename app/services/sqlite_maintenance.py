@@ -6,7 +6,7 @@ import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 _TREE_ROOT_RE = re.compile(r"\bTree\s+(\d+)\b")
 _CRITICAL_TABLES = ("rules", "rule_search_snapshots", "download_acceleration_jobs")
@@ -333,7 +333,7 @@ def analyze_database(
             and integrity_error is None
             and integrity_messages == ["ok"]
         )
-        logical_ok = not foreign_keys and int(malformed_datetimes["count"]) == 0
+        logical_ok = not foreign_keys and int(cast(int, malformed_datetimes["count"])) == 0
         unreadable = acceleration.get("unreadable")
         sample = acceleration.get("sample")
         reconstructible = bool(

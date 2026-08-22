@@ -7,7 +7,7 @@ import os
 import shutil
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.services.sqlite_maintenance import (
     _indexed_values_for_rowid,
@@ -52,7 +52,7 @@ def _assert_immutable_source_is_self_contained(path: Path) -> None:
     unsafe = [
         item
         for item in _source_sidecars(path)
-        if item["suffix"] in {"-wal", "-journal"} and int(item["size"]) > 0
+        if item["suffix"] in {"-wal", "-journal"} and int(cast(int, item["size"])) > 0
     ]
     if unsafe:
         raise RuntimeError(
@@ -287,11 +287,14 @@ def _validate_candidate(
             f"Recovered candidate row counts differ from expected counts: "
             f"expected={expected_counts!r} actual={actual_counts!r}"
         )
+    physical = cast(dict[str, object], report["physical_integrity"])
+    foreign_keys = cast(dict[str, object], report["foreign_keys"])
+    malformed_datetimes = cast(dict[str, object], report["malformed_datetimes"])
     return {
         "status": report["status"],
-        "integrity_check_ok": report["physical_integrity"]["integrity_check_ok"],
-        "foreign_key_violations": report["foreign_keys"]["count"],
-        "malformed_datetimes": report["malformed_datetimes"]["count"],
+        "integrity_check_ok": physical["integrity_check_ok"],
+        "foreign_key_violations": foreign_keys["count"],
+        "malformed_datetimes": malformed_datetimes["count"],
         "table_counts": actual_counts,
     }
 
@@ -462,6 +465,9 @@ def activate_candidate(
             "Recovery activation failed; verified pre-change SQLite state was restored"
         ) from exc
 
+    physical = cast(dict[str, object], activated["physical_integrity"])
+    foreign_keys = cast(dict[str, object], activated["foreign_keys"])
+    malformed_datetimes = cast(dict[str, object], activated["malformed_datetimes"])
     return {
         "status": "activated",
         "action": "activate_candidate",
@@ -471,9 +477,9 @@ def activate_candidate(
         "rollback_bundle": str(rollback_path),
         "validation": {
             "status": activated["status"],
-            "integrity_check_ok": activated["physical_integrity"]["integrity_check_ok"],
-            "foreign_key_violations": activated["foreign_keys"]["count"],
-            "malformed_datetimes": activated["malformed_datetimes"]["count"],
+            "integrity_check_ok": physical["integrity_check_ok"],
+            "foreign_key_violations": foreign_keys["count"],
+            "malformed_datetimes": malformed_datetimes["count"],
         },
     }
 

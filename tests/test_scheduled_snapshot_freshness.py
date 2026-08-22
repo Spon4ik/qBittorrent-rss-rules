@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from sqlalchemy import text
+
 from app.config import obfuscate_secret
 from app.models import AppSettings, MediaType, QualityProfile, Rule, RuleSearchSnapshot
 from app.services import functional_watchdog
@@ -123,6 +125,15 @@ def test_runtime_diagnostics_reports_stale_and_missing_snapshots_without_loading
                 fetched_at=NOW - timedelta(days=20),
             ),
         ]
+    )
+    db_session.commit()
+    db_session.execute(
+        text(
+            "UPDATE rule_search_snapshots "
+            "SET inline_search = '{\"truncated\":' "
+            "WHERE rule_id = :rule_id"
+        ),
+        {"rule_id": stale.id},
     )
     db_session.commit()
 

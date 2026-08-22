@@ -217,7 +217,15 @@ def evaluate_scheduled_fetch_effectiveness(
 
     schedule = _mapping(component.get("schedule"))
     readiness = _mapping(component.get("readiness"))
+    snapshot_freshness = _mapping(component.get("snapshot_freshness"))
     runtime = _mapping(payload.get("runtime"))
+    raw_capabilities = payload.get("diagnostic_capabilities")
+    capabilities = (
+        {str(item) for item in raw_capabilities}
+        if isinstance(raw_capabilities, list)
+        else set()
+    )
+    snapshot_freshness_supported = "scheduled_snapshot_freshness" in capabilities
     schedule_enabled = bool(schedule.get("enabled"))
     jackett_ready = bool(readiness.get("jackett_app_ready"))
     last_status = str(schedule.get("last_status") or "idle").strip().casefold() or "idle"
@@ -234,6 +242,13 @@ def evaluate_scheduled_fetch_effectiveness(
         and runtime_started_at is not None
         and last_run_at < runtime_started_at
     )
+    snapshot_total = max(0, int(_number(snapshot_freshness.get("total_rules"))))
+    stale_snapshots = max(0, int(_number(snapshot_freshness.get("stale_snapshots"))))
+    missing_snapshots = max(0, int(_number(snapshot_freshness.get("missing_snapshots"))))
+    freshness_limit_seconds = max(
+        0.0,
+        _number(snapshot_freshness.get("freshness_limit_seconds")),
+    )
 
     metrics: dict[str, Any] = {
         "schedule_enabled": schedule_enabled,
@@ -244,6 +259,16 @@ def evaluate_scheduled_fetch_effectiveness(
         "runtime_started_at": runtime.get("started_at"),
         "last_run_current_runtime": last_run_current_runtime,
         "historical_run": historical_run,
+        "snapshot_freshness_supported": snapshot_freshness_supported,
+        "snapshot_scope": snapshot_freshness.get("scope"),
+        "snapshot_total_rules": snapshot_total,
+        "fresh_snapshots": max(0, int(_number(snapshot_freshness.get("fresh_snapshots")))),
+        "stale_snapshots": stale_snapshots,
+        "missing_snapshots": missing_snapshots,
+        "snapshot_freshness_limit_seconds": freshness_limit_seconds or None,
+        "oldest_snapshot_at": snapshot_freshness.get("oldest_snapshot_at"),
+        "newest_snapshot_at": snapshot_freshness.get("newest_snapshot_at"),
+        "oldest_snapshot_age_seconds": snapshot_freshness.get("oldest_snapshot_age_seconds"),
         "effectiveness_state": "unknown",
     }
 
@@ -274,6 +299,39 @@ def evaluate_scheduled_fetch_effectiveness(
             title="Scheduled fetch effectiveness",
             status="fail",
             summary="The current runtime's latest scheduled fetch completed with error status.",
+            metrics=metrics,
+        )
+
+    if snapshot_freshness_supported and not snapshot_freshness:
+        metrics["effectiveness_state"] = "snapshot_freshness_unknown"
+        return CheckResult(
+            check_id="F-02",
+            title="Scheduled fetch effectiveness",
+            status="fail",
+            summary=(
+                "Runtime advertises scheduled snapshot freshness telemetry but did not provide it."
+            ),
+            metrics=metrics,
+        )
+
+    if (
+        snapshot_freshness_supported
+        and last_run_at is not None
+        and (stale_snapshots > 0 or missing_snapshots > 0)
+    ):
+        metrics["effectiveness_state"] = "stale_snapshots"
+        freshness_hours = freshness_limit_seconds / 3600.0 if freshness_limit_seconds else 0.0
+        oldest = str(snapshot_freshness.get("oldest_snapshot_at") or "unknown")
+        return CheckResult(
+            check_id="F-02",
+            title="Scheduled fetch effectiveness",
+            status="fail",
+            summary=(
+                "Scheduled fetching has not kept rule snapshots current: "
+                f"{stale_snapshots} stale and {missing_snapshots} missing of "
+                f"{snapshot_total} in-scope rule(s); oldest snapshot {oldest}; "
+                f"freshness limit {freshness_hours:.1f}h."
+            ),
             metrics=metrics,
         )
 
@@ -327,7 +385,11 @@ def evaluate_scheduled_fetch_effectiveness(
         check_id="F-02",
         title="Scheduled fetch effectiveness",
         status="pass",
-        summary="Scheduled fetch prerequisites are ready and no current-runtime failure is present.",
+        summary=(
+            "Scheduled fetch prerequisites are ready and in-scope rule snapshots are current."
+            if snapshot_freshness_supported
+            else "Scheduled fetch prerequisites are ready and no current-runtime failure is present."
+        ),
         metrics=metrics,
     )
 

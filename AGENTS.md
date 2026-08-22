@@ -65,6 +65,20 @@ Every reported defect and every requested behavior change must leave behind dete
 - Keep failure artifacts compact and machine-readable so future Codex sessions can consume a summary instead of rereading raw logs, screenshots, or databases.
 - Before closeout, exercise the new/changed regression or invariant narrowly, then include it in the normal broader gate. Report the specific regression/invariant in the final handoff.
 
+## Reversible change and recovery contract
+
+Reversibility is the default safety mechanism for mutable state that Git cannot restore. Do not stop merely because a repair changes a production database, local runtime data, generated state, or machine configuration. First make the operation recoverable, verify that recovery path, then continue autonomously.
+
+- Before modifying non-Git state that could be corrupted, lost, or made unusable, establish a deterministic rollback path. Examples include SQLite databases and sidecars, local provider/cache state, runtime configuration, generated files, user-managed data, and machine-specific service state.
+- Prefer an application-consistent backup/snapshot/export. Stop or quiesce the owning service when consistency requires it. Capture all coupled state needed for restoration, such as relevant SQLite sidecars, rather than assuming a single copied file is sufficient.
+- Verify the rollback artifact before mutation: confirm it exists, is readable, and is plausibly restorable; record hashes/counts/metadata or run the maintained verification tool when useful. A backup is not considered sufficient merely because a copy command returned success.
+- If the repository lacks a safe backup/restore mechanism for a risky but otherwise routine repair, implement the smallest deterministic backup/restore or recovery tool first and add regression coverage for it. Reuse and generalize that tool for future incidents instead of relying on repeated ad-hoc commands.
+- Once rollback is verified, proceed with the reversible repair without asking the user for routine approval. Use atomic replacement/swap patterns where practical, preserve the pre-change artifact until validation succeeds, and keep recovery evidence compact and machine-readable.
+- Validate immediately after the mutation with the cheapest reliable deterministic checks. If validation fails and rollback is still safe, stop the affected service if needed, restore the verified pre-change state automatically, and validate the rollback rather than leaving the user with a partially applied repair.
+- Ask for explicit user approval only when reversibility cannot be established with high confidence, the operation intentionally discards non-reconstructible/user data, rollback itself is destructive or ambiguous, credentials/secrets are involved, or an external/remote action has no proven safe inverse.
+- Do not label a change reversible when restoring it would itself require guessing. When the data model or provider semantics make restoration uncertain, treat that as a real approval/blocker boundary and explain the exact missing recovery guarantee.
+- Add or strengthen deterministic tests/invariants for the recovery path whenever the task introduces or relies on new backup, restore, migration, replacement, or rollback behavior.
+
 ## Model routing and task ownership
 
 Subagents consume extra tokens. Prefer one task owner over a fixed multi-agent pipeline, and do not delegate when the current parent already has the right capability and can finish the task without duplicated context.
@@ -104,10 +118,10 @@ Practical parent defaults: application-generated incident automation may use Lun
 
 ## Autonomous execution and validation
 
-- When a task requires tests, fresh shells, clean Python processes, Docker rebuilds, health probes, or local service checks, do them autonomously instead of asking the user to intervene.
+- When a task requires tests, fresh shells, clean Python processes, Docker rebuilds, health probes, local service checks, reversible data recovery, or rollback validation, do them autonomously instead of asking the user to intervene.
 - If a command/test run hangs or leaves stale helper processes, recover autonomously with the smallest safe cleanup needed, then rerun the validation in a fresh process.
-- Do not hand work back to the user for routine environment recovery, reruns, dependency checks, or non-destructive diagnostics.
-- Pause for user confirmation only when the next step risks destructive data loss, credential exposure, broad behavior changes outside the active phase, or other dangerous intent/behavior.
+- Do not hand work back to the user for routine environment recovery, reruns, dependency checks, non-destructive diagnostics, or state changes whose rollback path has already been verified.
+- Before a potentially destructive mutation, apply the reversible-change contract first. Pause for user confirmation only if a verified rollback cannot be established, non-reconstructible data would intentionally be lost, credentials/secrets are involved, or another genuinely irreversible boundary remains.
 - Continue phase work sequentially until the active phase is actually validated and documented; only then proceed to the next planned phase.
 - After closing each phase, inspect whether the work exposed previously unknown facts that should change later scope, sequencing, tests, or release criteria. If so, update the roadmap/status docs first, then keep following the adjusted plan without waiting for routine user intervention.
 - Keep packaging, commit, push, PR, and release handoff work moving after validation passes; do not leave completed phase work local unless a concrete blocker is documented. A blocked release/tag does not by itself justify leaving an otherwise validated task only in an uncommitted worktree; persist it to the established working branch unless the user asked otherwise or the change itself is unsafe to preserve.

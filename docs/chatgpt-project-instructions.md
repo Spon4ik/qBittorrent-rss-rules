@@ -61,6 +61,8 @@ When the user asks ChatGPT Web to edit repository files, use the branch/ref they
 
 Do not create a PR, merge, tag, release, or modify unrelated files unless requested or clearly required by the task. Keep repository planning/status documentation synchronized when the requested work changes future scope, sequencing, or architectural decisions.
 
+Keep `CHANGELOG.md`'s `[Unreleased]` section current as notable product, UI, runtime/reliability, QA/operational, or developer-workflow changes land. Do not wait until release prep to reconstruct a long development period from memory; omit only trivial documentation/test-only noise that would not be useful release history.
+
 ## Codex boundary
 
 Codex execution behavior belongs in `AGENTS.md`, `.codex/skills/`, custom-agent definitions, and other Codex-specific repository configuration. ChatGPT Web may inspect those files to understand how the repository works and may recommend changes to them, but this Project instruction file must not act as a second Codex policy layer.

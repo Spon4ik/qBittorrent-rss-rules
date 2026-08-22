@@ -5,7 +5,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
+# Legacy runtimes do not expose per-batch progress, so keep the former total
+# duration guard only as a compatibility fallback. Current runtimes should be
+# judged by whether rule-level progress is still advancing.
 MAX_ACTIVE_TICK_SECONDS = 1800.0
+MAX_ACTIVE_TICK_NO_PROGRESS_SECONDS = 300.0
+ACTIVE_TICK_PROGRESS_START_GRACE_SECONDS = 120.0
 KNOWN_RECOVERABLE_READINESS_ERRORS = frozenset(
     {
         "Jackett app search is not configured in Settings.",
@@ -56,10 +61,41 @@ def _mapping(value: object | None) -> dict[str, Any]:
     return cast(dict[str, Any], value) if isinstance(value, dict) else {}
 
 
+def _capabilities(payload: dict[str, Any]) -> set[str]:
+    raw_capabilities = payload.get("diagnostic_capabilities")
+    return (
+        {str(item) for item in raw_capabilities}
+        if isinstance(raw_capabilities, list)
+        else set()
+    )
+
+
 def _scheduled_component(payload: dict[str, Any]) -> dict[str, Any] | None:
     components = _mapping(payload.get("components"))
     component = components.get("scheduled_rule_fetch")
     return cast(dict[str, Any], component) if isinstance(component, dict) else None
+
+
+def _operation_progress_state(
+    component: dict[str, Any],
+    observed_at: datetime,
+) -> dict[str, Any]:
+    progress = _mapping(component.get("operation_progress"))
+    updated_at = parse_datetime(progress.get("updated_at"))
+    progress_age_seconds = (
+        max(0.0, (observed_at - updated_at).total_seconds())
+        if updated_at is not None
+        else None
+    )
+    return {
+        "current": max(0, int(_number(progress.get("current")))),
+        "total": max(0, int(_number(progress.get("total")))),
+        "percent": progress.get("percent"),
+        "started_at": progress.get("started_at"),
+        "updated_at": progress.get("updated_at"),
+        "age_seconds": progress_age_seconds,
+        "present": bool(progress),
+    }
 
 
 def evaluate_scheduled_fetch_liveness(
@@ -79,6 +115,9 @@ def evaluate_scheduled_fetch_liveness(
 
     schedule = _mapping(component.get("schedule"))
     scheduler = _mapping(component.get("scheduler"))
+    capabilities = _capabilities(payload)
+    progress_supported = "scheduled_fetch_progress" in capabilities
+    progress = _operation_progress_state(component, observed_at)
     schedule_enabled = bool(schedule.get("enabled"))
     runtime_enabled = bool(component.get("runtime_enabled"))
     scheduler_running = bool(scheduler.get("running"))
@@ -121,6 +160,16 @@ def evaluate_scheduled_fetch_liveness(
         "active_tick_age_seconds": (
             round(active_tick_age_seconds, 3) if active_tick_age_seconds is not None else None
         ),
+        "progress_supported": progress_supported,
+        "progress_current": progress["current"],
+        "progress_total": progress["total"],
+        "progress_percent": progress["percent"],
+        "progress_updated_at": progress["updated_at"],
+        "progress_age_seconds": (
+            round(float(progress["age_seconds"]), 3)
+            if progress["age_seconds"] is not None
+            else None
+        ),
     }
 
     if not schedule_enabled:
@@ -141,10 +190,30 @@ def evaluate_scheduled_fetch_liveness(
     if tick_in_progress:
         if last_tick_started_at is None:
             failures.append("scheduler reports a tick in progress without a start timestamp")
+        elif progress_supported:
+            if not progress["present"]:
+                if (
+                    active_tick_age_seconds is not None
+                    and active_tick_age_seconds > ACTIVE_TICK_PROGRESS_START_GRACE_SECONDS
+                ):
+                    failures.append(
+                        "scheduler tick is active but no rule-fetch progress operation was published"
+                    )
+            elif progress["updated_at"] is None:
+                failures.append("rule-fetch progress is missing its update timestamp")
+            elif (
+                progress["age_seconds"] is not None
+                and float(progress["age_seconds"]) > MAX_ACTIVE_TICK_NO_PROGRESS_SECONDS
+            ):
+                failures.append(
+                    "scheduler tick has made no rule-level progress for "
+                    f"{float(progress['age_seconds']):.0f}s "
+                    f"(limit {MAX_ACTIVE_TICK_NO_PROGRESS_SECONDS:.0f}s)"
+                )
         elif active_tick_age_seconds is not None and active_tick_age_seconds > MAX_ACTIVE_TICK_SECONDS:
             failures.append(
                 f"scheduler tick has been running for {active_tick_age_seconds:.0f}s "
-                f"(limit {MAX_ACTIVE_TICK_SECONDS:.0f}s)"
+                f"(legacy limit {MAX_ACTIVE_TICK_SECONDS:.0f}s)"
             )
         if failures:
             return CheckResult(
@@ -152,6 +221,18 @@ def evaluate_scheduled_fetch_liveness(
                 title="Scheduled fetch liveness",
                 status="fail",
                 summary="; ".join(failures) + ".",
+                metrics=metrics,
+            )
+        if progress["present"] and int(progress["total"]) > 0:
+            progress_text = f"{int(progress['current'])}/{int(progress['total'])} rule(s)"
+            return CheckResult(
+                check_id="F-01",
+                title="Scheduled fetch liveness",
+                status="pending",
+                summary=(
+                    f"Scheduler is executing a tick and rule-level progress is current "
+                    f"({progress_text}); awaiting a settled result."
+                ),
                 metrics=metrics,
             )
         return CheckResult(
@@ -204,7 +285,7 @@ def evaluate_scheduled_fetch_effectiveness(
     payload: dict[str, Any],
     now: datetime | None = None,
 ) -> CheckResult:
-    del now
+    observed_at = (now or datetime.now(UTC)).astimezone(UTC)
     component = _scheduled_component(payload)
     if component is None:
         return CheckResult(
@@ -216,16 +297,22 @@ def evaluate_scheduled_fetch_effectiveness(
         )
 
     schedule = _mapping(component.get("schedule"))
+    scheduler = _mapping(component.get("scheduler"))
     readiness = _mapping(component.get("readiness"))
     snapshot_freshness = _mapping(component.get("snapshot_freshness"))
     runtime = _mapping(payload.get("runtime"))
-    raw_capabilities = payload.get("diagnostic_capabilities")
-    capabilities = (
-        {str(item) for item in raw_capabilities}
-        if isinstance(raw_capabilities, list)
-        else set()
-    )
+    capabilities = _capabilities(payload)
     snapshot_freshness_supported = "scheduled_snapshot_freshness" in capabilities
+    progress_supported = "scheduled_fetch_progress" in capabilities
+    progress = _operation_progress_state(component, observed_at)
+    tick_in_progress = bool(scheduler.get("tick_in_progress"))
+    progress_recent = bool(
+        progress_supported
+        and progress["present"]
+        and progress["updated_at"] is not None
+        and progress["age_seconds"] is not None
+        and float(progress["age_seconds"]) <= MAX_ACTIVE_TICK_NO_PROGRESS_SECONDS
+    )
     schedule_enabled = bool(schedule.get("enabled"))
     jackett_ready = bool(readiness.get("jackett_app_ready"))
     last_status = str(schedule.get("last_status") or "idle").strip().casefold() or "idle"
@@ -243,6 +330,7 @@ def evaluate_scheduled_fetch_effectiveness(
         and last_run_at < runtime_started_at
     )
     snapshot_total = max(0, int(_number(snapshot_freshness.get("total_rules"))))
+    fresh_snapshots = max(0, int(_number(snapshot_freshness.get("fresh_snapshots"))))
     stale_snapshots = max(0, int(_number(snapshot_freshness.get("stale_snapshots"))))
     missing_snapshots = max(0, int(_number(snapshot_freshness.get("missing_snapshots"))))
     freshness_limit_seconds = max(
@@ -262,13 +350,23 @@ def evaluate_scheduled_fetch_effectiveness(
         "snapshot_freshness_supported": snapshot_freshness_supported,
         "snapshot_scope": snapshot_freshness.get("scope"),
         "snapshot_total_rules": snapshot_total,
-        "fresh_snapshots": max(0, int(_number(snapshot_freshness.get("fresh_snapshots")))),
+        "fresh_snapshots": fresh_snapshots,
         "stale_snapshots": stale_snapshots,
         "missing_snapshots": missing_snapshots,
         "snapshot_freshness_limit_seconds": freshness_limit_seconds or None,
         "oldest_snapshot_at": snapshot_freshness.get("oldest_snapshot_at"),
         "newest_snapshot_at": snapshot_freshness.get("newest_snapshot_at"),
         "oldest_snapshot_age_seconds": snapshot_freshness.get("oldest_snapshot_age_seconds"),
+        "progress_supported": progress_supported,
+        "progress_current": progress["current"],
+        "progress_total": progress["total"],
+        "progress_percent": progress["percent"],
+        "progress_updated_at": progress["updated_at"],
+        "progress_age_seconds": (
+            round(float(progress["age_seconds"]), 3)
+            if progress["age_seconds"] is not None
+            else None
+        ),
         "effectiveness_state": "unknown",
     }
 
@@ -319,9 +417,27 @@ def evaluate_scheduled_fetch_effectiveness(
         and last_run_at is not None
         and (stale_snapshots > 0 or missing_snapshots > 0)
     ):
-        metrics["effectiveness_state"] = "stale_snapshots"
         freshness_hours = freshness_limit_seconds / 3600.0 if freshness_limit_seconds else 0.0
         oldest = str(snapshot_freshness.get("oldest_snapshot_at") or "unknown")
+        if tick_in_progress and progress_recent:
+            metrics["effectiveness_state"] = "refresh_in_progress"
+            progress_text = (
+                f"{int(progress['current'])}/{int(progress['total'])} rule(s)"
+                if int(progress["total"]) > 0
+                else "rule-level work"
+            )
+            return CheckResult(
+                check_id="F-02",
+                title="Scheduled fetch effectiveness",
+                status="pending",
+                summary=(
+                    "Scheduled fetching is actively repairing stale snapshots: "
+                    f"{fresh_snapshots} fresh, {stale_snapshots} stale, {missing_snapshots} missing "
+                    f"of {snapshot_total}; current batch progress {progress_text}."
+                ),
+                metrics=metrics,
+            )
+        metrics["effectiveness_state"] = "stale_snapshots"
         return CheckResult(
             check_id="F-02",
             title="Scheduled fetch effectiveness",
@@ -399,12 +515,7 @@ def evaluate_unhandled_api_errors(
     now: datetime | None = None,
 ) -> CheckResult:
     del now
-    raw_capabilities = payload.get("diagnostic_capabilities")
-    capabilities = (
-        {str(item) for item in raw_capabilities}
-        if isinstance(raw_capabilities, list)
-        else set()
-    )
+    capabilities = _capabilities(payload)
     if "unhandled_api_error_telemetry" not in capabilities:
         return CheckResult(
             check_id="F-03",

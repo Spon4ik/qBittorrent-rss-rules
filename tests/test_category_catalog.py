@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import select, text
 
 from app.models import IndexerCategoryCatalog
 from app.schemas import JackettSearchResult
@@ -137,3 +139,62 @@ def test_category_catalog_normalizes_legacy_unknown_labels(db_session) -> None:
         indexer="legacyindexer",
         category_ids=["100119"],
     ) == ["Category #100119"]
+
+
+def test_category_catalog_tolerates_and_repairs_malformed_legacy_timestamps(db_session) -> None:
+    sync_category_catalog_from_results(
+        db_session,
+        [
+            JackettSearchResult(
+                title="Legacy category timestamp",
+                link="magnet:?xt=urn:btih:LEGACYTIME",
+                indexer="legacyindexer",
+                category_ids=["2045"],
+                category_labels=["Category #2045"],
+            )
+        ],
+    )
+    db_session.commit()
+
+    malformed = r"3d\u0430\u044f \u0414\u0430\u0442\u0430"
+    db_session.execute(
+        text(
+            """
+            UPDATE indexer_category_catalog
+            SET created_at = :malformed, updated_at = :malformed
+            WHERE indexer = 'legacyindexer' AND category_id = '2045'
+            """
+        ),
+        {"malformed": malformed},
+    )
+    db_session.commit()
+    db_session.expire_all()
+
+    assert resolve_category_labels(
+        db_session,
+        indexer="legacyindexer",
+        category_ids=["2045"],
+    ) == ["Category #2045"]
+
+    changed = sync_category_catalog_from_indexer_map(
+        db_session,
+        {"legacyindexer": {"2045": ["Movies/UHD"]}},
+    )
+    db_session.commit()
+
+    assert changed == 1
+    assert resolve_category_labels(
+        db_session,
+        indexer="legacyindexer",
+        category_ids=["2045"],
+    ) == ["Movies/UHD"]
+    raw_updated_at = db_session.execute(
+        text(
+            """
+            SELECT updated_at
+            FROM indexer_category_catalog
+            WHERE indexer = 'legacyindexer' AND category_id = '2045'
+            """
+        )
+    ).scalar_one()
+    datetime.fromisoformat(str(raw_updated_at))

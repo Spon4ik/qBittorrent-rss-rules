@@ -10,6 +10,7 @@ from app.services.release_versioning import (
     apply_version_bump,
     current_version,
     ensure_changelog_entry,
+    validate_unreleased_changelog,
 )
 
 
@@ -69,6 +70,22 @@ def test_apply_version_bump_updates_all_touchpoints(tmp_path: Path) -> None:
     ).read_text(encoding="utf-8")
 
 
+def test_validate_unreleased_changelog_returns_real_notes(tmp_path: Path) -> None:
+    _seed_release_files(tmp_path)
+    changelog_path = tmp_path / "CHANGELOG.md"
+    changelog_path.write_text(
+        "# Changelog\n\n"
+        "## [Unreleased]\n\n"
+        "### Added\n\n"
+        "- Deterministic runtime checks.\n",
+        encoding="utf-8",
+    )
+
+    notes = validate_unreleased_changelog(tmp_path)
+
+    assert notes == "### Added\n\n- Deterministic runtime checks."
+
+
 def test_ensure_changelog_entry_promotes_unreleased_notes_intact(tmp_path: Path) -> None:
     _seed_release_files(tmp_path)
     changelog_path = tmp_path / "CHANGELOG.md"
@@ -108,7 +125,7 @@ def test_ensure_changelog_entry_promotes_unreleased_notes_intact(tmp_path: Path)
 def test_ensure_changelog_entry_refuses_empty_unreleased_notes(tmp_path: Path) -> None:
     _seed_release_files(tmp_path)
 
-    with pytest.raises(RuntimeError, match="\[Unreleased\] has no release notes"):
+    with pytest.raises(RuntimeError, match=r"\[Unreleased\] has no release notes"):
         ensure_changelog_entry(
             tmp_path,
             new_version="0.9.1",

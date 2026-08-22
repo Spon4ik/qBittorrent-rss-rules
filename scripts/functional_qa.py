@@ -33,6 +33,7 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_TIMEOUT_SECONDS = 5.0
 DEFAULT_SETTLE_TIMEOUT_SECONDS = 600.0
 DEFAULT_POLL_SECONDS = 5.0
+DEFAULT_PROGRESS_SECONDS = 30.0
 
 
 def _fetch_json(url: str, *, timeout_seconds: float) -> dict[str, Any]:
@@ -121,6 +122,31 @@ def _timeout_pending_results(
     ]
 
 
+def _settle_progress_summary(
+    results: list[CheckResult],
+    *,
+    elapsed_seconds: float,
+    settle_timeout_seconds: float,
+) -> str:
+    states: list[str] = []
+    for item in results:
+        state = f"{item.check_id}={item.status}"
+        if item.status == "pending":
+            active_age = item.metrics.get("active_tick_age_seconds")
+            if active_age is not None:
+                state += f"(active {float(active_age):.0f}s)"
+        elif item.check_id == "F-02":
+            stale = item.metrics.get("stale_snapshots")
+            total = item.metrics.get("snapshot_total_rules")
+            if stale is not None and total is not None:
+                state += f"(stale {int(stale)}/{int(total)})"
+        states.append(state)
+    return (
+        f"[PENDING] Functional QA settling {elapsed_seconds:.0f}s/"
+        f"{settle_timeout_seconds:.0f}s: {', '.join(states)}"
+    )
+
+
 def run(
     *,
     base_url: str,
@@ -136,6 +162,7 @@ def run(
     diagnostics_url = f"{base_url.rstrip('/')}/api/diagnostics/runtime"
     started = time.perf_counter()
     settle_started = time.monotonic()
+    last_progress_at: float | None = None
     attempts = 0
 
     while True:
@@ -149,7 +176,21 @@ def run(
             break
         if observe_only or settle_timeout_seconds <= 0:
             break
-        elapsed = time.monotonic() - settle_started
+        now_monotonic = time.monotonic()
+        elapsed = now_monotonic - settle_started
+        if (
+            last_progress_at is None
+            or now_monotonic - last_progress_at >= DEFAULT_PROGRESS_SECONDS
+        ):
+            print(
+                _settle_progress_summary(
+                    results,
+                    elapsed_seconds=elapsed,
+                    settle_timeout_seconds=settle_timeout_seconds,
+                ),
+                flush=True,
+            )
+            last_progress_at = now_monotonic
         if elapsed >= settle_timeout_seconds:
             results = _timeout_pending_results(
                 results,

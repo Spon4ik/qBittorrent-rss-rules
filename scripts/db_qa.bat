@@ -26,9 +26,10 @@ if "%~1"=="" (
 )
 
 set "DATABASE=%~1"
-shift
+set "FULL_ARG="
+if /I "%~2"=="--full" set "FULL_ARG=--full"
 
-call "%PYTHON_EXE%" -m app.services.sqlite_maintenance "%DATABASE%" --output "%REPORT_FILE%" %*
+call "%PYTHON_EXE%" -m app.services.sqlite_maintenance "%DATABASE%" --output "%REPORT_FILE%" %FULL_ARG%
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo DB QA report: %REPORT_FILE%

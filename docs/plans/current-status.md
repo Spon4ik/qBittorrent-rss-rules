@@ -2,6 +2,19 @@
 
 ## Current focus
 
+- SQLite corruption incident triage on `experiment/codex-token-efficiency`:
+  upstream is synchronized and the maintained rollback tests pass (`11 passed`).
+  `scripts\\db_bundle.bat backup` captured and verified the current production
+  SQLite file family at `logs/qa/db/incident-20260823-014358/production-before-recovery`.
+  Deterministic DB QA reports one physically corrupt,
+  reconstructible `download_acceleration_jobs` row plus one orphan snapshot.
+  A dated rollback candidate restores cleanly and passes physical integrity, but
+  is stale (`349` rules) and remains logically repairable, so production
+  replacement is blocked pending a current-state logical rebuild and explicit
+  approval. Fixed `scripts\\db_qa.bat` so it no longer forwards the database
+  argument twice; wrapper validation now reaches the analyzer and returns its
+  compact logical-health result.
+
 - The scheduled-fetch F-01 runtime invariant repair is implemented on
   `experiment/codex-token-efficiency`. A legacy malformed
   `rule_search_snapshots.inline_search` JSON value caused SQLAlchemy JSON

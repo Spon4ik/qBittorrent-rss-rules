@@ -196,7 +196,11 @@ def test_f02_reconciles_historical_jackett_error_when_current_runtime_is_ready()
     assert result.metrics["historical_run"] is True
 
 
-def test_runner_rechecks_pending_state_until_it_settles(tmp_path, monkeypatch) -> None:
+def test_runner_rechecks_pending_state_until_it_settles(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
     payloads = iter(
         [
             _payload(
@@ -233,8 +237,11 @@ def test_runner_rechecks_pending_state_until_it_settles(tmp_path, monkeypatch) -
         poll_seconds=0.0,
     )
 
+    output = capsys.readouterr().out
     assert exit_code == 0
     assert calls == 2
+    assert "[PENDING] Functional QA settling" in output
+    assert "F-01=pending" in output
     report = json.loads((tmp_path / "functional-qa-report.json").read_text(encoding="utf-8"))
     assert report["attempts"] == 2
     assert report["results"][0]["status"] == "pass"

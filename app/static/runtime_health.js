@@ -35,6 +35,16 @@ function reconcileScheduledFetchStatus(payload) {
     return;
   }
 
+  if (invariant?.status === "fail") {
+    statusElement.dataset.functionalState = "functional_warning";
+    statusElement.textContent = scheduleStatusParts(
+      "runtime warning",
+      `Automatic functional QA detected an F-02 failure: ${invariant.summary}`,
+      schedule,
+    );
+    return;
+  }
+
   const state = String(invariant?.metrics?.effectiveness_state || "unknown");
   statusElement.dataset.functionalState = state;
 

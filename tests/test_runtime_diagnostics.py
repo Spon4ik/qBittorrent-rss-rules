@@ -41,6 +41,7 @@ def test_rule_fetch_scheduler_telemetry_records_tick_success_and_failure(monkeyp
     healthy = scheduler.status()
     assert healthy["last_tick_result"] == "run:partial"
     assert healthy["last_tick_error_type"] is None
+    assert healthy["last_tick_error_location"] is None
     assert healthy["last_tick_completed_at"] is not None
     assert sessions[-1].closed is True
 
@@ -53,6 +54,8 @@ def test_rule_fetch_scheduler_telemetry_records_tick_success_and_failure(monkeyp
     failed = scheduler.status()
     assert failed["last_tick_result"] == "error"
     assert failed["last_tick_error_type"] == "RuntimeError"
+    assert failed["last_tick_error_location"].startswith("rule_fetch_scheduler.py:_tick:")
+    assert "provider detail" not in failed["last_tick_error_location"]
     assert sessions[-1].rollback_called is True
     assert sessions[-1].closed is True
 
@@ -108,6 +111,7 @@ def test_runtime_diagnostics_endpoint_exposes_schedule_overdue_and_runtime_switc
             "last_tick_completed_at": None,
             "last_tick_result": "never",
             "last_tick_error_type": None,
+            "last_tick_error_location": None,
         },
     )
 
@@ -122,6 +126,7 @@ def test_runtime_diagnostics_endpoint_exposes_schedule_overdue_and_runtime_switc
     assert component["schedule"]["enabled"] is True
     assert component["overdue_seconds"] > 6 * 24 * 60 * 60
     assert component["scheduler"]["running"] is False
+    assert component["scheduler"]["last_tick_error_location"] is None
     assert component["readiness"]["jackett_app_ready"] is False
     assert payload["invariants"]["F-01"]["status"] == "fail"
     assert payload["invariants"]["F-02"]["status"] == "fail"

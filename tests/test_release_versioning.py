@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from app.services.release_versioning import (
     VersionParts,
     apply_version_bump,
@@ -65,8 +67,22 @@ def test_apply_version_bump_updates_all_touchpoints(tmp_path: Path) -> None:
     assert 'assert payload["app_version"] == "0.9.1"' in (
         tmp_path / "tests" / "test_routes.py"
     ).read_text(encoding="utf-8")
-def test_ensure_changelog_entry_scaffolds_release_heading(tmp_path: Path) -> None:
+
+
+def test_ensure_changelog_entry_promotes_unreleased_notes_intact(tmp_path: Path) -> None:
     _seed_release_files(tmp_path)
+    changelog_path = tmp_path / "CHANGELOG.md"
+    changelog_path.write_text(
+        "# Changelog\n\n"
+        "## [Unreleased]\n\n"
+        "### Added\n\n"
+        "- Deterministic runtime checks.\n\n"
+        "### Fixed\n\n"
+        "- Preserve release notes.\n\n"
+        "## [0.9.0] - 2026-04-11\n\n"
+        "- Previous release.\n",
+        encoding="utf-8",
+    )
 
     changed = ensure_changelog_entry(
         tmp_path,
@@ -75,7 +91,26 @@ def test_ensure_changelog_entry_scaffolds_release_heading(tmp_path: Path) -> Non
     )
 
     assert changed is True
-    text = (tmp_path / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "## [Unreleased]" in text
-    assert "## [0.9.1] - 2026-04-17" in text
-    assert "- Release prep in progress." in text
+    text = changelog_path.read_text(encoding="utf-8")
+    assert (
+        "## [Unreleased]\n\n"
+        "- No entries yet.\n\n"
+        "## [0.9.1] - 2026-04-17\n\n"
+        "### Added\n\n"
+        "- Deterministic runtime checks.\n\n"
+        "### Fixed\n\n"
+        "- Preserve release notes.\n\n"
+        "## [0.9.0] - 2026-04-11"
+    ) in text
+    assert "Release prep in progress" not in text
+
+
+def test_ensure_changelog_entry_refuses_empty_unreleased_notes(tmp_path: Path) -> None:
+    _seed_release_files(tmp_path)
+
+    with pytest.raises(RuntimeError, match="\[Unreleased\] has no release notes"):
+        ensure_changelog_entry(
+            tmp_path,
+            new_version="0.9.1",
+            release_date=date(2026, 4, 17),
+        )

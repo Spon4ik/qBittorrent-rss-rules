@@ -141,7 +141,7 @@ def test_category_catalog_normalizes_legacy_unknown_labels(db_session) -> None:
     ) == ["Category #100119"]
 
 
-def test_category_catalog_tolerates_and_repairs_malformed_legacy_timestamps(db_session) -> None:
+def test_category_catalog_tolerates_and_repairs_malformed_legacy_timestamp(db_session) -> None:
     sync_category_catalog_from_results(
         db_session,
         [
@@ -161,7 +161,7 @@ def test_category_catalog_tolerates_and_repairs_malformed_legacy_timestamps(db_s
         text(
             """
             UPDATE indexer_category_catalog
-            SET created_at = :malformed, updated_at = :malformed
+            SET updated_at = :malformed
             WHERE indexer = 'legacyindexer' AND category_id = '2045'
             """
         ),

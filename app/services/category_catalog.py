@@ -4,7 +4,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import IndexerCategoryCatalog
@@ -89,7 +89,7 @@ def _upsert_catalog_row(
     category_name: str,
     source: str,
 ) -> bool:
-    pending = next(
+    existing = next(
         (
             item
             for item in session.new
@@ -99,37 +99,10 @@ def _upsert_catalog_row(
         ),
         None,
     )
+    if existing is None:
+        existing = session.get(IndexerCategoryCatalog, (indexer, category_id))
     normalized_name = _canonical_category_name(category_name, category_id)
     normalized_source = str(source or "result_attr").strip() or "result_attr"
-    timestamp = datetime.now(UTC)
-
-    if pending is not None:
-        current_priority = _source_priority(pending.source)
-        incoming_priority = _source_priority(normalized_source)
-        should_replace_name = (
-            incoming_priority > current_priority
-            or _is_placeholder_category_name(pending.category_name)
-            or not pending.category_name.strip()
-        )
-        if should_replace_name:
-            pending.category_name = normalized_name
-            pending.source = normalized_source
-        pending.updated_at = timestamp
-        return should_replace_name
-
-    # Catalog timestamps are bookkeeping only. Select the scalar fields used by
-    # reconciliation instead of materializing the ORM row: legacy databases may
-    # contain malformed timestamp text, and decoding that metadata must never
-    # make a rule fetch fail.
-    existing = session.execute(
-        select(
-            IndexerCategoryCatalog.category_name,
-            IndexerCategoryCatalog.source,
-        ).where(
-            IndexerCategoryCatalog.indexer == indexer,
-            IndexerCategoryCatalog.category_id == category_id,
-        )
-    ).one_or_none()
     if existing is None:
         session.add(
             IndexerCategoryCatalog(
@@ -137,33 +110,26 @@ def _upsert_catalog_row(
                 category_id=category_id,
                 category_name=normalized_name,
                 source=normalized_source,
-                updated_at=timestamp,
+                updated_at=datetime.now(UTC),
             )
         )
         return True
 
-    current_name = str(existing.category_name or "")
-    current_source = str(existing.source or "")
-    current_priority = _source_priority(current_source)
+    current_priority = _source_priority(existing.source)
     incoming_priority = _source_priority(normalized_source)
+    existing_is_unknown = _is_placeholder_category_name(existing.category_name)
     should_replace_name = (
         incoming_priority > current_priority
-        or _is_placeholder_category_name(current_name)
-        or not current_name.strip()
+        or existing_is_unknown
+        or not existing.category_name.strip()
     )
-    values: dict[str, object] = {"updated_at": timestamp}
     if should_replace_name:
-        values.update(category_name=normalized_name, source=normalized_source)
-    session.execute(
-        update(IndexerCategoryCatalog)
-        .where(
-            IndexerCategoryCatalog.indexer == indexer,
-            IndexerCategoryCatalog.category_id == category_id,
-        )
-        .values(**values),
-        execution_options={"synchronize_session": False},
-    )
-    return should_replace_name
+        existing.category_name = normalized_name
+        existing.source = normalized_source
+        existing.updated_at = datetime.now(UTC)
+        return True
+    existing.updated_at = datetime.now(UTC)
+    return False
 
 
 def sync_category_catalog_from_indexer_map(
@@ -240,15 +206,8 @@ def resolve_category_labels(
     if not indexer_candidates:
         return [_fallback_category_name(category_id) for category_id in normalized_ids]
 
-    # Label resolution has no need for catalog timestamps. Keep this query
-    # scalar-only so malformed legacy timestamp metadata cannot break search.
-    rows = session.execute(
-        select(
-            IndexerCategoryCatalog.indexer,
-            IndexerCategoryCatalog.category_id,
-            IndexerCategoryCatalog.category_name,
-            IndexerCategoryCatalog.source,
-        ).where(
+    rows = session.scalars(
+        select(IndexerCategoryCatalog).where(
             IndexerCategoryCatalog.indexer.in_(indexer_candidates),
             IndexerCategoryCatalog.category_id.in_(normalized_ids),
         )

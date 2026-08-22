@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from app.models import MediaType, QualityProfile, Rule, utcnow
+from app.models import MediaType, QualityProfile, Rule
 from app.schemas import JackettSearchRequest, JackettSearchRun
 from app.services.rule_search_snapshots import save_rule_search_snapshot
 
@@ -24,9 +24,9 @@ def test_save_snapshot_overwrites_corrupt_legacy_row_without_deserializing_old_v
             "INSERT INTO rule_search_snapshots "
             "(rule_id, payload, inline_search, fetched_at, created_at, updated_at) "
             "VALUES (:rule_id, '{\"truncated\":', '{\"truncated\":', "
-            "'not-a-timestamp', :now, :now)"
+            "'bad-fetched-at', 'bad-created-at', 'bad-updated-at')"
         ),
-        {"rule_id": rule.id, "now": utcnow()},
+        {"rule_id": rule.id},
     )
     db_session.commit()
 
@@ -43,6 +43,8 @@ def test_save_snapshot_overwrites_corrupt_legacy_row_without_deserializing_old_v
     assert snapshot.payload["query"] == "Snapshot Recovery"
     assert snapshot.inline_search["query"] == "Snapshot Recovery"
     assert snapshot.fetched_at is not None
+    assert snapshot.created_at is not None
+    assert snapshot.updated_at is not None
     assert snapshot.release_filter_cache_key is None
     assert snapshot.release_filtered_count is None
     assert snapshot.release_fetched_count is None

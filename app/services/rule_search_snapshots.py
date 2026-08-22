@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
+from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import select, update
+from sqlalchemy import String, cast as sql_cast, select, update
 from sqlalchemy.orm import Session
 
 from app.models import RuleSearchSnapshot, utcnow
@@ -402,23 +403,37 @@ def save_rule_search_snapshot(
     exact_fetched_count = int(inline_search_dict.get("exact_fetched_count") or 0)
     fetched_at = utcnow()
 
-    existing_rule_id = session.scalar(
-        select(RuleSearchSnapshot.rule_id).where(RuleSearchSnapshot.rule_id == rule_id)
-    )
-    if existing_rule_id is not None:
+    existing = session.execute(
+        select(
+            RuleSearchSnapshot.rule_id,
+            sql_cast(RuleSearchSnapshot.created_at, String).label("created_at_raw"),
+        ).where(RuleSearchSnapshot.rule_id == rule_id)
+    ).one_or_none()
+    if existing is not None:
+        values: dict[str, object] = {
+            "payload": payload_dict,
+            "inline_search": inline_search,
+            "release_filter_cache_key": None,
+            "release_filtered_count": None,
+            "release_fetched_count": None,
+            "exact_filtered_count": exact_filtered_count,
+            "exact_fetched_count": exact_fetched_count,
+            "fetched_at": fetched_at,
+            "updated_at": fetched_at,
+        }
+
+        # Preserve healthy historical creation time. Legacy corrupted rows can
+        # contain arbitrary text in DateTime columns; repair only when the raw
+        # stored creation timestamp cannot be parsed.
+        try:
+            datetime.fromisoformat(str(existing.created_at_raw))
+        except (TypeError, ValueError):
+            values["created_at"] = fetched_at
+
         session.execute(
             update(RuleSearchSnapshot)
             .where(RuleSearchSnapshot.rule_id == rule_id)
-            .values(
-                payload=payload_dict,
-                inline_search=inline_search,
-                release_filter_cache_key=None,
-                release_filtered_count=None,
-                release_fetched_count=None,
-                exact_filtered_count=exact_filtered_count,
-                exact_fetched_count=exact_fetched_count,
-                fetched_at=fetched_at,
-            )
+            .values(**values)
         )
         session.flush()
         snapshot = session.get(RuleSearchSnapshot, rule_id)

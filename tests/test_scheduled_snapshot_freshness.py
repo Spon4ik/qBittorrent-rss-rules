@@ -65,6 +65,7 @@ def _stale_effectiveness_payload() -> dict[str, object]:
                     "fresh_snapshots": 0,
                     "stale_snapshots": 355,
                     "missing_snapshots": 0,
+                    "pending_snapshots": 0,
                     "freshness_limit_seconds": 172800.0,
                     "stale_cutoff": "2026-08-20T18:00:00+00:00",
                     "oldest_snapshot_at": "2026-08-13T20:20:00+00:00",
@@ -91,10 +92,13 @@ def test_runtime_diagnostics_reports_stale_and_missing_snapshots_without_loading
 
     stale = _rule("Stale enabled")
     fresh = _rule("Fresh enabled")
-    missing = _rule("Missing enabled")
+    missing = _rule("Missing overdue")
+    missing.created_at = NOW - timedelta(days=9)
+    recent_missing = _rule("Missing recent")
+    recent_missing.created_at = NOW - timedelta(hours=1)
     disabled = _rule("Disabled stale", enabled=False)
     completed = _rule("Completed stale", completion_disabled=True)
-    db_session.add_all([settings, stale, fresh, missing, disabled, completed])
+    db_session.add_all([settings, stale, fresh, missing, recent_missing, disabled, completed])
     db_session.flush()
     db_session.add_all(
         [
@@ -127,10 +131,11 @@ def test_runtime_diagnostics_reports_stale_and_missing_snapshots_without_loading
 
     assert "scheduled_snapshot_freshness" in payload["diagnostic_capabilities"]
     assert freshness["scope"] == "enabled"
-    assert freshness["total_rules"] == 3
+    assert freshness["total_rules"] == 4
     assert freshness["fresh_snapshots"] == 1
     assert freshness["stale_snapshots"] == 1
     assert freshness["missing_snapshots"] == 1
+    assert freshness["pending_snapshots"] == 1
     assert freshness["freshness_limit_seconds"] == 172800.0
     assert freshness["oldest_snapshot_at"] == (NOW - timedelta(days=9)).isoformat()
 

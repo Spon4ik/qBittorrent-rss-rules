@@ -1339,17 +1339,30 @@ def _rule_snapshot_fetch_sort_value(
 def _prioritize_fetch_rules(session: Session, rules: list[Rule]) -> list[Rule]:
     if not rules:
         return []
-    snapshot_rows = session.execute(
-        select(RuleSearchSnapshot.rule_id, RuleSearchSnapshot.fetched_at).where(
-            RuleSearchSnapshot.rule_id.in_([rule.id for rule in rules])
-        )
-    ).all()
-    # Batch ordering needs only these scalar fields.  Do not materialize the
-    # snapshot JSON payload here: a legacy malformed snapshot must become one
-    # rule's failed fetch, not abort every unrelated rule before execution.
     fetched_at_by_rule_id = {
-        rule_id: fetched_at for rule_id, fetched_at in snapshot_rows
+        rule.id: getattr(rule, "last_snapshot_at", None)
+        for rule in rules
     }
+    missing_summary_rule_ids = [
+        rule.id for rule in rules if fetched_at_by_rule_id.get(rule.id) is None
+    ]
+    if missing_summary_rule_ids:
+        try:
+            snapshot_rows = session.execute(
+                select(RuleSearchSnapshot.rule_id, RuleSearchSnapshot.fetched_at).where(
+                    RuleSearchSnapshot.rule_id.in_(missing_summary_rule_ids)
+                )
+            ).all()
+        except ValueError:
+            # Legacy malformed snapshot timestamps are only prioritization metadata.
+            # Treat affected summaries as missing so one corrupt row cannot abort
+            # the entire scheduled batch before any rule executes.
+            snapshot_rows = []
+        for rule_id, fetched_at in snapshot_rows:
+            fetched_at_by_rule_id[rule_id] = fetched_at
+    # Current runtimes maintain Rule.last_snapshot_at as the compact scalar
+    # summary, so healthy batches do not scan or materialize the large snapshot
+    # table merely to decide ordering.
     return sorted(
         rules,
         key=lambda rule: _rule_snapshot_fetch_sort_value(rule, fetched_at_by_rule_id),

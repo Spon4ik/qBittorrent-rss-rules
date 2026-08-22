@@ -13,7 +13,17 @@
   replacement is blocked pending a current-state logical rebuild and explicit
   approval. Fixed `scripts\\db_qa.bat` so it no longer forwards the database
   argument twice; wrapper validation now reaches the analyzer and returns its
-  compact logical-health result.
+  compact logical-health result. After quiescing `qb-rss-rules`, the
+  maintained `scripts\\db_recover.bat prepare` flow produced a current-state
+  candidate at `logs/qa/db/incident-20260823-014358/current-recovery-2/` with
+  `355` rules, `341` snapshots, and `628` acceleration jobs; it skipped only
+  the proven orphan snapshot and one reconstructible corrupt acceleration row.
+  Candidate DB QA is healthy with zero integrity, foreign-key, orphan, and
+  malformed-datetime findings. Docker was restarted and is current on
+  `v1.4.20`. The canonical finalizer passes Ruff, mypy, and `638` tests and
+  deploys successfully, but its final F-03 runtime invariant still reports
+  `/api/operations/status` `DatabaseError` against the untouched production
+  database. Candidate activation remains pending explicit approval.
 
 - The scheduled-fetch F-01 runtime invariant repair is implemented on
   `experiment/codex-token-efficiency`. A legacy malformed

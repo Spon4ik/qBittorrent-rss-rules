@@ -3,11 +3,11 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_environment_settings
-from app.models import Rule, RuleSearchSnapshot
+from app.models import Rule
 from app.services.api_error_registry import api_error_status
 from app.services.rule_fetch_ops import schedule_payload
 from app.services.rule_fetch_scheduler import rule_fetch_scheduler_status
@@ -47,66 +47,71 @@ def _scheduled_snapshot_freshness(
     if scope != "all":
         filters.append(Rule.enabled.is_(True))
 
-    joined = Rule.__table__.outerjoin(
-        RuleSearchSnapshot.__table__,
-        RuleSearchSnapshot.rule_id == Rule.id,
-    )
-    total_rules = int(
-        session.scalar(
-            select(func.count()).select_from(joined).where(*filters)
-        )
-        or 0
-    )
-    missing_snapshots = int(
-        session.scalar(
-            select(func.count())
-            .select_from(joined)
-            .where(
-                *filters,
-                RuleSearchSnapshot.rule_id.is_(None),
-                Rule.created_at < stale_cutoff,
-            )
-        )
-        or 0
-    )
-    pending_snapshots = int(
-        session.scalar(
-            select(func.count())
-            .select_from(joined)
-            .where(
-                *filters,
-                RuleSearchSnapshot.rule_id.is_(None),
-                Rule.created_at >= stale_cutoff,
-            )
-        )
-        or 0
-    )
-    stale_snapshots = int(
-        session.scalar(
-            select(func.count())
-            .select_from(joined)
-            .where(
-                *filters,
-                RuleSearchSnapshot.fetched_at.is_not(None),
-                RuleSearchSnapshot.fetched_at < stale_cutoff,
-            )
-        )
-        or 0
-    )
-    oldest_snapshot_at = _as_utc(
-        session.scalar(
-            select(func.min(RuleSearchSnapshot.fetched_at))
-            .select_from(joined)
-            .where(*filters, RuleSearchSnapshot.fetched_at.is_not(None))
-        )
-    )
-    newest_snapshot_at = _as_utc(
-        session.scalar(
-            select(func.max(RuleSearchSnapshot.fetched_at))
-            .select_from(joined)
-            .where(*filters, RuleSearchSnapshot.fetched_at.is_not(None))
-        )
-    )
+    # Rule.last_snapshot_at is the compact scalar summary maintained whenever a
+    # snapshot is refreshed and backfilled from legacy snapshots during DB init.
+    # Diagnostics must never scan the large JSON snapshot table merely to prove
+    # freshness: doing so makes the watchdog itself depend on the data it is
+    # meant to diagnose and can exceed the functional-QA request budget.
+    row = session.execute(
+        select(
+            func.count().label("total_rules"),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            Rule.last_snapshot_at.is_(None),
+                            Rule.created_at < stale_cutoff,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("missing_snapshots"),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            Rule.last_snapshot_at.is_(None),
+                            Rule.created_at >= stale_cutoff,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("pending_snapshots"),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            Rule.last_snapshot_at.is_not(None),
+                            Rule.last_snapshot_at < stale_cutoff,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("stale_snapshots"),
+            func.sum(
+                case(
+                    (
+                        Rule.last_snapshot_at >= stale_cutoff,
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("fresh_snapshots"),
+            func.min(Rule.last_snapshot_at).label("oldest_snapshot_at"),
+            func.max(Rule.last_snapshot_at).label("newest_snapshot_at"),
+        ).where(*filters)
+    ).one()
+
+    total_rules = int(row.total_rules or 0)
+    missing_snapshots = int(row.missing_snapshots or 0)
+    pending_snapshots = int(row.pending_snapshots or 0)
+    stale_snapshots = int(row.stale_snapshots or 0)
+    fresh_snapshots = int(row.fresh_snapshots or 0)
+    oldest_snapshot_at = _as_utc(row.oldest_snapshot_at)
+    newest_snapshot_at = _as_utc(row.newest_snapshot_at)
     oldest_snapshot_age_seconds = (
         max(0.0, (generated_at - oldest_snapshot_at).total_seconds())
         if oldest_snapshot_at is not None
@@ -116,10 +121,7 @@ def _scheduled_snapshot_freshness(
     return {
         "scope": scope,
         "total_rules": total_rules,
-        "fresh_snapshots": max(
-            0,
-            total_rules - missing_snapshots - pending_snapshots - stale_snapshots,
-        ),
+        "fresh_snapshots": fresh_snapshots,
         "stale_snapshots": stale_snapshots,
         "missing_snapshots": missing_snapshots,
         "pending_snapshots": pending_snapshots,

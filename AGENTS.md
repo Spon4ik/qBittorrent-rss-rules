@@ -13,6 +13,7 @@ At the start of each meaningful work session:
 The WinUI shell (`QbRssRulesDesktop`) embeds `RequiredDesktopBackendAppVersion` and compares it to `/health`’s `app_version`. If those diverge from `pyproject.toml` / `app/main.py`, the desktop shows an incompatible-backend error even when Python code is current.
 
 - When bumping the app version, keep **one** semver across `pyproject.toml`, `app/main.py`, `QbRssRulesDesktop/Views/MainPage.xaml.cs` (`RequiredDesktopBackendAppVersion`), `tests/test_routes.py` (health assert), and `tests/test_stremio_addon.py` (manifest `+stremio.1` assert). Prefer `python scripts/release_prep.py <patch|minor|major> --apply` from the repo root so those files move together.
+- Keep `CHANGELOG.md`'s `[Unreleased]` section current as notable product, UI, runtime/reliability, QA/operational, and developer-workflow changes land. Release prep promotes those notes intact into the new release entry and refuses an empty `[Unreleased]` section unless `--no-changelog` is used intentionally.
 - After changing the desktop constants or pulling a branch that did, **rebuild** the desktop (`scripts\run_dev.bat desktop-build` or `desktop`) so the EXE you launch matches the repo; stale local builds keep old expectations.
 - When changing `DESKTOP_BACKEND_CONTRACT` or `DESKTOP_BACKEND_CAPABILITIES` in `app/main.py`, mirror the same contract date and capability list in `MainPage.xaml.cs`.
 
@@ -41,7 +42,7 @@ The WinUI shell (`QbRssRulesDesktop`) embeds `RequiredDesktopBackendAppVersion` 
 - For iterative browser/UI work, prefer the venv-aware wrapper: `scripts\browser_qa.bat --check <ID>` on Windows or `scripts/browser_qa.sh --check <ID>` on Linux/WSL. Phase-focused checks remain available through `--phase <N>`.
 - Before spending model context on screenshots or one-off visual inspection for a broad UI/layout request, run `scripts\browser_qa.bat --suite ui` (or the Linux/WSL equivalent). The maintained UI-invariants suite uses DOM geometry/state and currently covers representative core-page horizontal overflow, rule-header stability while qB diagnostics opens, and the existing Result-toolbar interaction/reflow contract. Consume the JSON report and `UI-*-metrics.json` first; screenshots are failure evidence only and should not be opened unless deterministic metrics are insufficient.
 - Focused browser QA starts an isolated temporary app process from the checkout. A focused/UI-suite PASS proves the checkout behavior only; it is **not** evidence that the Docker runtime the user is viewing was rebuilt or updated.
-- Use `scripts\runtime_state.bat` on Windows or `scripts/runtime_state.sh` on Linux/WSL to report the checkout version/HEAD, worktree and tracked-upstream persistence state, and the deployed `/health` version. It writes `logs/qa/runtime-state.json`. `--require-runtime-current` is the deterministic deployment-freshness gate; `--require-upstream-synced` is available when a task specifically requires pushed persistence.
+- Use `scripts\runtime_state.bat` on Windows or `scripts/runtime_state.sh` on Linux/WSL to report checkout version/HEAD, worktree and tracked-upstream persistence state, and the deployed `/health` version. It writes `logs/qa/runtime-state.json`. `--require-runtime-current` is the deterministic deployment-freshness gate; `--require-upstream-synced` is available when a task specifically requires pushed persistence.
 - Run `scripts\browser_qa.bat --full` on Windows or `scripts/browser_qa.sh --full` on Linux/WSL at most once for browser-wide closeout when that coverage is warranted. Read its `codex-summary.json` / `codex-summary.md` before opening the raw legacy report, logs, or screenshots; dependency cascades are reported as `blocked`, and only explicitly audited stale contracts are `quarantined`.
 - Keep `scripts/closeout_browser_qa.py` as the raw compatibility/audit path, not the normal iterative loop for one focused UI defect.
 - Do not read full logs to determine PASS/FAIL. If the summary is insufficient, inspect only the relevant failure, stack frames, or filtered log region; deduplicate repeated errors.
@@ -101,9 +102,10 @@ Before ending a meaningful work session:
 
 1. Update `docs/plans/current-status.md`.
 2. Update the active phase plan with completion state, follow-up work, or changed assumptions.
-3. Update `ROADMAP.md` only when phase scope, ordering, or long-term direction changes.
-4. Run `scripts\runtime_state.bat` (or `scripts/runtime_state.sh`) when the task changes deployable application code or when deployment/persistence status is relevant.
-5. In the final handoff, report these states separately; never collapse them into a single word such as "complete":
+3. Update `CHANGELOG.md` `[Unreleased]` for notable product, UI, runtime/reliability, QA/operational, or developer-workflow changes made during the session; do not defer this reconstruction to release prep.
+4. Update `ROADMAP.md` only when phase scope, ordering, or long-term direction changes.
+5. Run `scripts\runtime_state.bat` (or `scripts/runtime_state.sh`) when the task changes deployable application code or when deployment/persistence status is relevant.
+6. In the final handoff, report these states separately; never collapse them into a single word such as "complete":
    - **Implementation:** PASS / FAIL / BLOCKED.
    - **Focused validation:** PASS / FAIL / NOT RUN, with the relevant deterministic checks.
    - **GitHub persistence:** PUSHED/SYNCED with branch+commit, LOCAL ONLY/UNPUSHED, or NOT APPLICABLE.

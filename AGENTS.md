@@ -43,11 +43,27 @@ The WinUI shell (`QbRssRulesDesktop`) embeds `RequiredDesktopBackendAppVersion` 
 - Before spending model context on screenshots or one-off visual inspection for a broad UI/layout request, run `scripts\browser_qa.bat --suite ui` (or the Linux/WSL equivalent). The maintained UI-invariants suite uses DOM geometry/state and currently covers representative core-page horizontal overflow, rule-header stability while qB diagnostics opens, and the existing Result-toolbar interaction/reflow contract. Consume the JSON report and `UI-*-metrics.json` first; screenshots are failure evidence only and should not be opened unless deterministic metrics are insufficient.
 - Focused browser QA starts an isolated temporary app process from the checkout. A focused/UI-suite PASS proves the checkout behavior only; it is **not** evidence that the Docker runtime the user is viewing was rebuilt or updated.
 - Use `scripts\runtime_state.bat` on Windows or `scripts/runtime_state.sh` on Linux/WSL to report checkout version/HEAD, worktree and tracked-upstream persistence state, and the deployed `/health` version. It writes `logs/qa/runtime-state.json`. `--require-runtime-current` is the deterministic deployment-freshness gate; `--require-upstream-synced` is available when a task specifically requires pushed persistence.
-- Run `scripts\browser_qa.bat --full` on Windows or `scripts/browser_qa.sh --full` on Linux/WSL at most once for browser-wide closeout when that coverage is warranted. Read its `codex-summary.json` / `codex-summary.md` before opening the raw legacy report, logs, or screenshots; dependency cascades are reported as `blocked`, and only explicitly audited stale contracts are `quarantined`.
+- Run `scripts\browser_qa.bat --full` on Windows or `scripts/browser_qa.sh --full` at most once for browser-wide closeout when that coverage is warranted. Read its `codex-summary.json` / `codex-summary.md` before opening the raw legacy report, logs, or screenshots; dependency cascades are reported as `blocked`, and only explicitly audited stale contracts are `quarantined`.
 - Keep `scripts/closeout_browser_qa.py` as the raw compatibility/audit path, not the normal iterative loop for one focused UI defect.
 - Do not read full logs to determine PASS/FAIL. If the summary is insufficient, inspect only the relevant failure, stack frames, or filtered log region; deduplicate repeated errors.
 - Pass conclusions plus minimal supporting evidence between agents, not the same raw logs or repository dumps repeatedly.
 - Prefer DOM/API/state assertions over screenshots for behavior. Use vision only for genuinely visual defects.
+
+## Deterministic regression contract
+
+Every reported defect and every requested behavior change must leave behind deterministic automated coverage before the task is closed. Existing green tests are not enough by themselves; explicitly decide what regression or invariant should prevent the same class of failure from silently returning.
+
+- For bugs, whenever practical add or strengthen a test that fails against the pre-fix behavior and passes after the fix.
+- For behavior/feature changes, test the externally meaningful contract and important boundaries, not incidental implementation details.
+- Prefer the most generic reliable invariant that still proves the reported behavior. Remove incidental titles, IDs, timestamps, provider values, and other one-off literals when they are not semantically required.
+- Do not over-generalize beyond the evidence: the test must still reproduce or logically imply the reported failure mode.
+- Prefer parameterized/table-driven coverage when several concrete examples exercise the same rule, rather than accumulating near-duplicate one-off tests.
+- Reuse and extend existing test/QA/diagnostic harnesses before creating a parallel mechanism. If a manual diagnostic becomes useful more than once, promote it into a reusable deterministic script/invariant and add tests for that tool.
+- Choose the cheapest reliable evidence layer: unit/service assertions first, then API/DB/state checks, then DOM/browser geometry/state, then image/pixel checks only when lower layers cannot establish the property.
+- For provider/runtime behavior that cannot be reproduced deterministically in ordinary tests, add the strongest deterministic boundary contract possible plus structured runtime diagnostics that capture the missing evidence. Do not silently omit regression coverage.
+- A direct regression test may be omitted only when no reliable deterministic assertion is technically possible. In that case document the reason, the replacement invariant/diagnostic, and how the behavior is validated at runtime.
+- Keep failure artifacts compact and machine-readable so future Codex sessions can consume a summary instead of rereading raw logs, screenshots, or databases.
+- Before closeout, exercise the new/changed regression or invariant narrowly, then include it in the normal broader gate. Report the specific regression/invariant in the final handoff.
 
 ## Model routing and task ownership
 

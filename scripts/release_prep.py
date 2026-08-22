@@ -14,6 +14,7 @@ from app.services.release_versioning import (
     repository_root_from_script_path,
     suggested_release_branch,
     suggested_release_tag,
+    validate_unreleased_changelog,
 )
 
 
@@ -40,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-changelog",
         action="store_true",
-        help="Skip CHANGELOG.md scaffolding.",
+        help="Skip CHANGELOG.md promotion explicitly.",
     )
     return parser
 
@@ -55,6 +56,9 @@ def main(argv: list[str] | None = None) -> int:
 
     changed_files: list[str] = []
     if args.apply:
+        if not args.no_changelog:
+            # Fail before touching version files when release notes are missing.
+            validate_unreleased_changelog(root)
         changed_files.extend(apply_version_bump(root, new_version=next_version))
         if not args.no_changelog and ensure_changelog_entry(
             root,

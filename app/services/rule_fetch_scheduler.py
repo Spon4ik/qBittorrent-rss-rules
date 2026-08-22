@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import threading
+import traceback
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -11,6 +13,19 @@ from app.services.rule_fetch_ops import run_due_scheduled_fetch
 
 def _iso(value: datetime | None) -> str | None:
     return value.astimezone(UTC).isoformat() if value is not None else None
+
+
+def _error_location(exc: Exception) -> str | None:
+    frames = traceback.extract_tb(exc.__traceback__)
+    if not frames:
+        return None
+    application_frames = [
+        frame
+        for frame in frames
+        if "/app/" in frame.filename.replace("\\", "/")
+    ]
+    frame = application_frames[-1] if application_frames else frames[-1]
+    return f"{Path(frame.filename).name}:{frame.name}:{frame.lineno}"
 
 
 class RuleFetchScheduler:
@@ -31,6 +46,7 @@ class RuleFetchScheduler:
         self._last_tick_completed_at: datetime | None = None
         self._last_tick_result = "never"
         self._last_tick_error_type: str | None = None
+        self._last_tick_error_location: str | None = None
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -67,6 +83,7 @@ class RuleFetchScheduler:
                 "last_tick_completed_at": _iso(self._last_tick_completed_at),
                 "last_tick_result": self._last_tick_result,
                 "last_tick_error_type": self._last_tick_error_type,
+                "last_tick_error_location": self._last_tick_error_location,
             }
 
     def _mark_tick_started(self) -> None:
@@ -74,12 +91,19 @@ class RuleFetchScheduler:
             self._tick_in_progress = True
             self._last_tick_started_at = datetime.now(UTC)
 
-    def _mark_tick_completed(self, *, result: str, error_type: str | None = None) -> None:
+    def _mark_tick_completed(
+        self,
+        *,
+        result: str,
+        error_type: str | None = None,
+        error_location: str | None = None,
+    ) -> None:
         with self._state_lock:
             self._tick_in_progress = False
             self._last_tick_completed_at = datetime.now(UTC)
             self._last_tick_result = result
             self._last_tick_error_type = error_type
+            self._last_tick_error_location = error_location
 
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -94,7 +118,11 @@ class RuleFetchScheduler:
         except Exception as exc:
             # Scheduler must stay alive, but deterministic diagnostics must expose the failure.
             session.rollback()
-            self._mark_tick_completed(result="error", error_type=type(exc).__name__)
+            self._mark_tick_completed(
+                result="error",
+                error_type=type(exc).__name__,
+                error_location=_error_location(exc),
+            )
         else:
             batch_status = str((result or {}).get("status") or "").strip()
             self._mark_tick_completed(
@@ -146,5 +174,6 @@ def rule_fetch_scheduler_status() -> dict[str, Any]:
             "last_tick_completed_at": None,
             "last_tick_result": "never",
             "last_tick_error_type": None,
+            "last_tick_error_location": None,
         }
     return _scheduler.status()

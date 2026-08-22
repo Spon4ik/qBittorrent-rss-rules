@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from app.config import obfuscate_secret
 from app.models import AppSettings, MediaType, QualityProfile, Rule, RuleSearchSnapshot
@@ -93,13 +93,17 @@ def test_runtime_diagnostics_reports_stale_and_missing_snapshots_without_loading
     settings.rules_fetch_schedule_last_status = "ok"
 
     stale = _rule("Stale enabled")
+    stale.last_snapshot_at = NOW - timedelta(days=9)
     fresh = _rule("Fresh enabled")
+    fresh.last_snapshot_at = NOW - timedelta(hours=2)
     missing = _rule("Missing overdue")
     missing.created_at = NOW - timedelta(days=9)
     recent_missing = _rule("Missing recent")
     recent_missing.created_at = NOW - timedelta(hours=1)
     disabled = _rule("Disabled stale", enabled=False)
+    disabled.last_snapshot_at = NOW - timedelta(days=20)
     completed = _rule("Completed stale", completion_disabled=True)
+    completed.last_snapshot_at = NOW - timedelta(days=20)
     db_session.add_all([settings, stale, fresh, missing, recent_missing, disabled, completed])
     db_session.flush()
     db_session.add_all(
@@ -107,22 +111,22 @@ def test_runtime_diagnostics_reports_stale_and_missing_snapshots_without_loading
             RuleSearchSnapshot(
                 rule_id=stale.id,
                 inline_search={},
-                fetched_at=NOW - timedelta(days=9),
+                fetched_at=stale.last_snapshot_at,
             ),
             RuleSearchSnapshot(
                 rule_id=fresh.id,
                 inline_search={},
-                fetched_at=NOW - timedelta(hours=2),
+                fetched_at=fresh.last_snapshot_at,
             ),
             RuleSearchSnapshot(
                 rule_id=disabled.id,
                 inline_search={},
-                fetched_at=NOW - timedelta(days=20),
+                fetched_at=disabled.last_snapshot_at,
             ),
             RuleSearchSnapshot(
                 rule_id=completed.id,
                 inline_search={},
-                fetched_at=NOW - timedelta(days=20),
+                fetched_at=completed.last_snapshot_at,
             ),
         ]
     )
@@ -137,7 +141,18 @@ def test_runtime_diagnostics_reports_stale_and_missing_snapshots_without_loading
     )
     db_session.commit()
 
-    payload = runtime_diagnostics_payload(db_session, now=NOW)
+    statements: list[str] = []
+
+    def record_statement(_conn, _cursor, statement, _parameters, _context, _executemany) -> None:
+        statements.append(str(statement))
+
+    bind = db_session.get_bind()
+    event.listen(bind, "before_cursor_execute", record_statement)
+    try:
+        payload = runtime_diagnostics_payload(db_session, now=NOW)
+    finally:
+        event.remove(bind, "before_cursor_execute", record_statement)
+
     freshness = payload["components"]["scheduled_rule_fetch"]["snapshot_freshness"]
 
     assert "scheduled_snapshot_freshness" in payload["diagnostic_capabilities"]
@@ -149,6 +164,7 @@ def test_runtime_diagnostics_reports_stale_and_missing_snapshots_without_loading
     assert freshness["pending_snapshots"] == 1
     assert freshness["freshness_limit_seconds"] == 172800.0
     assert freshness["oldest_snapshot_at"] == (NOW - timedelta(days=9)).isoformat()
+    assert not any("rule_search_snapshots" in statement.casefold() for statement in statements)
 
 
 def test_f02_rejects_ready_historical_recovery_when_snapshots_are_stale() -> None:

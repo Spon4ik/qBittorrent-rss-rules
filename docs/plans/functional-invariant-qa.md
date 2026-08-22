@@ -15,7 +15,7 @@ A new bug should not require inventing a new testing mechanism. New coverage sho
 3. **Pre-deploy evidence capture** - `Finalize-Backend.cmd --no-pause` first runs the core suite in non-gating observation mode before it changes Docker. This preserves evidence from the currently running runtime so a restart cannot erase the defect being investigated.
 4. **Post-deploy gate** - after Docker rebuild and runtime-version freshness, the finalizer runs the core functional suite as a gate. A current Docker deployment can therefore still fail closeout when live functional behavior is wrong.
 5. **Periodic in-app watchdog** - implemented on `experiment/codex-token-efficiency`. The running application evaluates the same shared `F-*` contracts every five minutes by default, tracks consecutive failures and recovery, and promotes a check to an in-memory structured incident after three consecutive failures. It is an independent runtime service, controlled by `QB_RULES_ENABLE_FUNCTIONAL_WATCHDOG` and `QB_RULES_FUNCTIONAL_WATCHDOG_INTERVAL_SECONDS`, so it can detect an enabled persisted schedule whose scheduler runtime feature is itself disabled. The watchdog is read-only: it classifies runtime state but does not rewrite credentials, provider configuration, schedules, or historical failure records.
-6. **Runtime-aware status reconciliation** - the diagnostics payload carries a process `runtime.instance_id` and `runtime.started_at`, while scheduler telemetry exposes its own `started_at`. The Rules page reads those diagnostics and can distinguish a failure produced by the current runtime from historical state inherited from a replaced container. A known previous-runtime Jackett-readiness error is rendered as recovered/awaiting verification when the current runtime deterministically resolves Jackett successfully; the original persisted error remains intact for diagnostics.
+6. **Runtime-aware status reconciliation** - the diagnostics payload carries a process `runtime.instance_id` and `runtime.started_at`, while scheduler telemetry exposes its own `started_at`. The Rules page reads those diagnostics and can distinguish a failure produced by the current runtime from historical state inherited from a replaced container. A known previous-runtime Jackett-readiness error is rendered as recovered/awaiting verification only when current deterministic evidence is healthy; stale or missing rule snapshots now prevent that optimistic recovery state.
 7. **Safe synthetic provider probes** - add only where a real external-provider contract cannot be inferred from internal state. Probes must be read-only or explicitly non-destructive and must respect provider quotas.
 
 ## F-01 - Scheduled fetch liveness
@@ -51,28 +51,37 @@ The endpoint and runner are read-only. F-01 does not trigger a fetch or mutate s
 
 The first live calibration exposed why this distinction matters: rebuilding Docker restarted the overdue scheduler and the initial implementation reported PASS merely because the catch-up tick was active. That was too weak; a hung tick would also have passed. The runner now treats active work as provisional and the finalizer captures the pre-rebuild runtime before restart.
 
-## F-02 - Scheduled fetch effectiveness
+## F-02 - Scheduled fetch effectiveness and snapshot freshness
 
-`F-02` separates useful scheduled work from mechanical scheduler liveness.
+`F-02` separates useful scheduled work from mechanical scheduler liveness. Provider readiness by itself is not enough: scheduled fetching is effective only when the in-scope rule snapshots are actually kept current.
 
-It consumes only bounded runtime state:
+It consumes bounded runtime state:
 
 - whether the schedule is enabled;
 - current Jackett app-search readiness after environment/DB resolution;
 - persisted last scheduled status/run time;
-- current runtime instance/start time.
+- current runtime instance/start time;
+- scalar snapshot-freshness aggregates for the exact scheduled rule scope.
+
+Snapshot freshness is computed without materializing `payload` or `inline_search` JSON. Runtime diagnostics join the in-scope rules to `rule_search_snapshots` and read only aggregate/count values and `fetched_at`. This preserves the corruption isolation established by the F-01 repair: malformed legacy snapshot JSON cannot break the freshness check itself.
+
+The scope matches scheduled fetch behavior: `enabled` includes only enabled rules; `all` includes manually disabled rules; completion-auto-disabled movie/Jellyfin rules are excluded in either case. A snapshot is stale after two configured schedule intervals. The two-interval window is deliberately conservative to avoid treating a single slightly late run as stale data; the five-minute watchdog still promotes a continuing violation after three observations.
 
 The invariant behaves as follows:
 
 - intentionally disabled schedule -> `SKIP`;
 - current runtime cannot resolve required Jackett app search -> `FAIL`;
 - latest scheduled run belongs to the current runtime and has `error` status -> `FAIL`;
-- previous-runtime Jackett-readiness error plus currently healthy readiness -> `PASS` with `effectiveness_state=recovered_historical`;
-- other previous-runtime errors plus healthy current prerequisites -> non-incident historical/degraded state, retained for diagnostics until a current runtime run verifies recovery;
-- `partial` remains effective but degraded rather than being confused with scheduler failure;
+- current runtime advertises snapshot-freshness telemetry but omits it -> `FAIL`;
+- after any completed scheduled run, one or more in-scope snapshots are missing or older than two configured intervals -> `FAIL` with `effectiveness_state=stale_snapshots` and bounded counts/timestamps;
+- previous-runtime Jackett-readiness error plus currently healthy readiness -> `PASS` with `effectiveness_state=recovered_historical` only when snapshot freshness is also healthy;
+- other previous-runtime errors plus healthy current prerequisites -> non-incident historical/degraded state only when snapshot freshness is healthy;
+- `partial` remains effective-but-degraded only while snapshots satisfy the freshness contract;
 - ready runtime with no completed scheduled run yet -> `PASS` as `ready_not_run`.
 
-The persisted last error is never deleted just to make QA green. Reconciliation changes the effective presentation only when the current deterministic state proves that a known historical readiness condition is no longer true.
+The persisted last error is never deleted just to make QA green. Reconciliation changes the effective presentation only when current deterministic state proves both provider readiness and data freshness.
+
+The Rules page consumes the instantaneous F-02 result every minute. An F-02 failure is shown immediately as `runtime warning`, before the watchdog's persistence threshold. If the same failure remains for three watchdog observations, the existing persistent-incident path escalates the presentation to `runtime problem`. Codex is not required to discover that the snapshots are stale.
 
 ## Watchdog incident contract
 
@@ -98,11 +107,11 @@ After the deterministic project gate passed (`603 passed`, Ruff clean, mypy clea
 - `PASS F-01`: scheduler alive, recent ticks, non-overdue next run;
 - `PASS F-02`: the previous-runtime Jackett-readiness error was retained as historical evidence while the current runtime resolved Jackett successfully and had not reproduced the failure.
 
-This proves the key operational distinction: a stale persisted error can be automatically reclassified from current failure to recovered historical state using deterministic runtime evidence, without deleting the original error or invoking Codex. The periodic watchdog and UI reconciliation are therefore live-validated on the Docker runtime for this incident shape. Persistent current-runtime failures still require the configured consecutive-failure threshold before becoming watchdog incidents.
+That calibration proved runtime-aware historical reconciliation, but the 2026-08-22 observation exposed an important missing effectiveness dimension: the UI could say `ready` while rule snapshots such as the reported 2026-08-13 snapshot were still far older than the daily schedule. F-02 now requires snapshot freshness as well as readiness so that state cannot silently recur.
 
 ## Extension contract
 
-Future functional checks should use IDs `F-03`, `F-04`, ... and be registered in `app/services/functional_invariants.py`. Prefer subsystem-level contracts over symptom-specific assertions. Good candidates include:
+Future functional checks should use IDs `F-04`, `F-05`, ... and be registered in `app/services/functional_invariants.py`. Prefer subsystem-level contracts over symptom-specific assertions. Good candidates include:
 
 - background worker/scheduler liveness;
 - queue work that must eventually leave `queued/running`;
@@ -110,7 +119,7 @@ Future functional checks should use IDs `F-03`, `F-04`, ... and be registered in
 - stale synchronization timestamps beyond configured service-level expectations;
 - required configuration present but runtime service disabled;
 - lifecycle resources that survive shutdown/restart unexpectedly;
-- data freshness/monotonicity contracts;
+- additional data freshness/monotonicity contracts not already owned by F-02;
 - safe provider reachability/capability checks.
 
 Do not add an invariant merely because a particular string or screenshot changed. Assert the underlying product contract.

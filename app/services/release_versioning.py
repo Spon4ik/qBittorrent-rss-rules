@@ -6,6 +6,9 @@ from datetime import date
 from pathlib import Path
 
 SEMVER_RE = re.compile(r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)$")
+UNRELEASED_HEADER = "## [Unreleased]"
+EMPTY_UNRELEASED_MARKER = "- No entries yet."
+RELEASE_HEADER_RE = re.compile(r"(?m)^## \[(?!Unreleased\])[^\]]+\](?: - .+)?$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +120,17 @@ def apply_version_bump(root: Path, *, new_version: str) -> list[str]:
     return changed_files
 
 
+def _unreleased_bounds(changelog_text: str) -> tuple[int, int, int]:
+    unreleased_index = changelog_text.find(UNRELEASED_HEADER)
+    if unreleased_index < 0:
+        raise RuntimeError("CHANGELOG.md is missing the [Unreleased] section.")
+
+    content_start = unreleased_index + len(UNRELEASED_HEADER)
+    next_release = RELEASE_HEADER_RE.search(changelog_text, content_start)
+    content_end = next_release.start() if next_release is not None else len(changelog_text)
+    return unreleased_index, content_start, content_end
+
+
 def ensure_changelog_entry(root: Path, *, new_version: str, release_date: date) -> bool:
     changelog_path = root / "CHANGELOG.md"
     original_text = changelog_path.read_text(encoding="utf-8")
@@ -124,24 +138,25 @@ def ensure_changelog_entry(root: Path, *, new_version: str, release_date: date) 
     if version_header in original_text:
         return False
 
-    unreleased_header = "## [Unreleased]"
-    unreleased_index = original_text.find(unreleased_header)
-    if unreleased_index < 0:
-        raise RuntimeError("CHANGELOG.md is missing the [Unreleased] section.")
+    unreleased_index, content_start, content_end = _unreleased_bounds(original_text)
+    unreleased_notes = original_text[content_start:content_end].strip()
+    if not unreleased_notes or unreleased_notes == EMPTY_UNRELEASED_MARKER:
+        raise RuntimeError(
+            "CHANGELOG.md [Unreleased] has no release notes. Add notable changes before "
+            "release prep or pass --no-changelog only when intentionally bypassing it."
+        )
 
-    insertion = (
-        f"{unreleased_header}\n\n"
-        "- No entries yet.\n\n"
+    replacement = (
+        f"{UNRELEASED_HEADER}\n\n"
+        f"{EMPTY_UNRELEASED_MARKER}\n\n"
         f"{version_header}\n\n"
-        "- Release prep in progress.\n"
+        f"{unreleased_notes}\n\n"
     )
-    unreleased_block = re.compile(
-        r"## \[Unreleased\]\n(?:\n|- .*\n)+",
-        re.MULTILINE,
+    updated_text = (
+        original_text[:unreleased_index]
+        + replacement
+        + original_text[content_end:].lstrip("\n")
     )
-    updated_text, replacements = unreleased_block.subn(insertion, original_text, count=1)
-    if replacements != 1:
-        raise RuntimeError("Could not normalize the [Unreleased] changelog block.")
     changelog_path.write_text(updated_text, encoding="utf-8")
     return True
 

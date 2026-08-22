@@ -131,6 +131,19 @@ def _unreleased_bounds(changelog_text: str) -> tuple[int, int, int]:
     return unreleased_index, content_start, content_end
 
 
+def validate_unreleased_changelog(root: Path) -> str:
+    changelog_path = root / "CHANGELOG.md"
+    changelog_text = changelog_path.read_text(encoding="utf-8")
+    _unreleased_index, content_start, content_end = _unreleased_bounds(changelog_text)
+    unreleased_notes = changelog_text[content_start:content_end].strip()
+    if not unreleased_notes or unreleased_notes == EMPTY_UNRELEASED_MARKER:
+        raise RuntimeError(
+            "CHANGELOG.md [Unreleased] has no release notes. Add notable changes before "
+            "release prep or pass --no-changelog only when intentionally bypassing it."
+        )
+    return unreleased_notes
+
+
 def ensure_changelog_entry(root: Path, *, new_version: str, release_date: date) -> bool:
     changelog_path = root / "CHANGELOG.md"
     original_text = changelog_path.read_text(encoding="utf-8")
@@ -138,14 +151,8 @@ def ensure_changelog_entry(root: Path, *, new_version: str, release_date: date) 
     if version_header in original_text:
         return False
 
-    unreleased_index, content_start, content_end = _unreleased_bounds(original_text)
-    unreleased_notes = original_text[content_start:content_end].strip()
-    if not unreleased_notes or unreleased_notes == EMPTY_UNRELEASED_MARKER:
-        raise RuntimeError(
-            "CHANGELOG.md [Unreleased] has no release notes. Add notable changes before "
-            "release prep or pass --no-changelog only when intentionally bypassing it."
-        )
-
+    unreleased_notes = validate_unreleased_changelog(root)
+    unreleased_index, _content_start, content_end = _unreleased_bounds(original_text)
     replacement = (
         f"{UNRELEASED_HEADER}\n\n"
         f"{EMPTY_UNRELEASED_MARKER}\n\n"

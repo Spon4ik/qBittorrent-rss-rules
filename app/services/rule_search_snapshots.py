@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any, cast
 
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models import RuleSearchSnapshot, utcnow
@@ -390,20 +391,49 @@ def save_rule_search_snapshot(
     run: JackettSearchRun,
     ignored_full_regex: bool,
 ) -> RuleSearchSnapshot:
-    snapshot = session.get(RuleSearchSnapshot, rule_id)
-    if snapshot is None:
-        snapshot = RuleSearchSnapshot(rule_id=rule_id)
-
-    snapshot.payload = cast(dict[str, object], payload.model_dump(mode="json"))
-    snapshot.inline_search = build_inline_search_payload(
+    payload_dict = cast(dict[str, object], payload.model_dump(mode="json"))
+    inline_search = build_inline_search_payload(
         payload=payload,
         run=run,
         ignored_full_regex=ignored_full_regex,
     )
-    inline_search = cast(dict[str, Any], snapshot.inline_search or {})
-    snapshot.exact_filtered_count = int(inline_search.get("exact_filtered_count") or 0)
-    snapshot.exact_fetched_count = int(inline_search.get("exact_fetched_count") or 0)
-    snapshot.fetched_at = utcnow()
+    inline_search_dict = cast(dict[str, Any], inline_search)
+    exact_filtered_count = int(inline_search_dict.get("exact_filtered_count") or 0)
+    exact_fetched_count = int(inline_search_dict.get("exact_fetched_count") or 0)
+    fetched_at = utcnow()
+
+    existing_rule_id = session.scalar(
+        select(RuleSearchSnapshot.rule_id).where(RuleSearchSnapshot.rule_id == rule_id)
+    )
+    if existing_rule_id is not None:
+        session.execute(
+            update(RuleSearchSnapshot)
+            .where(RuleSearchSnapshot.rule_id == rule_id)
+            .values(
+                payload=payload_dict,
+                inline_search=inline_search,
+                release_filter_cache_key=None,
+                release_filtered_count=None,
+                release_fetched_count=None,
+                exact_filtered_count=exact_filtered_count,
+                exact_fetched_count=exact_fetched_count,
+                fetched_at=fetched_at,
+            )
+        )
+        session.flush()
+        snapshot = session.get(RuleSearchSnapshot, rule_id)
+        if snapshot is None:
+            raise RuntimeError("Updated rule search snapshot could not be reloaded.")
+        return snapshot
+
+    snapshot = RuleSearchSnapshot(
+        rule_id=rule_id,
+        payload=payload_dict,
+        inline_search=inline_search,
+        exact_filtered_count=exact_filtered_count,
+        exact_fetched_count=exact_fetched_count,
+        fetched_at=fetched_at,
+    )
     session.add(snapshot)
     return snapshot
 

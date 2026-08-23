@@ -45,19 +45,31 @@ bundle remains available if a later post-recovery issue requires reversal.
 
 ### Scheduled-fetch repair
 
-The scheduled-fetch corruption handling and snapshot timestamp repair are
-implemented on the experiment branch. The final snapshot recovery regression
-covers malformed JSON plus malformed `fetched_at`, `created_at`, and
-`updated_at`. Live targeted fetch validation succeeded before the separate
-physical SQLite corruption was discovered. Final closeout of this work is
-therefore coupled to successful database recovery/runtime validation above.
+The scheduler is operationally healthy after recovery, but the Rules page exposed
+a follow-up presentation bug: persisted `last_status=partial` from the historical
+275/1 scheduled run was still rendered as the active status even though deployed
+F-01/F-02/F-03 and current snapshot freshness were healthy.
+
+The branch now preserves the historical run result while deriving a separate
+current scheduled-fetch state from runtime enablement, Jackett readiness, active
+progress, and the same scheduled-scope snapshot freshness evidence used by runtime
+QA. `runtime_health.js` leads with `Current status` and moves a superseded
+`partial`/`error` result to secondary historical context instead of continuing to
+present it as a current failure. This deliberately does not claim that a specific
+failed rule was retried unless such identity evidence exists.
+
+Generic regressions are added in `tests/test_scheduled_fetch_current_state.py` and
+`tests/test_scheduled_fetch_status_ui.py`. This follow-up is not closed until those
+focused tests pass, the normal backend gate passes, Docker is current, and the
+Rules page/runtime diagnostics show the healthy current state rather than the old
+partial result as active status.
 
 ### Phase 44
 
 Phase 44 remains in implementation under
 `docs/plans/phase-44-acceleration-operations-console.md`. Its remaining unrelated
 acceptance work includes end-to-end automatic Codex heartbeat pickup/status
-readback. Do not let that unrelated item block the SQLite recovery incident.
+readback. Do not let that unrelated item block the scheduled-fetch status follow-up.
 
 ## Handoff discipline
 

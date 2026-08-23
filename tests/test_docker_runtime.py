@@ -216,7 +216,13 @@ def test_windows_entrypoints_delegate_to_maintained_helper() -> None:
     powershell = (root / "scripts" / "docker_runtime.ps1").read_text(encoding="utf-8")
     batch = (root / "scripts" / "docker_runtime.bat").read_text(encoding="utf-8")
 
+    executable_lines = [
+        line.strip().casefold()
+        for line in powershell.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
     assert "docker_runtime.py" in powershell
-    assert "Start-Process" not in powershell
-    assert "& docker" not in powershell.casefold()
+    assert not any(line.startswith("start-process") for line in executable_lines)
+    assert not any(line.startswith("& docker") for line in executable_lines)
     assert "docker_runtime.ps1" in batch

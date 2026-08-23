@@ -12,11 +12,16 @@ component that shares the same behavioral or visual contract.
 | `UI-02` | Rule-header diagnostics | unrelated action movement when a disclosure changes state |
 | `UI-03` | Result toolbar menus | sibling-menu interaction, Escape/outside close, overlay reflow, hidden queue options |
 | `UI-04` | Every visible generic top-level `details`/menu surface | unsampled disclosure/menu interaction and layout regressions |
-| `UI-05` | Every visible interactive component across core pages, light/dark themes, and responsive widths | unclassified components, unreadable contrast, clipped text, viewport escape, keyboard-focus loss, hover/focus readability, menu occlusion, and non-functioning checkbox-menu choices |
+| `UI-05` | Every interactive component reachable on core pages after ordinary disclosures are expanded, across light/dark themes and responsive widths | unclassified components, unreadable contrast, clipped text, viewport escape, keyboard-focus loss, hover/focus readability, menu occlusion, and non-functioning checkbox-menu choices |
 
 `UI-04` and `UI-05` are exhaustive coverage gates. They do not intentionally sample
 only the first N controls. A high fail-safe ceiling exists only to detect runaway
 or malformed discovery; reaching it is itself a failure.
+
+`UI-05` does not trust the page's initial disclosure state as a coverage boundary.
+Before component inventory it opens ordinary non-menu `details` surfaces so controls
+inside initially collapsed criteria/help sections are visible to the audit. Actual
+menu families stay closed until their own open-state/readability/behavior checks.
 
 Dedicated exclusions from a generic check are allowed only when they are mapped to
 another maintained `UI-*` contract. The suite fails if an exclusion exists without
@@ -35,7 +40,8 @@ For every reported UI defect:
 4. Extend the lowest-cost existing invariant that can cover the whole family. Add
    a dedicated check only when the behavior is genuinely unique.
 5. Ensure the originally reported instance is discovered by the generalized
-   matrix and that all visible siblings are exercised by the same contract.
+   matrix and that all reachable siblings, including those inside initially closed
+   disclosures, are exercised by the same contract.
 6. Fix the shared component implementation where possible instead of adding a
    one-instance CSS/JS override.
 7. Run the focused invariant first, then `scripts\\browser_qa.bat --suite ui`, and
@@ -45,7 +51,7 @@ For every reported UI defect:
 
 ## Component-family inventory
 
-`UI-05` currently classifies visible controls into maintained families including:
+`UI-05` currently classifies controls into maintained families including:
 
 - checkbox dropdowns (the shared Language/feed family);
 - search multiselects;
@@ -58,11 +64,12 @@ For every reported UI defect:
 - buttons, button-role controls, and links;
 - keyboard-focusable help controls.
 
-A visible interactive element that cannot be classified fails the suite rather
-than silently falling outside coverage. Menu-family instances are opened and
-checked for panel visibility, horizontal containment, topmost/occlusion state,
-and descendant readability. When an enabled checkbox choice exists, the suite
-activates it and restores its original state in the isolated QA runtime.
+An interactive element that becomes visible in the expanded coverage state and
+cannot be classified fails the suite rather than silently falling outside coverage.
+Menu-family instances are opened and checked for panel visibility, horizontal
+containment, topmost/occlusion state, and descendant readability. When an enabled
+checkbox choice exists, the suite activates it and restores its original state in
+the isolated QA runtime.
 
 ## Readability evidence
 
@@ -76,4 +83,6 @@ The component contract uses browser-computed styles and DOM geometry, including:
 - keyboard focusability for interactive controls.
 
 Normal text uses a minimum `4.5:1` contrast contract; disabled text uses `3:1`.
-This is deterministic browser evidence, not image interpretation.
+Diagnostic component metrics do not persist arbitrary input or textarea values;
+field metadata or a redacted `[value]` marker is used instead. This is deterministic
+browser evidence, not image interpretation.

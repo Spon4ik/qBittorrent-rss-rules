@@ -4,7 +4,7 @@
 
 ### SQLite corruption recovery
 
-The active blocker is the physically corrupted production SQLite database on
+The SQLite corruption incident is recovered and closed on
 `experiment/codex-token-efficiency`.
 
 Deterministic recovery preparation is complete:
@@ -21,9 +21,6 @@ Deterministic recovery preparation is complete:
   zero, orphan snapshots are zero, and malformed DateTime findings are zero.
 - Recovery-focused tests pass (`17 passed`) and the full deterministic suite
   passes (`638 passed`).
-- Docker is current on `v1.4.20`, but the untouched production DB is still
-  corrupt, so the final F-03 runtime invariant correctly continues to fail on
-  `/api/operations/status` with `DatabaseError`.
 - Routine Docker lifecycle is now implemented through
   `scripts\docker_runtime.bat <status|start|stop|restart>`. It uses an exact
   Docker Desktop executable path, never a shell/open association for the token
@@ -32,30 +29,18 @@ Deterministic recovery preparation is complete:
   The new focused regression is `tests/test_docker_runtime.py`; it still requires
   execution on the local checkout before the wrapper is treated as validated.
 
-Per the `AGENTS.md` reversible-change contract, candidate activation is **not an
-approval gate** once the maintained tooling has established and verified the
-rollback path. The words `production` or `live database` alone do not create an
-approval boundary. Codex should continue autonomously with the maintained
-recovery flow and stop only if the tooling can no longer prove safe rollback or
-would discard non-reconstructible/user data.
+- `scripts\\db_recover.bat activate` quiesced the owning service, created and
+  verified `logs/qa/db/incident-20260823-014358/activation-rollback`, and
+  activated the validated candidate. Post-activation DB QA reports `healthy`
+  with `355` rules, `341` snapshots, `628` acceleration jobs, zero integrity
+  errors, zero foreign-key violations, zero orphan snapshots, and zero
+  malformed DateTime values.
+- Docker was restarted with the maintained updater and is current on
+  `v1.4.20`. Deployed functional QA passes F-01, F-02, and F-03 with zero
+  unhandled API exceptions.
 
-The next recovery sequence is:
-
-1. Validate `tests/test_docker_runtime.py`, then quiesce the owning Docker service
-   with `scripts\docker_runtime.bat stop` if required by the recovery tool.
-2. Activate the validated current-state candidate with the maintained reversible
-   recovery tooling; create/verify a fresh rollback bundle as part of activation.
-3. Start the existing service with `scripts\docker_runtime.bat start`. Do not
-   compose ad-hoc `docker.exe` or Docker Desktop launch commands. A rebuild, if
-   actually required by code changes, belongs to the updater/finalizer instead.
-4. Run DB QA and the affected API/runtime checks.
-5. Run functional QA and require F-01/F-02/F-03 to pass.
-6. Run the canonical backend completion gate. If post-activation validation
-   fails, restore the verified pre-change SQLite state automatically and validate
-   the rollback before continuing investigation.
-
-The incident is not complete until the recovered database is active in the
-running Docker service and the deterministic runtime/finalizer gates pass.
+The recovery sequence and completion gate are complete. The verified rollback
+bundle remains available if a later post-recovery issue requires reversal.
 
 ### Scheduled-fetch repair
 

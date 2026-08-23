@@ -71,7 +71,7 @@ def test_compose_base_args_uses_env_file_when_present(tmp_path: Path) -> None:
     ]
 
 
-def test_start_uses_compose_up_without_build(
+def test_start_uses_existing_compose_service_without_build_or_recreate(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -107,12 +107,12 @@ def test_start_uses_compose_up_without_build(
     )
 
     assert exit_code == 0
-    assert calls == [["up", "-d", "qb-rss-rules"]]
+    assert calls == [["start", "qb-rss-rules"]]
     assert report["status"] == "ready"
     assert report["docker_desktop_started"] is True
 
 
-def test_restart_starts_stopped_service_idempotently(
+def test_restart_starts_existing_stopped_service_without_recreate(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -149,7 +149,45 @@ def test_restart_starts_stopped_service_idempotently(
     )
 
     assert exit_code == 0
-    assert calls == [["up", "-d", "qb-rss-rules"]]
+    assert calls == [["start", "qb-rss-rules"]]
+    assert report["status"] == "ready"
+
+
+def test_restart_running_service_uses_compose_restart(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    compose = tmp_path / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(runtime, "_ensure_engine", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        runtime,
+        "_compose_action",
+        lambda _docker, _compose, arguments: calls.append(list(arguments)),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_wait_for_health",
+        lambda *args, **kwargs: {
+            "ok": True,
+            "status_code": 200,
+            "app_version": None,
+            "error": None,
+        },
+    )
+    monkeypatch.setattr(runtime, "_service_running", lambda *args, **kwargs: True)
+
+    report, exit_code = runtime.run_action(
+        "restart",
+        compose_file=compose,
+        docker_exe=tmp_path / "docker.exe",
+        docker_desktop_exe=tmp_path / "Docker Desktop.exe",
+    )
+
+    assert exit_code == 0
+    assert calls == [["restart", "qb-rss-rules"]]
     assert report["status"] == "ready"
 
 

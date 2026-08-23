@@ -10,7 +10,9 @@ from urllib.parse import urlsplit
 
 import browser_qa as core
 import cross_surface_contracts as actions
+import ui_component_behavior as component_behavior
 import ui_component_contracts as components
+import ui_design_contracts as design
 import ui_invariant_qa as base
 import ui_invariants as ui
 
@@ -20,6 +22,7 @@ VIEWPORTS: tuple[tuple[int, int], ...] = (
     (1720, 1040),
 )
 THEMES: tuple[str, ...] = ("light", "dark")
+ACTION_TIMEOUT_MS = 3000
 
 
 def _same_origin_path(base_url: str, href: str) -> str | None:
@@ -78,8 +81,6 @@ def discover_page_paths(runtime: core.FocusedRuntime) -> list[str]:
                     "/rules/new",
                     f"/rules/{rule_id}",
                 }:
-                    # Runtime result/search links can carry item-specific state;
-                    # the seeded edit route supplies deterministic dynamic coverage.
                     continue
                 if discovered.startswith("/settings/") or discovered in {
                     "/",
@@ -115,9 +116,9 @@ def _command_surfaces(page: Any) -> list[dict[str, Any]]:
           };
           const text = (element) => String(
             element?.getAttribute?.('aria-label')
-            || element?.getAttribute?.('title')
             || element?.innerText
             || element?.value
+            || element?.getAttribute?.('title')
             || element?.textContent
             || ''
           ).trim().replace(/\\s+/g, ' ').slice(0, 160);
@@ -125,6 +126,11 @@ def _command_surfaces(page: Any) -> list[dict[str, Any]]:
             Array.from(element.classList || []).some((token) => token.toLocaleLowerCase().includes('danger'))
             || element.dataset.uiCommandTone === 'danger'
           );
+          const hasConcreteConfirmation = (element, form) => String(
+            element.getAttribute('onclick')
+            || form?.getAttribute?.('onsubmit')
+            || ''
+          ).includes('confirm(');
           const familyForControl = (element) => {
             if (element.matches('[data-rules-run-selected], [data-rules-run-all], [data-rules-schedule-run-now], [data-run-search-here]')) return 'fetch-snapshot';
             if (element.matches('a[data-operation-start-label]') && String(element.getAttribute('href') || '').includes('/search')) return 'fetch-snapshot';
@@ -138,8 +144,6 @@ def _command_surfaces(page: Any) -> list[dict[str, Any]]:
             if (actionArea) {
               const label = text(element).toLocaleLowerCase();
               if (label.startsWith('retry')) return 'retry-acceleration';
-              // Disabled Codex state controls are status representations, not a
-              // second command vocabulary. Only the actionable Ask control is a command.
               if (label.startsWith('ask codex')) return 'ask-codex';
               if (label.startsWith('dismiss')) return 'dismiss-acceleration';
               if (label.startsWith('remove')) return 'remove-acceleration';
@@ -149,9 +153,6 @@ def _command_surfaces(page: Any) -> list[dict[str, Any]]:
 
           const commands = [];
           const seen = new Set();
-
-          // Use the browser's form-owner relationship instead of DOM nesting so
-          // submit buttons with form="..." are inventoried as real commands too.
           for (const trigger of document.querySelectorAll(
             'button[type="submit"], input[type="submit"], button:not([type])'
           )) {
@@ -172,11 +173,7 @@ def _command_surfaces(page: Any) -> list[dict[str, Any]]:
               label: text(trigger),
               disabled: Boolean(trigger.disabled),
               danger: hasDangerTone(trigger),
-              confirmation: String(
-                trigger.getAttribute('formonsubmit')
-                || form.getAttribute('onsubmit')
-                || ''
-              ).includes('confirm(') || trigger.dataset.uiCommandConfirm === 'true',
+              confirmation: hasConcreteConfirmation(trigger, form),
               feedback: 'navigation',
             });
           }
@@ -185,11 +182,11 @@ def _command_surfaces(page: Any) -> list[dict[str, Any]]:
             if (seen.has(element) || !visible(element)) continue;
             const family = familyForControl(element);
             if (!family) continue;
-            const commandStatus = element.closest(
+            const commandRoot = element.closest(
               '[data-rules-page], [data-search-page], [data-acceleration-console], [data-operation-progress-shell]'
             );
             const hasStatusSurface = Boolean(
-              commandStatus?.querySelector?.(
+              commandRoot?.querySelector?.(
                 '[aria-live], [data-rules-run-status], [data-rules-schedule-status], [data-acceleration-summary], [data-operation-progress-summary]'
               )
             );
@@ -200,7 +197,7 @@ def _command_surfaces(page: Any) -> list[dict[str, Any]]:
               label: text(element),
               disabled: Boolean(element.disabled || element.getAttribute('aria-disabled') === 'true'),
               danger: hasDangerTone(element),
-              confirmation: element.dataset.uiCommandConfirm === 'true',
+              confirmation: hasConcreteConfirmation(element, null),
               feedback: element.hasAttribute('data-operation-start-label')
                 ? 'global-progress'
                 : (hasStatusSurface ? 'status-surface' : 'none'),
@@ -266,6 +263,7 @@ def _audit(runtime: core.FocusedRuntime) -> tuple[list[dict[str, Any]], list[str
     failures: list[str] = []
     component_family_counts: Counter[str] = Counter()
     action_family_counts: Counter[str] = Counter()
+    palette_observations: list[design.PaletteObservation] = []
 
     for width, height in VIEWPORTS:
         context = runtime.browser.new_context(viewport={"width": width, "height": height})
@@ -278,6 +276,7 @@ def _audit(runtime: core.FocusedRuntime) -> tuple[list[dict[str, Any]], list[str
                         "path": path,
                         "viewport": {"width": width, "height": height},
                         "theme": theme,
+                        "controls": [],
                         "commands": [],
                     }
                     records.append(record)
@@ -294,15 +293,96 @@ def _audit(runtime: core.FocusedRuntime) -> tuple[list[dict[str, Any]], list[str
                         controls = components.discover_interactive_components(page)
                         components.assert_component_coverage(controls)
                         record["component_family_counts"] = components.family_counts(controls)
+
                         for control in controls:
                             control_id = str(control.get("id") or "")
                             family = str(control.get("family") or "unclassified")
+                            control_label = f"{label}:{family}:{str(control.get('text') or control_id)[:60]}"
+                            control_record: dict[str, Any] = {"control": control}
+                            record["controls"].append(control_record)
                             component_family_counts[family] += 1
-                            metric = components.capture_control_readability(page, control_id)
-                            components.assert_control_readability(
-                                metric,
-                                label=f"{label}:{family}:{str(control.get('text') or control_id)[:60]}",
+
+                            normal = components.capture_control_readability(page, control_id)
+                            control_record["normal"] = normal
+                            components.assert_control_readability(normal, label=control_label)
+                            design.add_palette_observation(
+                                palette_observations,
+                                control=control,
+                                metric=normal,
+                                theme=theme,
+                                state="normal",
+                                label=control_label,
                             )
+
+                            if not bool(control.get("disabled")):
+                                locator = page.locator(
+                                    f'[data-ui-qa-control-id="{control_id}"]'
+                                )
+                                locator.hover(timeout=min(runtime.timeout_ms, ACTION_TIMEOUT_MS))
+                                hover = components.capture_control_readability(page, control_id)
+                                control_record["hover"] = hover
+                                components.assert_control_readability(
+                                    hover,
+                                    label=f"{control_label}:hover",
+                                )
+                                design.add_palette_observation(
+                                    palette_observations,
+                                    control=control,
+                                    metric=hover,
+                                    theme=theme,
+                                    state="hover",
+                                    label=control_label,
+                                )
+
+                                page.mouse.move(1, 1)
+                                components.focus_control(
+                                    page,
+                                    control_id,
+                                    timeout_ms=runtime.timeout_ms,
+                                )
+                                focus = components.capture_control_readability(page, control_id)
+                                control_record["focus"] = focus
+                                components.assert_control_readability(
+                                    focus,
+                                    label=f"{control_label}:focus",
+                                )
+                                design.add_palette_observation(
+                                    palette_observations,
+                                    control=control,
+                                    metric=focus,
+                                    theme=theme,
+                                    state="focus",
+                                    label=control_label,
+                                )
+
+                            if family in components.MENU_FAMILIES:
+                                components.open_menu(
+                                    page,
+                                    control_id,
+                                    timeout_ms=runtime.timeout_ms,
+                                )
+                                opened = components.capture_open_menu_readability(page, control_id)
+                                control_record["open"] = opened
+                                components.assert_open_menu_readability(
+                                    opened,
+                                    label=f"{control_label}:open",
+                                )
+                                design.add_palette_observation(
+                                    palette_observations,
+                                    control=control,
+                                    metric=opened,
+                                    theme=theme,
+                                    state="open",
+                                    label=control_label,
+                                )
+                                choice = component_behavior.exercise_first_menu_choice(
+                                    page,
+                                    control_id,
+                                    timeout_ms=runtime.timeout_ms,
+                                )
+                                control_record["choice_behavior"] = choice
+                                components.close_menu(page, control_id)
+
                         command_records = _command_surfaces(page)
                         command_failures = _validate_commands(command_records, page_label=label)
                         for command in command_records:
@@ -314,6 +394,11 @@ def _audit(runtime: core.FocusedRuntime) -> tuple[list[dict[str, Any]], list[str
         finally:
             context.close()
 
+    try:
+        design.assert_palette_consistency(palette_observations)
+    except ui.UIInvariantError as exc:
+        failures.append(f"design-consistency: {exc}")
+
     records.append(
         {
             "summary": {
@@ -322,6 +407,7 @@ def _audit(runtime: core.FocusedRuntime) -> tuple[list[dict[str, Any]], list[str
                 "viewports": [{"width": w, "height": h} for w, h in VIEWPORTS],
                 "component_family_counts": dict(sorted(component_family_counts.items())),
                 "action_family_counts": dict(sorted(action_family_counts.items())),
+                "palette_observations": len(palette_observations),
             }
         }
     )

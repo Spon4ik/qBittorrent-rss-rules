@@ -107,6 +107,10 @@ def _has_danger_class(attrs: dict[str, str]) -> bool:
     return any("danger" in token for token in classes) or attrs.get("data-ui-command-tone") == "danger"
 
 
+def _has_confirmation(attrs: dict[str, str]) -> bool:
+    return any("confirm(" in attrs.get(name, "") for name in ("onclick", "onsubmit"))
+
+
 def _surface(
     *,
     path: Path,
@@ -150,7 +154,7 @@ def _scan_template(path: Path) -> list[CommandSurface]:
         form_id = attrs.get("id", "").strip()
         if form_id:
             form_by_id[form_id] = (form_endpoint, attrs)
-        form_confirmation = "confirm(" in attrs.get("onsubmit", "")
+        form_confirmation = _has_confirmation(attrs)
         button_matches = list(_BUTTON_RE.finditer(match.group("body")))
         submit_buttons: list[tuple[re.Match[str], dict[str, str]]] = []
         for button_match in button_matches:
@@ -183,9 +187,7 @@ def _scan_template(path: Path) -> list[CommandSurface]:
                     endpoint=endpoint,
                     label=label,
                     danger=_has_danger_class(button_attrs),
-                    confirmation=form_confirmation
-                    or "confirm(" in button_attrs.get("formonsubmit", "")
-                    or button_attrs.get("data-ui-command-confirm") == "true",
+                    confirmation=form_confirmation or _has_confirmation(button_attrs),
                 )
             )
 
@@ -212,9 +214,7 @@ def _scan_template(path: Path) -> list[CommandSurface]:
                 endpoint=endpoint,
                 label=label,
                 danger=_has_danger_class(button_attrs),
-                confirmation="confirm(" in form_attrs.get("onsubmit", "")
-                or "confirm(" in button_attrs.get("formonsubmit", "")
-                or button_attrs.get("data-ui-command-confirm") == "true",
+                confirmation=_has_confirmation(form_attrs) or _has_confirmation(button_attrs),
             )
         )
     return surfaces
@@ -303,7 +303,7 @@ def evaluate_surfaces(surfaces: list[CommandSurface]) -> list[Finding]:
                         surface.source,
                         surface.line,
                         "destructive-command-confirmation",
-                        f"{surface.family!r} is destructive but exposes no confirmation contract.",
+                        f"{surface.family!r} is destructive but exposes no concrete confirmation behavior.",
                     )
                 )
     return findings

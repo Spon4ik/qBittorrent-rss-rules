@@ -44,6 +44,9 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Extend `Finalize-Backend.cmd` to capture a non-gating pre-deploy functional
   baseline before Docker replacement and to gate closeout on the same functional
   invariants after deterministic checks, rebuild, and runtime-freshness proof.
+- Reconcile known previous-runtime Jackett-readiness failures on the Rules page
+  as historical/recovered when the current runtime deterministically resolves
+  Jackett successfully, while retaining the original persisted failure record.
 - Make verified reversibility the default safety boundary for mutable local state:
   routine database/runtime repairs proceed autonomously once backup/restore is
   proven, with automatic rollback when post-change validation fails.
@@ -64,7 +67,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - Prevent one legacy malformed `rule_search_snapshots.inline_search` JSON value
   from aborting an entire scheduled batch during prioritization; batch ordering
-  now selects only the scalar fields it requires.
+  now selects only the scalar `rule_id` and `fetched_at` fields it requires.
 - Repair malformed legacy snapshot `fetched_at`, `created_at`, and `updated_at`
   values during successful snapshot replacement without first ORM-materializing
   the corrupt row, allowing the affected scheduled rule to self-heal.
@@ -290,7 +293,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [1.2.17] - 2026-06-02
 
-- Fixed finished-series auto-disable for continuing shows: Cinemata `status=Continuing`, scheduled videos, or open-ended release years now prevent and clear watch-state auto-disable even when the latest known episode has been watched and no next season is listed yet.
+- Fixed finished-series auto-disable for continuing shows: Cinemeta `status=Continuing`, scheduled videos, or open-ended release years now prevent and clear watch-state auto-disable even when the latest known episode has been watched and no next season is listed yet.
 - Death in Paradise-style rules can now be re-enabled by running Stremio or Jellyfin sync after the patch, without spending OMDb quota.
 
 ## [1.2.16] - 2026-06-02

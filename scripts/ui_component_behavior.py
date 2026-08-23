@@ -6,11 +6,13 @@ import ui_invariants as ui
 
 
 def exercise_first_menu_choice(page: Any, control_id: str, *, timeout_ms: int) -> dict[str, Any]:
-    """Toggle one enabled checkbox/radio in an open menu, then restore it.
+    """Toggle one enabled checkbox in an open menu, then restore it.
 
     The interaction runs only against the isolated browser-QA app. It proves the
-    common menu family is actually actionable without encoding business-specific
-    labels, languages, feeds, categories, or provider values.
+    common checkbox-menu family is actually actionable without encoding business-
+    specific labels, languages, feeds, categories, or provider values. Radio
+    groups intentionally need a separate group-selection contract because a radio
+    cannot be restored by clicking the same choice twice.
     """
 
     choice = page.evaluate(
@@ -35,9 +37,9 @@ def exercise_first_menu_choice(page: Any, control_id: str, *, timeout_ms: int) -
             );
           };
           const input = Array.from(
-            details.querySelectorAll('input[type="checkbox"], input[type="radio"]')
+            details.querySelectorAll('input[type="checkbox"]')
           ).find((candidate) => !candidate.disabled && visible(candidate));
-          if (!input) return {available: false, reason: "no enabled visible choice"};
+          if (!input) return {available: false, reason: "no enabled visible checkbox choice"};
           if (!input.dataset.uiQaChoiceId) {
             input.dataset.uiQaChoiceId = `${controlId}-choice`;
           }
@@ -45,7 +47,7 @@ def exercise_first_menu_choice(page: Any, control_id: str, *, timeout_ms: int) -
             available: true,
             id: input.dataset.uiQaChoiceId,
             initialChecked: Boolean(input.checked),
-            type: String(input.getAttribute("type") || ""),
+            type: "checkbox",
           };
         }
         """,
@@ -56,7 +58,7 @@ def exercise_first_menu_choice(page: Any, control_id: str, *, timeout_ms: int) -
     if not bool(choice.get("available")):
         return {
             "exercised": False,
-            "reason": str(choice.get("reason") or "no actionable menu choice"),
+            "reason": str(choice.get("reason") or "no actionable menu checkbox"),
         }
 
     choice_id = str(choice.get("id") or "")
@@ -82,7 +84,7 @@ def exercise_first_menu_choice(page: Any, control_id: str, *, timeout_ms: int) -
 
     return {
         "exercised": True,
-        "type": str(choice.get("type") or ""),
+        "type": "checkbox",
         "initial_checked": initial_checked,
         "changed_checked": changed_checked,
         "restored_checked": restored_checked,

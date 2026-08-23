@@ -108,6 +108,8 @@
                 type="submit"
                 aria-label="Remove {{ option.label }}"
                 title="Remove"
+                data-ui-command-confirm="true"
+                onclick="return confirm('Remove this taxonomy value? Existing rules or profiles may depend on it.');"
               >×</button>
             </span>
           </form>

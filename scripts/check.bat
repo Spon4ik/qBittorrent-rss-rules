@@ -18,6 +18,9 @@ if errorlevel 1 goto :done
 %PYTHON_EXE% -m mypy app
 if errorlevel 1 goto :done
 
+%PYTHON_EXE% "%SCRIPT_DIR%changelog_guard.py"
+if errorlevel 1 goto :done
+
 call "%SCRIPT_DIR%test.bat"
 
 :done

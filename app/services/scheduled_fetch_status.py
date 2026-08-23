@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-_RECOVERABLE_HISTORICAL_STATUSES = frozenset({"partial", "error"})
+_HISTORICAL_FAILURE_STATUSES = frozenset({"partial", "error"})
 
 
 def _count(mapping: dict[str, Any], key: str) -> int:
@@ -53,7 +53,7 @@ def current_scheduled_fetch_state(
     elif stale > 0 or missing > 0:
         status = "degraded"
         summary = (
-            "Scheduled scope is not fully fresh: "
+            "Scheduled scope is outside its freshness target: "
             f"{stale} stale, {missing} missing, {pending} pending snapshot(s)."
         )
     elif pending > 0:
@@ -64,7 +64,7 @@ def current_scheduled_fetch_state(
         summary = "Scheduled scope is healthy; there are currently no rules in scope."
     elif fresh >= total:
         status = "healthy"
-        summary = f"All {fresh}/{total} scheduled-scope rule snapshots are fresh."
+        summary = f"All {fresh}/{total} scheduled-scope rule snapshots are within freshness SLA."
     else:
         status = "degraded"
         summary = (
@@ -72,12 +72,14 @@ def current_scheduled_fetch_state(
             f"{fresh}/{total} rule snapshots are confirmed fresh."
         )
 
-    recovered = status == "healthy" and historical_status in _RECOVERABLE_HISTORICAL_STATUSES
+    historical_failure_superseded = (
+        status == "healthy" and historical_status in _HISTORICAL_FAILURE_STATUSES
+    )
     return {
         "status": status,
         "summary": summary,
         "historical_status": historical_status,
-        "recovered_from_last_run": recovered,
+        "historical_failure_superseded": historical_failure_superseded,
         "total_rules": total,
         "fresh_snapshots": fresh,
         "stale_snapshots": stale,

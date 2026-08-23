@@ -91,6 +91,20 @@ def test_active_refresh_reports_running_before_stale_state() -> None:
     assert state["historical_failure_superseded"] is False
 
 
+def test_unrelated_fetch_progress_does_not_masquerade_as_scheduler_tick() -> None:
+    state = current_scheduled_fetch_state(
+        schedule=_schedule("partial"),
+        runtime_enabled=True,
+        jackett_ready=True,
+        snapshot_freshness=_freshness(total=3, fresh=2, stale=1),
+        scheduler={"tick_in_progress": False},
+        operation_progress={"current": 1, "total": 1},
+    )
+
+    assert state["status"] == "degraded"
+    assert state["historical_failure_superseded"] is False
+
+
 def test_readiness_and_runtime_failures_take_precedence_over_fresh_snapshots() -> None:
     no_runtime = current_scheduled_fetch_state(
         schedule=_schedule("partial"),

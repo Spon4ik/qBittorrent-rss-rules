@@ -10,8 +10,10 @@ from pathlib import Path
 from cross_surface_contracts import (
     canonical_label_matches,
     classify_endpoint,
+    contract_for_family,
     is_internal_endpoint,
     normalize_endpoint,
+    refine_family,
 )
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
@@ -31,15 +33,23 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _JINJA_RE = re.compile(r"\{[%{].*?[}%]\}", re.DOTALL)
 _WS_RE = re.compile(r"\s+")
 
-# These families are semantically narrow enough that a common leading verb is a
-# reliable cross-surface UX invariant. Broad provider/settings families are still
-# classified, but their controls legitimately use verbs such as Test/Connect/Save.
+# Narrow semantic families must share terminology on every form surface. Broad
+# provider operations are intentionally classified without forcing Test/Connect/
+# Disconnect into one misleading verb.
 STRICT_LABEL_FAMILIES = frozenset(
     {
         "sync",
         "save-sync",
-        "delete-rule",
+        "create-rule",
         "save-rule",
+        "delete-rule",
+        "taxonomy-add",
+        "taxonomy-move",
+        "taxonomy-remove",
+        "taxonomy-validate",
+        "taxonomy-apply",
+        "import-preview",
+        "import-apply",
         "adopt-acceleration",
         "retry-acceleration",
         "ask-codex",
@@ -58,6 +68,8 @@ class CommandSurface:
     family: str | None
     label: str | None = None
     internal: bool = False
+    danger: bool = False
+    confirmation: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +94,19 @@ def _visible_text(raw: str) -> str:
     return _WS_RE.sub(" ", value).strip()
 
 
+def _button_label(attrs: dict[str, str], body: str) -> str | None:
+    for name in ("aria-label", "title"):
+        candidate = _visible_text(attrs.get(name, ""))
+        if candidate:
+            return candidate
+    return _visible_text(body) or None
+
+
+def _has_danger_class(attrs: dict[str, str]) -> bool:
+    classes = attrs.get("class", "").casefold().split()
+    return any("danger" in token for token in classes) or attrs.get("data-ui-command-tone") == "danger"
+
+
 def _surface(
     *,
     path: Path,
@@ -90,28 +115,42 @@ def _surface(
     endpoint: str,
     label: str | None,
     transport: str = "form-post",
+    danger: bool = False,
+    confirmation: bool = False,
 ) -> CommandSurface:
     normalized = normalize_endpoint(endpoint)
     internal = is_internal_endpoint(normalized)
+    base_family = None if internal else classify_endpoint(normalized)
+    family = refine_family(base_family, label)
     return CommandSurface(
         source=str(path.relative_to(PROJECT_DIR)).replace("\\", "/"),
         line=_line_number(text, offset),
         transport=transport,
         endpoint=normalized,
-        family=None if internal else classify_endpoint(normalized),
+        family=family,
         label=label or None,
         internal=internal,
+        danger=danger,
+        confirmation=confirmation,
     )
 
 
 def _scan_template(path: Path) -> list[CommandSurface]:
     text = path.read_text(encoding="utf-8")
     surfaces: list[CommandSurface] = []
+    form_by_id: dict[str, tuple[str, dict[str, str]]] = {}
+    form_spans: list[tuple[int, int]] = []
+
     for match in _FORM_RE.finditer(text):
+        form_spans.append((match.start(), match.end()))
         attrs = _attrs(match.group("attrs"))
         if attrs.get("method", "get").casefold() != "post":
             continue
         form_endpoint = attrs.get("action", "").strip()
+        form_id = attrs.get("id", "").strip()
+        if form_id:
+            form_by_id[form_id] = (form_endpoint, attrs)
+        form_confirmation = "confirm(" in attrs.get("onsubmit", "")
         button_matches = list(_BUTTON_RE.finditer(match.group("body")))
         submit_buttons: list[tuple[re.Match[str], dict[str, str]]] = []
         for button_match in button_matches:
@@ -128,13 +167,14 @@ def _scan_template(path: Path) -> list[CommandSurface]:
                     offset=match.start(),
                     endpoint=form_endpoint,
                     label=None,
+                    confirmation=form_confirmation,
                 )
             )
             continue
 
         for button_match, button_attrs in submit_buttons:
             endpoint = button_attrs.get("formaction", form_endpoint).strip()
-            label = _visible_text(button_match.group("body")) or None
+            label = _button_label(button_attrs, button_match.group("body"))
             surfaces.append(
                 _surface(
                     path=path,
@@ -142,8 +182,41 @@ def _scan_template(path: Path) -> list[CommandSurface]:
                     offset=match.start() + button_match.start(),
                     endpoint=endpoint,
                     label=label,
+                    danger=_has_danger_class(button_attrs),
+                    confirmation=form_confirmation
+                    or "confirm(" in button_attrs.get("formonsubmit", "")
+                    or button_attrs.get("data-ui-command-confirm") == "true",
                 )
             )
+
+    # HTML permits a submit button outside its form via form="...". Those are
+    # user commands too and must not escape the inventory (the edit-page Save
+    # command is one current example).
+    for button_match in _BUTTON_RE.finditer(text):
+        button_attrs = _attrs(button_match.group("attrs"))
+        form_id = button_attrs.get("form", "").strip()
+        if not form_id or form_id not in form_by_id:
+            continue
+        if any(start <= button_match.start() < end for start, end in form_spans):
+            continue
+        if button_attrs.get("type", "submit").casefold() != "submit":
+            continue
+        form_endpoint, form_attrs = form_by_id[form_id]
+        endpoint = button_attrs.get("formaction", form_endpoint).strip()
+        label = _button_label(button_attrs, button_match.group("body"))
+        surfaces.append(
+            _surface(
+                path=path,
+                text=text,
+                offset=button_match.start(),
+                endpoint=endpoint,
+                label=label,
+                danger=_has_danger_class(button_attrs),
+                confirmation="confirm(" in form_attrs.get("onsubmit", "")
+                or "confirm(" in button_attrs.get("formonsubmit", "")
+                or button_attrs.get("data-ui-command-confirm") == "true",
+            )
+        )
     return surfaces
 
 
@@ -212,6 +285,27 @@ def evaluate_surfaces(surfaces: list[CommandSurface]) -> list[Finding]:
                     f"{surface.family!r} surface label {surface.label!r} does not use its canonical verb.",
                 )
             )
+
+        contract = contract_for_family(surface.family)
+        if surface.transport == "form-post" and contract.destructive:
+            if not surface.danger:
+                findings.append(
+                    Finding(
+                        surface.source,
+                        surface.line,
+                        "destructive-command-tone",
+                        f"{surface.family!r} is destructive but is not danger-styled.",
+                    )
+                )
+            if not surface.confirmation:
+                findings.append(
+                    Finding(
+                        surface.source,
+                        surface.line,
+                        "destructive-command-confirmation",
+                        f"{surface.family!r} is destructive but exposes no confirmation contract.",
+                    )
+                )
     return findings
 
 

@@ -19,6 +19,7 @@ def _metric(**overrides: object) -> dict[str, object]:
     metric: dict[str, object] = {
         "visible": True,
         "text": "Readable control",
+        "interactive": True,
         "disabled": False,
         "contrast": 7.0,
         "placeholderContrast": None,
@@ -82,13 +83,17 @@ def test_readability_rejects_low_contrast_clipping_and_viewport_escape() -> None
         )
 
 
-def test_readability_requires_keyboard_focus_for_enabled_interactive_controls() -> None:
+def test_readability_requires_focus_only_for_interactive_elements() -> None:
     with pytest.raises(ui.UIInvariantError, match="keyboard-focusable"):
         components.assert_control_readability(
             _metric(keyboardFocusable=False),
             label="Dropdown",
         )
 
+    components.assert_control_readability(
+        _metric(interactive=False, keyboardFocusable=False),
+        label="Dropdown option text",
+    )
     components.assert_control_readability(
         _metric(disabled=True, keyboardFocusable=False, contrast=3.1),
         label="Disabled dropdown",
@@ -115,7 +120,14 @@ def test_open_menu_contract_rejects_occlusion_and_unreadable_descendants() -> No
                 "panelVisible": True,
                 "panelEscapesViewport": False,
                 "panelTopmost": True,
-                "descendants": [_metric(text="Russian", contrast=1.5)],
+                "descendants": [
+                    _metric(
+                        text="Russian",
+                        contrast=1.5,
+                        interactive=False,
+                        keyboardFocusable=False,
+                    )
+                ],
             },
             label="Language dropdown",
         )

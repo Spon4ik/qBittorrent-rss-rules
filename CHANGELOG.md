@@ -39,6 +39,19 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Add a deterministic changelog freshness guard to the normal Windows/Linux
   check gates. It fails when implementation/runtime/maintained-QA tooling is
   newer than `CHANGELOG.md` and writes compact evidence under `logs/qa/`.
+- Add repository-wide cross-surface action contracts for commands such as Sync,
+  Fetch snapshot, Queue, Retry, Save + Sync, taxonomy operations, and destructive
+  Remove/Delete actions. The normal check gate now inventories POST forms,
+  `formaction` overrides, form-owned external submit buttons, and frontend POST
+  requests and fails unclassified or semantically inconsistent command families.
+- Add cross-page browser consistency QA that discovers stable application pages
+  from navigation, expands initially closed disclosures, exercises all resulting
+  component instances across light/dark responsive states, audits action-family
+  terminology/safety/feedback, and accumulates sibling failures instead of
+  stopping at the first bad control.
+- Add computed design-token consistency checks for shared form/menu component
+  families so page-specific foreground/background palette drift fails even when
+  every individual control still clears a minimum contrast threshold.
 
 ### Changed
 
@@ -61,6 +74,12 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Require generic UI exclusions to map to an explicit maintained replacement
   contract and document the issue-to-property-to-component-family regression
   workflow in `docs/qa/ui-regression-contracts.md`.
+- Make cross-surface consistency a standing repository contract: reported
+  instances must be expanded to their component/action/service/data family and
+  relevant siblings before closeout instead of being patched or tested one page,
+  ID, endpoint, or example at a time.
+- Make `scripts\\browser_qa.bat --suite ui` and its Linux equivalent run the
+  cross-surface page/component/action audit after the focused `UI-*` suite.
 - Mark application-generated maintenance requests as explicit incident work so
   low-cost Codex routing can skip redundant task classification.
 
@@ -82,6 +101,9 @@ The format is based on Keep a Changelog and the project follows Semantic Version
   backgrounds could be combined with dark-theme foreground colors.
 - Fix `scripts/db_qa.bat` argument forwarding so maintained DB diagnostics can be
   invoked through the wrapper without duplicate/incorrect arguments.
+- Require destructive taxonomy-value removal to use danger styling and concrete
+  confirmation behavior, matching the shared destructive-action contract instead
+  of relying on an unconfirmed icon-only POST.
 - Prevent unexpected API failures from degrading into browser errors such as
   `Unexpected token 'I' ... is not valid JSON`; unhandled API exceptions now
   preserve deterministic route/type/reference evidence in a bounded JSON

@@ -5,7 +5,6 @@ import argparse
 import json
 import sys
 from collections import Counter
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -21,7 +20,6 @@ VIEWPORTS: tuple[tuple[int, int], ...] = (
     (1720, 1040),
 )
 THEMES: tuple[str, ...] = ("light", "dark")
-ACTION_TIMEOUT_MS = 3000
 
 
 def _same_origin_path(base_url: str, href: str) -> str | None:
@@ -39,7 +37,7 @@ def _same_origin_path(base_url: str, href: str) -> str | None:
 
 
 def discover_page_paths(runtime: core.FocusedRuntime) -> list[str]:
-    """Discover stable user pages from the app's own navigation plus seeded dynamic pages."""
+    """Discover stable user pages from app navigation plus seeded dynamic pages."""
 
     rule_id = base._seed_rule_id(runtime)
     paths: set[str] = {
@@ -76,9 +74,12 @@ def discover_page_paths(runtime: core.FocusedRuntime) -> list[str]:
                 discovered = _same_origin_path(runtime.app_base_url, str(href))
                 if discovered is None:
                     continue
-                if discovered.startswith("/rules/") and discovered not in {"/rules/new", f"/rules/{rule_id}"}:
-                    # Result/search links can carry runtime IDs and query state; the
-                    # seeded edit page provides deterministic dynamic-route coverage.
+                if discovered.startswith("/rules/") and discovered not in {
+                    "/rules/new",
+                    f"/rules/{rule_id}",
+                }:
+                    # Runtime result/search links can carry item-specific state;
+                    # the seeded edit route supplies deterministic dynamic coverage.
                     continue
                 if discovered.startswith("/settings/") or discovered in {
                     "/",
@@ -120,6 +121,10 @@ def _command_surfaces(page: Any) -> list[dict[str, Any]]:
             || element?.textContent
             || ''
           ).trim().replace(/\\s+/g, ' ').slice(0, 160);
+          const hasDangerTone = (element) => (
+            Array.from(element.classList || []).some((token) => token.toLocaleLowerCase().includes('danger'))
+            || element.dataset.uiCommandTone === 'danger'
+          );
           const familyForControl = (element) => {
             if (element.matches('[data-rules-run-selected], [data-rules-run-all], [data-rules-schedule-run-now], [data-run-search-here]')) return 'fetch-snapshot';
             if (element.matches('a[data-operation-start-label]') && String(element.getAttribute('href') || '').includes('/search')) return 'fetch-snapshot';
@@ -133,7 +138,9 @@ def _command_surfaces(page: Any) -> list[dict[str, Any]]:
             if (actionArea) {
               const label = text(element).toLocaleLowerCase();
               if (label.startsWith('retry')) return 'retry-acceleration';
-              if (label.startsWith('ask codex') || label.startsWith('codex')) return 'ask-codex';
+              // Disabled Codex state controls are status representations, not a
+              // second command vocabulary. Only the actionable Ask control is a command.
+              if (label.startsWith('ask codex')) return 'ask-codex';
               if (label.startsWith('dismiss')) return 'dismiss-acceleration';
               if (label.startsWith('remove')) return 'remove-acceleration';
             }
@@ -142,49 +149,61 @@ def _command_surfaces(page: Any) -> list[dict[str, Any]]:
 
           const commands = [];
           const seen = new Set();
-          for (const form of document.querySelectorAll('form')) {
-            if (String(form.method || 'get').toLocaleLowerCase() !== 'post') continue;
-            const triggers = Array.from(
-              form.querySelectorAll('button[type="submit"], input[type="submit"], button:not([type])')
-            ).filter(visible);
-            if (!triggers.length) continue;
-            for (const trigger of triggers) {
-              seen.add(trigger);
-              const endpoint = String(
-                trigger.getAttribute('formaction')
-                || form.getAttribute('action')
-                || form.action
+
+          // Use the browser's form-owner relationship instead of DOM nesting so
+          // submit buttons with form="..." are inventoried as real commands too.
+          for (const trigger of document.querySelectorAll(
+            'button[type="submit"], input[type="submit"], button:not([type])'
+          )) {
+            if (!visible(trigger)) continue;
+            const form = trigger.form;
+            if (!form || String(form.method || 'get').toLocaleLowerCase() !== 'post') continue;
+            seen.add(trigger);
+            const endpoint = String(
+              trigger.getAttribute('formaction')
+              || form.getAttribute('action')
+              || form.action
+              || ''
+            );
+            commands.push({
+              transport: 'form-post',
+              endpoint,
+              family: form.dataset.uiCommandFamily || trigger.dataset.uiCommandFamily || null,
+              label: text(trigger),
+              disabled: Boolean(trigger.disabled),
+              danger: hasDangerTone(trigger),
+              confirmation: String(
+                trigger.getAttribute('formonsubmit')
+                || form.getAttribute('onsubmit')
                 || ''
-              );
-              commands.push({
-                transport: 'form-post',
-                endpoint,
-                family: form.dataset.uiCommandFamily || trigger.dataset.uiCommandFamily || null,
-                label: text(trigger),
-                disabled: Boolean(trigger.disabled),
-                danger: trigger.classList.contains('danger') || trigger.dataset.uiCommandTone === 'danger',
-                confirmation: String(
-                  trigger.getAttribute('formonsubmit')
-                  || form.getAttribute('onsubmit')
-                  || ''
-                ).includes('confirm('),
-                feedback: 'navigation',
-              });
-            }
+              ).includes('confirm(') || trigger.dataset.uiCommandConfirm === 'true',
+              feedback: 'navigation',
+            });
           }
+
           for (const element of document.querySelectorAll('button, a[href]')) {
             if (seen.has(element) || !visible(element)) continue;
             const family = familyForControl(element);
             if (!family) continue;
+            const commandStatus = element.closest(
+              '[data-rules-page], [data-search-page], [data-acceleration-console], [data-operation-progress-shell]'
+            );
+            const hasStatusSurface = Boolean(
+              commandStatus?.querySelector?.(
+                '[aria-live], [data-rules-run-status], [data-rules-schedule-status], [data-acceleration-summary], [data-operation-progress-summary]'
+              )
+            );
             commands.push({
               transport: element.tagName === 'A' ? 'link' : 'async-control',
               endpoint: String(element.getAttribute('href') || ''),
               family,
               label: text(element),
               disabled: Boolean(element.disabled || element.getAttribute('aria-disabled') === 'true'),
-              danger: element.classList.contains('danger') || element.dataset.uiCommandTone === 'danger',
+              danger: hasDangerTone(element),
               confirmation: element.dataset.uiCommandConfirm === 'true',
-              feedback: element.hasAttribute('data-operation-start-label') ? 'global-progress' : 'local-or-inline',
+              feedback: element.hasAttribute('data-operation-start-label')
+                ? 'global-progress'
+                : (hasStatusSurface ? 'status-surface' : 'none'),
             });
           }
           return commands;
@@ -201,9 +220,11 @@ def _validate_commands(records: list[dict[str, Any]], *, page_label: str) -> lis
     for index, record in enumerate(records):
         family = str(record.get("family") or "").strip()
         endpoint = str(record.get("endpoint") or "").strip()
+        label = str(record.get("label") or "").strip()
         if not family and endpoint:
             family = actions.classify_endpoint(endpoint) or ""
-            record["family"] = family or None
+        family = actions.refine_family(family or None, label) or ""
+        record["family"] = family or None
         if not family:
             failures.append(f"{page_label}: command #{index} is unclassified: {record}")
             continue
@@ -212,8 +233,11 @@ def _validate_commands(records: list[dict[str, Any]], *, page_label: str) -> lis
         except ValueError as exc:
             failures.append(f"{page_label}: {exc}")
             continue
-        label = str(record.get("label") or "").strip()
-        if family not in {"provider-command"} and label and not actions.canonical_label_matches(family, label):
+        if (
+            family not in {"provider-command"}
+            and label
+            and not actions.canonical_label_matches(family, label)
+        ):
             failures.append(
                 f"{page_label}: {family} label {label!r} does not use canonical verb "
                 f"{contract.canonical_verb!r}"
@@ -221,12 +245,18 @@ def _validate_commands(records: list[dict[str, Any]], *, page_label: str) -> lis
         if contract.destructive:
             if not bool(record.get("danger")):
                 failures.append(f"{page_label}: destructive {family} command is not danger-styled")
-            # Dynamically generated destructive commands are source-guarded for
-            # confirm logic; form commands must expose confirmation in the DOM.
             if record.get("transport") == "form-post" and not bool(record.get("confirmation")):
-                failures.append(f"{page_label}: destructive {family} POST form has no confirmation contract")
-        if contract.long_running and str(record.get("feedback") or "") in {"", "none"}:
-            failures.append(f"{page_label}: long-running {family} command exposes no feedback lifecycle")
+                failures.append(
+                    f"{page_label}: destructive {family} POST form has no confirmation contract"
+                )
+        if (
+            contract.long_running
+            and record.get("transport") in {"async-control", "link"}
+            and str(record.get("feedback") or "") == "none"
+        ):
+            failures.append(
+                f"{page_label}: long-running {family} command exposes no progress/status feedback"
+            )
     return failures
 
 
@@ -234,7 +264,8 @@ def _audit(runtime: core.FocusedRuntime) -> tuple[list[dict[str, Any]], list[str
     paths = discover_page_paths(runtime)
     records: list[dict[str, Any]] = []
     failures: list[str] = []
-    family_counts: Counter[str] = Counter()
+    component_family_counts: Counter[str] = Counter()
+    action_family_counts: Counter[str] = Counter()
 
     for width, height in VIEWPORTS:
         context = runtime.browser.new_context(viewport={"width": width, "height": height})
@@ -247,7 +278,6 @@ def _audit(runtime: core.FocusedRuntime) -> tuple[list[dict[str, Any]], list[str
                         "path": path,
                         "viewport": {"width": width, "height": height},
                         "theme": theme,
-                        "components": [],
                         "commands": [],
                     }
                     records.append(record)
@@ -267,15 +297,18 @@ def _audit(runtime: core.FocusedRuntime) -> tuple[list[dict[str, Any]], list[str
                         for control in controls:
                             control_id = str(control.get("id") or "")
                             family = str(control.get("family") or "unclassified")
-                            family_counts[family] += 1
+                            component_family_counts[family] += 1
                             metric = components.capture_control_readability(page, control_id)
                             components.assert_control_readability(
                                 metric,
                                 label=f"{label}:{family}:{str(control.get('text') or control_id)[:60]}",
                             )
                         command_records = _command_surfaces(page)
+                        command_failures = _validate_commands(command_records, page_label=label)
+                        for command in command_records:
+                            action_family_counts[str(command.get("family") or "unclassified")] += 1
                         record["commands"] = command_records
-                        failures.extend(_validate_commands(command_records, page_label=label))
+                        failures.extend(command_failures)
                     except Exception as exc:  # noqa: BLE001
                         failures.append(f"{label}: {exc.__class__.__name__}: {exc}")
         finally:
@@ -287,7 +320,8 @@ def _audit(runtime: core.FocusedRuntime) -> tuple[list[dict[str, Any]], list[str
                 "paths": paths,
                 "themes": list(THEMES),
                 "viewports": [{"width": w, "height": h} for w, h in VIEWPORTS],
-                "component_family_counts": dict(sorted(family_counts.items())),
+                "component_family_counts": dict(sorted(component_family_counts.items())),
+                "action_family_counts": dict(sorted(action_family_counts.items())),
             }
         }
     )

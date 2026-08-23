@@ -20,6 +20,12 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         long_running=True,
         description="Synchronize app-owned rule/provider state.",
     ),
+    "save-sync": ActionContract(
+        "save-sync",
+        "Save + Sync",
+        long_running=True,
+        description="Persist provider settings and immediately run that provider sync.",
+    ),
     "fetch-snapshot": ActionContract(
         "fetch-snapshot",
         "Fetch",
@@ -78,6 +84,9 @@ _ENDPOINT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^/api/acceleration/jobs/[^/]+/cleanup(?:\?.*)?$"), "remove-acceleration"),
     (re.compile(r"^/api/(?:import|imports)(?:/.*)?$"), "import"),
     (re.compile(r"^/api/taxonomy(?:/.*)?$"), "taxonomy-save"),
+    (re.compile(r"^/api/settings/sync-(?:jellyfin|stremio)(?:\?.*)?$"), "save-sync"),
+    (re.compile(r"^/api/settings/sync-watch-progress(?:\?.*)?$"), "sync"),
+    (re.compile(r"^/api/settings/(?:test-[^/]+|real-debrid/(?:connect|disconnect))(?:\?.*)?$"), "provider-command"),
     (re.compile(r"^/api/settings(?:/.*)?$"), "save-settings"),
     (re.compile(r"^/settings(?:/.*)?$"), "save-settings"),
     (re.compile(r"^/api/(?:real-debrid|myjdownloader|jellyfin|stremio|qbittorrent|jackett)(?:/.*)?$"), "provider-command"),

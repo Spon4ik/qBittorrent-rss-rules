@@ -19,7 +19,7 @@ def test_rules_status_ui_leads_with_current_health_and_keeps_history_secondary()
     source = RUNTIME_HEALTH_JS.read_text(encoding="utf-8")
 
     assert "Current status: ${status}." in source
-    assert "Previous scheduled run: ${historicalStatus}." in source
-    assert "Previous run detail:" in source
+    assert "Previous scheduled run: ${historicalStatus} (historical)." in source
     assert "component?.current_state" in source
-    assert "currentState.recovered_from_last_run" in source
+    assert "currentState.historical_failure_superseded" in source
+    assert "Previous run detail:" not in source

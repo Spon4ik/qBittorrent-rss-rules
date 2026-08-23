@@ -116,6 +116,7 @@ def _command_surfaces(page: Any) -> list[dict[str, Any]]:
             element?.getAttribute?.('aria-label')
             || element?.getAttribute?.('title')
             || element?.innerText
+            || element?.value
             || element?.textContent
             || ''
           ).trim().replace(/\\s+/g, ' ').slice(0, 160);
@@ -143,19 +144,33 @@ def _command_surfaces(page: Any) -> list[dict[str, Any]]:
           const seen = new Set();
           for (const form of document.querySelectorAll('form')) {
             if (String(form.method || 'get').toLocaleLowerCase() !== 'post') continue;
-            const trigger = form.querySelector('button[type="submit"], input[type="submit"], button:not([type])');
-            if (!trigger || !visible(trigger)) continue;
-            seen.add(trigger);
-            commands.push({
-              transport: 'form-post',
-              endpoint: String(form.getAttribute('action') || form.action || ''),
-              family: form.dataset.uiCommandFamily || trigger.dataset.uiCommandFamily || null,
-              label: text(trigger),
-              disabled: Boolean(trigger.disabled),
-              danger: trigger.classList.contains('danger') || trigger.dataset.uiCommandTone === 'danger',
-              confirmation: String(form.getAttribute('onsubmit') || '').includes('confirm('),
-              feedback: 'navigation',
-            });
+            const triggers = Array.from(
+              form.querySelectorAll('button[type="submit"], input[type="submit"], button:not([type])')
+            ).filter(visible);
+            if (!triggers.length) continue;
+            for (const trigger of triggers) {
+              seen.add(trigger);
+              const endpoint = String(
+                trigger.getAttribute('formaction')
+                || form.getAttribute('action')
+                || form.action
+                || ''
+              );
+              commands.push({
+                transport: 'form-post',
+                endpoint,
+                family: form.dataset.uiCommandFamily || trigger.dataset.uiCommandFamily || null,
+                label: text(trigger),
+                disabled: Boolean(trigger.disabled),
+                danger: trigger.classList.contains('danger') || trigger.dataset.uiCommandTone === 'danger',
+                confirmation: String(
+                  trigger.getAttribute('formonsubmit')
+                  || form.getAttribute('onsubmit')
+                  || ''
+                ).includes('confirm('),
+                feedback: 'navigation',
+              });
+            }
           }
           for (const element of document.querySelectorAll('button, a[href]')) {
             if (seen.has(element) || !visible(element)) continue;

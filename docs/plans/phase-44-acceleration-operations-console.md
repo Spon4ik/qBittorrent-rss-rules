@@ -47,23 +47,32 @@ compact Retry/Ask Codex actions. Category or title inference is forbidden.
   opening qB diagnostics had made the whole disclosure absolute, removing its
   flex slot and shifting the command bar by 573px at 1720px and 901px at
   2048px. The disclosure now keeps its stable header slot while its expanded
-  panel overlays. `scripts\\browser_qa.bat --suite ui` passes UI-01 through
-  UI-04 without screenshot review. The previous cross-test scheduler/fixture-
-  state leak is repaired: route fixtures stop/join the app-global queues, app
-  shutdown owns the same queue lifecycle, and the startup sync thread is joined.
-- The experiment branch now also has a reusable deterministic UI-invariants audit,
-  implemented early by explicit user request before the next UI-fix task. This is
-  QA infrastructure only and does not change Phase 44 product behavior or waive
-  the remaining automatic heartbeat acceptance criterion. The canonical Windows
-  command is `scripts\browser_qa.bat --suite ui`. It checks representative core
-  responsive pages for document-level overflow, the qB-diagnostics closed/open
-  rule-header transition for overlap/containment/unexpected desktop horizontal
-  movement, the maintained Result-toolbar interaction/reflow contract, and a
-  bounded generic interactive-surface audit. The suite records DOM metrics and
-  uses screenshots only as failure evidence. Known deterministic UI failures are
-  allowed to remain red until the later UI-fix task; they are not quarantined
-  merely to make the audit pass.
-- Browser-QA iteration now has venv-aware wrappers. On Windows,
+  panel overlays. `scripts\\browser_qa.bat --suite ui` passed the then-current
+  UI-01 through UI-04 suite without screenshot review. The previous cross-test
+  scheduler/fixture-state leak is repaired: route fixtures stop/join the app-global
+  queues, app shutdown owns the same queue lifecycle, and the startup sync thread
+  is joined.
+- The experiment branch now has a reusable deterministic UI-invariants audit that
+  has been strengthened beyond the earlier bounded generic check. The canonical
+  Windows command remains `scripts\browser_qa.bat --suite ui`. `UI-01` through
+  `UI-03` retain the responsive/layout and dedicated Result-toolbar contracts;
+  `UI-04` now exhaustively exercises every visible generic top-level disclosure/menu
+  rather than sampling a fixed prefix; and new `UI-05` expands ordinary initially
+  closed disclosures, inventories every resulting visible interactive control
+  across light/dark themes and 390/1180/1720 widths, rejects unclassified component
+  families, and checks contrast/readability, clipping, viewport containment,
+  keyboard focus, hover/focus states, open-panel occlusion, and reversible checkbox
+  menu choice behavior. Dedicated exclusions must identify another maintained
+  `UI-*` replacement contract. The suite records compact DOM/computed-style metrics
+  and uses screenshots only as failure evidence. This strengthened suite is new
+  checkout behavior and still requires local Playwright execution before it can be
+  reported PASS or used as deployed-runtime evidence.
+- The shared rule Language/feed checkbox-dropdown and search-multiselect surfaces
+  now inherit semantic theme palette styling from `app/static/components.css`
+  instead of retaining light-only feed option backgrounds. This follow-up remains
+  open until the strengthened UI suite, normal completion gate, Docker update, and
+  deployed affected-control proof all pass.
+- Browser-QA iteration has venv-aware wrappers. On Windows,
   `scripts\browser_qa.bat --check P44-03` runs only the maintained Result-toolbar
   regression and `scripts\browser_qa.bat --phase 44` selects all maintained Phase
   44 focused checks. The wrapper follows the repository's existing interpreter

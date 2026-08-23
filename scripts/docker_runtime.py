@@ -199,15 +199,24 @@ def inspect_runtime(
         return {
             "engine": "unavailable",
             "service": "unknown",
-            "health": {"ok": False, "status_code": None, "app_version": None, "error": "engine unavailable"},
+            "health": {
+                "ok": False,
+                "status_code": None,
+                "app_version": None,
+                "error": "engine unavailable",
+            },
         }
     running = _service_running(docker_exe, compose_file, service)
-    health = _health_probe(health_url) if running else {
-        "ok": False,
-        "status_code": None,
-        "app_version": None,
-        "error": "service not running",
-    }
+    health = (
+        _health_probe(health_url)
+        if running
+        else {
+            "ok": False,
+            "status_code": None,
+            "app_version": None,
+            "error": "service not running",
+        }
+    )
     return {
         "engine": "ready",
         "service": "running" if running else "stopped",
@@ -233,7 +242,6 @@ def run_action(
     if not compose_file.is_file():
         raise FileNotFoundError(compose_file)
 
-    desktop_started = False
     if action == "status":
         runtime = inspect_runtime(
             docker_exe=docker_exe,
@@ -241,9 +249,9 @@ def run_action(
             service=service,
             health_url=health_url,
         )
-        ok = runtime["engine"] == "ready" and runtime["service"] == "running" and bool(
-            runtime["health"]["ok"]  # type: ignore[index]
-        )
+        health = runtime["health"]
+        health_ok = isinstance(health, dict) and bool(health.get("ok"))
+        ok = runtime["engine"] == "ready" and runtime["service"] == "running" and health_ok
         return {
             "status": "ok" if ok else "not_ready",
             "action": action,
@@ -258,7 +266,12 @@ def run_action(
                 "runtime": {
                     "engine": "unavailable",
                     "service": "stopped",
-                    "health": {"ok": False, "status_code": None, "app_version": None, "error": "engine unavailable"},
+                    "health": {
+                        "ok": False,
+                        "status_code": None,
+                        "app_version": None,
+                        "error": "engine unavailable",
+                    },
                 },
             }, 0
         _compose_action(docker_exe, compose_file, ["stop", service])
@@ -282,12 +295,12 @@ def run_action(
     )
 
     if action == "start":
-        _compose_action(docker_exe, compose_file, ["up", "-d", service])
+        _compose_action(docker_exe, compose_file, ["start", service])
     elif action == "restart":
         if _service_running(docker_exe, compose_file, service):
             _compose_action(docker_exe, compose_file, ["restart", service])
         else:
-            _compose_action(docker_exe, compose_file, ["up", "-d", service])
+            _compose_action(docker_exe, compose_file, ["start", service])
     else:
         raise ValueError(f"Unsupported Docker runtime action: {action}")
 

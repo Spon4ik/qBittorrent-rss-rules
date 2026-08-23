@@ -12,10 +12,9 @@ function currentScheduleStatusParts(currentState, schedule) {
   if (currentState?.summary) parts.push(String(currentState.summary));
 
   const historicalStatus = String(schedule?.last_status || "idle");
-  const recovered = Boolean(currentState?.recovered_from_last_run);
-  if (recovered) {
-    parts.push(`Previous scheduled run: ${historicalStatus}.`);
-    if (schedule?.last_message) parts.push(`Previous run detail: ${schedule.last_message}`);
+  const superseded = Boolean(currentState?.historical_failure_superseded);
+  if (superseded) {
+    parts.push(`Previous scheduled run: ${historicalStatus} (historical).`);
   } else if (historicalStatus && historicalStatus !== "idle") {
     parts.push(`Last scheduled run: ${historicalStatus}.`);
     if (schedule?.last_message) parts.push(String(schedule.last_message));
@@ -67,8 +66,8 @@ function reconcileScheduledFetchStatus(payload) {
 
   const currentState = component?.current_state;
   if (currentState?.status) {
-    statusElement.dataset.functionalState = currentState.recovered_from_last_run
-      ? "recovered"
+    statusElement.dataset.functionalState = currentState.historical_failure_superseded
+      ? "healthy_historical_failure"
       : String(currentState.status);
     statusElement.textContent = currentScheduleStatusParts(currentState, schedule);
     return;

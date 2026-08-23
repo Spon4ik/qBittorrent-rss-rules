@@ -6,6 +6,7 @@ from collections import Counter
 from typing import Any
 
 import browser_qa as core
+import ui_component_behavior as component_behavior
 import ui_component_contracts as components
 import ui_interactions as interactions
 import ui_invariant_qa as base
@@ -288,6 +289,7 @@ def check_ui_05(runtime: core.FocusedRuntime) -> None:
     total_discovered = 0
     total_exercised = 0
     total_menus_opened = 0
+    total_menu_choices_exercised = 0
     failure_path = runtime.run_dir / "ui-05-failure.png"
     captured_failure = False
 
@@ -349,12 +351,34 @@ def check_ui_05(runtime: core.FocusedRuntime) -> None:
                             metric = components.capture_control_readability(page, control_id)
                             control_record["readability"] = metric
                             components.assert_control_readability(metric, label=control_label)
+
                             if not bool(control.get("disabled")):
+                                locator = page.locator(
+                                    f'[data-ui-qa-control-id="{control_id}"]'
+                                )
+                                locator.hover(timeout=INTERACTION_ACTION_TIMEOUT_MS)
+                                hover_metric = components.capture_control_readability(
+                                    page, control_id
+                                )
+                                control_record["hover_readability"] = hover_metric
+                                components.assert_control_readability(
+                                    hover_metric,
+                                    label=f"{control_label}:hover",
+                                )
                                 components.focus_control(
                                     page,
                                     control_id,
                                     timeout_ms=runtime.timeout_ms,
                                 )
+                                focus_metric = components.capture_control_readability(
+                                    page, control_id
+                                )
+                                control_record["focus_readability"] = focus_metric
+                                components.assert_control_readability(
+                                    focus_metric,
+                                    label=f"{control_label}:focus",
+                                )
+
                             if family in components.MENU_FAMILIES:
                                 components.open_menu(
                                     page,
@@ -367,8 +391,17 @@ def check_ui_05(runtime: core.FocusedRuntime) -> None:
                                     opened,
                                     label=control_label,
                                 )
+                                choice_result = component_behavior.exercise_first_menu_choice(
+                                    page,
+                                    control_id,
+                                    timeout_ms=runtime.timeout_ms,
+                                )
+                                control_record["choice_behavior"] = choice_result
+                                if bool(choice_result.get("exercised")):
+                                    total_menu_choices_exercised += 1
                                 total_menus_opened += 1
                                 components.close_menu(page, control_id)
+
                             control_record["status"] = "pass"
                             total_exercised += 1
                         except Exception as exc:  # noqa: BLE001
@@ -397,6 +430,11 @@ def check_ui_05(runtime: core.FocusedRuntime) -> None:
             "coverage: no checkbox-dropdown instances were exercised; the shared "
             "Language/feed dropdown family must remain in the matrix."
         )
+    if aggregate_families.get("checkbox-dropdown", 0) > 0 and total_menu_choices_exercised == 0:
+        failures.append(
+            "behavior coverage: dropdown-family instances were present but no enabled menu "
+            "choice was toggled and restored."
+        )
 
     ui.write_metrics(
         runtime.run_dir / "ui-05-metrics.json",
@@ -404,8 +442,9 @@ def check_ui_05(runtime: core.FocusedRuntime) -> None:
             "check": "UI-05",
             "contract": (
                 "every visible interactive control is classified into a maintained component "
-                "family and passes deterministic readability, contrast, focusability, clipping, "
-                "viewport, and menu-panel occlusion checks across light/dark responsive states"
+                "family and passes deterministic normal/hover/focus readability, contrast, "
+                "focusability, clipping, viewport, open-panel occlusion, and reversible menu-"
+                "choice behavior checks across light/dark responsive states"
             ),
             "matrix": {
                 "themes": list(COMPONENT_THEMES),
@@ -423,6 +462,7 @@ def check_ui_05(runtime: core.FocusedRuntime) -> None:
             "discovered_components": total_discovered,
             "passed_components": total_exercised,
             "opened_menu_instances": total_menus_opened,
+            "menu_choices_exercised": total_menu_choices_exercised,
             "records": records,
             "failures": failures,
         },

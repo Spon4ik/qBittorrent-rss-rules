@@ -8,4 +8,5 @@ cd "${PROJECT_DIR}"
 
 ruff check .
 mypy app
+python "${SCRIPT_DIR}/changelog_guard.py"
 "${SCRIPT_DIR}/test.sh"

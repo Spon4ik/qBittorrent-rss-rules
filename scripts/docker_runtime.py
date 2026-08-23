@@ -6,8 +6,8 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
 
 DEFAULT_COMPOSE_FILE = Path(r"C:\Users\nucc\docker-config\docker-compose.yml")
 DEFAULT_SERVICE = "qb-rss-rules"

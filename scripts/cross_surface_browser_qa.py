@@ -257,6 +257,84 @@ def _validate_commands(records: list[dict[str, Any]], *, page_label: str) -> lis
     return failures
 
 
+def _exercise_control(
+    page: Any,
+    control: dict[str, Any],
+    *,
+    theme: str,
+    label: str,
+    timeout_ms: int,
+    observations: list[design.PaletteObservation],
+) -> dict[str, Any]:
+    control_id = str(control.get("id") or "")
+    family = str(control.get("family") or "unclassified")
+    record: dict[str, Any] = {"control": control}
+
+    normal = components.capture_control_readability(page, control_id)
+    record["normal"] = normal
+    components.assert_control_readability(normal, label=label)
+    design.add_palette_observation(
+        observations,
+        control=control,
+        metric=normal,
+        theme=theme,
+        state="normal",
+        label=label,
+    )
+
+    if not bool(control.get("disabled")):
+        locator = page.locator(f'[data-ui-qa-control-id="{control_id}"]')
+        locator.hover(timeout=min(timeout_ms, ACTION_TIMEOUT_MS))
+        hover = components.capture_control_readability(page, control_id)
+        record["hover"] = hover
+        components.assert_control_readability(hover, label=f"{label}:hover")
+        design.add_palette_observation(
+            observations,
+            control=control,
+            metric=hover,
+            theme=theme,
+            state="hover",
+            label=label,
+        )
+
+        page.mouse.move(1, 1)
+        components.focus_control(page, control_id, timeout_ms=timeout_ms)
+        focus = components.capture_control_readability(page, control_id)
+        record["focus"] = focus
+        components.assert_control_readability(focus, label=f"{label}:focus")
+        design.add_palette_observation(
+            observations,
+            control=control,
+            metric=focus,
+            theme=theme,
+            state="focus",
+            label=label,
+        )
+
+    if family in components.MENU_FAMILIES:
+        try:
+            components.open_menu(page, control_id, timeout_ms=timeout_ms)
+            opened = components.capture_open_menu_readability(page, control_id)
+            record["open"] = opened
+            components.assert_open_menu_readability(opened, label=f"{label}:open")
+            design.add_palette_observation(
+                observations,
+                control=control,
+                metric=opened,
+                theme=theme,
+                state="open",
+                label=label,
+            )
+            record["choice_behavior"] = component_behavior.exercise_first_menu_choice(
+                page,
+                control_id,
+                timeout_ms=timeout_ms,
+            )
+        finally:
+            components.close_menu(page, control_id)
+    return record
+
+
 def _audit(runtime: core.FocusedRuntime) -> tuple[list[dict[str, Any]], list[str]]:
     paths = discover_page_paths(runtime)
     records: list[dict[str, Any]] = []
@@ -271,7 +349,7 @@ def _audit(runtime: core.FocusedRuntime) -> tuple[list[dict[str, Any]], list[str
         try:
             for theme in THEMES:
                 for path in paths:
-                    label = f"{path}@{width}x{height}:{theme}"
+                    page_label = f"{path}@{width}x{height}:{theme}"
                     record: dict[str, Any] = {
                         "path": path,
                         "viewport": {"width": width, "height": height},
@@ -293,104 +371,57 @@ def _audit(runtime: core.FocusedRuntime) -> tuple[list[dict[str, Any]], list[str
                         controls = components.discover_interactive_components(page)
                         components.assert_component_coverage(controls)
                         record["component_family_counts"] = components.family_counts(controls)
+                    except Exception as exc:  # noqa: BLE001
+                        failures.append(
+                            f"{page_label}:page-discovery: {exc.__class__.__name__}: {exc}"
+                        )
+                        continue
 
-                        for control in controls:
-                            control_id = str(control.get("id") or "")
-                            family = str(control.get("family") or "unclassified")
-                            control_label = f"{label}:{family}:{str(control.get('text') or control_id)[:60]}"
-                            control_record: dict[str, Any] = {"control": control}
-                            record["controls"].append(control_record)
-                            component_family_counts[family] += 1
-
-                            normal = components.capture_control_readability(page, control_id)
-                            control_record["normal"] = normal
-                            components.assert_control_readability(normal, label=control_label)
-                            design.add_palette_observation(
-                                palette_observations,
-                                control=control,
-                                metric=normal,
-                                theme=theme,
-                                state="normal",
-                                label=control_label,
+                    for control in controls:
+                        family = str(control.get("family") or "unclassified")
+                        component_family_counts[family] += 1
+                        control_id = str(control.get("id") or "")
+                        control_label = (
+                            f"{page_label}:{family}:"
+                            f"{str(control.get('text') or control_id)[:60]}"
+                        )
+                        try:
+                            record["controls"].append(
+                                _exercise_control(
+                                    page,
+                                    control,
+                                    theme=theme,
+                                    label=control_label,
+                                    timeout_ms=runtime.timeout_ms,
+                                    observations=palette_observations,
+                                )
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            record["controls"].append(
+                                {
+                                    "control": control,
+                                    "status": "fail",
+                                    "failure": f"{exc.__class__.__name__}: {exc}",
+                                }
+                            )
+                            failures.append(
+                                f"{control_label}: {exc.__class__.__name__}: {exc}"
                             )
 
-                            if not bool(control.get("disabled")):
-                                locator = page.locator(
-                                    f'[data-ui-qa-control-id="{control_id}"]'
-                                )
-                                locator.hover(timeout=min(runtime.timeout_ms, ACTION_TIMEOUT_MS))
-                                hover = components.capture_control_readability(page, control_id)
-                                control_record["hover"] = hover
-                                components.assert_control_readability(
-                                    hover,
-                                    label=f"{control_label}:hover",
-                                )
-                                design.add_palette_observation(
-                                    palette_observations,
-                                    control=control,
-                                    metric=hover,
-                                    theme=theme,
-                                    state="hover",
-                                    label=control_label,
-                                )
-
-                                page.mouse.move(1, 1)
-                                components.focus_control(
-                                    page,
-                                    control_id,
-                                    timeout_ms=runtime.timeout_ms,
-                                )
-                                focus = components.capture_control_readability(page, control_id)
-                                control_record["focus"] = focus
-                                components.assert_control_readability(
-                                    focus,
-                                    label=f"{control_label}:focus",
-                                )
-                                design.add_palette_observation(
-                                    palette_observations,
-                                    control=control,
-                                    metric=focus,
-                                    theme=theme,
-                                    state="focus",
-                                    label=control_label,
-                                )
-
-                            if family in components.MENU_FAMILIES:
-                                components.open_menu(
-                                    page,
-                                    control_id,
-                                    timeout_ms=runtime.timeout_ms,
-                                )
-                                opened = components.capture_open_menu_readability(page, control_id)
-                                control_record["open"] = opened
-                                components.assert_open_menu_readability(
-                                    opened,
-                                    label=f"{control_label}:open",
-                                )
-                                design.add_palette_observation(
-                                    palette_observations,
-                                    control=control,
-                                    metric=opened,
-                                    theme=theme,
-                                    state="open",
-                                    label=control_label,
-                                )
-                                choice = component_behavior.exercise_first_menu_choice(
-                                    page,
-                                    control_id,
-                                    timeout_ms=runtime.timeout_ms,
-                                )
-                                control_record["choice_behavior"] = choice
-                                components.close_menu(page, control_id)
-
+                    try:
                         command_records = _command_surfaces(page)
-                        command_failures = _validate_commands(command_records, page_label=label)
+                        command_failures = _validate_commands(
+                            command_records,
+                            page_label=page_label,
+                        )
                         for command in command_records:
                             action_family_counts[str(command.get("family") or "unclassified")] += 1
                         record["commands"] = command_records
                         failures.extend(command_failures)
                     except Exception as exc:  # noqa: BLE001
-                        failures.append(f"{label}: {exc.__class__.__name__}: {exc}")
+                        failures.append(
+                            f"{page_label}:command-discovery: {exc.__class__.__name__}: {exc}"
+                        )
         finally:
             context.close()
 

@@ -20,7 +20,7 @@ Deterministic recovery preparation is complete:
 - Candidate DB QA is healthy: integrity check passes, foreign-key violations are
   zero, orphan snapshots are zero, and malformed DateTime findings are zero.
 - Recovery-focused tests pass (`17 passed`) and the full deterministic suite
-  passes (`646 passed`), including the Docker lifecycle wrapper regressions.
+  passes (`647 passed`), including the Docker lifecycle wrapper regressions.
 - Routine Docker lifecycle is now implemented through
   `scripts\docker_runtime.bat <status|start|stop|restart>`. It uses an exact
   Docker Desktop executable path, never a shell/open association for the token

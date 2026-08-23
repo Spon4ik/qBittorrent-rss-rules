@@ -19,10 +19,18 @@ if exist "%PROJECT_DIR%\.venv\Scripts\python.exe" (
   )
 )
 
-set "QA_SCRIPT=browser_qa.py"
-if /I "%~1"=="--suite" (
-  if /I "%~2"=="ui" set "QA_SCRIPT=ui_suite_qa.py"
+if /I "%~1"=="--suite" if /I "%~2"=="ui" (
+  "!PYTHON_EXE!" "%PROJECT_DIR%\scripts\ui_suite_qa.py" %*
+  if !ERRORLEVEL! NEQ 0 (
+    set "EXIT_CODE=!ERRORLEVEL!"
+    endlocal & exit /b !EXIT_CODE!
+  )
+  "!PYTHON_EXE!" "%PROJECT_DIR%\scripts\cross_surface_browser_qa.py" %*
+  set "EXIT_CODE=!ERRORLEVEL!"
+  endlocal & exit /b !EXIT_CODE!
 )
+
+set "QA_SCRIPT=browser_qa.py"
 if /I "%~1"=="--check" (
   set "CHECK_ID=%~2"
   if /I "!CHECK_ID:~0,3!"=="UI-" set "QA_SCRIPT=ui_suite_qa.py"

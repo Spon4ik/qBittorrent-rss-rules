@@ -24,6 +24,7 @@
     </script>
     {% set static_asset_version = static_asset_version | default(request.app.version, true) %}
     <link rel="stylesheet" href="{{ request.url_for('static', path='app.css') }}?v={{ static_asset_version }}" />
+    <link rel="stylesheet" href="{{ request.url_for('static', path='components.css') }}?v={{ static_asset_version }}" />
   </head>
   <body>
     <div class="page-shell{% if shell_layout == 'wide' %} page-shell--wide{% endif %}">

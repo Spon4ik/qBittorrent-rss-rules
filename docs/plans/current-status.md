@@ -23,21 +23,26 @@ focused validation, normal gate, Docker deployment, and deployed Rules-page proo
 
 ### Systematic UI regression coverage
 
-The previous generic UI audit still sampled only the first eight interactive
-surfaces per page, allowing sibling controls such as the rule Language/feed
-checkbox-dropdown family to escape coverage. That sampling model has been replaced.
+The previous generic UI audit sampled only the first eight interactive surfaces per
+page, allowing sibling controls such as the rule Language/feed checkbox-dropdown
+family to escape coverage. That sampling model has been replaced.
 
 - `UI-04` now treats generic disclosure/menu discovery as exhaustive. The high
   ceiling is only a runaway guard; reaching it fails coverage. Dedicated generic
   exclusions must map to an explicit maintained `UI-*` replacement contract.
-- `UI-05` inventories every visible interactive control on the maintained core-page
-  matrix across light/dark themes and 390/1180/1720 widths. Every control must map
-  to a known component family and pass deterministic normal/hover/focus contrast,
-  clipping, viewport, focusability, open-panel containment/occlusion, and menu
-  readability checks.
+- `UI-05` first expands ordinary non-menu disclosures so controls hidden by the
+  page's initial collapsed state cannot escape inventory. Menu families remain
+  closed until their own open-state checks run.
+- `UI-05` inventories every resulting visible interactive control on the maintained
+  core-page matrix across light/dark themes and 390/1180/1720 widths. Every control
+  must map to a known component family and pass deterministic normal/hover/focus
+  contrast, clipping, viewport, focusability, open-panel containment/occlusion,
+  and menu-readability checks.
 - Checkbox-based menu families exercise one enabled real choice and restore its
   original state in the isolated QA runtime, so appearance-only success is not
   enough.
+- QA evidence is value-safe: arbitrary input/textarea values are not persisted in
+  component metrics; diagnostics use field metadata or a redacted `[value]` marker.
 - `app/static/components.css` moves the shared checkbox-dropdown/search-multiselect
   family and feed option surfaces onto semantic theme palette variables. This
   removes the hard-coded light feed surfaces that could make dark-theme text
@@ -46,11 +51,12 @@ checkbox-dropdown family to escape coverage. That sampling model has been replac
 - The maintained rationale and issue-to-family workflow are documented in
   `docs/qa/ui-regression-contracts.md`.
 
-Focused unit regressions were added for component coverage, readability,
-menu behavior, and shared styles. ChatGPT Web has not executed the local
-Playwright/browser suite, so this UI work is not closed until Codex runs the new
-unit tests, `scripts\browser_qa.bat --suite ui`, the normal completion gate,
-updates Docker, and proves the deployed affected controls pass.
+Focused unit regressions were added for exhaustive component coverage, closed-
+disclosure inventory, readability, menu behavior, and shared styles. ChatGPT Web
+has not executed the local Playwright/browser suite, so this UI work is not closed
+until Codex runs the new unit tests, `scripts\browser_qa.bat --suite ui`, the
+normal completion gate, updates Docker, and proves the deployed affected controls
+pass.
 
 ### Changelog freshness
 
@@ -58,8 +64,9 @@ updates Docker, and proves the deployed affected controls pass.
 `scripts/changelog_guard.py` is now part of both `scripts/check.bat` and
 `scripts/check.sh`. It fails when implementation/runtime/maintained-QA tooling is
 newer than the latest changelog update, and it writes compact evidence to
-`logs/qa/changelog-guard.json`. This turns the existing closeout convention into a
-mechanical gate instead of relying on memory.
+`logs/qa/changelog-guard.json`. The latest changelog commit is intentionally newer
+than the current implementation/QA-tooling commits, turning this closeout convention
+into a mechanical gate instead of relying on memory.
 
 ### Phase 44
 

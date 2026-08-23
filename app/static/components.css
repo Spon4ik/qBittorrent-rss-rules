@@ -1,0 +1,55 @@
+/* Shared interactive component surfaces.
+ *
+ * Keep common dropdown/multiselect families on semantic palette variables so
+ * light/dark readability is inherited by every instance instead of patched per
+ * page. Deterministic UI-05 browser QA owns contrast/readability enforcement.
+ */
+
+.checkbox-dropdown > summary,
+.checkbox-dropdown-menu,
+.search-multiselect,
+.search-multiselect-panel {
+  border-color: var(--panel-border);
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+
+.checkbox-dropdown-option,
+.search-multiselect-option,
+.feed-option-list,
+.feed-option,
+.feed-empty-state {
+  color: var(--ink);
+}
+
+.feed-option-list {
+  background: var(--surface);
+}
+
+.feed-option {
+  background: var(--surface-raised);
+}
+
+.feed-empty-state {
+  border-color: var(--panel-border);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.checkbox-dropdown-option:hover,
+.search-multiselect-option:hover,
+.feed-option:hover {
+  background: rgba(184, 91, 42, 0.12);
+}
+
+:root[data-theme="dark"] .checkbox-dropdown-option:hover,
+:root[data-theme="dark"] .search-multiselect-option:hover,
+:root[data-theme="dark"] .feed-option:hover {
+  background: rgba(223, 120, 67, 0.16);
+}
+
+.checkbox-dropdown > summary:focus-visible,
+.search-multiselect > summary:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}

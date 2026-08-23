@@ -24,6 +24,13 @@ Deterministic recovery preparation is complete:
 - Docker is current on `v1.4.20`, but the untouched production DB is still
   corrupt, so the final F-03 runtime invariant correctly continues to fail on
   `/api/operations/status` with `DatabaseError`.
+- Routine Docker lifecycle is now implemented through
+  `scripts\docker_runtime.bat <status|start|stop|restart>`. It uses an exact
+  Docker Desktop executable path, never a shell/open association for the token
+  `docker`, waits deterministically for the engine/service health, and writes
+  `logs/qa/docker-runtime.json`. Use the existing updater/finalizer for rebuilds.
+  The new focused regression is `tests/test_docker_runtime.py`; it still requires
+  execution on the local checkout before the wrapper is treated as validated.
 
 Per the `AGENTS.md` reversible-change contract, candidate activation is **not an
 approval gate** once the maintained tooling has established and verified the
@@ -34,10 +41,13 @@ would discard non-reconstructible/user data.
 
 The next recovery sequence is:
 
-1. Quiesce the owning Docker service if required by the recovery tool.
+1. Validate `tests/test_docker_runtime.py`, then quiesce the owning Docker service
+   with `scripts\docker_runtime.bat stop` if required by the recovery tool.
 2. Activate the validated current-state candidate with the maintained reversible
    recovery tooling; create/verify a fresh rollback bundle as part of activation.
-3. Restart the supported Docker runtime using repository-maintained tooling.
+3. Start the existing service with `scripts\docker_runtime.bat start`. Do not
+   compose ad-hoc `docker.exe` or Docker Desktop launch commands. A rebuild, if
+   actually required by code changes, belongs to the updater/finalizer instead.
 4. Run DB QA and the affected API/runtime checks.
 5. Run functional QA and require F-01/F-02/F-03 to pass.
 6. Run the canonical backend completion gate. If post-activation validation

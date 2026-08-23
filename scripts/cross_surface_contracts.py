@@ -32,6 +32,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         long_running=True,
         description="Fetch or refresh persisted rule-search snapshots.",
     ),
+    "create-rule": ActionContract("create-rule", "Create"),
     "save-rule": ActionContract("save-rule", "Save"),
     "save-settings": ActionContract("save-settings", "Save"),
     "save-preferences": ActionContract("save-preferences", "Save"),
@@ -42,8 +43,13 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
     "metadata-lookup": ActionContract("metadata-lookup", "Lookup", long_running=True),
     "refresh-feeds": ActionContract("refresh-feeds", "Refresh", long_running=True),
     "refresh-view": ActionContract("refresh-view", "Refresh"),
-    "import": ActionContract("import", "Import", long_running=True),
-    "taxonomy-save": ActionContract("taxonomy-save", "Save"),
+    "import-preview": ActionContract("import-preview", "Preview", long_running=True),
+    "import-apply": ActionContract("import-apply", "Apply", long_running=True),
+    "taxonomy-add": ActionContract("taxonomy-add", "Add"),
+    "taxonomy-move": ActionContract("taxonomy-move", "Move"),
+    "taxonomy-remove": ActionContract("taxonomy-remove", "Remove", destructive=True),
+    "taxonomy-validate": ActionContract("taxonomy-validate", "Validate"),
+    "taxonomy-apply": ActionContract("taxonomy-apply", "Apply"),
     "adopt-acceleration": ActionContract("adopt-acceleration", "Adopt", long_running=True),
     "retry-acceleration": ActionContract("retry-acceleration", "Retry", long_running=True),
     "ask-codex": ActionContract("ask-codex", "Ask", long_running=True),
@@ -71,7 +77,8 @@ _ENDPOINT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^/api/rules/page-preferences(?:\?.*)?$"), "save-preferences"),
     (re.compile(r"^/api/rules/batch-quality-profile(?:\?.*)?$"), "apply-quality"),
     (re.compile(r"^/api/rules/[^/]+/delete(?:\?.*)?$"), "delete-rule"),
-    (re.compile(r"^/api/rules(?:/[^/]+)?(?:\?.*)?$"), "save-rule"),
+    (re.compile(r"^/api/rules/[^/]+(?:\?.*)?$"), "save-rule"),
+    (re.compile(r"^/api/rules(?:\?.*)?$"), "create-rule"),
     (re.compile(r"^/api/search/preferences(?:\?.*)?$"), "save-preferences"),
     (re.compile(r"^/api/search/queue(?:\?.*)?$"), "queue"),
     (re.compile(r"^/api/filter-profiles(?:\?.*)?$"), "save-profile"),
@@ -82,8 +89,12 @@ _ENDPOINT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^/api/acceleration/jobs/[^/]+/ask-codex(?:\?.*)?$"), "ask-codex"),
     (re.compile(r"^/api/acceleration/jobs/[^/]+/dismiss(?:\?.*)?$"), "dismiss-acceleration"),
     (re.compile(r"^/api/acceleration/jobs/[^/]+/cleanup(?:\?.*)?$"), "remove-acceleration"),
-    (re.compile(r"^/api/(?:import|imports)(?:/.*)?$"), "import"),
-    (re.compile(r"^/api/taxonomy(?:/.*)?$"), "taxonomy-save"),
+    (re.compile(r"^/api/(?:import|imports)(?:/.*)?$"), "import-apply"),
+    (re.compile(r"^/api/taxonomy/options/add(?:\?.*)?$"), "taxonomy-add"),
+    (re.compile(r"^/api/taxonomy/options/move(?:\?.*)?$"), "taxonomy-move"),
+    (re.compile(r"^/api/taxonomy/options/remove(?:\?.*)?$"), "taxonomy-remove"),
+    (re.compile(r"^/api/taxonomy/validate(?:\?.*)?$"), "taxonomy-validate"),
+    (re.compile(r"^/api/taxonomy/apply(?:\?.*)?$"), "taxonomy-apply"),
     (re.compile(r"^/api/settings/sync-(?:jellyfin|stremio)(?:\?.*)?$"), "save-sync"),
     (re.compile(r"^/api/settings/sync-watch-progress(?:\?.*)?$"), "sync"),
     (re.compile(r"^/api/settings/(?:test-[^/]+|real-debrid/(?:connect|disconnect))(?:\?.*)?$"), "provider-command"),
@@ -116,6 +127,17 @@ def classify_endpoint(endpoint: str) -> str | None:
         if pattern.search(normalized):
             return family
     return None
+
+
+def refine_family(family: str | None, label: str | None) -> str | None:
+    """Refine endpoints whose semantic action is encoded by the submit control."""
+
+    if family != "import-apply":
+        return family
+    normalized_label = str(label or "").strip().casefold()
+    if normalized_label.startswith("preview"):
+        return "import-preview"
+    return family
 
 
 def contract_for_family(family: str) -> ActionContract:

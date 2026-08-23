@@ -31,10 +31,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
   `stop`, and `restart`, using exact executable paths, engine/service readiness
   checks, compact reports, and no ad-hoc shell/open invocation of `docker`.
 - Add exhaustive UI component-family QA. `UI-04` no longer intentionally samples
-  only a small prefix of disclosures, while `UI-05` classifies every visible
-  interactive control across light/dark themes and responsive widths and checks
-  normal/hover/focus readability, contrast, clipping, viewport containment,
-  menu occlusion, and reversible checkbox-menu behavior.
+  only a small prefix of disclosures, while `UI-05` expands ordinary initially
+  closed disclosures, classifies every resulting visible interactive control
+  across light/dark themes and responsive widths, and checks normal/hover/focus
+  readability, contrast, clipping, viewport containment, menu occlusion, and
+  reversible checkbox-menu behavior.
 - Add a deterministic changelog freshness guard to the normal Windows/Linux
   check gates. It fails when implementation/runtime/maintained-QA tooling is
   newer than `CHANGELOG.md` and writes compact evidence under `logs/qa/`.

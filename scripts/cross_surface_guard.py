@@ -21,7 +21,10 @@ REPORT_PATH = PROJECT_DIR / "logs" / "qa" / "cross-surface-guard.json"
 
 _FORM_RE = re.compile(r"<form\b(?P<attrs>[^>]*)>(?P<body>.*?)</form>", re.IGNORECASE | re.DOTALL)
 _ATTR_RE = re.compile(r"(?P<name>[A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*([\"'])(?P<value>.*?)\2", re.DOTALL)
-_BUTTON_RE = re.compile(r"<button\b[^>]*>(?P<body>.*?)</button>", re.IGNORECASE | re.DOTALL)
+_BUTTON_RE = re.compile(
+    r"<button\b(?P<attrs>[^>]*)>(?P<body>.*?)</button>",
+    re.IGNORECASE | re.DOTALL,
+)
 _FETCH_RE = re.compile(r"(?:window\.)?fetch\(\s*([`\"'])(?P<endpoint>.*?)\1", re.DOTALL)
 _POST_METHOD_RE = re.compile(r"method\s*:\s*[\"']POST[\"']", re.IGNORECASE)
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -34,6 +37,7 @@ _WS_RE = re.compile(r"\s+")
 STRICT_LABEL_FAMILIES = frozenset(
     {
         "sync",
+        "save-sync",
         "delete-rule",
         "save-rule",
         "adopt-acceleration",
@@ -78,6 +82,28 @@ def _visible_text(raw: str) -> str:
     return _WS_RE.sub(" ", value).strip()
 
 
+def _surface(
+    *,
+    path: Path,
+    text: str,
+    offset: int,
+    endpoint: str,
+    label: str | None,
+    transport: str = "form-post",
+) -> CommandSurface:
+    normalized = normalize_endpoint(endpoint)
+    internal = is_internal_endpoint(normalized)
+    return CommandSurface(
+        source=str(path.relative_to(PROJECT_DIR)).replace("\\", "/"),
+        line=_line_number(text, offset),
+        transport=transport,
+        endpoint=normalized,
+        family=None if internal else classify_endpoint(normalized),
+        label=label or None,
+        internal=internal,
+    )
+
+
 def _scan_template(path: Path) -> list[CommandSurface]:
     text = path.read_text(encoding="utf-8")
     surfaces: list[CommandSurface] = []
@@ -85,34 +111,39 @@ def _scan_template(path: Path) -> list[CommandSurface]:
         attrs = _attrs(match.group("attrs"))
         if attrs.get("method", "get").casefold() != "post":
             continue
-        endpoint = attrs.get("action", "").strip()
-        if not endpoint:
+        form_endpoint = attrs.get("action", "").strip()
+        button_matches = list(_BUTTON_RE.finditer(match.group("body")))
+        submit_buttons: list[tuple[re.Match[str], dict[str, str]]] = []
+        for button_match in button_matches:
+            button_attrs = _attrs(button_match.group("attrs"))
+            button_type = button_attrs.get("type", "submit").casefold()
+            if button_type == "submit":
+                submit_buttons.append((button_match, button_attrs))
+
+        if not submit_buttons:
             surfaces.append(
-                CommandSurface(
-                    source=str(path.relative_to(PROJECT_DIR)).replace("\\", "/"),
-                    line=_line_number(text, match.start()),
-                    transport="form-post",
-                    endpoint="",
-                    family=None,
+                _surface(
+                    path=path,
+                    text=text,
+                    offset=match.start(),
+                    endpoint=form_endpoint,
                     label=None,
                 )
             )
             continue
-        button_match = _BUTTON_RE.search(match.group("body"))
-        label = _visible_text(button_match.group("body")) if button_match else None
-        normalized = normalize_endpoint(endpoint)
-        internal = is_internal_endpoint(normalized)
-        surfaces.append(
-            CommandSurface(
-                source=str(path.relative_to(PROJECT_DIR)).replace("\\", "/"),
-                line=_line_number(text, match.start()),
-                transport="form-post",
-                endpoint=normalized,
-                family=None if internal else classify_endpoint(normalized),
-                label=label or None,
-                internal=internal,
+
+        for button_match, button_attrs in submit_buttons:
+            endpoint = button_attrs.get("formaction", form_endpoint).strip()
+            label = _visible_text(button_match.group("body")) or None
+            surfaces.append(
+                _surface(
+                    path=path,
+                    text=text,
+                    offset=match.start() + button_match.start(),
+                    endpoint=endpoint,
+                    label=label,
+                )
             )
-        )
     return surfaces
 
 
@@ -125,16 +156,14 @@ def _scan_javascript(path: Path) -> list[CommandSurface]:
         tail = text[match.end() : match.end() + 900]
         if not _POST_METHOD_RE.search(tail):
             continue
-        endpoint = normalize_endpoint(match.group("endpoint"))
-        internal = is_internal_endpoint(endpoint)
         surfaces.append(
-            CommandSurface(
-                source=str(path.relative_to(PROJECT_DIR)).replace("\\", "/"),
-                line=_line_number(text, match.start()),
+            _surface(
+                path=path,
+                text=text,
+                offset=match.start(),
+                endpoint=match.group("endpoint"),
+                label=None,
                 transport="fetch-post",
-                endpoint=endpoint,
-                family=None if internal else classify_endpoint(endpoint),
-                internal=internal,
             )
         )
     return surfaces
@@ -156,7 +185,7 @@ def evaluate_surfaces(surfaces: list[CommandSurface]) -> list[Finding]:
             continue
         if not surface.endpoint:
             findings.append(
-                Finding(surface.source, surface.line, "missing-endpoint", "POST form has no action endpoint.")
+                Finding(surface.source, surface.line, "missing-endpoint", "POST command has no endpoint.")
             )
             continue
         if surface.family is None:

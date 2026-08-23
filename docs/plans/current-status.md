@@ -20,14 +20,13 @@ Deterministic recovery preparation is complete:
 - Candidate DB QA is healthy: integrity check passes, foreign-key violations are
   zero, orphan snapshots are zero, and malformed DateTime findings are zero.
 - Recovery-focused tests pass (`17 passed`) and the full deterministic suite
-  passes (`638 passed`).
+  passes (`646 passed`), including the Docker lifecycle wrapper regressions.
 - Routine Docker lifecycle is now implemented through
   `scripts\docker_runtime.bat <status|start|stop|restart>`. It uses an exact
   Docker Desktop executable path, never a shell/open association for the token
   `docker`, waits deterministically for the engine/service health, and writes
   `logs/qa/docker-runtime.json`. Use the existing updater/finalizer for rebuilds.
-  The new focused regression is `tests/test_docker_runtime.py`; it still requires
-  execution on the local checkout before the wrapper is treated as validated.
+  The focused regression `tests/test_docker_runtime.py` passes in the full gate.
 
 - `scripts\\db_recover.bat activate` quiesced the owning service, created and
   verified `logs/qa/db/incident-20260823-014358/activation-rollback`, and
@@ -38,6 +37,8 @@ Deterministic recovery preparation is complete:
 - Docker was restarted with the maintained updater and is current on
   `v1.4.20`. Deployed functional QA passes F-01, F-02, and F-03 with zero
   unhandled API exceptions.
+- Full-file DB QA is authoritative when the owning writer is quiesced; a scan
+  taken concurrently with SQLite writes can report transient page references.
 
 The recovery sequence and completion gate are complete. The verified rollback
 bundle remains available if a later post-recovery issue requires reversal.

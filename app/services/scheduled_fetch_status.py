@@ -42,7 +42,7 @@ def current_scheduled_fetch_state(
     elif not jackett_ready:
         status = "blocked"
         summary = "Scheduled fetch is enabled, but Jackett search is not currently ready."
-    elif bool(scheduler.get("tick_in_progress")) or operation_progress:
+    elif bool(scheduler.get("tick_in_progress")):
         status = "running"
         current = _count(operation_progress, "current")
         progress_total = _count(operation_progress, "total")

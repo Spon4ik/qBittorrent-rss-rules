@@ -33,9 +33,6 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _JINJA_RE = re.compile(r"\{[%{].*?[}%]\}", re.DOTALL)
 _WS_RE = re.compile(r"\s+")
 
-# Narrow semantic families must share terminology on every form surface. Broad
-# provider operations are intentionally classified without forcing Test/Connect/
-# Disconnect into one misleading verb.
 STRICT_LABEL_FAMILIES = frozenset(
     {
         "sync",
@@ -95,11 +92,14 @@ def _visible_text(raw: str) -> str:
 
 
 def _button_label(attrs: dict[str, str], body: str) -> str | None:
-    for name in ("aria-label", "title"):
-        candidate = _visible_text(attrs.get(name, ""))
-        if candidate:
-            return candidate
-    return _visible_text(body) or None
+    aria_label = _visible_text(attrs.get("aria-label", ""))
+    if aria_label:
+        return aria_label
+    body_text = _visible_text(body)
+    if body_text and not all(character in "⇧⇩×←→↗↘↖↙+−" for character in body_text):
+        return body_text
+    title = _visible_text(attrs.get("title", ""))
+    return title or body_text or None
 
 
 def _has_danger_class(attrs: dict[str, str]) -> bool:
@@ -191,9 +191,6 @@ def _scan_template(path: Path) -> list[CommandSurface]:
                 )
             )
 
-    # HTML permits a submit button outside its form via form="...". Those are
-    # user commands too and must not escape the inventory (the edit-page Save
-    # command is one current example).
     for button_match in _BUTTON_RE.finditer(text):
         button_attrs = _attrs(button_match.group("attrs"))
         form_id = button_attrs.get("form", "").strip()
@@ -224,8 +221,6 @@ def _scan_javascript(path: Path) -> list[CommandSurface]:
     text = path.read_text(encoding="utf-8")
     surfaces: list[CommandSurface] = []
     for match in _FETCH_RE.finditer(text):
-        # Keep the window tight enough that a later unrelated fetch cannot donate
-        # its method, while covering headers/body setup in ordinary command calls.
         tail = text[match.end() : match.end() + 900]
         if not _POST_METHOD_RE.search(tail):
             continue

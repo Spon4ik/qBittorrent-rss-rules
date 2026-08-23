@@ -4,77 +4,72 @@
 
 ### SQLite corruption recovery
 
-The SQLite corruption incident is recovered and closed on
-`experiment/codex-token-efficiency`.
+Closed on `experiment/codex-token-efficiency`. The recovered production database is
+healthy, the verified activation rollback remains available, Docker is current on
+`v1.4.20`, and deployed F-01/F-02/F-03 previously passed with zero unhandled API
+exceptions.
 
-Deterministic recovery preparation is complete:
+### Scheduled-fetch status reconciliation
 
-- `scripts\db_bundle.bat` provides verified backup/restore bundles for the SQLite
-  file family, including relevant sidecars.
-- `scripts\db_qa.bat` provides compact deterministic database diagnostics.
-- `scripts\db_recover.bat prepare` produced the current-state candidate at
-  `logs/qa/db/incident-20260823-014358/current-recovery-2/qb_rules-recovered.db`.
-- The candidate contains `355` rules, `341` snapshots, and `628` acceleration
-  jobs. It omits only one proven orphan snapshot and one unreadable acceleration
-  row that satisfies the maintained reconstructibility policy.
-- Candidate DB QA is healthy: integrity check passes, foreign-key violations are
-  zero, orphan snapshots are zero, and malformed DateTime findings are zero.
-- Recovery-focused tests pass (`17 passed`) and the full deterministic suite
-  passes (`647 passed`), including the Docker lifecycle wrapper regressions.
-- Routine Docker lifecycle is now implemented through
-  `scripts\docker_runtime.bat <status|start|stop|restart>`. It uses an exact
-  Docker Desktop executable path, never a shell/open association for the token
-  `docker`, waits deterministically for the engine/service health, and writes
-  `logs/qa/docker-runtime.json`. Use the existing updater/finalizer for rebuilds.
-  The focused regression `tests/test_docker_runtime.py` passes in the full gate.
+The branch now separates historical scheduled-run evidence from current scheduler
+health. A persisted historical `partial`/`error` remains available as history, but
+current status is derived from scheduler/runtime readiness and scheduled-scope
+snapshot freshness. The Rules page should lead with the current healthy/degraded
+state instead of presenting an old partial run as the active failure.
 
-- `scripts\\db_recover.bat activate` quiesced the owning service, created and
-  verified `logs/qa/db/incident-20260823-014358/activation-rollback`, and
-  activated the validated candidate. Post-activation DB QA reports `healthy`
-  with `355` rules, `341` snapshots, `628` acceleration jobs, zero integrity
-  errors, zero foreign-key violations, zero orphan snapshots, and zero
-  malformed DateTime values.
-- Docker was restarted with the maintained updater and is current on
-  `v1.4.20`. Deployed functional QA passes F-01, F-02, and F-03 with zero
-  unhandled API exceptions.
-- Full-file DB QA is authoritative when the owning writer is quiesced; a scan
-  taken concurrently with SQLite writes can report transient page references.
+Regressions live in `tests/test_scheduled_fetch_current_state.py` and
+`tests/test_scheduled_fetch_status_ui.py`. This follow-up still requires local
+focused validation, normal gate, Docker deployment, and deployed Rules-page proof.
 
-The recovery sequence and completion gate are complete. The verified rollback
-bundle remains available if a later post-recovery issue requires reversal.
+### Systematic UI regression coverage
 
-### Scheduled-fetch repair
+The previous generic UI audit still sampled only the first eight interactive
+surfaces per page, allowing sibling controls such as the rule Language/feed
+checkbox-dropdown family to escape coverage. That sampling model has been replaced.
 
-The scheduler is operationally healthy after recovery, but the Rules page exposed
-a follow-up presentation bug: persisted `last_status=partial` from the historical
-275/1 scheduled run was still rendered as the active status even though deployed
-F-01/F-02/F-03 and current snapshot freshness were healthy.
+- `UI-04` now treats generic disclosure/menu discovery as exhaustive. The high
+  ceiling is only a runaway guard; reaching it fails coverage. Dedicated generic
+  exclusions must map to an explicit maintained `UI-*` replacement contract.
+- `UI-05` inventories every visible interactive control on the maintained core-page
+  matrix across light/dark themes and 390/1180/1720 widths. Every control must map
+  to a known component family and pass deterministic normal/hover/focus contrast,
+  clipping, viewport, focusability, open-panel containment/occlusion, and menu
+  readability checks.
+- Checkbox-based menu families exercise one enabled real choice and restore its
+  original state in the isolated QA runtime, so appearance-only success is not
+  enough.
+- `app/static/components.css` moves the shared checkbox-dropdown/search-multiselect
+  family and feed option surfaces onto semantic theme palette variables. This
+  removes the hard-coded light feed surfaces that could make dark-theme text
+  unreadable. The stylesheet is loaded globally and participates in static asset
+  cache versioning.
+- The maintained rationale and issue-to-family workflow are documented in
+  `docs/qa/ui-regression-contracts.md`.
 
-The branch now preserves the historical run result while deriving a separate
-current scheduled-fetch state from runtime enablement, Jackett readiness, active
-progress, and the same scheduled-scope snapshot freshness evidence used by runtime
-QA. `runtime_health.js` leads with `Current status` and moves a superseded
-`partial`/`error` result to secondary historical context instead of continuing to
-present it as a current failure. This deliberately does not claim that a specific
-failed rule was retried unless such identity evidence exists.
+Focused unit regressions were added for component coverage, readability,
+menu behavior, and shared styles. ChatGPT Web has not executed the local
+Playwright/browser suite, so this UI work is not closed until Codex runs the new
+unit tests, `scripts\browser_qa.bat --suite ui`, the normal completion gate,
+updates Docker, and proves the deployed affected controls pass.
 
-Generic regressions are added in `tests/test_scheduled_fetch_current_state.py` and
-`tests/test_scheduled_fetch_status_ui.py`. This follow-up is not closed until those
-focused tests pass, the normal backend gate passes, Docker is current, and the
-Rules page/runtime diagnostics show the healthy current state rather than the old
-partial result as active status.
+### Changelog freshness
+
+`CHANGELOG.md` had again fallen behind implementation. A deterministic
+`scripts/changelog_guard.py` is now part of both `scripts/check.bat` and
+`scripts/check.sh`. It fails when implementation/runtime/maintained-QA tooling is
+newer than the latest changelog update, and it writes compact evidence to
+`logs/qa/changelog-guard.json`. This turns the existing closeout convention into a
+mechanical gate instead of relying on memory.
 
 ### Phase 44
 
 Phase 44 remains in implementation under
-`docs/plans/phase-44-acceleration-operations-console.md`. Its remaining unrelated
-acceptance work includes end-to-end automatic Codex heartbeat pickup/status
-readback. Do not let that unrelated item block the scheduled-fetch status follow-up.
+`docs/plans/phase-44-acceleration-operations-console.md`. Its unrelated remaining
+acceptance item is end-to-end automatic Codex heartbeat pickup/status readback.
 
 ## Handoff discipline
 
-`current-status.md` is a live short-form handoff, not a historical release ledger
-or a second approval-policy layer. Historical completed-release detail belongs in
-Git history, `CHANGELOG.md`, and the relevant phase plans. If status text ever
-conflicts with `AGENTS.md` safety/autonomy rules, correct the stale status rather
-than introducing a new approval boundary.
+`current-status.md` is a short live handoff, not a historical release ledger or a
+second policy layer. Historical release detail belongs in Git history,
+`CHANGELOG.md`, and phase plans. If status text conflicts with `AGENTS.md`, correct
+the stale status instead of introducing another approval boundary.

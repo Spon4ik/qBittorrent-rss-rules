@@ -17,10 +17,13 @@ else
   exit 127
 fi
 
-QA_SCRIPT="browser_qa.py"
 if [[ "${1:-}" == "--suite" && "${2:-}" == "ui" ]]; then
-  QA_SCRIPT="ui_suite_qa.py"
-elif [[ "${1:-}" == "--check" && "${2:-}" == UI-* ]]; then
+  "$PYTHON_EXE" "$PROJECT_DIR/scripts/ui_suite_qa.py" "$@"
+  exec "$PYTHON_EXE" "$PROJECT_DIR/scripts/cross_surface_browser_qa.py" "$@"
+fi
+
+QA_SCRIPT="browser_qa.py"
+if [[ "${1:-}" == "--check" && "${2:-}" == UI-* ]]; then
   QA_SCRIPT="ui_suite_qa.py"
 fi
 

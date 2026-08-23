@@ -58,6 +58,16 @@ def test_component_family_counts_are_exhaustive_not_sampled() -> None:
     assert not hasattr(suite, "MAX_INTERACTIONS_PER_PAGE")
 
 
+def test_component_inventory_reveals_closed_disclosures_without_preopening_menus() -> None:
+    selector = components.COVERAGE_EXPANDABLE_DETAILS_SELECTOR
+
+    assert selector.startswith("details")
+    assert ":not(.checkbox-dropdown)" in selector
+    assert ":not(.search-multiselect)" in selector
+    assert ":not(.search-queue-advanced)" in selector
+    assert ":not([data-result-toolbar-menu])" in selector
+
+
 def test_dedicated_surface_exclusions_have_explicit_replacement_contracts() -> None:
     assert set(suite.DEDICATED_SURFACE_CONTRACTS) == set(
         interactions.DEDICATED_SURFACE_SELECTORS

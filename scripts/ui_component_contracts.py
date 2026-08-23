@@ -189,7 +189,9 @@ def assert_control_readability(
         failures.append("text is vertically clipped")
     if not bool(metric.get("insideHorizontalScroller")) and bool(metric.get("escapesViewport")):
         failures.append("control escapes the viewport")
-    if not disabled and not bool(metric.get("keyboardFocusable")):
+
+    interactive = bool(metric.get("interactive", True))
+    if interactive and not disabled and not bool(metric.get("keyboardFocusable")):
         failures.append("interactive control is not keyboard-focusable")
 
     if failures:
@@ -384,6 +386,16 @@ _READABILITY_SCRIPT = r"""
       && opacity > 0
     );
   };
+  const isInteractive = (element) => element.matches([
+    "summary",
+    "select",
+    "textarea",
+    "button",
+    "a[href]",
+    'input:not([type="hidden"])',
+    '[role="button"]',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(","));
   const metric = (element) => {
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
@@ -407,6 +419,7 @@ _READABILITY_SCRIPT = r"""
       tag: element.tagName.toLowerCase(),
       text,
       visible: visible(element),
+      interactive: isInteractive(element),
       disabled: Boolean(element.disabled || element.getAttribute("aria-disabled") === "true"),
       keyboardFocusable: element.tabIndex >= 0,
       contrast: foreground ? contrast(foreground, background) : null,
@@ -448,8 +461,14 @@ _READABILITY_SCRIPT = r"""
   const panel = Array.from(details.children).find((child) => child.tagName !== "SUMMARY");
   if (!panel) return {...base, open: details.open, panelVisible: false};
   const panelRect = panel.getBoundingClientRect();
-  const sampleX = Math.min(window.innerWidth - 2, Math.max(1, panelRect.left + Math.min(panelRect.width / 2, 24)));
-  const sampleY = Math.min(window.innerHeight - 2, Math.max(1, panelRect.top + Math.min(panelRect.height / 2, 24)));
+  const sampleX = Math.min(
+    window.innerWidth - 2,
+    Math.max(1, panelRect.left + Math.min(panelRect.width / 2, 24))
+  );
+  const sampleY = Math.min(
+    window.innerHeight - 2,
+    Math.max(1, panelRect.top + Math.min(panelRect.height / 2, 24))
+  );
   const topmost = document.elementFromPoint(sampleX, sampleY);
   const descendantSelector = [
     "summary",
@@ -463,8 +482,16 @@ _READABILITY_SCRIPT = r"""
   ].join(",");
   const descendants = Array.from(panel.querySelectorAll(descendantSelector))
     .filter((element) => visible(element))
-    .filter((element) => String(element.innerText || element.value || element.getAttribute("placeholder") || element.textContent || "").trim())
-    .filter((element) => !Array.from(element.children).some((child) => visible(child) && String(child.innerText || child.textContent || "").trim()))
+    .filter((element) => String(
+      element.innerText
+      || element.value
+      || element.getAttribute("placeholder")
+      || element.textContent
+      || ""
+    ).trim())
+    .filter((element) => !Array.from(element.children).some(
+      (child) => visible(child) && String(child.innerText || child.textContent || "").trim()
+    ))
     .map(metric);
   return {
     ...base,

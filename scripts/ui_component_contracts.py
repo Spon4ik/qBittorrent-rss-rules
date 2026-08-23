@@ -45,6 +45,33 @@ def discover_interactive_components(page: Any) -> list[dict[str, Any]]:
             );
           };
 
+          const diagnosticLabel = (element) => {
+            const tag = element.tagName.toLowerCase();
+            if (tag === "select") {
+              return String(
+                element.getAttribute("aria-label")
+                || element.getAttribute("name")
+                || element.selectedOptions?.[0]?.textContent
+                || "select"
+              ).trim();
+            }
+            if (["input", "textarea"].includes(tag)) {
+              return String(
+                element.getAttribute("aria-label")
+                || element.getAttribute("name")
+                || element.getAttribute("placeholder")
+                || element.getAttribute("type")
+                || tag
+              ).trim();
+            }
+            return String(
+              element.innerText
+              || element.getAttribute("aria-label")
+              || element.textContent
+              || tag
+            ).trim();
+          };
+
           const familyFor = (element) => {
             const tag = element.tagName.toLowerCase();
             if (tag === "summary") {
@@ -93,14 +120,7 @@ def discover_interactive_components(page: Any) -> list[dict[str, Any]]:
               family: familyFor(element),
               tag: element.tagName.toLowerCase(),
               type: String(element.getAttribute("type") || ""),
-              text: String(
-                element.innerText
-                || element.value
-                || element.getAttribute("placeholder")
-                || element.getAttribute("aria-label")
-                || element.textContent
-                || ""
-              ).trim().slice(0, 140),
+              text: diagnosticLabel(element).slice(0, 140),
               disabled: Boolean(element.disabled || element.getAttribute("aria-disabled") === "true"),
               detailsClasses: details ? String(details.className || "") : "",
               detailsOpen: details ? Boolean(details.open) : null,
@@ -396,6 +416,16 @@ _READABILITY_SCRIPT = r"""
     '[role="button"]',
     '[tabindex]:not([tabindex="-1"])',
   ].join(","));
+  const visibleTextMarker = (element) => {
+    const tag = element.tagName.toLowerCase();
+    if (tag === "select") {
+      return String(element.selectedOptions?.[0]?.textContent || "").trim().slice(0, 180);
+    }
+    if (["input", "textarea"].includes(tag)) {
+      return element.value ? "[value]" : "";
+    }
+    return String(element.innerText || element.textContent || "").trim().slice(0, 180);
+  };
   const metric = (element) => {
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
@@ -405,14 +435,7 @@ _READABILITY_SCRIPT = r"""
       ? getComputedStyle(element, "::placeholder")
       : null;
     const placeholderColor = placeholderStyle ? rgba(placeholderStyle.color) : null;
-    const text = String(
-      element.innerText
-      || element.value
-      || element.getAttribute("placeholder")
-      || element.getAttribute("aria-label")
-      || element.textContent
-      || ""
-    ).trim().slice(0, 180);
+    const text = visibleTextMarker(element);
     const overflowX = style.overflowX;
     const overflowY = style.overflowY;
     return {
@@ -482,15 +505,13 @@ _READABILITY_SCRIPT = r"""
   ].join(",");
   const descendants = Array.from(panel.querySelectorAll(descendantSelector))
     .filter((element) => visible(element))
-    .filter((element) => String(
-      element.innerText
-      || element.value
-      || element.getAttribute("placeholder")
-      || element.textContent
-      || ""
-    ).trim())
+    .filter((element) => Boolean(
+      visibleTextMarker(element) || element.getAttribute("placeholder")
+    ))
     .filter((element) => !Array.from(element.children).some(
-      (child) => visible(child) && String(child.innerText || child.textContent || "").trim()
+      (child) => visible(child) && Boolean(
+        visibleTextMarker(child) || child.getAttribute("placeholder")
+      )
     ))
     .map(metric);
   return {

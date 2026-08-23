@@ -13,12 +13,14 @@ from app.services.operation_status import operations_status_payload
 from app.services.rule_fetch_ops import schedule_payload
 from app.services.rule_fetch_scheduler import rule_fetch_scheduler_status
 from app.services.runtime_identity import runtime_identity_payload
+from app.services.scheduled_fetch_status import current_scheduled_fetch_state
 from app.services.settings_service import SettingsService
 
 RUNTIME_DIAGNOSTIC_CAPABILITIES = (
     "unhandled_api_error_telemetry",
     "scheduled_snapshot_freshness",
     "scheduled_fetch_progress",
+    "scheduled_fetch_current_state",
 )
 SNAPSHOT_FRESHNESS_INTERVAL_MULTIPLIER = 2.0
 
@@ -189,6 +191,17 @@ def runtime_diagnostics_payload(
         schedule=schedule,
         generated_at=generated_at,
     )
+    runtime_enabled = bool(environment.enable_rule_fetch_scheduler)
+    scheduler = rule_fetch_scheduler_status()
+    operation_progress = _scheduled_fetch_operation_progress()
+    current_state = current_scheduled_fetch_state(
+        schedule=schedule,
+        runtime_enabled=runtime_enabled,
+        jackett_ready=jackett_ready,
+        snapshot_freshness=snapshot_freshness,
+        scheduler=scheduler,
+        operation_progress=operation_progress,
+    )
 
     return {
         "generated_at": generated_at.isoformat(),
@@ -199,10 +212,11 @@ def runtime_diagnostics_payload(
                 "unhandled_errors": api_error_status(),
             },
             "scheduled_rule_fetch": {
-                "runtime_enabled": bool(environment.enable_rule_fetch_scheduler),
+                "runtime_enabled": runtime_enabled,
                 "schedule": schedule,
-                "scheduler": rule_fetch_scheduler_status(),
-                "operation_progress": _scheduled_fetch_operation_progress(),
+                "scheduler": scheduler,
+                "operation_progress": operation_progress,
+                "current_state": current_state,
                 "overdue_seconds": overdue_seconds,
                 "readiness": {
                     "jackett_app_ready": jackett_ready,

@@ -23,15 +23,40 @@ The format is based on Keep a Changelog and the project follows Semantic Version
   can be attributed to the runtime generation that actually produced them.
 - Add bounded, secret-free unhandled API exception telemetry with generated
   reference IDs and JSON error responses for unexpected `/api/*` failures.
+- Add deterministic SQLite maintenance tooling: compact DB QA, verified rollback
+  bundles for the database plus relevant sidecars, logical recovery with explicit
+  loss accounting, validated activation, and automatic rollback on failed
+  post-activation validation.
+- Add a deterministic Windows Docker lifecycle wrapper for `status`, `start`,
+  `stop`, and `restart`, using exact executable paths, engine/service readiness
+  checks, compact reports, and no ad-hoc shell/open invocation of `docker`.
+- Add exhaustive UI component-family QA. `UI-04` no longer intentionally samples
+  only a small prefix of disclosures, while `UI-05` classifies every visible
+  interactive control across light/dark themes and responsive widths and checks
+  normal/hover/focus readability, contrast, clipping, viewport containment,
+  menu occlusion, and reversible checkbox-menu behavior.
+- Add a deterministic changelog freshness guard to the normal Windows/Linux
+  check gates. It fails when implementation/runtime/maintained-QA tooling is
+  newer than `CHANGELOG.md` and writes compact evidence under `logs/qa/`.
 
 ### Changed
 
 - Extend `Finalize-Backend.cmd` to capture a non-gating pre-deploy functional
   baseline before Docker replacement and to gate closeout on the same functional
   invariants after deterministic checks, rebuild, and runtime-freshness proof.
-- Reconcile known previous-runtime Jackett-readiness failures on the Rules page
-  as historical/recovered when the current runtime deterministically resolves
-  Jackett successfully, while retaining the original persisted failure record.
+- Make verified reversibility the default safety boundary for mutable local state:
+  routine database/runtime repairs proceed autonomously once backup/restore is
+  proven, with automatic rollback when post-change validation fails.
+- Reconcile scheduled-fetch presentation around a separate current operational
+  state derived from scheduler/runtime readiness and scheduled-scope freshness;
+  historical `partial`/`error` runs remain available as evidence but no longer
+  masquerade as the active state once current health is proven.
+- Move shared checkbox-dropdown, feed-option, and search-multiselect surfaces onto
+  semantic palette variables so the same component styling applies consistently
+  across light and dark themes instead of relying on page-specific fixes.
+- Require generic UI exclusions to map to an explicit maintained replacement
+  contract and document the issue-to-property-to-component-family regression
+  workflow in `docs/qa/ui-regression-contracts.md`.
 - Mark application-generated maintenance requests as explicit incident work so
   low-cost Codex routing can skip redundant task classification.
 
@@ -39,7 +64,20 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - Prevent one legacy malformed `rule_search_snapshots.inline_search` JSON value
   from aborting an entire scheduled batch during prioritization; batch ordering
-  now selects only the scalar `rule_id` and `fetched_at` fields it requires.
+  now selects only the scalar fields it requires.
+- Repair malformed legacy snapshot `fetched_at`, `created_at`, and `updated_at`
+  values during successful snapshot replacement without first ORM-materializing
+  the corrupt row, allowing the affected scheduled rule to self-heal.
+- Recover the production SQLite corruption incident through the maintained
+  logical-rebuild path while preserving all readable data and omitting only one
+  proven reconstructible acceleration row plus one orphan snapshot.
+- Stop the Rules page from leaving a historical 275/1 scheduled-run failure as
+  the apparent current scheduler error after runtime and freshness checks are
+  healthy.
+- Fix shared dropdown/feed dark-theme readability where hard-coded light option
+  backgrounds could be combined with dark-theme foreground colors.
+- Fix `scripts/db_qa.bat` argument forwarding so maintained DB diagnostics can be
+  invoked through the wrapper without duplicate/incorrect arguments.
 - Prevent unexpected API failures from degrading into browser errors such as
   `Unexpected token 'I' ... is not valid JSON`; unhandled API exceptions now
   preserve deterministic route/type/reference evidence in a bounded JSON
@@ -252,7 +290,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [1.2.17] - 2026-06-02
 
-- Fixed finished-series auto-disable for continuing shows: Cinemeta `status=Continuing`, scheduled videos, or open-ended release years now prevent and clear watch-state auto-disable even when the latest known episode has been watched and no next season is listed yet.
+- Fixed finished-series auto-disable for continuing shows: Cinemata `status=Continuing`, scheduled videos, or open-ended release years now prevent and clear watch-state auto-disable even when the latest known episode has been watched and no next season is listed yet.
 - Death in Paradise-style rules can now be re-enabled by running Stremio or Jellyfin sync after the patch, without spending OMDb quota.
 
 ## [1.2.16] - 2026-06-02

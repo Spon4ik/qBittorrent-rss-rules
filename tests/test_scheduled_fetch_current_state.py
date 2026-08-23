@@ -28,7 +28,7 @@ def _freshness(
     }
 
 
-def test_historical_partial_becomes_recovered_when_current_scope_is_fresh() -> None:
+def test_historical_partial_is_secondary_when_current_scope_is_healthy() -> None:
     state = current_scheduled_fetch_state(
         schedule=_schedule("partial"),
         runtime_enabled=True,
@@ -37,12 +37,14 @@ def test_historical_partial_becomes_recovered_when_current_scope_is_fresh() -> N
     )
 
     assert state["status"] == "healthy"
-    assert state["recovered_from_last_run"] is True
+    assert state["historical_failure_superseded"] is True
     assert state["historical_status"] == "partial"
-    assert state["summary"] == "All 276/276 scheduled-scope rule snapshots are fresh."
+    assert state["summary"] == (
+        "All 276/276 scheduled-scope rule snapshots are within freshness SLA."
+    )
 
 
-def test_historical_error_becomes_recovered_only_after_current_scope_is_fresh() -> None:
+def test_historical_error_is_not_superseded_until_current_scope_is_healthy() -> None:
     degraded = current_scheduled_fetch_state(
         schedule=_schedule("error"),
         runtime_enabled=True,
@@ -57,12 +59,12 @@ def test_historical_error_becomes_recovered_only_after_current_scope_is_fresh() 
     )
 
     assert degraded["status"] == "degraded"
-    assert degraded["recovered_from_last_run"] is False
+    assert degraded["historical_failure_superseded"] is False
     assert healthy["status"] == "healthy"
-    assert healthy["recovered_from_last_run"] is True
+    assert healthy["historical_failure_superseded"] is True
 
 
-def test_pending_new_rules_do_not_clear_historical_failure() -> None:
+def test_pending_new_rules_do_not_supersede_historical_failure() -> None:
     state = current_scheduled_fetch_state(
         schedule=_schedule("partial"),
         runtime_enabled=True,
@@ -71,7 +73,7 @@ def test_pending_new_rules_do_not_clear_historical_failure() -> None:
     )
 
     assert state["status"] == "pending"
-    assert state["recovered_from_last_run"] is False
+    assert state["historical_failure_superseded"] is False
 
 
 def test_active_refresh_reports_running_before_stale_state() -> None:
@@ -86,7 +88,7 @@ def test_active_refresh_reports_running_before_stale_state() -> None:
 
     assert state["status"] == "running"
     assert state["summary"] == "Scheduled refresh is running (2/3 rule(s))."
-    assert state["recovered_from_last_run"] is False
+    assert state["historical_failure_superseded"] is False
 
 
 def test_readiness_and_runtime_failures_take_precedence_over_fresh_snapshots() -> None:
@@ -104,12 +106,12 @@ def test_readiness_and_runtime_failures_take_precedence_over_fresh_snapshots() -
     )
 
     assert no_runtime["status"] == "unavailable"
-    assert no_runtime["recovered_from_last_run"] is False
+    assert no_runtime["historical_failure_superseded"] is False
     assert no_jackett["status"] == "blocked"
-    assert no_jackett["recovered_from_last_run"] is False
+    assert no_jackett["historical_failure_superseded"] is False
 
 
-def test_disabled_schedule_is_not_reported_as_recovered() -> None:
+def test_disabled_schedule_does_not_supersede_historical_failure() -> None:
     state = current_scheduled_fetch_state(
         schedule=_schedule("partial", enabled=False),
         runtime_enabled=True,
@@ -118,4 +120,4 @@ def test_disabled_schedule_is_not_reported_as_recovered() -> None:
     )
 
     assert state["status"] == "disabled"
-    assert state["recovered_from_last_run"] is False
+    assert state["historical_failure_superseded"] is False

@@ -6,6 +6,26 @@ function scheduleStatusParts(status, message, schedule) {
   return parts.join(" ");
 }
 
+function currentScheduleStatusParts(currentState, schedule) {
+  const status = String(currentState?.status || "unknown");
+  const parts = [`Current status: ${status}.`];
+  if (currentState?.summary) parts.push(String(currentState.summary));
+
+  const historicalStatus = String(schedule?.last_status || "idle");
+  const recovered = Boolean(currentState?.recovered_from_last_run);
+  if (recovered) {
+    parts.push(`Previous scheduled run: ${historicalStatus}.`);
+    if (schedule?.last_message) parts.push(`Previous run detail: ${schedule.last_message}`);
+  } else if (historicalStatus && historicalStatus !== "idle") {
+    parts.push(`Last scheduled run: ${historicalStatus}.`);
+    if (schedule?.last_message) parts.push(String(schedule.last_message));
+  }
+
+  if (schedule?.last_run_at) parts.push(`Last run ${schedule.last_run_at}.`);
+  if (schedule?.next_run_at) parts.push(`Next run ${schedule.next_run_at}.`);
+  return parts.join(" ");
+}
+
 function persistentScheduledFetchIncident(payload) {
   const checks = payload?.functional_watchdog?.checks || {};
   for (const checkId of ["F-01", "F-02"]) {
@@ -42,6 +62,15 @@ function reconcileScheduledFetchStatus(payload) {
       `Automatic functional QA detected an F-02 failure: ${invariant.summary}`,
       schedule,
     );
+    return;
+  }
+
+  const currentState = component?.current_state;
+  if (currentState?.status) {
+    statusElement.dataset.functionalState = currentState.recovered_from_last_run
+      ? "recovered"
+      : String(currentState.status);
+    statusElement.textContent = currentScheduleStatusParts(currentState, schedule);
     return;
   }
 

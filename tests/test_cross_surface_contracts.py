@@ -24,6 +24,11 @@ import cross_surface_guard as guard  # noqa: E402
         ("/api/feeds/refresh", "refresh-feeds"),
         ("/api/acceleration/jobs/abc/retry", "retry-acceleration"),
         ("/api/acceleration/jobs/abc/cleanup", "remove-acceleration"),
+        ("/api/settings/sync-jellyfin", "save-sync"),
+        ("/api/settings/sync-stremio", "save-sync"),
+        ("/api/settings/sync-watch-progress", "sync"),
+        ("/api/settings/test-jellyfin", "provider-command"),
+        ("/api/settings/real-debrid/connect", "provider-command"),
     ],
 )
 def test_common_endpoints_map_to_action_families(endpoint: str, family: str) -> None:
@@ -46,6 +51,7 @@ def test_internal_telemetry_is_not_a_user_command_family() -> None:
 def test_shared_action_families_have_stable_canonical_verbs() -> None:
     assert contracts.canonical_label_matches("sync", "Sync rule") is True
     assert contracts.canonical_label_matches("sync", "Refresh rule") is False
+    assert contracts.canonical_label_matches("save-sync", "Save + Sync Jellyfin") is True
     assert contracts.canonical_label_matches("delete-rule", "Delete") is True
     assert contracts.canonical_label_matches("fetch-snapshot", "Fetch all snapshots") is True
     assert contracts.canonical_label_matches("fetch-snapshot", "Run now") is False
@@ -86,5 +92,6 @@ def test_command_registry_distinguishes_destructive_and_long_running_actions() -
     assert contracts.contract_for_family("delete-rule").destructive is True
     assert contracts.contract_for_family("remove-acceleration").destructive is True
     assert contracts.contract_for_family("sync").long_running is True
+    assert contracts.contract_for_family("save-sync").long_running is True
     assert contracts.contract_for_family("fetch-snapshot").long_running is True
     assert contracts.contract_for_family("dismiss-acceleration").destructive is False

@@ -111,6 +111,11 @@ def normalize_endpoint(endpoint: str) -> str:
     """Normalize dynamic UI source URLs without retaining concrete IDs."""
 
     value = str(endpoint or "").strip()
+    # The shared rule form selects create/update action with a Jinja block. The
+    # source-level guard only needs a safe known-family representative; rendered
+    # browser QA checks create and edit pages separately with their actual URLs.
+    if "{%" in value and "/api/rules" in value:
+        return "/api/rules/{id}"
     value = _JINJA_EXPR_RE.sub("{id}", value)
     value = re.sub(r"\$\{[^}]+\}", "{id}", value)
     return value
@@ -132,11 +137,11 @@ def classify_endpoint(endpoint: str) -> str | None:
 def refine_family(family: str | None, label: str | None) -> str | None:
     """Refine endpoints whose semantic action is encoded by the submit control."""
 
-    if family != "import-apply":
-        return family
     normalized_label = str(label or "").strip().casefold()
-    if normalized_label.startswith("preview"):
+    if family == "import-apply" and normalized_label.startswith("preview"):
         return "import-preview"
+    if family == "save-rule" and normalized_label.startswith("create"):
+        return "create-rule"
     return family
 
 

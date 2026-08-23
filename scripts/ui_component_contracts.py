@@ -22,14 +22,26 @@ _INTERACTIVE_SELECTOR = ", ".join(
         '[tabindex]:not([tabindex="-1"])',
     )
 )
+COVERAGE_EXPANDABLE_DETAILS_SELECTOR = (
+    "details:not(.checkbox-dropdown):not(.search-multiselect):"
+    "not(.search-queue-advanced):not([data-result-toolbar-menu])"
+)
 
 
 def discover_interactive_components(page: Any) -> list[dict[str, Any]]:
-    """Enumerate every visible interactive control and classify its component family."""
+    """Enumerate every interactive control after revealing non-menu disclosures."""
 
     result = page.evaluate(
         """
-        (selector) => {
+        ({selector, expandableDetailsSelector}) => {
+          // The QA inventory must not depend on a page's initial disclosure state.
+          // Reveal ordinary disclosure content, but keep menu families closed so
+          // their own closed/open behavior is still exercised separately.
+          for (const details of document.querySelectorAll(expandableDetailsSelector)) {
+            details.open = true;
+            details.dataset.uiQaCoverageExpanded = "true";
+          }
+
           const visible = (element) => {
             const rect = element.getBoundingClientRect();
             const style = getComputedStyle(element);
@@ -124,12 +136,18 @@ def discover_interactive_components(page: Any) -> list[dict[str, Any]]:
               disabled: Boolean(element.disabled || element.getAttribute("aria-disabled") === "true"),
               detailsClasses: details ? String(details.className || "") : "",
               detailsOpen: details ? Boolean(details.open) : null,
+              insideCoverageExpandedDisclosure: Boolean(
+                element.closest('details[data-ui-qa-coverage-expanded="true"]')
+              ),
             });
           }
           return controls;
         }
         """,
-        _INTERACTIVE_SELECTOR,
+        {
+            "selector": _INTERACTIVE_SELECTOR,
+            "expandableDetailsSelector": COVERAGE_EXPANDABLE_DETAILS_SELECTOR,
+        },
     )
     if not isinstance(result, list):
         raise ui.UIInvariantError("Interactive component discovery did not return a list.")

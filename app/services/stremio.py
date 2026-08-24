@@ -363,6 +363,13 @@ class StremioService:
         )
 
         active_item_ids = {item.item_id for item in active_items}
+        inactive_movie_items_by_imdb = {
+            item.imdb_id: item
+            for item in items
+            if item.media_type == MediaType.MOVIE
+            and item.imdb_id
+            and (item.removed or item.temp)
+        }
         outcomes: list[StremioRuleSyncOutcome] = []
 
         for item in active_items:
@@ -396,17 +403,24 @@ class StremioService:
             linked_item_type = _normalize_stremio_item_type(
                 getattr(rule, "stremio_library_item_type", None)
             )
-            if linked_item_type not in SUPPORTED_STREMIO_ITEM_TYPES or not linked_item_id:
+            inactive_item = inactive_movie_items_by_imdb.get(
+                str(getattr(rule, "imdb_id", "") or "").strip()
+            )
+            if (
+                linked_item_type not in SUPPORTED_STREMIO_ITEM_TYPES or not linked_item_id
+            ) and inactive_item is None:
                 continue
             if linked_item_id in active_item_ids:
                 continue
             message_parts: list[str] = []
             status: StremioOutcomeStatus | None = None
             if rule.media_type == MediaType.MOVIE:
+                source_present = inactive_item is not None
+                source_completed = bool(inactive_item and inactive_item.completed)
                 selection, completion_message_parts = self._movie_completion_selection(
                     rule=rule,
-                    source_present=False,
-                    source_completed=False,
+                    source_present=source_present,
+                    source_completed=source_completed,
                 )
                 if selection.changed:
                     self._apply_movie_completion_selection(

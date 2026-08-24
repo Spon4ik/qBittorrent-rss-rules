@@ -45,7 +45,7 @@ def test_selection_expands_dependencies_in_registry_order() -> None:
 
 
 def test_ui_suite_registers_generic_interaction_check() -> None:
-    assert list(ui_suite_qa.UI_CHECK_SPECS) == ["UI-01", "UI-02", "UI-03", "UI-04"]
+    assert list(ui_suite_qa.UI_CHECK_SPECS) == ["UI-01", "UI-02", "UI-03", "UI-04", "UI-05"]
 
 
 def test_legacy_classifier_marks_dependency_cascades_blocked() -> None:

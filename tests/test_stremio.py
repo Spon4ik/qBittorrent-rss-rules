@@ -768,6 +768,49 @@ def test_stremio_sync_disables_completed_movie_rule_via_shared_watch_state(
     assert rule.movie_completion_sources == ["stremio"]
 
 
+def test_stremio_sync_disables_enabled_imdb_rule_for_removed_watched_movie(
+    db_session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """A watched Stremio tombstone must still reconcile its matching qB rule."""
+    storage_path = create_stremio_local_storage(tmp_path)
+    settings = AppSettings(id="default", stremio_local_storage_path=str(storage_path))
+    rule = Rule(
+        rule_name="Cocorico 2",
+        content_name="Cocorico 2",
+        normalized_title="Cocorico 2",
+        imdb_id="tt36933402",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=True,
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    _install_stremio_api(
+        monkeypatch,
+        items=[
+            stremio_library_item(
+                "tt36933402",
+                "Cocorico 2",
+                item_type="movie",
+                removed=True,
+                temp=True,
+                state_overrides={"timesWatched": 1},
+            )
+        ],
+    )
+
+    summary = StremioService(settings).sync_rules(db_session)
+
+    db_session.refresh(rule)
+    assert summary.disabled_count == 1
+    assert rule.enabled is False
+    assert rule.movie_completion_sources == ["stremio"]
+    assert rule.movie_completion_auto_disabled is True
+
+
 def test_stremio_sync_disables_finished_series_when_latest_known_episode_is_watched(
     db_session,
     monkeypatch,

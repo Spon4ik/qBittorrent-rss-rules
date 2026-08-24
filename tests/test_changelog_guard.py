@@ -7,7 +7,8 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from changelog_guard import GuardEvidence, RELEVANT_PATHS, evaluate_guard  # noqa: E402
+# noqa: E402 - the script under test is intentionally imported from scripts.
+from changelog_guard import RELEVANT_PATHS, GuardEvidence, evaluate_guard  # noqa: E402
 
 
 def _evidence(

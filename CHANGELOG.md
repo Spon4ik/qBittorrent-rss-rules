@@ -6,6 +6,14 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
+- No entries yet.
+
+## [1.4.21] - 2026-08-25
+
+### Fixed
+
+- Reconcile watched Stremio movie tombstones by exact IMDb ID so matching qBittorrent RSS rules are auto-disabled even when Stremio marks the library row removed/temp.
+
 ### Added
 
 - Add experimental project-scoped Codex task owners and model routing for known

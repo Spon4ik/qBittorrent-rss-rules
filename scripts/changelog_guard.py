@@ -4,9 +4,9 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Sequence
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 REPORT_PATH = PROJECT_DIR / "logs" / "qa" / "changelog-guard.json"

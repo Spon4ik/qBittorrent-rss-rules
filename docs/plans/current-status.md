@@ -2,6 +2,14 @@
 
 ## Current focus
 
+### Stremio watched-movie tombstone reconciliation
+
+Fixed and regression-tested the live `tt36933402` discrepancy: Stremio exposed a
+watched movie tombstone (`removed=true`, `temp=true`, `timesWatched=1`) while the
+matching enabled qB RSS rule had no Stremio link. Sync now reconciles inactive
+movie tombstones by exact IMDb ID before applying completion state. Focused
+Stremio tests pass; release/runtime closeout remains pending.
+
 ### SQLite corruption recovery
 
 Closed on `experiment/codex-token-efficiency`. The recovered production database is

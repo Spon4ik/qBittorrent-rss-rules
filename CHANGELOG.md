@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.22] - 2026-09-26
+
+- Fix qBittorrent webseed attachment for URI-escaped Unicode and space paths,
+  and add a pinned real-qBittorrent API integration test to CI.
+
 ## [1.4.20] - 2026-08-21
 
 - Keep qB diagnostics open as an overlay without shifting rule-header actions

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from types import TracebackType
 from typing import Any, cast
+from urllib.parse import quote
 
 import httpx
 
@@ -336,29 +337,27 @@ class QbittorrentClient:
             else:
                 candidate = ""
             if candidate:
-                urls.append(candidate)
+                urls.append(_normalize_webseed_url(candidate))
         return urls
 
     def add_webseeds(self, info_hash: str, urls: list[str]) -> None:
         cleaned = _clean_string_list(urls)
         if not cleaned:
             return
-        self._request(
+        self._request_text(
             "POST",
             "/api/v2/torrents/addWebSeeds",
-            data={"hash": info_hash, "urls": "|".join(cleaned)},
-            expect_json=False,
+            data={"hash": info_hash, "urls": _encode_webseed_urls(cleaned)},
         )
 
     def remove_webseeds(self, info_hash: str, urls: list[str]) -> None:
         cleaned = _clean_string_list(urls)
         if not cleaned:
             return
-        self._request(
+        self._request_text(
             "POST",
             "/api/v2/torrents/removeWebSeeds",
-            data={"hash": info_hash, "urls": "|".join(cleaned)},
-            expect_json=False,
+            data={"hash": info_hash, "urls": _encode_webseed_urls(cleaned)},
         )
 
     def add_tags(self, info_hashes: str, tags: list[str]) -> None:
@@ -483,6 +482,16 @@ class QbittorrentClient:
             raise QbittorrentClientError(f"qBittorrent request failed: {exc}") from exc
         return response.content
 
+    def _request_text(self, method: str, path: str, **kwargs: Any) -> str:
+        if not self._authenticated:
+            self.login()
+        try:
+            response = self._client.request(method, path, **kwargs)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise QbittorrentClientError(f"qBittorrent request failed: {exc}") from exc
+        return response.text.strip()
+
     def _set_file_priority_legacy(self, *, info_hash: str, file_ids: list[int], priority: int) -> None:
         for file_id in file_ids:
             self._request(
@@ -530,6 +539,19 @@ class QbittorrentClient:
         walk(payload)
         entries.sort(key=lambda item: item.label.lower())
         return entries
+
+
+def _encode_webseed_urls(urls: list[str]) -> str:
+    # qBittorrent's Web API applies percent-decoding before strict QUrl
+    # validation. Escape existing URI percent sequences once more so the
+    # decoded parameter still contains a valid percent-encoded URI.
+    safe = ":/?#[]@!$&'()*+,;=~-._"
+    return "|".join(quote(url, safe=safe) for url in urls)
+
+
+def _normalize_webseed_url(url: str) -> str:
+    safe = ":/?#[]@!$&'()*+,;=%~-._"
+    return quote(url, safe=safe)
 
 
 def _clean_string_list(values: list[str]) -> list[str]:

@@ -2,6 +2,20 @@
 
 ## Current focus
 
+- `v1.4.22` fixes the Real-Debrid/qBittorrent webseed failure tracked by
+  [issue #48](https://github.com/Spon4ik/qBittorrent-rss-rules/issues/48).
+  qBittorrent percent-decodes form values before strict URL validation, so
+  Cyrillic and spaces in URI paths now receive the required additional encoding;
+  Unicode readback is normalized for stable comparison. A pinned real-qBittorrent
+  integration workflow verifies add/readback/remove and fails if CI lacks its
+  ephemeral service configuration. The exact persisted torrent job was retried
+  on the running app and reached `webseed_attached`; qBittorrent readback matched
+  its stored URL and the proxy returned HTTP 206 for a one-byte Range request.
+  The focused real-qBittorrent suite passed (`22 passed`). GitHub PR/CI validation
+  is pending. Ruff and mypy pass. The full pytest suite on clean `main` reports
+  six unrelated existing resolution-quality expectation failures in quality
+  filter, rule builder, and sync tests; this fix leaves those assertions alone.
+
 - The `v1.4.20` qB diagnostics rule-header repair and its unrelated full-suite
   isolation repair are implemented and deployed. The maintained UI suite
   passes UI-01 through UI-04. The isolation failure was caused by application-

@@ -5,6 +5,21 @@
 In implementation. UI/API behavior is implemented and live-smoke-tested; automatic
 Codex heartbeat pickup remains pending end-to-end proof after the active task yields.
 
+## Active follow-up: Real-Debrid WebSeed 400 (issue #48)
+
+The selected Real-Debrid file was unrestricted and its HTTP Range proxy worked,
+but qBittorrent rejected `addWebSeeds` with HTTP 400. The cause was qBittorrent's
+extra percent-decoding of form data before strict URL validation. The client now
+adds the required encoding layer for add/remove and normalizes raw-Unicode API
+readback. A pinned qBittorrent 5.2.3 CI integration test creates a temporary
+torrent and verifies add, readback, removal, and cleanup. The exact saved job was
+retried against the running app; it reached `webseed_attached`, qBittorrent's
+readback matched the saved URL, and the proxy returned HTTP 206 for a one-byte
+Range request. Focused unit and integration tests pass (`22 passed`). PR/CI
+validation remains pending. The clean-main full-suite run also reports six
+resolution-quality expectation failures outside this fix's scope; Ruff and
+mypy pass.
+
 ## Product decision
 
 The global background strip is a progress surface, not an operations console. It

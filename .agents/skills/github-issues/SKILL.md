@@ -1,13 +1,8 @@
 ---
-description: Create, update, and manage GitHub issues using MCP tools. Use this skill when users want to create bug reports, feature requests, or task issues, update existing issues, add labels/assignees/milestones, manage repository labels, set issue fields (dates, priority, custom fields), set issue types, manage issue workflows, link issues, add dependencies, or track blocked-by/blocking relationships. Triggers on requests like "create an issue", "file a bug", "request a feature", "update issue X", "set the priority", "set the start date", "create a label", "rename a label", "list repo labels", "link issues", "add dependency", "blocked by", "blocking", or any GitHub issue management task.
-metadata:
-    github-path: skills/github-issues
-    github-pinned: 6c4d33b9cfca967a28bb2962ef4d55e4a384c88c
-    github-ref: 6c4d33b9cfca967a28bb2962ef4d55e4a384c88c
-    github-repo: https://github.com/github/awesome-copilot
-    github-tree-sha: ff3489a4f04f2a7cb9a00609c5e1e50966e54c74
 name: github-issues
+description: 'Create, update, and manage GitHub issues using MCP tools. Use this skill when users want to create bug reports, feature requests, or task issues, update existing issues, add labels/assignees/milestones, manage repository labels, set issue fields (dates, priority, custom fields), set issue types, manage issue workflows, link issues, add dependencies, or track blocked-by/blocking relationships. Triggers on requests like "create an issue", "file a bug", "request a feature", "update issue X", "set the priority", "set the start date", "create a label", "rename a label", "list repo labels", "link issues", "add dependency", "blocked by", "blocking", or any GitHub issue management task.'
 ---
+
 # GitHub Issues
 
 Manage GitHub issues using the `@modelcontextprotocol/server-github` MCP server.

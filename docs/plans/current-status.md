@@ -11,11 +11,16 @@
   ephemeral service configuration. The exact persisted torrent job was retried
   on the running app and reached `webseed_attached`; qBittorrent readback matched
   its stored URL and the proxy returned HTTP 206 for a one-byte Range request.
-  The focused real-qBittorrent suite passed (`22 passed`). PR #49 is open and
-  its hosted pinned-qBittorrent integration job passed (run `36197148042`). Ruff
-  and mypy pass. The full pytest suite on clean `main` reports
-  six unrelated existing resolution-quality expectation failures in quality
-  filter, rule builder, and sync tests; this fix leaves those assertions alone.
+  The focused real-qBittorrent suite passed (`22 passed`). PR #49 was squash-
+  merged to protected `main` as `ec3cc845`; the pinned integration job passed
+  on the PR and merge commit (runs `36197363920` and `36198173177`). Ruleset
+  `24023362` requires PRs, that Actions check, up-to-date heads, resolved review
+  threads, squash-only merges, and blocks force-push/deletion with no bypass
+  actors. Issue #48 is closed; full-finalizer recovery is tracked in issue #50.
+  Post-merge `Finalize-Backend` passed Ruff/mypy but stopped before Docker:
+  pytest had `576 passed, 7 failed, 1 skipped` (one startup timing test and six
+  resolution-quality expectations). Runtime remains at v1.4.21; v1.4.22 is not
+  deployed or released until issue #50 restores the full gate.
 
 - The `v1.4.20` qB diagnostics rule-header repair and its unrelated full-suite
   isolation repair are implemented and deployed. The maintained UI suite

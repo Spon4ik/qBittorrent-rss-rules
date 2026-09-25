@@ -15,11 +15,16 @@ readback. A pinned qBittorrent 5.2.3 CI integration test creates a temporary
 torrent and verifies add, readback, removal, and cleanup. The exact saved job was
 retried against the running app; it reached `webseed_attached`, qBittorrent's
 readback matched the saved URL, and the proxy returned HTTP 206 for a one-byte
-Range request. Focused unit and integration tests pass (`22 passed`). PR #49 is
-open and its hosted pinned-qBittorrent integration job passed (run
-`36197148042`). The clean-main full-suite run also reports six
-resolution-quality expectation failures outside this fix's scope; Ruff and
-mypy pass.
+Range request. Focused unit and integration tests pass (`22 passed`). PR #49 was
+squash-merged to protected `main` as `ec3cc845`; pinned qBittorrent integration
+passed on the PR and merge commit (runs `36197363920` and `36198173177`). Ruleset
+`24023362` requires PRs and the integration check, enforces up-to-date heads,
+resolved review threads, squash-only merges, and blocks force-push/deletion
+without bypass actors. Issue #48 is closed. Post-merge `Finalize-Backend` passed
+Ruff/mypy but stopped before Docker after pytest reported 576 passed, 7 failed,
+1 skipped: one startup timing test and six resolution-quality expectations.
+Issue #50 tracks full-gate recovery. The running app remains v1.4.21; v1.4.22
+deployment and release await a green finalizer.
 
 ## Product decision
 

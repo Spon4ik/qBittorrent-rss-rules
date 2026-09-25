@@ -2,6 +2,15 @@
 
 ## Current focus
 
+- On 2026-09-25, the [native GitHub delivery and governance plan](2026-09-25-native-github-delivery-governance.md)
+  was prepared for review. It covers the optional Spon4ik-Labs transfer, isolated
+  TDD, hosted CI, main rulesets, native issue tracking, trusted runners, and gated
+  deployment. Implementation is NOT STARTED: no transfer, GitHub settings,
+  workflows, runners, tests, or deployment were changed/run for this plan.
+  Next: review G0's ownership decision and runner-access prerequisite before
+  authorizing implementation. Phase 44 and its pre-existing local edits remain
+  active; historical release/runtime claims below were not revalidated here.
+
 - The `v1.4.20` qB diagnostics rule-header repair and its unrelated full-suite
   isolation repair are implemented and deployed. The maintained UI suite
   passes UI-01 through UI-04. The isolation failure was caused by application-

@@ -1,5 +1,13 @@
 # Phase 44 - Acceleration operations console and variant context
 
+## Governance planning follow-up (2026-09-25)
+
+The separate [native GitHub delivery and governance plan](2026-09-25-native-github-delivery-governance.md)
+proposes stronger TDD/isolation, CI, protected-main and delivery evidence. It is
+planning-only and does not complete or change Phase 44's product scope. Its G0
+requires reconciliation of existing release/runtime evidence and preservation of
+unfinished Phase 44 work before governance implementation begins.
+
 ## Status
 
 In implementation. UI/API behavior is implemented and live-smoke-tested; automatic

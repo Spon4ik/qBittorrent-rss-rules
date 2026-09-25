@@ -6,7 +6,8 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
-- No entries yet.
+- Document the proposed native GitHub governance, isolated TDD, CI/CD, and optional
+  organization-transfer sequence; implementation remains pending plan review.
 
 ## [1.4.20] - 2026-08-21
 

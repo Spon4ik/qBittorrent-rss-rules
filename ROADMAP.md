@@ -1,5 +1,15 @@
 # Roadmap
 
+## Planned governance track (2026-09-25; not started)
+
+- [Native GitHub delivery and project governance](docs/plans/2026-09-25-native-github-delivery-governance.md):
+  decide repository ownership, prove test isolation/TDD, establish hosted CI before
+  required main checks, adopt native issue/Project tracking, and qualify trusted
+  runners plus gated deployment only when needed.
+- Planning is persisted for review; implementation is not authorized by this entry.
+  Phase 44 remains active. G0 will reconcile the historical release headings below
+  with actual GitHub and runtime evidence before they are treated as current state.
+
 ## Current release state: v1.4.11 published; Phase 39 complete
 
 ### Validated locally

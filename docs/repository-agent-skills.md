@@ -10,7 +10,7 @@ This repository stores portable Agent Skills under `.agents/skills/`. GitHub Cop
 - `github-issues`, `breakdown-plan`, `repo-standardizer`, `github-actions-hardening`, `github-actions-efficiency`: source-pinned skills from GitHub's community-contributed `awesome-copilot` collection.
 - `gh-fix-ci`, `security-best-practices`, `skill-creator`: source-pinned skills from OpenAI's curated/system catalog.
 
-The source refs, per-skill provenance, license notes, and live GitHub baseline are recorded in `.agents/skills/UPSTREAM.md`. Main protection and runner configuration must be checked live; installing skills does not enable or enforce those controls.
+The `github-issues` package is byte-for-byte matched to `E:\GitHub\tab-rule-manager\.agents\skills\github-issues`. Source refs, per-skill provenance, license notes, and the live GitHub baseline are recorded in `.agents/skills/UPSTREAM.md`. Main protection and runner configuration must be checked live; installing skills does not enable or enforce those controls.
 
 ## Updating
 

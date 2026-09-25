@@ -42,6 +42,7 @@ jobs:
           for attempt in $(seq 1 60); do
             password="$(docker logs qb-webseed-test 2>&1 \
               | sed -n 's/.*A temporary password is provided for this session: //p' \
+              | tr -d '\r' \
               | tail -n 1)"
             if [[ -n "$password" ]]; then
               status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
@@ -56,6 +57,7 @@ jobs:
           done
           if [[ -z "$password" || ( "$status" != "200" && "$status" != "204" ) ]]; then
             echo "Pinned qBittorrent Web API did not become ready."
+            echo "qBittorrent login probe HTTP status: ${status:-unavailable}"
             docker ps --all --filter name=qb-webseed-test --format 'container={{.Names}} status={{.Status}}'
             docker logs --tail 80 qb-webseed-test 2>&1 \
               | sed -E '/password|token|key/I s/.*/[redacted sensitive log line]/'

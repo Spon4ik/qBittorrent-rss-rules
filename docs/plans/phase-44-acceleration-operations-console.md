@@ -15,8 +15,9 @@ readback. A pinned qBittorrent 5.2.3 CI integration test creates a temporary
 torrent and verifies add, readback, removal, and cleanup. The exact saved job was
 retried against the running app; it reached `webseed_attached`, qBittorrent's
 readback matched the saved URL, and the proxy returned HTTP 206 for a one-byte
-Range request. Focused unit and integration tests pass (`22 passed`). PR/CI
-validation remains pending. The clean-main full-suite run also reports six
+Range request. Focused unit and integration tests pass (`22 passed`). PR #49 is
+open and its hosted pinned-qBittorrent integration job passed (run
+`36197148042`). The clean-main full-suite run also reports six
 resolution-quality expectation failures outside this fix's scope; Ruff and
 mypy pass.
 

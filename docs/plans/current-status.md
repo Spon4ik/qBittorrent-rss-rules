@@ -11,8 +11,9 @@
   ephemeral service configuration. The exact persisted torrent job was retried
   on the running app and reached `webseed_attached`; qBittorrent readback matched
   its stored URL and the proxy returned HTTP 206 for a one-byte Range request.
-  The focused real-qBittorrent suite passed (`22 passed`). GitHub PR/CI validation
-  is pending. Ruff and mypy pass. The full pytest suite on clean `main` reports
+  The focused real-qBittorrent suite passed (`22 passed`). PR #49 is open and
+  its hosted pinned-qBittorrent integration job passed (run `36197148042`). Ruff
+  and mypy pass. The full pytest suite on clean `main` reports
   six unrelated existing resolution-quality expectation failures in quality
   filter, rule builder, and sync tests; this fix leaves those assertions alone.
 

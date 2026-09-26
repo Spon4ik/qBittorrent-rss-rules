@@ -11,7 +11,8 @@ from urllib.parse import parse_qsl, quote, urlsplit
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AppSettings, DownloadAccelerationJob, utcnow
+from app.models import AppSettings, DownloadAccelerationJob, Rule, utcnow
+from app.services.codex_maintenance import queue_deterministic_acceleration_incident
 from app.services.myjdownloader import MyJDownloaderClient
 from app.services.qbittorrent import (
     JDOWNLOADER_FALLBACK_TAG,
@@ -434,6 +435,13 @@ class DownloadAccelerationService:
         job.next_retry_at = None
         self.session.add(job)
         self.session.commit()
+        rule = self.session.get(Rule, job.rule_id) if job.rule_id else None
+        try:
+            queue_deterministic_acceleration_incident(job, rule=rule)
+        except OSError:
+            # Incident reporting must never turn a completed state transition
+            # into a new acceleration retry when runtime storage is unavailable.
+            pass
 
 
 def _fallback_link_groups(

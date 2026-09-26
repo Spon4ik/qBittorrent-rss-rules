@@ -71,6 +71,11 @@ class FakeRd:
         self.selected = file_ids
 
 
+class TerminalFakeRd(FakeRd):
+    def get_torrent(self, torrent_id):
+        return {"status": "magnet_error", "files": [], "links": []}
+
+
 def test_sensitive_metainfo_and_safe_paths() -> None:
     assert metainfo_is_sensitive(PUBLIC_TORRENT) is False
     assert metainfo_is_sensitive(PRIVATE_TORRENT) is True
@@ -219,3 +224,31 @@ def test_invalid_exported_metainfo_falls_back_to_tracker_free_magnet(db_session)
     job = db_session.query(DownloadAccelerationJob).one()
     assert job.provider_torrent_id == "rd-magnet"
     assert rd.magnets == [tracker_free_magnet("a" * 40, "file.mkv")]
+
+
+def test_terminal_acceleration_failure_records_one_deterministic_incident(
+    db_session, monkeypatch, tmp_path
+) -> None:
+    from app.services import codex_maintenance
+
+    monkeypatch.setattr(codex_maintenance, "REQUEST_DIR", tmp_path / "incidents")
+    settings = AppSettings(id="default", real_debrid_metadata_wait_seconds=120)
+    db_session.add(settings)
+    db_session.commit()
+
+    service = DownloadAccelerationService(
+        db_session,
+        settings,
+        qb_client=FakeQb(),
+        real_debrid_client=TerminalFakeRd(),
+    )
+    service.run_once()
+    service.run_once()
+
+    job = db_session.query(DownloadAccelerationJob).one()
+    assert job.state == "terminal_error"
+    incident_files = list((tmp_path / "incidents").glob("*.json"))
+    assert len(incident_files) == 1
+    incident = incident_files[0].read_text(encoding="utf-8")
+    assert '"status": "pending"' in incident
+    assert '"job_state": "terminal_error"' in incident

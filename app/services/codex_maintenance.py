@@ -11,6 +11,11 @@ from app.services.log_redaction import redact_sensitive_text
 
 REQUEST_DIR = DATA_DIR / "codex-maintenance-requests"
 
+# These states mean the engine has exhausted its deterministic recovery path.
+# Transient retry_wait states are deliberately excluded: creating an incident for
+# each retry would turn normal provider/network instability into noisy work.
+MAINTENANCE_REQUIRED_STATES = frozenset({"terminal_error", "metadata_unavailable"})
+
 
 def maintenance_status_by_job() -> dict[str, dict[str, object]]:
     statuses: dict[str, dict[str, object]] = {}
@@ -80,3 +85,14 @@ def queue_acceleration_maintenance_request(
     temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     os.replace(temporary, target)
     return payload
+
+
+def queue_deterministic_acceleration_incident(
+    job: DownloadAccelerationJob,
+    *,
+    rule: Rule | None,
+) -> dict[str, object] | None:
+    """Persist one redacted incident after deterministic recovery is exhausted."""
+    if job.state not in MAINTENANCE_REQUIRED_STATES:
+        return None
+    return queue_acceleration_maintenance_request(job, rule=rule)

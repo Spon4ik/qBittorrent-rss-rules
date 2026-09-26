@@ -1382,8 +1382,8 @@ def ask_codex_to_investigate_acceleration_job(
             "status": "queued",
             "request_id": request_payload["id"],
             "message": (
-                "Codex maintenance task queued. "
-                "It will inspect this issue within five minutes."
+                "A redacted maintenance incident was recorded for this exact job. "
+                "Review it from the acceleration operations screen."
             ),
         }
     )

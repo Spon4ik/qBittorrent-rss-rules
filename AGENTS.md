@@ -35,6 +35,15 @@ The WinUI shell (`QbRssRulesDesktop`) embeds `RequiredDesktopBackendAppVersion` 
 
 ## Deterministic debugging and UI QA
 
+- Treat every reported/runtime issue as a deterministic-engine concern first:
+  classify it from persisted state and explicit failure transitions, and persist
+  a redacted, deduplicated incident only after normal deterministic recovery is
+  exhausted. Do not use periodic AI polling as issue detection or maintenance.
+- Every confirmed application defect must gain a deterministic regression test
+  that reproduces its triggering state before the fix is considered complete.
+  AI investigation remains explicit and opt-in; it must not be scheduled merely
+  to look for work.
+
 - Prefer deterministic evidence over model interpretation: assertions, exit codes, JUnit, API/DB/DOM/state checks, and small diagnostic scripts.
 - Run the narrowest relevant test first; broaden only after the targeted check passes or cannot explain the failure.
 - Prefer `scripts\test.bat` on Windows or `scripts/test.sh` on Linux/WSL. They keep full pytest output in `logs/tests/` and print a compact summary. Use `QB_TEST_VERBOSE=1` only when full output is necessary.

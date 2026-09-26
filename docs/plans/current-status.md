@@ -16,6 +16,17 @@
   and verify the remote head before ending or switching tasks. See `AGENTS.md`,
   “Remote persistence and resumability.”
 
+- The `docs/repository-agent-skills` branch now includes current `main`. Its
+  carried application changes add deterministic incident
+  persistence after terminal acceleration failure and one retry for failed
+  scheduled rule fetches, with regression coverage and a maintained issue-test
+  inventory. Ruff, mypy, and the full suite pass (`605 passed, 0 failed, 0
+  errors, 1 skipped`); the focused three-module run also passed (`32 passed`).
+  These changes are not released or deployed. An attempted Docker updater
+  auto-repair was excluded because it would silently rewrite the Compose build
+  context and database bind mount; path changes require an intentional operator
+  edit.
+
 - G5a Windows/source release staging and publication are complete for v1.4.24.
   Release workflow run
   [36255119862](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36255119862)

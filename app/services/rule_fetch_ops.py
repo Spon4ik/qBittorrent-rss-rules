@@ -1546,6 +1546,30 @@ def run_rules_fetch_batch(
             results = [result for result in ordered_results if result is not None]
 
         attempted = len(rules)
+        # A single provider timeout or transient transport error must not leave
+        # the scheduler in a stale partial state until tomorrow. Retry only the
+        # rules that failed, once, after the primary batch has fully settled.
+        rule_by_id = {rule.id: rule for rule in rules}
+        failed_results = [result for result in results if not result.get("success")]
+        if failed_results:
+            retried_results: dict[str, dict[str, Any]] = {}
+            for failed_result in failed_results:
+                failed_rule = rule_by_id.get(str(failed_result.get("rule_id") or ""))
+                if failed_rule is None:
+                    continue
+                retried_results[failed_rule.id] = execute_rule_fetch(
+                    session,
+                    rule=failed_rule,
+                    allow_completion_disabled=not run_all and include_disabled,
+                )
+            if retried_results:
+                results = [
+                    retried_results.get(str(result.get("rule_id") or ""), result)
+                    for result in results
+                ]
+                succeeded = sum(1 for result in results if result.get("success"))
+                failed = len(results) - succeeded
+
         if failed == 0:
             message = f"Completed Jackett fetch for {succeeded}/{attempted} rule(s)."
             status = "ok"

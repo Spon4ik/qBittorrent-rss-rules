@@ -9,11 +9,19 @@
   passed. Exact post-merge SHA `d227db3bb438163ac0f1b759248a189fc1750b91` passed
   main CI run [36243525969](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36243525969)
   and real-qBittorrent API run [36243525914](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36243525914).
-  G3b native Project inventory and
-  workflow verification remain pending because the authenticated CLI lacks
-  `read:project`; there are no repository milestones, and no Project state is
-  claimed. The repo remains under `Spon4ik`; organization-only issue types/fields
-  and a transfer are out of scope. The scheduled Codex maintainer is paused, and
+  G3b's native Project is configured at
+  [qBittorrent RSS Rules](https://github.com/users/Spon4ik/projects/2), linked to
+  this repository. It has a five-state Status field, one Priority field, a
+  status-grouped Delivery flow board, and seven enabled native workflows. All
+  open repository issues and pull requests are auto-added; new items enter
+  Backlog, linked pull requests set In Review, requested changes set In Progress,
+  reopened items set Ready, and closed issues set Done. Existing issue #47 is the
+  first item and remains in Backlog. No repository milestones exist, so no
+  unrelated milestone was created; no parent/child hierarchy was needed. The
+  configuration is live, while observing an issue traverse natural review and
+  closure events remains pending; do not simulate those events on a real bug.
+  The repository stays under `Spon4ik`; organization-only issue types/fields and
+  a transfer are out of scope. The scheduled Codex maintainer is paused, and
   existing forms use standard labels without issue-triage bot assumptions. See
   the [governance plan](2026-09-25-native-github-delivery-governance.md).
 

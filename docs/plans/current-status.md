@@ -17,6 +17,14 @@
   existing forms use standard labels without issue-triage bot assumptions. See
   the [governance plan](2026-09-25-native-github-delivery-governance.md).
 
+- G4 self-hosted runner adoption is deferred. GitHub documents standard hosted
+  runners as free for public repositories, and GitHub advises against persistent
+  self-hosted runners for public PR workflows because contributors can execute
+  untrusted code. The live organization runner group is broad (`Default` allows
+  public repositories and all workflows) and cannot be assigned to this personal
+  repository as-is; this repository has no self-hosted runner. Revisit only for a
+  concrete technical need and an isolated, restricted host design.
+
 - G1 test isolation is complete in PR #56 (`59c3e3dd`). Pytest now strips
   inherited provider configuration,
   gives each test a temporary SQLite URL, and refuses checkout-backed database

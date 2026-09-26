@@ -99,7 +99,4 @@ jobs:
           BACKEND_CHECKS_RESULT: ${{ needs.backend-checks.result }}
           BROWSER_UI_RESULT: ${{ needs.browser-ui.result }}
           DESKTOP_BUILD_RESULT: ${{ needs.desktop-build.result }}
-        run: |
-          test "$BACKEND_CHECKS_RESULT" = success
-          test "$BROWSER_UI_RESULT" = success
-          test "$DESKTOP_BUILD_RESULT" = success
+        run: python scripts/ci_required_gate.py

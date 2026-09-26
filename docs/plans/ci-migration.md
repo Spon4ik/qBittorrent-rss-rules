@@ -79,5 +79,24 @@ The CI workflow validates code and UI; Docker deployment and release publication
 remain separate delivery steps. Issue #50's v1.4.23 closeout passed the required
 backend finalizer and deployed runtime-version check.
 
+## Test isolation audit (G1)
+
+The pytest harness strips all inherited `QB_RULES_*` settings before application
+configuration is imported, then installs its own temporary runtime root. Each
+test now receives a distinct `tmp_path` SQLite URL by default, and the engine
+fixture rejects file-backed SQLite URLs outside the OS temporary directory
+before SQLAlchemy opens them. Tests retain their existing per-test database
+fixtures. A denied checkout-path regression confirms the sentinel file remains
+absent; a teardown regression proves both application queues stop when app
+construction raises.
+
+Focused browser QA and full closeout QA keep reports and logs in the selected
+artifact directory but store app databases under OS temporary directories.
+Their teardown stops the app/mock services, disposes the seed database engine,
+and then removes temporary storage. The local Windows UI suite passed UI-01
+through UI-04, exercising the focused subprocess path. `scripts/check.bat`
+passed Ruff, mypy, and pytest (`601 passed, 0 failed, 0 errors, 1 skipped`).
+The GitHub PR run remains the cross-platform acceptance check before G1 closes.
+
 No application deployment, production runner access, release, or tag is part of
 this CI change.

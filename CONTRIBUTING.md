@@ -33,6 +33,14 @@ Or use:
 ./scripts/check.sh
 ```
 
+Pytest removes inherited `QB_RULES_*` configuration before importing the app,
+uses a per-test temporary SQLite database by default, and rejects file-backed
+SQLite URLs outside the operating-system temporary directory before opening
+them. Tests that launch app processes must pass an explicit temporary database
+URL and stub provider endpoints; browser QA keeps reports/logs as artifacts but
+removes its temporary database after the process exits. Add regressions for
+these boundaries before changing their behavior.
+
 ## Pull request checklist
 
 - The code is typed and lint-clean.

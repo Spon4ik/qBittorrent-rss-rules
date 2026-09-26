@@ -8,6 +8,7 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -763,7 +764,7 @@ def prepare_closeout_db(
     feed_urls: list[str],
 ) -> None:
     from app.config import get_environment_settings, obfuscate_secret
-    from app.db import get_session_factory, init_db, reset_db_caches
+    from app.db import get_engine, get_session_factory, init_db, reset_db_caches
     from app.models import AppSettings, MediaType, QualityProfile, Rule, SyncStatus
 
     env_overrides = {
@@ -779,10 +780,12 @@ def prepare_closeout_db(
         "QB_RULES_ENABLE_RULE_FETCH_SCHEDULER": "0",
     }
     previous_env = {key: os.environ.get(key) for key in env_overrides}
+    engine = None
     try:
         os.environ.update(env_overrides)
         get_environment_settings.cache_clear()
         reset_db_caches()
+        engine = get_engine()
         init_db()
         session_factory = get_session_factory()
         with session_factory() as session:
@@ -932,6 +935,8 @@ def prepare_closeout_db(
                 )
             session.commit()
     finally:
+        if engine is not None:
+            engine.dispose()
         for key, value in previous_env.items():
             if value is None:
                 os.environ.pop(key, None)
@@ -1037,7 +1042,8 @@ def main() -> int:
     report_md_path = run_dir / "closeout-report.md"
     app_log_path = run_dir / "uvicorn.log"
 
-    db_path = run_dir / "closeout.db"
+    database_runtime = tempfile.TemporaryDirectory(prefix="qb-rss-browser-closeout-")
+    db_path = Path(database_runtime.name) / "closeout.db"
     app_port = find_free_port()
     qb_port = find_free_port()
     jackett_port = find_free_port()
@@ -3890,15 +3896,22 @@ def main() -> int:
         )
 
     finally:
-        if server_process is not None:
-            server_process.terminate()
+        try:
+            if server_process is not None:
+                server_process.terminate()
+                try:
+                    server_process.wait(timeout=6)
+                except subprocess.TimeoutExpired:
+                    server_process.kill()
+                    server_process.wait(timeout=4)
+        finally:
             try:
-                server_process.wait(timeout=6)
-            except subprocess.TimeoutExpired:
-                server_process.kill()
-                server_process.wait(timeout=4)
-        stop_threaded_server(jackett_server, jackett_thread)
-        stop_threaded_server(qb_server, qb_thread)
+                stop_threaded_server(jackett_server, jackett_thread)
+            finally:
+                try:
+                    stop_threaded_server(qb_server, qb_thread)
+                finally:
+                    database_runtime.cleanup()
 
     failures = [item for item in checks if item.status != "pass"]
     passed = len(checks) - len(failures)
@@ -3913,7 +3926,7 @@ def main() -> int:
         },
         "artifacts": {
             "run_dir": relative_path(run_dir, project_dir),
-            "db": relative_path(db_path, project_dir),
+            "db": "temporary database (removed after run)",
             "uvicorn_log": relative_path(app_log_path, project_dir),
             "r4_layout_screenshots": r4_layout_artifacts,
             "p9_hover_screenshots": p9_hover_artifacts,

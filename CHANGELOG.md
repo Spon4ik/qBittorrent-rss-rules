@@ -10,6 +10,9 @@ The format is based on Keep a Changelog and the project follows Semantic Version
   the WinUI build, and a required aggregate status job.
 - Test that the required CI aggregate rejects failed, cancelled, skipped, and
   missing lane results; pin the qBittorrent integration workflow actions by SHA.
+- Isolate every pytest SQLite database under a per-test temporary directory,
+  reject checkout-backed SQLite paths, and clean up browser QA databases after
+  app subprocess shutdown.
 
 ## [1.4.23] - 2026-09-26
 

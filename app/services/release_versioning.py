@@ -124,24 +124,45 @@ def ensure_changelog_entry(root: Path, *, new_version: str, release_date: date) 
     if version_header in original_text:
         return False
 
+    lines = original_text.splitlines()
     unreleased_header = "## [Unreleased]"
-    unreleased_index = original_text.find(unreleased_header)
-    if unreleased_index < 0:
+    unreleased_index = next(
+        (index for index, line in enumerate(lines) if line == unreleased_header),
+        None,
+    )
+    if unreleased_index is None:
         raise RuntimeError("CHANGELOG.md is missing the [Unreleased] section.")
 
-    insertion = (
-        f"{unreleased_header}\n\n"
-        "- No entries yet.\n\n"
-        f"{version_header}\n\n"
-        "- Release prep in progress.\n"
+    next_heading_index = next(
+        (
+            index
+            for index in range(unreleased_index + 1, len(lines))
+            if lines[index].startswith("## ")
+        ),
+        len(lines),
     )
-    unreleased_block = re.compile(
-        r"## \[Unreleased\]\n(?:\n|- .*\n)+",
-        re.MULTILINE,
-    )
-    updated_text, replacements = unreleased_block.subn(insertion, original_text, count=1)
-    if replacements != 1:
-        raise RuntimeError("Could not normalize the [Unreleased] changelog block.")
+    pending_notes = lines[unreleased_index + 1 : next_heading_index]
+    while pending_notes and not pending_notes[0].strip():
+        pending_notes.pop(0)
+    while pending_notes and not pending_notes[-1].strip():
+        pending_notes.pop()
+    if pending_notes == ["- No entries yet."]:
+        pending_notes = []
+
+    release_notes = pending_notes or ["- Release prep in progress."]
+    updated_lines = [
+        *lines[:unreleased_index],
+        unreleased_header,
+        "",
+        "- No entries yet.",
+        "",
+        version_header,
+        "",
+        *release_notes,
+        "",
+        *lines[next_heading_index:],
+    ]
+    updated_text = "\n".join(updated_lines).rstrip() + "\n"
     changelog_path.write_text(updated_text, encoding="utf-8")
     return True
 

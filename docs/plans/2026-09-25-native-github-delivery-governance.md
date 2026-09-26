@@ -5,9 +5,11 @@
 **Status: IN PROGRESS.** This plan was prepared on 2026-09-25 and is being executed
 in small, separately validated pull requests. G1 test isolation and G2 hosted CI /
 main protection are complete on `main`; repository ownership remains `Spon4ik` and
-no transfer is in scope. G3 is next. Its repository-local templates can proceed
-now; native Project inspection and configuration await Project API access. G4-G6
-remain future work and are not implied by this update.
+no transfer is in scope. G3a repository templates are complete; G3b native Project
+inspection and configuration await Project API access. G4 self-hosted runner
+adoption is deferred: standard hosted runners are free for this public repo, while
+persistent self-hosted public-PR execution carries a materially higher security
+cost. G5-G6 remain future work.
 
 Scope: deterministic TDD, isolated validation, CI/CD, protected `main`, native
 GitHub work tracking, dependency/security maintenance, and truthful release evidence.
@@ -39,9 +41,11 @@ that alone is not a reason to transfer. [Issue types][types], [issue fields][fie
 | Repository-scoped self-hosted runner | Possible without transfer | Possible, but avoid unnecessary duplicate infrastructure |
 | Native merge queue | Not this personal-repository option | Possible for public organization repos; deferred until needed |
 
-GitHub documents runner scopes and merge queue availability in [runner access][runner-access]
-and [deployment concepts][merge-queue]. The recommendation above is a design choice
-for this project, not a GitHub requirement to move.
+GitHub documents runner scopes, billing, and merge queue availability in [runner
+access][runner-access], [Actions billing][actions-billing], and [deployment
+concepts][merge-queue]. Standard GitHub-hosted runners are free for public
+repositories. The recommendation above is a design choice for this project, not a
+GitHub requirement to move.
 
 ### Transfer gate: separate, explicitly authorized operation
 
@@ -101,6 +105,24 @@ Audit APIs: repository metadata; `branches/main/protection`; `rulesets`;
 `actions/workflows`; `actions/runners`; `milestones`; org metadata and
 `orgs/Spon4ik-Labs/actions/runner-groups`. Preserve future inventories as small,
 redacted artifacts with date, repository ID, and observed commit.
+
+### Runner cost and access recheck (2026-09-26)
+
+GitHub's current billing documentation states that standard GitHub-hosted runners
+are free for public repositories. The existing workflow uses standard `windows-latest`
+and Ubuntu runners; it does not use chargeable larger runners. The live repository
+runner inventory is empty. The organization pool has three online/idle Windows
+runners (`generic-01`, `generic-02`, and `browser-01`), but its `Default` group allows
+all organization repositories, permits public repositories, and is not restricted
+to selected workflows. Since this repository remains personal, that organization
+pool is not currently available to it. Do not broaden group access or register a
+persistent repository runner merely to avoid a compute charge that does not apply.
+
+GitHub warns against self-hosted runners for public repositories because arbitrary
+contributors can execute pull-request code and compromise persistent runner hosts.
+Reopen G4 only for a demonstrated capability gap or a separate explicit
+infrastructure request, with an isolated ephemeral host and safe routing proven
+before changing `runs-on`.
 
 ## 3. What to reuse from tab-rule-manager
 
@@ -247,6 +269,31 @@ It receives no production environment or host access. Only G5b may create a
 production deployment record or touch the production Compose/runtime paths, after
 the separate production design and operator gate are satisfied.
 
+G5a release scope is the portable x64 Windows desktop ZIP and GitHub's source
+archives for the matching source tag. The workflow is manually dispatched from
+protected `main`, verifies both required workflow runs against the selected SHA,
+uses locked Python/NuGet dependencies, and stages a draft GitHub Release only
+after Windows packaging and a no-host-mount disposable-container smoke pass.
+An operator reviews and publishes the draft; no container image is published.
+The workflow implementation merged in PR #61 at `f04b29539a24a38eca7535d85ee98d65c39c3a70`;
+post-merge CI run `36251042266` and API integration run `36251042230` passed on
+that SHA. The `v1.4.24` version-preparation PR preserved and regression-tested
+pending changelog notes. The first manual run safely stopped when PowerShell
+treated the missing-release diagnostic from `gh release view` as an error; PR
+#64 replaced that probe with a remote Git tag lookup. The next run passed the
+guard and container smoke and built a valid Windows ZIP, then exposed the need
+to normalize Robocopy's successful exit codes for the Actions PowerShell
+wrapper. PR #65 fixed that behavior. After its required checks and exact-main
+CI/API runs passed, workflow run `36255119862` completed successfully from
+`115b992ab6a86adf9929d75a32c99ea84a7b4021`, creating draft release `v1.4.24`
+with `qB.RSS.Rules.Desktop-win-x64.zip` and its `.sha256` sidecar. The release
+was then published at
+`https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.24`;
+`refs/tags/v1.4.24` resolves directly to the validated main SHA, and GitHub's
+tagged source ZIP/TAR endpoints both return HTTP 200. No GHCR image or
+production deployment was created. G5a staging and publication acceptance are
+complete; G5b remains separate.
+
 Serialize production deployment with `cancel-in-progress: false`. Prevent stale
 queued commits from replacing a newer deployment. Check exact source identity and
 image digest before promotion; do not execute arbitrary artifact-supplied scripts.
@@ -280,17 +327,19 @@ policy. Planning-only documentation does not bump the application version.
 | G1 | Audit/enforce test isolation in `tests/conftest.py`, affected test fixtures, `scripts/test.bat`, `scripts/test.sh`, `scripts/browser_qa.py`; add isolation regressions and TDD guidance | G0; independent of transfer | **COMPLETE** on main. PR #56; safe-path guard, lifecycle teardown, isolated app databases, and browser QA cleanup. See current-status evidence and `ci-migration.md`. |
 | G2a | Establish hosted CI in `.github/workflows/ci.yml`; deterministic aggregate; pin reviewed action/tool inputs | G1 | **COMPLETE** on main. Windows/Ubuntu checks, maintained Windows UI suite, WinUI build, stable required aggregate, and separate real-qBittorrent API lane pass on main. |
 | G2b | Enable native main ruleset, squash-only repository merge settings, and document policy | G2a working on default branch; G0-T if selected | **COMPLETE** on main. Ruleset `24023362` requires the exact CI and real-qBittorrent contexts; PR-only, up-to-date, resolved conversations, squash-only, no force-push/deletion or bypass. |
-| G3a | Add English GitHub issue forms, PR template, and contribution guidance for reproducible scope, acceptance evidence, privacy, and test proof; no CODEOWNERS without additional owners | G0 | Repository templates validated; link each submitted work item to one issue/PR and explicit acceptance evidence. |
-| G3b | Inspect and configure one native Project, fields/status workflows, milestones, and native issue hierarchy/dependencies if useful | G0; Project API access | Project inventory recorded; one real item follows backlog → ready → in progress → review → done with acceptance evidence; no duplicate custom tracker or double-counted parent/child milestone. |
-| G4 | Optional trusted runner onboarding; changes in runner-pool repo and selected access policy, not application fixture hacks; `docs/ci-runner-operations.md` | G2b, explicit need, org access decision | Dedicated identity/host boundary, repo/workflow restrictions, no production access, exact runner/job assignment, cleanup/update/recovery proof; unavailable restrictions mean remain hosted |
-| G5a | Reproducible build/staging/release lane: `.github/workflows/release.yml`, dependency lock/constraints, `scripts/release_prep.py`, release/deployment runbook | G2b; G4 only if technically needed | Version touchpoints synchronized; trusted main SHA equals tag/artifact source; disposable-container health/contract smoke; staged release assets; no accidental live mounts |
+| G3a | Add English GitHub issue forms, PR template, and contribution guidance for reproducible scope, acceptance evidence, privacy, and test proof; no CODEOWNERS without additional owners | G0 | **COMPLETE** in PR #46, merged as `d227db3`. YAML/schema validation, all PR checks, and exact-main CI plus real-qBittorrent integration passed. |
+| G3b | Inspect and configure one native Project, fields/status workflows, milestones, and native issue hierarchy/dependencies if useful | G0; Project API access | **CONFIGURED; lifecycle observation pending.** Private user Project #2 is linked to this repository at [qBittorrent RSS Rules](https://github.com/users/Spon4ik/projects/2). Status options are Backlog, Ready, In Progress, In Review, Done; Priority is the only custom triage field. The Delivery flow board groups by Status and shows milestone, priority, parent issue, and sub-issue progress. Seven native workflows are enabled: auto-add all open repository issues/PRs, add new items to Backlog, set In Review for linked PRs, In Progress for requested changes, Ready for reopened items, Done for closed issues, and auto-add sub-issues. Issue #47 is tracked in Backlog. No milestone exists or fits that unrelated issue; no hierarchy/dependency was invented. Keep G3b open until a real item naturally demonstrates a transition through review and closure; do not close/reopen a real issue just to test the automation. |
+| G4 | **DEFERRED.** Retain standard hosted runners; revisit self-hosted only for a demonstrated capability gap or separate explicit infrastructure request. | No current dependency; separate access/host-safety review required | Standard hosted Windows and Ubuntu are free for this public repo. Before any self-hosted execution, prove isolated ephemeral hosts, safe public-PR routing, scoped repo/workflow access, no production access, exact job assignment, cleanup/update/recovery. |
+| G5a | Reproducible build/staging/release lane: `.github/workflows/release.yml`, dependency lock/constraints, `scripts/release_prep.py`, release/deployment runbook | G2b; G4 only if technically needed | Version touchpoints synchronized; trusted main SHA equals tag/artifact source; disposable-container health/contract smoke; staged Windows bundle and source archives; no accidental live mounts |
 | G5b | Design and implement gated production promotion, environment/concurrency, backup/restore and provenance; reconcile finalizer, updater and `AGENTS.md` before automation | G5a and separately approved production design | Existing finalizer gate or approved proven successor; verified backup restore in scratch environment; exact deployed SHA/digest and health; rollback drill; recorded approval; delivery item closed only with evidence |
 | G6 | Native security/dependency maintenance and compact governance upkeep: `.github/dependabot.yml`, `SECURITY.md`, default CodeQL where suitable, dependency review, release checklist | G2b, G3 | Update PR traverses normal gate; supported Python/.NET/Actions dependencies covered; initial findings triaged; redacted artifacts; no scheduled AI issue hunting |
 
-Sequence: G0 -> G1 -> G2a -> G2b; G3a can proceed now and G3b requires Project
-API read/write access. This repo stays personal, so organization-only issue types and
-fields are not prerequisites. G0-T is not selected. G4 is optional.
-G0-T is required only for selected organization-specific dependencies. G4 is optional.
+Sequence: G0 -> G1 -> G2a -> G2b -> G3a; G3b's Project setup is configured, with
+natural lifecycle observation pending. Project API read/write access is now
+available. This repo stays personal, so organization-only issue types and fields
+are not prerequisites. G0-T is not selected. G4 is deferred unless a concrete
+need changes the cost/security tradeoff. G0-T is required only for selected
+organization-specific dependencies.
 G5a precedes G5b; G6 follows baseline CI. A failed gate stops dependent work, not
 independent documentation. No artificial calendar dates or next app version are
 assigned before the maintainer chooses scope.
@@ -379,6 +428,7 @@ feature availability and organization policy when implementation is authorized.
 [runner-access]: https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/manage-access
 [merge-queue]: https://docs.github.com/en/pull-requests/concepts/deploying-code
 [actions-security]: https://docs.github.com/en/actions/reference/security/secure-use
+[actions-billing]: https://docs.github.com/en/billing/concepts/product-billing/github-actions
 [selfhost-security]: https://docs.github.com/en/actions/concepts/runners/self-hosted-runners
 [environments]: https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments
 [deployment-review]: https://docs.github.com/en/actions/how-tos/managing-workflow-runs-and-deployments/managing-deployments/reviewing-deployments

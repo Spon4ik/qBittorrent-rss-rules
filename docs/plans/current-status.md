@@ -2,15 +2,55 @@
 
 ## Current focus
 
-- Governance G1 test isolation and G2 hosted CI/main protection are complete on
-  `main`. G3 repository-local English issue forms, PR template, and contribution
-  guidance are prepared in the current PR. G3's native Project inventory and
-  workflow verification remain pending because the authenticated CLI lacks
-  `read:project`; there are no repository milestones, and no Project state is
-  claimed. The repo remains under `Spon4ik`; organization-only issue types/fields
-  and a transfer are out of scope. The scheduled Codex maintainer is paused, and
+- G5a Windows/source release staging and publication are complete for v1.4.24.
+  Release workflow run
+  [36255119862](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36255119862)
+  succeeded from exact main SHA `115b992ab6a86adf9929d75a32c99ea84a7b4021`.
+  Exact-SHA CI run [36254896183](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36254896183)
+  and qBittorrent API run
+  [36254896177](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36254896177)
+  passed first. The workflow then passed its protected-main/tag guard and
+  disposable-container smoke, built and verified the portable Windows x64
+  bundle, and created the draft release with the ZIP and SHA-256 sidecar. The
+  release is now published at
+  [v1.4.24](https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.24).
+  Tag `v1.4.24` resolves to the same main SHA, and GitHub's source ZIP and TAR
+  archive endpoints both return HTTP 200. PR #65 fixed Robocopy success exit handling that had
+  caused the previous package step to fail after producing a valid ZIP. G5a is
+  validated and published. GHCR and production access are excluded; production
+  deployment remains G5b and was not attempted.
+  See the [release runbook](../releases.md).
+
+- Governance G1 test isolation, G2 hosted CI/main protection, and G3a repository
+  templates are complete on `main`. PR #46 added English bug/feature/question
+  forms, a PR template tying changes to issue acceptance and test evidence, and
+  contribution guidance. The forms pass YAML/schema assertions; all PR checks
+  passed. Exact post-merge SHA `d227db3bb438163ac0f1b759248a189fc1750b91` passed
+  main CI run [36243525969](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36243525969)
+  and real-qBittorrent API run [36243525914](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36243525914).
+  G3b's native Project is configured at
+  [qBittorrent RSS Rules](https://github.com/users/Spon4ik/projects/2), linked to
+  this repository. It has a five-state Status field, one Priority field, a
+  status-grouped Delivery flow board, and seven enabled native workflows. All
+  open repository issues and pull requests are auto-added; new items enter
+  Backlog, linked pull requests set In Review, requested changes set In Progress,
+  reopened items set Ready, and closed issues set Done. Existing issue #47 is the
+  first item and remains in Backlog. No repository milestones exist, so no
+  unrelated milestone was created; no parent/child hierarchy was needed. The
+  configuration is live, while observing an issue traverse natural review and
+  closure events remains pending; do not simulate those events on a real bug.
+  The repository stays under `Spon4ik`; organization-only issue types/fields and
+  a transfer are out of scope. The scheduled Codex maintainer is paused, and
   existing forms use standard labels without issue-triage bot assumptions. See
   the [governance plan](2026-09-25-native-github-delivery-governance.md).
+
+- G4 self-hosted runner adoption is deferred. GitHub documents standard hosted
+  runners as free for public repositories, and GitHub advises against persistent
+  self-hosted runners for public PR workflows because contributors can execute
+  untrusted code. The live organization runner group is broad (`Default` allows
+  public repositories and all workflows) and cannot be assigned to this personal
+  repository as-is; this repository has no self-hosted runner. Revisit only for a
+  concrete technical need and an isolated, restricted host design.
 
 - G1 test isolation is complete in PR #56 (`59c3e3dd`). Pytest now strips
   inherited provider configuration,

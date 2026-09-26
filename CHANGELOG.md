@@ -6,6 +6,17 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
+- Clarify release draft publication, tag creation, and source archive verification
+  steps.
+
+## [1.4.24] - 2026-09-26
+
+- Stage portable Windows releases and matching GitHub source archives from a
+  validated protected-main commit, with locked build dependencies, a fail-closed
+  remote-tag guard, and isolated container smoke coverage.
+- Preserve existing unreleased notes when preparing the next version section.
+- Treat Robocopy's successful copy exit codes as success in the Windows packager.
+
 - Add issue forms and a pull request template that request reproducible scope,
   acceptance evidence, and sanitized validation details.
 

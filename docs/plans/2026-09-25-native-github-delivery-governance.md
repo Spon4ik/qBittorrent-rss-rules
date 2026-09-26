@@ -278,9 +278,12 @@ An operator reviews and publishes the draft; no container image is published.
 The workflow implementation merged in PR #61 at `f04b29539a24a38eca7535d85ee98d65c39c3a70`;
 post-merge CI run `36251042266` and API integration run `36251042230` passed on
 that SHA. The first end-to-end draft run is being exercised through the active
-`codex/release-v1.4.24` version-preparation PR. Its preparation also fixes and
-regression-tests changelog note preservation. The staged-release acceptance is
-pending merge and a successful manual workflow run; no release has been created.
+`codex/release-v1.4.24` version-preparation PR. Its preparation fixed and
+regression-tested changelog note preservation. The first manual workflow run
+verified the same-SHA gates but exposed a PowerShell stderr handling issue in the
+tag guard, then safely stopped before packaging or release creation. The guard
+correction is active on `codex/fix-release-guard`; staged-release acceptance is
+pending its merge and a successful retry. No release has been created.
 
 Serialize production deployment with `cancel-in-progress: false`. Prevent stale
 queued commits from replacing a newer deployment. Check exact source identity and

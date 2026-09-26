@@ -11,8 +11,8 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 ## [1.4.24] - 2026-09-26
 
 - Stage portable Windows releases and matching GitHub source archives from a
-  validated protected-main commit, with locked build dependencies and isolated
-  container smoke coverage.
+  validated protected-main commit, with locked build dependencies, a fail-closed
+  remote-tag guard, and isolated container smoke coverage.
 - Preserve existing unreleased notes when preparing the next version section.
 
 - Add issue forms and a pull request template that request reproducible scope,

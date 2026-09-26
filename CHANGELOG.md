@@ -6,6 +6,9 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
+- Add issue forms and a pull request template that request reproducible scope,
+  acceptance evidence, and sanitized validation details.
+
 - Add hosted Windows and Ubuntu full-check CI, the maintained Windows UI suite,
   the WinUI build, and a required aggregate status job.
 - Test that the required CI aggregate rejects failed, cancelled, skipped, and

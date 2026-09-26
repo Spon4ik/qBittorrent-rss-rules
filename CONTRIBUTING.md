@@ -43,6 +43,11 @@ these boundaries before changing their behavior.
 
 ## Pull request checklist
 
+- Link one primary issue and map its acceptance criteria to observable evidence.
+- Keep issue, parent, and child scope distinct; do not count a parent and its
+  deliverable children as separate completed work for one milestone.
+- Record focused regression evidence, affected checks, and deployment/release
+  evidence when those are part of the issue's acceptance criteria.
 - The code is typed and lint-clean.
 - Tests cover the changed behavior.
 - Docs and roadmap are updated if behavior changed.

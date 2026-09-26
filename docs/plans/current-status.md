@@ -2,6 +2,16 @@
 
 ## Current focus
 
+- Governance G1 test isolation and G2 hosted CI/main protection are complete on
+  `main`. G3 repository-local English issue forms, PR template, and contribution
+  guidance are prepared in the current PR. G3's native Project inventory and
+  workflow verification remain pending because the authenticated CLI lacks
+  `read:project`; there are no repository milestones, and no Project state is
+  claimed. The repo remains under `Spon4ik`; organization-only issue types/fields
+  and a transfer are out of scope. The scheduled Codex maintainer is paused, and
+  existing forms use standard labels without issue-triage bot assumptions. See
+  the [governance plan](2026-09-25-native-github-delivery-governance.md).
+
 - G1 test isolation is complete in PR #56 (`59c3e3dd`). Pytest now strips
   inherited provider configuration,
   gives each test a temporary SQLite URL, and refuses checkout-backed database

@@ -70,8 +70,10 @@ Ruff, mypy, and pytest (`597 passed, 0 failed, 0 errors, 1 skipped`). The actual
 aggregate workflow invokes the tested helper with live lane results. Its first PR
 run correctly failed the aggregate because that lightweight job had not checked
 out the helper script; the three test/build lanes and qBittorrent integration all
-passed. The aggregate now checks out source before invoking the helper; the updated
-exact-head run must pass before G2a closeout.
+passed. The aggregate now checks out source before invoking the helper. The corrected
+exact PR head `51e573ec99b338345e228b5ab97e7517a8266233` passed all CI lanes,
+including `required`, in run `36226813782`; the real qBittorrent integration passed
+in run `36226813783`.
 
 The CI workflow validates code and UI; Docker deployment and release publication
 remain separate delivery steps. Issue #50's v1.4.23 closeout passed the required

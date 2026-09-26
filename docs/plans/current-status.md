@@ -20,8 +20,12 @@
   but stopped in the remote-tag guard because PowerShell treated `gh release
   view`'s expected missing-release stderr as terminating; build, smoke, tag, and
   draft steps were skipped. No tag or release was created. The guard correction
-  is active on `codex/fix-release-guard`; next: pass PR checks, merge, confirm
-  exact-SHA `main` workflows, then retry staging.
+  is merged; the retry passed the guard and container smoke and produced the
+  Windows ZIP, but the packaging step returned failure because Robocopy's
+  successful copy code remained set for the Actions PowerShell wrapper. Release
+  creation was skipped. Exit-code normalization is active on
+  `codex/fix-package-exit-code`; next: pass PR checks, merge, confirm exact-SHA
+  `main` workflows, then retry staging.
   See the [release runbook](../releases.md).
 
 - Governance G1 test isolation, G2 hosted CI/main protection, and G3a repository

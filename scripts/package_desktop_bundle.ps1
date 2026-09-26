@@ -24,9 +24,12 @@ function Invoke-Robocopy {
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     $arguments = @($Source, $Destination) + $ExtraArgs
     & robocopy @arguments | Out-Null
-    if ($LASTEXITCODE -ge 8) {
-        throw "robocopy failed ($LASTEXITCODE): $Source -> $Destination"
+    $robocopyExitCode = $LASTEXITCODE
+    if ($robocopyExitCode -ge 8) {
+        throw "robocopy failed ($robocopyExitCode): $Source -> $Destination"
     }
+    # Robocopy uses exit codes 1-7 for successful copies; normalize for CI shells.
+    $global:LASTEXITCODE = 0
 }
 
 $projectRoot = [System.IO.Path]::GetFullPath($ProjectRoot)

@@ -281,9 +281,13 @@ that SHA. The first end-to-end draft run is being exercised through the active
 `codex/release-v1.4.24` version-preparation PR. Its preparation fixed and
 regression-tested changelog note preservation. The first manual workflow run
 verified the same-SHA gates but exposed a PowerShell stderr handling issue in the
-tag guard, then safely stopped before packaging or release creation. The guard
-correction is active on `codex/fix-release-guard`; staged-release acceptance is
-pending its merge and a successful retry. No release has been created.
+tag guard, then safely stopped before packaging or release creation. After the
+guard fix merged, the retry passed the guard and container smoke and produced the
+ZIP, but the packaging step returned failure because Robocopy's successful copy
+code remained set for the Actions PowerShell wrapper; release creation was
+skipped. Exit-code normalization is active on `codex/fix-package-exit-code`;
+staged-release acceptance is pending its merge and a successful retry. No
+release has been created.
 
 Serialize production deployment with `cancel-in-progress: false`. Prevent stale
 queued commits from replacing a newer deployment. Check exact source identity and

@@ -6,6 +6,8 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
+- Draft the G5b gated manual production-promotion design; no production changes
+  are included.
 - Clarify release draft publication, tag creation, and source archive verification
   steps.
 

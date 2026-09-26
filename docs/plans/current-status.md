@@ -2,6 +2,15 @@
 
 ## Current focus
 
+- G5a is complete and v1.4.24 is published. G5b's manual Windows production
+  promotion design is drafted for review in
+  [the G5b design spec](../superpowers/specs/2026-09-26-g5b-manual-production-promotion-design.md).
+  The proposed gate uses a protected GitHub Environment for approval of an
+  exact published tag, then requires local promotion from a clean stable
+  checkout through the existing finalizer. No production runner, Compose edit,
+  backup, rebuild, or deployment has occurred. G5b implementation planning is
+  waiting for review of the written spec.
+
 - G5a Windows/source release staging and publication are complete for v1.4.24.
   Release workflow run
   [36255119862](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36255119862)

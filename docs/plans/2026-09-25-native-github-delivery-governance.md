@@ -292,7 +292,10 @@ was then published at
 `refs/tags/v1.4.24` resolves directly to the validated main SHA, and GitHub's
 tagged source ZIP/TAR endpoints both return HTTP 200. No GHCR image or
 production deployment was created. G5a staging and publication acceptance are
-complete; G5b remains separate.
+complete. G5b is design-drafted in
+`docs/superpowers/specs/2026-09-26-g5b-manual-production-promotion-design.md`;
+implementation has not started and requires maintainer review of that spec and
+a subsequent implementation plan.
 
 Serialize production deployment with `cancel-in-progress: false`. Prevent stale
 queued commits from replacing a newer deployment. Check exact source identity and

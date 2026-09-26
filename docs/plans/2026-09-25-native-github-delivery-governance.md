@@ -275,6 +275,11 @@ protected `main`, verifies both required workflow runs against the selected SHA,
 uses locked Python/NuGet dependencies, and stages a draft GitHub Release only
 after Windows packaging and a no-host-mount disposable-container smoke pass.
 An operator reviews and publishes the draft; no container image is published.
+The workflow implementation merged in PR #61 at `f04b29539a24a38eca7535d85ee98d65c39c3a70`;
+post-merge CI run `36251042266` and API integration run `36251042230` passed on
+that SHA. The first end-to-end draft run remains pending the next merged version
+preparation, so G5a's staged-release acceptance is not yet exercised and no
+release was created as part of the workflow implementation.
 
 Serialize production deployment with `cancel-in-progress: false`. Prevent stale
 queued commits from replacing a newer deployment. Check exact source identity and

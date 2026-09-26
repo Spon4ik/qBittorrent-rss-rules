@@ -40,12 +40,14 @@ commit before `CI / required` is added to the main ruleset. Capture the workflow
 run and tested SHA for both platforms and the Windows UI/desktop lanes. Never merge
 or treat a red full-suite run as success.
 
-Current `main` has known full-suite failures tracked by
-[issue #50](https://github.com/Spon4ik/qBittorrent-rss-rules/issues/50). The new
-backend lane is expected to expose those failures until their root causes are
-fixed. This is a merge blocker for enforcing the aggregate check, not a reason to
-skip or weaken tests. The workflow implementation and local command checks are
-being developed on a separate branch.
+The first full CI run exposed seven failures tracked by
+[issue #50](https://github.com/Spon4ik/qBittorrent-rss-rules/issues/50). The
+candidate repair restores the missing `240p`/`400p` packaged taxonomy entries,
+replaces the startup timing threshold with an event-coordinated regression, and
+isolates pytest from persistent checkout runtime data. Its local full gate passed;
+the updated Windows and Ubuntu Actions runs are the acceptance proof still
+pending. Keep this draft until both platform lanes, browser UI, desktop build, and
+the aggregate job pass on the same PR head.
 
 No application deployment, production runner access, release, or tag is part of
 this CI change.

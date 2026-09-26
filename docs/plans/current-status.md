@@ -7,10 +7,11 @@
   maintained Windows browser UI suite, the WinUI build, and a stable aggregate
   `required` job. Standard hosted runners are free for this public repository, so
   these jobs do not consume billable Actions minutes. Existing CI currently
-  requires only the focused qBittorrent integration check. Full-suite failures on
-  `main` remain tracked by issue #50; the new aggregate must pass on a PR and exact
-  `main` commit before it becomes a required ruleset check. See
-  [CI adoption plan](ci-migration.md).
+  requires only the focused qBittorrent integration check. The first full CI run
+  exposed issue #50 regressions; the candidate repair is now included in this PR
+  and has passed the local full gate. The updated Windows and Ubuntu Actions runs
+  must pass on the same PR head and exact `main` commit before the aggregate becomes
+  a required ruleset check. See [CI adoption plan](ci-migration.md).
 
 - `v1.4.22` fixes the Real-Debrid/qBittorrent webseed failure tracked by
   [issue #48](https://github.com/Spon4ik/qBittorrent-rss-rules/issues/48).

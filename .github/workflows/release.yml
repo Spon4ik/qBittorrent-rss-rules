@@ -60,15 +60,12 @@ jobs:
 
       - name: Reject an existing tag or release
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
           $tag = "v$env:RELEASE_VERSION"
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) { throw "Release $tag already exists" }
-          git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
-          if ($LASTEXITCODE -eq 0) { throw "Tag $tag already exists" }
+          $matchingTags = git ls-remote --tags origin "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw "Could not check remote tag $tag (git exit $LASTEXITCODE)" }
+          if (-not [string]::IsNullOrWhiteSpace($matchingTags)) { throw "Tag $tag already exists" }
         shell: pwsh
 
   build-windows:

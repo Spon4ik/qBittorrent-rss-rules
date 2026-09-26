@@ -16,8 +16,12 @@
   That branch preserves the pending changelog notes, synchronizes the `1.4.24`
   version touchpoints, and adds a regression for changelog preservation. Focused
   release/version tests and the health-version test pass; the WinUI desktop
-  rebuild passes. No tag or release exists yet. Next: pass PR checks, merge,
-  confirm exact-SHA `main` workflows, then manually stage the draft release.
+  rebuild passes. The first workflow dispatch passed same-SHA CI/API validation
+  but stopped in the remote-tag guard because PowerShell treated `gh release
+  view`'s expected missing-release stderr as terminating; build, smoke, tag, and
+  draft steps were skipped. No tag or release was created. The guard correction
+  is active on `codex/fix-release-guard`; next: pass PR checks, merge, confirm
+  exact-SHA `main` workflows, then retry staging.
   See the [release runbook](../releases.md).
 
 - Governance G1 test isolation, G2 hosted CI/main protection, and G3a repository

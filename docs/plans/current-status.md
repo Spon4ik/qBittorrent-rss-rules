@@ -2,16 +2,13 @@
 
 ## Current focus
 
-- Full local-check adoption is merged as PR #52 (`ba0595c3`). The new workflow has
-  Windows and Ubuntu backend checks, the Windows UI suite, the WinUI build, and a
-  stable `CI / required` aggregate. Hosted runners cost no billable minutes for
-  this public repository. Every lane passed on PR head `9f9b6fa4`, including the
-  real-qBittorrent integration. The exact-main run exposed two test races: the
-  startup-sync regression depended on real session setup, and qB readback could
-  occur before its torrent-info list updated. A follow-up now isolates those
-  paths and adds bounded readback polling; local focused checks pass, while exact
-  main/PR Actions validation remains pending. Do not require `CI / required` in
-  the ruleset until the follow-up passes on its PR and exact main SHA. See
+- GitHub Actions CI adoption is complete in PR #52 (`ba0595c3`), with race fixes
+  in PR #53. The workflow runs Windows and Ubuntu backend gates, the Windows UI
+  suite, WinUI build, and `CI / required`; the real-qBittorrent integration stays
+  a focused separate workflow. All checks passed on exact main commit
+  `c7cb4d5f` (CI run `36209791955`, integration run `36209791977`). Ruleset
+  `24023362` now requires both `required` and `real-qbittorrent-webseed-api`.
+  Standard GitHub-hosted runners are free for this public repository. See
   [CI adoption plan](ci-migration.md).
 
 - `v1.4.22` fixes the Real-Debrid/qBittorrent webseed failure tracked by
@@ -26,17 +23,15 @@
   The focused real-qBittorrent suite passed (`22 passed`). PR #49 was squash-
   merged to protected `main` as `ec3cc845`; the pinned integration job passed
   on the PR and merge commit (runs `36197363920` and `36198173177`). Ruleset
-  `24023362` requires PRs, that Actions check, up-to-date heads, resolved review
+  `24023362` requires PRs, both Actions checks, up-to-date heads, resolved review
   threads, squash-only merges, and blocks force-push/deletion with no bypass
-  actors. Issue #48 is closed; full-finalizer recovery is tracked in issue #50.
-  Post-merge `Finalize-Backend` passed Ruff/mypy but stopped before Docker:
-  pytest had `576 passed, 7 failed, 1 skipped` (one startup timing test and six
-  resolution-quality expectations). A v1.4.23 candidate restores the missing
-  `240p`/`400p` resolution taxonomy entries and replaces the startup wall-clock
-  threshold with an event-coordinated concurrency assertion. The targeted issue
-  #50 regressions and the full local check pass (`583 passed, 1 skipped`). This
-  candidate is not merged; the post-merge finalizer, Docker deployment, and release
-  remain pending. Runtime remains at v1.4.21.
+  actors. Issue #48 is closed. The v1.4.23 release also closes issue #50: the
+  packaged quality taxonomy includes `240p`/`400p`; startup concurrency coverage
+  uses event coordination and isolated session/scheduler setup; and pytest runtime
+  data is isolated from persistent checkout data. `Finalize-Backend.cmd
+  --no-pause` passed at `c7cb4d5f` (Ruff/mypy clean; `585 passed, 1 skipped`),
+  rebuilt Docker, and verified `/health` reports `1.4.23`. Annotated tag and
+  GitHub Release `v1.4.23` are published; runtime is current.
 
 - The `v1.4.20` qB diagnostics rule-header repair and its unrelated full-suite
   isolation repair are implemented and deployed. The maintained UI suite

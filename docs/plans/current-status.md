@@ -11,6 +11,17 @@
   Standard GitHub-hosted runners are free for this public repository. See
   [CI adoption plan](ci-migration.md).
 
+- CI follow-up adds an explicit fail-closed regression for the stable aggregate:
+  each required lane's failed/cancelled/skipped result and missing results must
+  reject the gate. The workflow uses the same tested helper. Third-party actions
+  are pinned by commit SHA in both workflows; their PR permissions remain read-only
+  with no secrets or `pull_request_target`. Focused regression passed (`12 passed`);
+  `scripts/check.bat` passed Ruff, mypy, and pytest (`597 passed, 1 skipped`). The
+  first PR run caught a missing checkout in the lightweight aggregate job while
+  all five other checks passed. The corrected PR head
+  `51e573ec99b338345e228b5ab97e7517a8266233` passed all lanes including `required`
+  (CI run `36226813782`) and qBittorrent integration (run `36226813783`).
+
 - `v1.4.22` fixes the Real-Debrid/qBittorrent webseed failure tracked by
   [issue #48](https://github.com/Spon4ik/qBittorrent-rss-rules/issues/48).
   qBittorrent percent-decodes form values before strict URL validation, so

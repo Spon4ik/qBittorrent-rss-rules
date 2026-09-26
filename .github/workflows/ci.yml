@@ -94,12 +94,12 @@ jobs:
     needs: [backend-checks, browser-ui, desktop-build]
     runs-on: ubuntu-latest
     steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
       - name: Require every CI lane to pass
         env:
           BACKEND_CHECKS_RESULT: ${{ needs.backend-checks.result }}
           BROWSER_UI_RESULT: ${{ needs.browser-ui.result }}
           DESKTOP_BUILD_RESULT: ${{ needs.desktop-build.result }}
-        run: |
-          test "$BACKEND_CHECKS_RESULT" = success
-          test "$BROWSER_UI_RESULT" = success
-          test "$DESKTOP_BUILD_RESULT" = success
+        run: python scripts/ci_required_gate.py

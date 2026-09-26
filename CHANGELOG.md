@@ -8,6 +8,8 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - Add hosted Windows and Ubuntu full-check CI, the maintained Windows UI suite,
   the WinUI build, and a required aggregate status job.
+- Test that the required CI aggregate rejects failed, cancelled, skipped, and
+  missing lane results; pin the qBittorrent integration workflow actions by SHA.
 
 ## [1.4.23] - 2026-09-26
 

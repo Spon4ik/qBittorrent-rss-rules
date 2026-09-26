@@ -6,9 +6,9 @@
   decide repository ownership, prove test isolation/TDD, establish hosted CI before
   required main checks, adopt native issue/Project tracking, and qualify trusted
   runners plus gated deployment only when needed.
-- G1 test isolation and G2 hosted CI/main protection are implemented. G3 issue/PR
-  templates are in progress; native Project configuration awaits API access. Phase
-  44 remains a separate active product phase.
+- G1 test isolation, G2 hosted CI/main protection, and G3a issue/PR templates are
+  implemented. G3b native Project configuration awaits API access. Phase 44 remains
+  a separate active product phase.
 
 ## Current release state: v1.4.23 published; Phase 44 active
 

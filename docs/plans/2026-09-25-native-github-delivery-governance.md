@@ -277,9 +277,10 @@ after Windows packaging and a no-host-mount disposable-container smoke pass.
 An operator reviews and publishes the draft; no container image is published.
 The workflow implementation merged in PR #61 at `f04b29539a24a38eca7535d85ee98d65c39c3a70`;
 post-merge CI run `36251042266` and API integration run `36251042230` passed on
-that SHA. The first end-to-end draft run remains pending the next merged version
-preparation, so G5a's staged-release acceptance is not yet exercised and no
-release was created as part of the workflow implementation.
+that SHA. The first end-to-end draft run is being exercised through the active
+`codex/release-v1.4.24` version-preparation PR. Its preparation also fixes and
+regression-tests changelog note preservation. The staged-release acceptance is
+pending merge and a successful manual workflow run; no release has been created.
 
 Serialize production deployment with `cancel-in-progress: false`. Prevent stale
 queued commits from replacing a newer deployment. Check exact source identity and

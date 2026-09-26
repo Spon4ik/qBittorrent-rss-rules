@@ -125,3 +125,9 @@ def test_docker_wrapper_requires_runtime_freshness_before_success() -> None:
     assert "--require-runtime-current" in wrapper
     assert "deployed runtime matches the checkout version" in wrapper
     assert "Docker update failed or the deployed runtime is stale" in wrapper
+
+
+def test_issue_regression_inventory_is_complete() -> None:
+    from issue_coverage import audit
+
+    assert audit() == []

@@ -14,6 +14,18 @@ unfinished Phase 44 work separate from governance commits.
 In implementation. UI/API behavior is implemented and live-smoke-tested; automatic
 Codex heartbeat pickup remains pending end-to-end proof after the active task yields.
 
+## Deterministic maintenance follow-up (2026-09-26)
+
+The `docs/repository-agent-skills` branch carries two additional application
+changes for review: persist one redacted maintenance incident only after an
+acceleration job reaches a terminal state, and retry failed rules once within the
+same scheduled fetch batch. Regression tests and the issue-test inventory are
+included. These changes remain unreleased and undeployed. Focused validation
+passes (`32 passed`); Ruff and mypy pass; the full suite passes (`605 passed,
+0 failed, 0 errors, 1 skipped`). Compose path auto-repair is excluded; the shared
+build context and database bind mount must be changed intentionally. Production
+deployment remains pending.
+
 ## Active follow-up: Real-Debrid WebSeed 400 (issue #48)
 
 The selected Real-Debrid file was unrestricted and its HTTP Range proxy worked,

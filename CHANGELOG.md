@@ -11,6 +11,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
   next step.
 - Clarify release draft publication, tag creation, and source archive verification
   steps.
+- Create one redacted, deduplicated engine-maintenance incident when an
+  acceleration job reaches a terminal failure after deterministic recovery,
+  instead of depending on a periodic AI maintainer.
+- Retry failed scheduled rule fetches once within the same batch and persist
+  the recovered `ok` status when the failure was transient.
 
 ## [1.4.24] - 2026-09-26
 

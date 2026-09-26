@@ -437,6 +437,52 @@ def test_rules_fetch_batch_limits_parallel_workers(db_session, monkeypatch) -> N
     assert max_active_workers == 2
 
 
+def test_rules_fetch_batch_retries_failed_rule_once_and_clears_partial_status(
+    db_session, monkeypatch
+) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+        rules_fetch_parallelism=1,
+    )
+    rule = Rule(
+        rule_name="Transient Rule",
+        content_name="Transient Rule",
+        normalized_title="Transient Rule",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+    calls = 0
+
+    def flaky_execute_rule_fetch(session, *, rule, feed_urls_override=None, **kwargs):
+        nonlocal calls
+        calls += 1
+        return {
+            "rule_id": rule.id,
+            "rule_name": rule.rule_name,
+            "success": calls > 1,
+            "state": "no_matches" if calls > 1 else "error",
+            "rank": 3 if calls > 1 else 0,
+            "filtered_count": 0,
+            "fetched_count": 0,
+            "warnings": [],
+            "notices": [],
+            "error": "transient timeout" if calls == 1 else "",
+        }
+
+    monkeypatch.setattr(rule_fetch_ops, "execute_rule_fetch", flaky_execute_rule_fetch)
+
+    result = rule_fetch_ops.run_rules_fetch_batch(db_session, run_all=True)
+
+    assert result["status"] == "ok"
+    assert result["succeeded"] == 1
+    assert result["failed"] == 0
+    assert calls == 2
+
+
 def test_rule_local_filter_excludes_zero_based_ranges_below_episode_floor() -> None:
     rule = Rule(
         rule_name="The Good Ship Murder",

@@ -49,7 +49,7 @@ addopts = "-q --ignore-glob=*-DESKTOP-*.py"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-extend-exclude = ["*-DESKTOP-*.py"]
+extend-exclude = ["*-DESKTOP-*.py", ".agents"]
 
 [tool.ruff.lint]
 select = [

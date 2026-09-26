@@ -6,7 +6,8 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
-- No entries yet.
+- Add hosted Windows and Ubuntu full-check CI, the maintained Windows UI suite,
+  the WinUI build, and a required aggregate status job.
 
 ## [1.4.22] - 2026-09-26
 

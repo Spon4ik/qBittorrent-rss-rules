@@ -1,6 +1,6 @@
 # G5b Manual Production Promotion Design
 
-**Status:** Draft for maintainer review
+**Status:** Accepted for implementation; production promotion remains a separate operator action
 **Date:** 2026-09-26
 **Audience:** Repository maintainer and release operator
 
@@ -125,14 +125,19 @@ This spec authorizes no production Compose edit, container rebuild, database bac
 - SQLite checks prove online backup integrity and successful isolated restore; failures stop before rebuild.
 - Disposable Compose integration covers image retention, health/version recording, failed health, and image rollback without touching production data.
 - The runbook documents exact commands, expected output, private backup retention, manual authorization, recovery, and evidence capture.
-- Production acceptance requires an explicitly authorized promotion, existing finalizer success, and `scripts\runtime_state.bat --require-runtime-current --require-upstream-synced` on the exact release SHA. CI evidence alone cannot close G5b.
+- Production acceptance requires an explicitly authorized promotion, existing finalizer success, verification that detached `HEAD` equals the published tag's peeled commit SHA, and `scripts\runtime_state.bat --require-runtime-current`. `--require-upstream-synced` is not valid for a detached tag checkout. CI evidence alone cannot close G5b.
 
-## Implementation-plan decisions to verify
+## Resolved implementation decisions
 
-- Select a stable deployment checkout path and verify its drive and permissions without changing Compose during planning.
-- Confirm Environment reviewer identity availability and `gh` permissions/API behavior before implementing approval extraction and production deployment status updates.
-- Choose whether to add a redacted release/issue comment in addition to the GitHub Deployment record; never publish private backup paths.
-- Define the local promotion lock and image-retention command against the installed Docker Desktop/Compose version.
+- Stable checkout: `C:\Users\nucc\deployments\qBittorrent-rss-rules` on the fixed system drive. It is currently absent; create it only from the local promotion command on explicit operator invocation.
+- Approval: GitHub Environment `production-approval`, with repository owner `Spon4ik` as sole required reviewer, self-review allowed, and administrator bypass disabled. This records owner approval, not independent review. Workflow artifact records the approval; a separate GitHub `production` Deployment is the production outcome audit. No release/issue comment is needed.
+- Promotion lock: exclusive OS file lock at `C:\Users\nucc\docker-config\qbrss-production.lock`, held for the full local promotion and automatically released on process exit.
+- Private backups and local journal: under `C:\Users\nucc\docker-config\backups\qbrss\`; never expose paths or contents to GitHub.
+- Retain the existing production image by immutable image ID before rebuilding. The GitHub `production` Deployment and private local JSON journal are the canonical audit records.
+- The current published/deployed release is v1.4.24. First promotion must use a newly published higher version; reject equal or lower versions by default.
+- Read-only GitHub/API and Compose inspection is permitted during implementation. Creating the Environment, editing shared Compose, creating backups, rebuilding Docker, and deploying remain outside implementation validation; production mutation requires a separate explicit operator promotion action.
+
+Implementation steps and file ownership are specified in [the G5b implementation plan](../plans/2026-09-27-g5b-manual-production-promotion.md).
 
 ## References
 

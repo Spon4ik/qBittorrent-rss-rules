@@ -3,13 +3,16 @@
 ## Current focus
 
 - G5a is complete and v1.4.24 is published. G5b's manual Windows production
-  promotion design is drafted for review in
+  promotion design is accepted for implementation in
   [the G5b design spec](../superpowers/specs/2026-09-26-g5b-manual-production-promotion-design.md).
   The proposed gate uses a protected GitHub Environment for approval of an
   exact published tag, then requires local promotion from a clean stable
-  checkout through the existing finalizer. No production runner, Compose edit,
-  backup, rebuild, or deployment has occurred. G5b implementation planning is
-  waiting for review of the written spec.
+  checkout through the existing finalizer. The decision-complete plan is
+  [here](../superpowers/plans/2026-09-27-g5b-manual-production-promotion.md).
+  The approval workflow and local promotion gate are next. The current deployed
+  version is v1.4.24, so the first eligible target must be a newly published
+  higher version. No production runner, Environment, Compose edit, backup,
+  rebuild, or deployment has occurred.
 
 - Remote continuity is an explicit repository rule: push each coherent,
   validated checkpoint on its feature branch, keep its PR or handoff current,

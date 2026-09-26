@@ -277,17 +277,22 @@ after Windows packaging and a no-host-mount disposable-container smoke pass.
 An operator reviews and publishes the draft; no container image is published.
 The workflow implementation merged in PR #61 at `f04b29539a24a38eca7535d85ee98d65c39c3a70`;
 post-merge CI run `36251042266` and API integration run `36251042230` passed on
-that SHA. The first end-to-end draft run is being exercised through the active
-`codex/release-v1.4.24` version-preparation PR. Its preparation fixed and
-regression-tested changelog note preservation. The first manual workflow run
-verified the same-SHA gates but exposed a PowerShell stderr handling issue in the
-tag guard, then safely stopped before packaging or release creation. After the
-guard fix merged, the retry passed the guard and container smoke and produced the
-ZIP, but the packaging step returned failure because Robocopy's successful copy
-code remained set for the Actions PowerShell wrapper; release creation was
-skipped. Exit-code normalization is active on `codex/fix-package-exit-code`;
-staged-release acceptance is pending its merge and a successful retry. No
-release has been created.
+that SHA. The `v1.4.24` version-preparation PR preserved and regression-tested
+pending changelog notes. The first manual run safely stopped when PowerShell
+treated the missing-release diagnostic from `gh release view` as an error; PR
+#64 replaced that probe with a remote Git tag lookup. The next run passed the
+guard and container smoke and built a valid Windows ZIP, then exposed the need
+to normalize Robocopy's successful exit codes for the Actions PowerShell
+wrapper. PR #65 fixed that behavior. After its required checks and exact-main
+CI/API runs passed, workflow run `36255119862` completed successfully from
+`115b992ab6a86adf9929d75a32c99ea84a7b4021`, creating draft release `v1.4.24`
+with `qB.RSS.Rules.Desktop-win-x64.zip` and its `.sha256` sidecar. The release
+was then published at
+`https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.24`;
+`refs/tags/v1.4.24` resolves directly to the validated main SHA, and GitHub's
+tagged source ZIP/TAR endpoints both return HTTP 200. No GHCR image or
+production deployment was created. G5a staging and publication acceptance are
+complete; G5b remains separate.
 
 Serialize production deployment with `cancel-in-progress: false`. Prevent stale
 queued commits from replacing a newer deployment. Check exact source identity and

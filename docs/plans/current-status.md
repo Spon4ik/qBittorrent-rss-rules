@@ -2,30 +2,23 @@
 
 ## Current focus
 
-- G5a Windows/source release staging is implemented in merged PR #61
-  (`f13ef0c7`) as main commit `f04b29539a24a38eca7535d85ee98d65c39c3a70`.
-  Post-merge CI run [36251042266](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36251042266)
-  and qBittorrent API integration run
-  [36251042230](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36251042230)
-  both passed on that exact SHA. Locally, the Release/x64 package was built and
-  its ZIP entries checked. The manual lane stages the portable Windows app,
-  SHA-256 file, and matching GitHub source tag after same-SHA CI/API and
-  disposable-container smoke checks. GHCR and production access are excluded;
-  production deployment remains G5b. The first end-to-end draft-release run is
-  being exercised through the active `codex/release-v1.4.24` preparation PR.
-  That branch preserves the pending changelog notes, synchronizes the `1.4.24`
-  version touchpoints, and adds a regression for changelog preservation. Focused
-  release/version tests and the health-version test pass; the WinUI desktop
-  rebuild passes. The first workflow dispatch passed same-SHA CI/API validation
-  but stopped in the remote-tag guard because PowerShell treated `gh release
-  view`'s expected missing-release stderr as terminating; build, smoke, tag, and
-  draft steps were skipped. No tag or release was created. The guard correction
-  is merged; the retry passed the guard and container smoke and produced the
-  Windows ZIP, but the packaging step returned failure because Robocopy's
-  successful copy code remained set for the Actions PowerShell wrapper. Release
-  creation was skipped. Exit-code normalization is active on
-  `codex/fix-package-exit-code`; next: pass PR checks, merge, confirm exact-SHA
-  `main` workflows, then retry staging.
+- G5a Windows/source release staging and publication are complete for v1.4.24.
+  Release workflow run
+  [36255119862](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36255119862)
+  succeeded from exact main SHA `115b992ab6a86adf9929d75a32c99ea84a7b4021`.
+  Exact-SHA CI run [36254896183](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36254896183)
+  and qBittorrent API run
+  [36254896177](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36254896177)
+  passed first. The workflow then passed its protected-main/tag guard and
+  disposable-container smoke, built and verified the portable Windows x64
+  bundle, and created the draft release with the ZIP and SHA-256 sidecar. The
+  release is now published at
+  [v1.4.24](https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.24).
+  Tag `v1.4.24` resolves to the same main SHA, and GitHub's source ZIP and TAR
+  archive endpoints both return HTTP 200. PR #65 fixed Robocopy success exit handling that had
+  caused the previous package step to fail after producing a valid ZIP. G5a is
+  validated and published. GHCR and production access are excluded; production
+  deployment remains G5b and was not attempted.
   See the [release runbook](../releases.md).
 
 - Governance G1 test isolation, G2 hosted CI/main protection, and G3a repository

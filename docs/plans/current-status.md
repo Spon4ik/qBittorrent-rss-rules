@@ -2,6 +2,11 @@
 
 ## Current focus
 
+- Remote continuity is an explicit repository rule: push each coherent,
+  validated checkpoint on its feature branch, keep its PR or handoff current,
+  and verify the remote head before ending or switching tasks. See `AGENTS.md`,
+  “Remote persistence and resumability.”
+
 - The `docs/repository-agent-skills` branch now includes current `main`. Its
   carried application changes add deterministic incident
   persistence after terminal acceleration failure and one retry for failed

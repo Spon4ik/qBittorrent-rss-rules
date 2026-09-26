@@ -6,6 +6,9 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
+- Keep resumable task checkpoints committed and pushed on their feature branches,
+  with the pull request or status handoff recording the exact remote commit and
+  next step.
 - Clarify release draft publication, tag creation, and source archive verification
   steps.
 - Create one redacted, deduplicated engine-maintenance incident when an

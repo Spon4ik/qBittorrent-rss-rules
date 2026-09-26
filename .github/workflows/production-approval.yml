@@ -1,0 +1,101 @@
+name: Production release approval
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published release tag to approve (for example v1.4.25)
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: production-approval
+  cancel-in-progress: false
+
+jobs:
+  require-main:
+    name: Require protected main dispatch
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Reject non-main dispatch
+        env:
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Dispatch this workflow from protected main." >&2
+            exit 1
+          fi
+
+  validate-release:
+    name: Validate published source and CI
+    needs: require-main
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      tag: ${{ steps.validate.outputs.tag }}
+      commit_sha: ${{ steps.validate.outputs.commit_sha }}
+      release_url: ${{ steps.validate.outputs.release_url }}
+      ci_run_id: ${{ steps.validate.outputs.ci_run_id }}
+      ci_run_url: ${{ steps.validate.outputs.ci_run_url }}
+      api_run_id: ${{ steps.validate.outputs.api_run_id }}
+      api_run_url: ${{ steps.validate.outputs.api_run_url }}
+    steps:
+      - name: Check out workflow source from main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate published tag and exact-SHA required runs
+        id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: python scripts/production_approval.py validate
+
+  record-approval:
+    name: Record production approval
+    needs: validate-release
+    if: needs.validate-release.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: production-approval
+    permissions:
+      contents: read
+    steps:
+      - name: Check out workflow source from main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Create data-only approval manifest
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+          COMMIT_SHA: ${{ needs.validate-release.outputs.commit_sha }}
+          RELEASE_URL: ${{ needs.validate-release.outputs.release_url }}
+          CI_RUN_ID: ${{ needs.validate-release.outputs.ci_run_id }}
+          CI_RUN_URL: ${{ needs.validate-release.outputs.ci_run_url }}
+          API_RUN_ID: ${{ needs.validate-release.outputs.api_run_id }}
+          API_RUN_URL: ${{ needs.validate-release.outputs.api_run_url }}
+        run: python scripts/production_approval.py emit-manifest
+
+      - name: Upload approval manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-approval-manifest
+          path: approval-manifest.json
+          if-no-files-found: error
+          retention-days: 90

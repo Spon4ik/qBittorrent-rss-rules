@@ -1,0 +1,18 @@
+name: Question
+description: Ask a usage or setup question
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: What would you like to know?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: What have you tried?
+      description: Include versions and sanitized context. Do not include credentials or private provider data.
+    validations:
+      required: false

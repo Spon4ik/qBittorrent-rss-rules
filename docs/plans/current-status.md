@@ -2,14 +2,69 @@
 
 ## Current focus
 
-- On 2026-09-25, the [native GitHub delivery and governance plan](2026-09-25-native-github-delivery-governance.md)
-  was prepared for review. It covers the optional Spon4ik-Labs transfer, isolated
-  TDD, hosted CI, main rulesets, native issue tracking, trusted runners, and gated
-  deployment. Implementation is NOT STARTED: no transfer, GitHub settings,
-  workflows, runners, tests, or deployment were changed/run for this plan.
-  Next: review G0's ownership decision and runner-access prerequisite before
-  authorizing implementation. Phase 44 and its pre-existing local edits remain
-  active; historical release/runtime claims below were not revalidated here.
+- Governance G1 test isolation and G2 hosted CI/main protection are complete on
+  `main`. G3 repository-local English issue forms, PR template, and contribution
+  guidance are prepared in the current PR. G3's native Project inventory and
+  workflow verification remain pending because the authenticated CLI lacks
+  `read:project`; there are no repository milestones, and no Project state is
+  claimed. The repo remains under `Spon4ik`; organization-only issue types/fields
+  and a transfer are out of scope. The scheduled Codex maintainer is paused, and
+  existing forms use standard labels without issue-triage bot assumptions. See
+  the [governance plan](2026-09-25-native-github-delivery-governance.md).
+
+- G1 test isolation is complete in PR #56 (`59c3e3dd`). Pytest now strips
+  inherited provider configuration,
+  gives each test a temporary SQLite URL, and refuses checkout-backed database
+  paths. Queue teardown on app-construction failure and preservation of a denied
+  path are regression-tested. Browser QA databases now use temporary directories
+  with explicit engine/process cleanup. Local Windows evidence: UI-01 through
+  UI-04 pass; `scripts/check.bat` passes Ruff, mypy, and pytest (`601 passed,
+  0 failed, 0 errors, 1 skipped`). PR #56 passed all six checks. Exact merge SHA
+  `59c3e3dd74af562739fc8f7358b767e93a7d06c0` passed CI run `36229846811` and
+  real-qBittorrent integration run `36229846797`. See
+  [CI isolation audit](ci-migration.md).
+
+- GitHub Actions CI adoption is complete in PR #52 (`ba0595c3`), with race fixes
+  in PR #53. The workflow runs Windows and Ubuntu backend gates, the Windows UI
+  suite, WinUI build, and `CI / required`; the real-qBittorrent integration stays
+  a focused separate workflow. All checks passed on exact main commit
+  `c7cb4d5f` (CI run `36209791955`, integration run `36209791977`). Ruleset
+  `24023362` now requires both `required` and `real-qbittorrent-webseed-api`.
+  Standard GitHub-hosted runners are free for this public repository. See
+  [CI adoption plan](ci-migration.md).
+
+- CI follow-up adds an explicit fail-closed regression for the stable aggregate:
+  each required lane's failed/cancelled/skipped result and missing results must
+  reject the gate. The workflow uses the same tested helper. Third-party actions
+  are pinned by commit SHA in both workflows; their PR permissions remain read-only
+  with no secrets or `pull_request_target`. Focused regression passed (`12 passed`);
+  `scripts/check.bat` passed Ruff, mypy, and pytest (`597 passed, 1 skipped`). The
+  first PR run caught a missing checkout in the lightweight aggregate job while
+  all five other checks passed. The corrected PR head
+  `51e573ec99b338345e228b5ab97e7517a8266233` passed all lanes including `required`
+  (CI run `36226813782`) and qBittorrent integration (run `36226813783`).
+
+- `v1.4.22` fixes the Real-Debrid/qBittorrent webseed failure tracked by
+  [issue #48](https://github.com/Spon4ik/qBittorrent-rss-rules/issues/48).
+  qBittorrent percent-decodes form values before strict URL validation, so
+  Cyrillic and spaces in URI paths now receive the required additional encoding;
+  Unicode readback is normalized for stable comparison. A pinned real-qBittorrent
+  integration workflow verifies add/readback/remove and fails if CI lacks its
+  ephemeral service configuration. The exact persisted torrent job was retried
+  on the running app and reached `webseed_attached`; qBittorrent readback matched
+  its stored URL and the proxy returned HTTP 206 for a one-byte Range request.
+  The focused real-qBittorrent suite passed (`22 passed`). PR #49 was squash-
+  merged to protected `main` as `ec3cc845`; the pinned integration job passed
+  on the PR and merge commit (runs `36197363920` and `36198173177`). Ruleset
+  `24023362` requires PRs, both Actions checks, up-to-date heads, resolved review
+  threads, squash-only merges, and blocks force-push/deletion with no bypass
+  actors. Issue #48 is closed. The v1.4.23 release also closes issue #50: the
+  packaged quality taxonomy includes `240p`/`400p`; startup concurrency coverage
+  uses event coordination and isolated session/scheduler setup; and pytest runtime
+  data is isolated from persistent checkout data. `Finalize-Backend.cmd
+  --no-pause` passed at `c7cb4d5f` (Ruff/mypy clean; `585 passed, 1 skipped`),
+  rebuilt Docker, and verified `/health` reports `1.4.23`. Annotated tag and
+  GitHub Release `v1.4.23` are published; runtime is current.
 
 - The `v1.4.20` qB diagnostics rule-header repair and its unrelated full-suite
   isolation repair are implemented and deployed. The maintained UI suite

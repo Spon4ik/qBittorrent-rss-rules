@@ -2,11 +2,12 @@
 
 ## Status and scope
 
-**Status: PLANNED; implementation has not started.** Prepared on 2026-09-25 at the
-maintainer's request to plan and persist improvements without implementing them.
-This document records proposed decisions, work packages, dependencies, and evidence
-needed for acceptance. Approval of this document does not itself transfer the
-repository, change GitHub settings, run tests, provision runners, or deploy software.
+**Status: IN PROGRESS.** This plan was prepared on 2026-09-25 and is being executed
+in small, separately validated pull requests. G1 test isolation and G2 hosted CI /
+main protection are complete on `main`; repository ownership remains `Spon4ik` and
+no transfer is in scope. G3 is next. Its repository-local templates can proceed
+now; native Project inspection and configuration await Project API access. G4-G6
+remain future work and are not implied by this update.
 
 Scope: deterministic TDD, isolated validation, CI/CD, protected `main`, native
 GitHub work tracking, dependency/security maintenance, and truthful release evidence.
@@ -76,9 +77,9 @@ work type, and Project fields for priority. Keep these concepts easy to map late
 
 ## 2. Observed baseline
 
-Read-only audit on **2026-09-25**; recheck before implementation because GitHub state
-can change. No application tests, deployment actions, or provider checks were run.
-The closeout status query only read Git/version information and `/health`.
+Read-only baseline audit on **2026-09-25**; recheck live settings before any further
+GitHub configuration because state can change. G1/G2 implementation evidence is
+recorded below and in `docs/plans/current-status.md`.
 
 | Area | Evidence / limitation |
 | --- | --- |
@@ -87,7 +88,7 @@ The closeout status query only read Git/version information and `/health`.
 | Actions | Workflow inventory count 0; no `.github` directory in the inspected checkout |
 | Runner configuration | Repository runner count 0; org pool previously inventoried with `generic-01`, `generic-02`, `browser-01` online; shared group access rechecked as described above |
 | Organization | `Spon4ik-Labs` reports Team plan and default repository permission `read`; host isolation, current ACLs, issue fields, and Project automation were not verified |
-| Work tracking | Open issue #47 is a bug without a milestone; repository milestone inventory empty; no claim that Projects or all security settings were audited |
+| Work tracking | Current audit: open issue #47 is a bug without a milestone; no repository milestones; Project inventory is unverified because the CLI token lacks `read:project` |
 | Skills / PR | Skills are on open PR #46, branch `docs/repository-agent-skills`; pre-plan head `f94628bcadab2eabde60005aa9eb967c5f27fdb8`; they do not configure GitHub enforcement |
 | Existing local checks | `scripts/check.bat` / `check.sh`: Ruff, mypy, then compact pytest wrapper; `browser_qa.py` has isolated process/stub support |
 | Existing isolation | `configured_app_env` supplies a per-test SQLite path and disables several integrations/schedulers, but is not autouse; import-time, subprocess, and teardown isolation still need an audit |
@@ -263,7 +264,7 @@ and data mount. Never silently repoint production Compose at a runner workspace.
 The later immutable-artifact deployment design must explicitly reconcile this
 rebuild-based contract before becoming the new production path.
 
-## 5. Sequenced implementation backlog (all NOT STARTED)
+## 5. Sequenced implementation backlog
 
 Each row is a proposed future issue, not an issue created by this planning session.
 Maintainer owns product acceptance and repository policy; the organization owner
@@ -274,18 +275,21 @@ policy. Planning-only documentation does not bump the application version.
 
 | ID | Deliverable and proposed edit surface | Depends on | Acceptance evidence |
 | --- | --- | --- | --- |
-| G0 | Approve operating model; reconcile current release/Phase 44 facts in `ROADMAP.md` and `docs/plans/current-status.md`; inventory settings and integration names; decide owner | Plan review | Dated inventory, exact main/release/runtime facts, chosen destination, explicit split from uncommitted product work |
+| G0 | Keep the public repository under `Spon4ik` for this work; reconcile the current release/Phase 44 handoff; preserve separation from uncommitted product work | Plan review | Decision recorded; no repository transfer; exact main CI and release facts recorded; unfinished Phase 44 kept separate |
 | G0-T | Optional transfer with runner-access prerequisite and post-transfer audit from section 1 | G0 and separate transfer authorization | Same repository/history/issues/PRs, intended permissions, remotes updated, integration checks, production paths unchanged |
-| G1 | Audit/enforce test isolation in `tests/conftest.py`, affected test fixtures, `scripts/test.bat`, `scripts/test.sh`, `scripts/browser_qa.py`; add smallest isolation regressions; document TDD in `CONTRIBUTING.md` | G0; independent of transfer | RED/GREEN for safe-path guard and lifecycle teardown; all test processes/test-created app instances use temporary DB roots; no live provider access; denied-path sentinel unchanged; compact full gate on isolated environment |
-| G2a | Establish hosted CI in `.github/workflows/ci.yml`; only add a helper if necessary for deterministic lane aggregation; record tool/dependency pins | G1 | Static workflow review; deliberate failing fixture blocks aggregate; green Windows/Linux checks, UI suite, WinUI build; fork/no-secret behavior reviewed; actual job contexts recorded |
-| G2b | Enable native main ruleset, squash-only repository merge settings and optional auto-merge; document policy/repair steps in `docs/repository-governance.md` | G2a is working on default branch; G0-T if selected | Live API export of ruleset/merge settings, exact required check name and App/source identity, plus rule evaluation/PR evidence: stale/failing PR blocked, fresh green PR merges natively, resulting main SHA validated |
-| G3 | Native Project, issue types/fields, milestones/sub-issues/dependencies; `.github/ISSUE_TEMPLATE/`, PR template, `CONTRIBUTING.md`; add `CODEOWNERS` only with real owners | G0; G0-T for org-only metadata | One real work item progresses with traceable acceptance; hierarchy and milestone avoid double counting; field/status automation observed; no duplicate custom tracker |
+| G1 | Audit/enforce test isolation in `tests/conftest.py`, affected test fixtures, `scripts/test.bat`, `scripts/test.sh`, `scripts/browser_qa.py`; add isolation regressions and TDD guidance | G0; independent of transfer | **COMPLETE** on main. PR #56; safe-path guard, lifecycle teardown, isolated app databases, and browser QA cleanup. See current-status evidence and `ci-migration.md`. |
+| G2a | Establish hosted CI in `.github/workflows/ci.yml`; deterministic aggregate; pin reviewed action/tool inputs | G1 | **COMPLETE** on main. Windows/Ubuntu checks, maintained Windows UI suite, WinUI build, stable required aggregate, and separate real-qBittorrent API lane pass on main. |
+| G2b | Enable native main ruleset, squash-only repository merge settings, and document policy | G2a working on default branch; G0-T if selected | **COMPLETE** on main. Ruleset `24023362` requires the exact CI and real-qBittorrent contexts; PR-only, up-to-date, resolved conversations, squash-only, no force-push/deletion or bypass. |
+| G3a | Add English GitHub issue forms, PR template, and contribution guidance for reproducible scope, acceptance evidence, privacy, and test proof; no CODEOWNERS without additional owners | G0 | Repository templates validated; link each submitted work item to one issue/PR and explicit acceptance evidence. |
+| G3b | Inspect and configure one native Project, fields/status workflows, milestones, and native issue hierarchy/dependencies if useful | G0; Project API access | Project inventory recorded; one real item follows backlog → ready → in progress → review → done with acceptance evidence; no duplicate custom tracker or double-counted parent/child milestone. |
 | G4 | Optional trusted runner onboarding; changes in runner-pool repo and selected access policy, not application fixture hacks; `docs/ci-runner-operations.md` | G2b, explicit need, org access decision | Dedicated identity/host boundary, repo/workflow restrictions, no production access, exact runner/job assignment, cleanup/update/recovery proof; unavailable restrictions mean remain hosted |
 | G5a | Reproducible build/staging/release lane: `.github/workflows/release.yml`, dependency lock/constraints, `scripts/release_prep.py`, release/deployment runbook | G2b; G4 only if technically needed | Version touchpoints synchronized; trusted main SHA equals tag/artifact source; disposable-container health/contract smoke; staged release assets; no accidental live mounts |
 | G5b | Design and implement gated production promotion, environment/concurrency, backup/restore and provenance; reconcile finalizer, updater and `AGENTS.md` before automation | G5a and separately approved production design | Existing finalizer gate or approved proven successor; verified backup restore in scratch environment; exact deployed SHA/digest and health; rollback drill; recorded approval; delivery item closed only with evidence |
 | G6 | Native security/dependency maintenance and compact governance upkeep: `.github/dependabot.yml`, `SECURITY.md`, default CodeQL where suitable, dependency review, release checklist | G2b, G3 | Update PR traverses normal gate; supported Python/.NET/Actions dependencies covered; initial findings triaged; redacted artifacts; no scheduled AI issue hunting |
 
-Sequence: G0 -> G1 -> G2a -> G2b; G3 can proceed after the ownership decision.
+Sequence: G0 -> G1 -> G2a -> G2b; G3a can proceed now and G3b requires Project
+API read/write access. This repo stays personal, so organization-only issue types and
+fields are not prerequisites. G0-T is not selected. G4 is optional.
 G0-T is required only for selected organization-specific dependencies. G4 is optional.
 G5a precedes G5b; G6 follows baseline CI. A failed gate stops dependent work, not
 independent documentation. No artificial calendar dates or next app version are

@@ -6,8 +6,29 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
-- Document the proposed native GitHub governance, isolated TDD, CI/CD, and optional
-  organization-transfer sequence; implementation remains pending plan review.
+- Add issue forms and a pull request template that request reproducible scope,
+  acceptance evidence, and sanitized validation details.
+
+- Add hosted Windows and Ubuntu full-check CI, the maintained Windows UI suite,
+  the WinUI build, and a required aggregate status job.
+- Test that the required CI aggregate rejects failed, cancelled, skipped, and
+  missing lane results; pin the qBittorrent integration workflow actions by SHA.
+- Isolate every pytest SQLite database under a per-test temporary directory,
+  reject checkout-backed SQLite paths, and clean up browser QA databases after
+  app subprocess shutdown.
+
+## [1.4.23] - 2026-09-26
+
+- Restore the 240p and 400p resolution tokens in the default quality taxonomy so
+  generated profiles, migrated settings, and qBittorrent rules consistently
+  exclude lower resolutions.
+- Replace the startup sync timing threshold with an event-coordinated concurrency
+  regression that proves app startup completes while qB sync remains blocked.
+
+## [1.4.22] - 2026-09-26
+
+- Fix qBittorrent webseed attachment for URI-escaped Unicode and space paths,
+  and add a pinned real-qBittorrent API integration test to CI.
 
 ## [1.4.20] - 2026-08-21
 

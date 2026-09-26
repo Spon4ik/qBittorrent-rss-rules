@@ -5,7 +5,11 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 
-from app.services.qbittorrent import QbittorrentAuthError, QbittorrentClient
+from app.services.qbittorrent import (
+    QbittorrentAuthError,
+    QbittorrentClient,
+    QbittorrentClientError,
+)
 
 
 def test_flatten_feed_tree_handles_nested_nodes() -> None:
@@ -243,6 +247,90 @@ def test_acceleration_endpoints_use_qbittorrent_web_api_contracts() -> None:
             {"hashes": ["abc123"], "tags": ["qb-rss-rules"]},
         ),
         ("POST", "/api/v2/torrents/stop", {"hashes": ["abc123"]}),
+    ]
+
+
+def test_webseed_endpoints_reject_http_errors() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/auth/login":
+            return httpx.Response(200, text="Ok.")
+        return httpx.Response(400, text="not a valid URL")
+
+    client = QbittorrentClient(
+        "http://127.0.0.1:8080",
+        "admin",
+        "adminadmin",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(QbittorrentClientError, match="400 Bad Request"):
+        client.add_webseeds("abc123", ["https://proxy.test/file.mkv"])
+
+
+def test_webseed_urls_survive_qbittorrent_percent_decode_before_validation() -> None:
+    captured: list[tuple[str, str, dict[str, list[str]]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/auth/login":
+            return httpx.Response(200, text="Ok.")
+        captured.append(
+            (request.method, request.url.path, parse_qs(request.content.decode()))
+        )
+        return httpx.Response(200, text="Ok.")
+
+    client = QbittorrentClient(
+        "http://127.0.0.1:8080",
+        "admin",
+        "adminadmin",
+        transport=httpx.MockTransport(handler),
+    )
+    url = (
+        "http://127.0.0.1:8000/webseeds/token/"
+        "%D0%97%D0%B2%D0%B5%D0%B7%D0%B4%D1%8B%20last%20jedi.mkv"
+    )
+
+    client.add_webseeds("abc123", [url])
+    client.remove_webseeds("abc123", [url])
+
+    encoded_url = url.replace("%", "%25")
+    assert captured == [
+        (
+            "POST",
+            "/api/v2/torrents/addWebSeeds",
+            {"hash": ["abc123"], "urls": [encoded_url]},
+        ),
+        (
+            "POST",
+            "/api/v2/torrents/removeWebSeeds",
+            {"hash": ["abc123"], "urls": [encoded_url]},
+        ),
+    ]
+
+
+def test_webseed_readback_normalizes_unicode_paths_to_uri_encoding() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/auth/login":
+            return httpx.Response(200, text="Ok.")
+        assert request.url.path == "/api/v2/torrents/webseeds"
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "url": "http://127.0.0.1:8000/webseeds/token/Звездные войны.mkv"
+                }
+            ],
+        )
+
+    client = QbittorrentClient(
+        "http://127.0.0.1:8080",
+        "admin",
+        "adminadmin",
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.get_webseeds("abc123") == [
+        "http://127.0.0.1:8000/webseeds/token/"
+        "%D0%97%D0%B2%D0%B5%D0%B7%D0%B4%D0%BD%D1%8B%D0%B5%20%D0%B2%D0%BE%D0%B9%D0%BD%D1%8B.mkv"
     ]
 
 

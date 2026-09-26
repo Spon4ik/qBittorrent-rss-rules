@@ -2,14 +2,17 @@
 
 ## Current focus
 
-- G1 test isolation is implemented locally on `codex/test-isolation-g1` and
-  awaiting PR CI acceptance. Pytest now strips inherited provider configuration,
+- G1 test isolation is complete in PR #56 (`59c3e3dd`). Pytest now strips
+  inherited provider configuration,
   gives each test a temporary SQLite URL, and refuses checkout-backed database
   paths. Queue teardown on app-construction failure and preservation of a denied
   path are regression-tested. Browser QA databases now use temporary directories
   with explicit engine/process cleanup. Local Windows evidence: UI-01 through
   UI-04 pass; `scripts/check.bat` passes Ruff, mypy, and pytest (`601 passed,
-  0 failed, 0 errors, 1 skipped`). See [CI isolation audit](ci-migration.md).
+  0 failed, 0 errors, 1 skipped`). PR #56 passed all six checks. Exact merge SHA
+  `59c3e3dd74af562739fc8f7358b767e93a7d06c0` passed CI run `36229846811` and
+  real-qBittorrent integration run `36229846797`. See
+  [CI isolation audit](ci-migration.md).
 
 - GitHub Actions CI adoption is complete in PR #52 (`ba0595c3`), with race fixes
   in PR #53. The workflow runs Windows and Ubuntu backend gates, the Windows UI

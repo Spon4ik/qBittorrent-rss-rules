@@ -96,7 +96,10 @@ Their teardown stops the app/mock services, disposes the seed database engine,
 and then removes temporary storage. The local Windows UI suite passed UI-01
 through UI-04, exercising the focused subprocess path. `scripts/check.bat`
 passed Ruff, mypy, and pytest (`601 passed, 0 failed, 0 errors, 1 skipped`).
-The GitHub PR run remains the cross-platform acceptance check before G1 closes.
+PR #56 passed all required PR lanes. The exact merge SHA
+`59c3e3dd74af562739fc8f7358b767e93a7d06c0` passed main CI run `36229846811`
+(Windows and Ubuntu backend checks, Browser UI suite, WinUI build, and `required`)
+and real-qBittorrent integration run `36229846797`. G1 is complete.
 
 No application deployment, production runner access, release, or tag is part of
 this CI change.

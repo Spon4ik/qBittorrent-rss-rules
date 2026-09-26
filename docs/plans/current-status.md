@@ -22,10 +22,14 @@
   scheduled rule fetches, with regression coverage and a maintained issue-test
   inventory. Ruff, mypy, and the full suite pass (`605 passed, 0 failed, 0
   errors, 1 skipped`); the focused three-module run also passed (`32 passed`).
-  These changes are not released or deployed. An attempted Docker updater
-  auto-repair was excluded because it would silently rewrite the Compose build
-  context and database bind mount; path changes require an intentional operator
-  edit.
+  PR #68 merged this work at main SHA `631593cf06079b525a04b4dc7dc93a96e5e801af`.
+  The post-merge backend finalizer passed the same full test gate, rebuilt the
+  `qb-rss-rules` Docker service, and confirmed `/health` reports v1.4.24 matching
+  the checkout. CI and real-qBittorrent API checks passed on the merged PR head.
+  No new release or tag was created for this post-release main commit. An
+  attempted Docker updater auto-repair was excluded because it would silently
+  rewrite the Compose build context and database bind mount; path changes
+  require an intentional operator edit.
 
 - G5a Windows/source release staging and publication are complete for v1.4.24.
   Release workflow run

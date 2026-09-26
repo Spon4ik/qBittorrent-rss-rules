@@ -11,6 +11,11 @@
   backup, rebuild, or deployment has occurred. G5b implementation planning is
   waiting for review of the written spec.
 
+- Remote continuity is an explicit repository rule: push each coherent,
+  validated checkpoint on its feature branch, keep its PR or handoff current,
+  and verify the remote head before ending or switching tasks. See `AGENTS.md`,
+  “Remote persistence and resumability.”
+
 - G5a Windows/source release staging and publication are complete for v1.4.24.
   Release workflow run
   [36255119862](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36255119862)

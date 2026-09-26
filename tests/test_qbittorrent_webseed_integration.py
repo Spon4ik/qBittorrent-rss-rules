@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import time
+from collections.abc import Callable
 from urllib.parse import quote
 
 import pytest
@@ -46,6 +48,34 @@ def _test_torrent() -> tuple[bytes, str]:
     return torrent_bytes, hashlib.sha1(info_bytes).hexdigest()
 
 
+def _wait_for_torrent(
+    get_torrent: Callable[[str], dict[str, object] | None], info_hash: str
+) -> dict[str, object] | None:
+    deadline = time.monotonic() + 10.0
+    while True:
+        torrent = get_torrent(info_hash)
+        if torrent is not None:
+            return torrent
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        time.sleep(min(0.25, remaining))
+
+
+def test_wait_for_torrent_retries_until_visible(monkeypatch: pytest.MonkeyPatch) -> None:
+    responses: list[dict[str, object] | None] = [None, {"hash": "expected"}]
+    calls: list[str] = []
+
+    def get_torrent(info_hash: str) -> dict[str, object] | None:
+        calls.append(info_hash)
+        return responses.pop(0)
+
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    assert _wait_for_torrent(get_torrent, "expected") == {"hash": "expected"}
+    assert calls == ["expected", "expected"]
+
+
 def test_qbittorrent_accepts_and_reads_back_encoded_unicode_webseed() -> None:
     base_url, username, password, save_path = _connection()
     if not (base_url and username and password):
@@ -69,7 +99,10 @@ def test_qbittorrent_accepts_and_reads_back_encoded_unicode_webseed() -> None:
             tags="codex-webseed-api-integration",
         )
         torrent_added = True
-        assert client.get_torrent(info_hash) is not None
+        assert _wait_for_torrent(client.get_torrent, info_hash) is not None, (
+            f"qBittorrent accepted torrent {info_hash} but did not expose it "
+            "through the torrent info API within 10 seconds"
+        )
 
         # Exercise qBittorrent's real POST parser and strict URL validator.
         client.add_webseeds(info_hash, [url])

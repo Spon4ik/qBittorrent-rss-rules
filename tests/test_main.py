@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 def test_startup_rule_sync_does_not_block_app_startup(configured_app_env, monkeypatch) -> None:
     monkeypatch.setenv("QB_RULES_SYNC_RULES_ON_STARTUP", "1")
 
+    import app.main as main_module
     from app.config import get_environment_settings
     from app.main import create_app
     from app.services.settings_service import SettingsService
@@ -19,6 +20,11 @@ def test_startup_rule_sync_does_not_block_app_startup(configured_app_env, monkey
     release_sync = threading.Event()
     startup_completed = threading.Event()
     startup_errors: list[BaseException] = []
+    fake_session = SimpleNamespace(close=lambda: None)
+    monkeypatch.setattr(main_module, "get_session_factory", lambda: lambda: fake_session)
+    monkeypatch.setattr(main_module, "start_download_acceleration_scheduler", lambda **_: None)
+    monkeypatch.setattr(main_module, "start_qb_recovery_scheduler", lambda **_: None)
+    monkeypatch.setattr(SettingsService, "get_or_create", lambda session: object())
     monkeypatch.setattr(
         SettingsService,
         "resolve_qb_connection",
@@ -57,6 +63,7 @@ def test_startup_rule_sync_is_joined_during_app_shutdown(configured_app_env, mon
 
     monkeypatch.setenv("QB_RULES_SYNC_RULES_ON_STARTUP", "1")
 
+    import app.main as main_module
     from app.config import get_environment_settings
     from app.main import create_app
     from app.services.settings_service import SettingsService
@@ -66,6 +73,11 @@ def test_startup_rule_sync_is_joined_during_app_shutdown(configured_app_env, mon
     started = threading.Event()
     release = threading.Event()
     finished = threading.Event()
+    fake_session = SimpleNamespace(close=lambda: None)
+    monkeypatch.setattr(main_module, "get_session_factory", lambda: lambda: fake_session)
+    monkeypatch.setattr(main_module, "start_download_acceleration_scheduler", lambda **_: None)
+    monkeypatch.setattr(main_module, "start_qb_recovery_scheduler", lambda **_: None)
+    monkeypatch.setattr(SettingsService, "get_or_create", lambda session: object())
     monkeypatch.setattr(
         SettingsService,
         "resolve_qb_connection",

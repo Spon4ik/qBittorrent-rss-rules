@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.config import ROOT_DIR, get_environment_settings, resolve_runtime_path
+from app.config import DATA_DIR, ROOT_DIR, get_environment_settings, resolve_runtime_path
 from app.db import get_engine, reset_db_caches
+
+
+def test_pytest_runtime_data_directory_is_isolated_from_repository() -> None:
+    assert DATA_DIR != ROOT_DIR / "data"
+    assert (DATA_DIR / "quality_taxonomy.json").is_file()
 
 
 def test_relative_sqlite_database_url_resolves_from_app_root(monkeypatch) -> None:

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "qbittorrent-rss-rule-manager"
-version = "1.4.22"
+version = "1.4.23"
 description = "Local web UI for managing qBittorrent RSS auto-download rules."
 readme = "README.md"
 license = { text = "MIT" }
@@ -49,7 +49,7 @@ addopts = "-q --ignore-glob=*-DESKTOP-*.py"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-extend-exclude = ["*-DESKTOP-*.py"]
+extend-exclude = ["*-DESKTOP-*.py", ".agents"]
 
 [tool.ruff.lint]
 select = [

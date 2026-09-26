@@ -6,7 +6,16 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
-- No entries yet.
+- Add hosted Windows and Ubuntu full-check CI, the maintained Windows UI suite,
+  the WinUI build, and a required aggregate status job.
+
+## [1.4.23] - 2026-09-26
+
+- Restore the 240p and 400p resolution tokens in the default quality taxonomy so
+  generated profiles, migrated settings, and qBittorrent rules consistently
+  exclude lower resolutions.
+- Replace the startup sync timing threshold with an event-coordinated concurrency
+  regression that proves app startup completes while qB sync remains blocked.
 
 ## [1.4.22] - 2026-09-26
 

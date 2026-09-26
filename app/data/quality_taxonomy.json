@@ -62,9 +62,29 @@
       ]
     },
     {
+      "value": "240p",
+      "label": "240p",
+      "pattern": "240p",
+      "group": "resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
+    },
+    {
       "value": "360p",
       "label": "360p",
       "pattern": "360p",
+      "group": "resolution",
+      "media_types": [
+        "series",
+        "movie"
+      ]
+    },
+    {
+      "value": "400p",
+      "label": "400p",
+      "pattern": "400p",
       "group": "resolution",
       "media_types": [
         "series",
@@ -517,7 +537,9 @@
       "label": "Resolution",
       "tokens": [
         "sd",
+        "240p",
         "360p",
+        "400p",
         "480p",
         "hd",
         "720p",

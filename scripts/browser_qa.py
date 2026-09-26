@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -151,7 +152,8 @@ def focused_runtime(args: argparse.Namespace) -> Iterator[FocusedRuntime]:
     run_dir = output_root / f"browser-focus-{legacy.utc_stamp()}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    db_path = run_dir / "focused.db"
+    database_runtime = tempfile.TemporaryDirectory(prefix="qb-rss-browser-qa-")
+    db_path = Path(database_runtime.name) / "focused.db"
     app_log_path = run_dir / "uvicorn.log"
     app_port = legacy.find_free_port()
     qb_port = legacy.find_free_port()
@@ -247,19 +249,30 @@ def focused_runtime(args: argparse.Namespace) -> Iterator[FocusedRuntime]:
             timeout_ms=args.timeout_ms,
         )
     finally:
-        if browser is not None:
-            browser.close()
-        if playwright is not None:
-            playwright.stop()
-        if server_process is not None:
-            server_process.terminate()
+        try:
+            if browser is not None:
+                browser.close()
+        finally:
             try:
-                server_process.wait(timeout=6)
-            except subprocess.TimeoutExpired:
-                server_process.kill()
-                server_process.wait(timeout=4)
-        legacy.stop_threaded_server(jackett_server, jackett_thread)
-        legacy.stop_threaded_server(qb_server, qb_thread)
+                if playwright is not None:
+                    playwright.stop()
+            finally:
+                try:
+                    if server_process is not None:
+                        server_process.terminate()
+                        try:
+                            server_process.wait(timeout=6)
+                        except subprocess.TimeoutExpired:
+                            server_process.kill()
+                            server_process.wait(timeout=4)
+                finally:
+                    try:
+                        legacy.stop_threaded_server(jackett_server, jackett_thread)
+                    finally:
+                        try:
+                            legacy.stop_threaded_server(qb_server, qb_thread)
+                        finally:
+                            database_runtime.cleanup()
 
 
 def check_p44_03(runtime: FocusedRuntime) -> None:

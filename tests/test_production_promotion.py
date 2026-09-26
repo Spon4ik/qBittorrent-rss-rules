@@ -1,0 +1,392 @@
+from __future__ import annotations
+
+import sqlite3
+import subprocess
+import sys
+from contextlib import nullcontext
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+import scripts.promote_production as promotion_cli
+from scripts.production_promotion import (
+    compose_config_digest,
+    create_compose_contract,
+    exclusive_file_lock,
+    parse_release_version,
+    parse_remote_tag_sha,
+    validate_approval_manifest,
+    validate_audit_retry_evidence,
+    validate_checkout_state,
+    validate_compose_config,
+    validate_compose_contract,
+    validate_version_upgrade,
+    verify_sqlite_backup,
+)
+
+SHA = "a" * 40
+NOW = datetime(2026, 9, 27, 12, 0, tzinfo=UTC)
+REPOSITORY = "Spon4ik/qBittorrent-rss-rules"
+STABLE_CHECKOUT = r"C:\Users\test\deployments\qBittorrent-rss-rules"
+
+
+def _manifest(**overrides: object) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "repository": REPOSITORY,
+        "tag": "v1.4.25",
+        "commit_sha": SHA,
+        "release_url": "https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.25",
+        "ci_run_id": 10,
+        "ci_run_url": "https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/10",
+        "api_run_id": 11,
+        "api_run_url": "https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/11",
+        "approval_run_id": 12,
+        "approval_run_url": "https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/12",
+        "approved_by": "Spon4ik",
+        "approved_at": NOW.isoformat(),
+        **overrides,
+    }
+
+
+def _compose_config(context: str = STABLE_CHECKOUT) -> dict[str, object]:
+    return {
+        "services": {
+            "qb-rss-rules": {
+                "build": {"context": context, "dockerfile": "Dockerfile"},
+                "environment": {"APP_SECRET": "secret-value"},
+                "volumes": [
+                    {
+                        "type": "bind",
+                        "source": r"E:\GitHub\qBittorrent rss rules\data",
+                        "target": "/app/data",
+                        "read_only": False,
+                    },
+                    {
+                        "type": "bind",
+                        "source": r"C:\Users",
+                        "target": "/host/C/Users",
+                        "read_only": True,
+                    },
+                    {
+                        "type": "bind",
+                        "source": r"C:\ProgramData",
+                        "target": "/host/C/ProgramData",
+                        "read_only": True,
+                    },
+                ],
+            }
+        }
+    }
+
+
+MOUNTS = [
+    {
+        "source": r"E:\GitHub\qBittorrent rss rules\data",
+        "target": "/app/data",
+        "read_only": False,
+    },
+    {"source": r"C:\Users", "target": "/host/C/Users", "read_only": True},
+    {"source": r"C:\ProgramData", "target": "/host/C/ProgramData", "read_only": True},
+]
+
+
+def test_approval_manifest_must_match_requested_tag_sha_run_and_be_fresh() -> None:
+    validate_approval_manifest(
+        _manifest(),
+        repository=REPOSITORY,
+        tag="v1.4.25",
+        commit_sha=SHA,
+        approval_run_id=12,
+        approver="Spon4ik",
+        now=NOW,
+    )
+
+    for changed in (
+        {"tag": "v1.4.24"},
+        {"commit_sha": "b" * 40},
+        {"approval_run_id": 13},
+        {"repository": "attacker/repo"},
+        {"approved_by": "someone-else"},
+        {"approved_at": (NOW - timedelta(days=8)).isoformat()},
+        {"approved_at": (NOW + timedelta(minutes=10)).isoformat()},
+    ):
+        with pytest.raises(ValueError):
+            validate_approval_manifest(
+                _manifest(**changed),
+                repository=REPOSITORY,
+                tag="v1.4.25",
+                commit_sha=SHA,
+                approval_run_id=12,
+                approver="Spon4ik",
+                now=NOW,
+            )
+
+
+def test_release_version_is_strict_semver_and_must_exceed_live_version() -> None:
+    assert parse_release_version("v1.4.25") == (1, 4, 25)
+    validate_version_upgrade("1.4.25", "1.4.24")
+
+    for version in ("1.4.24", "1.4.23", "1.4.25-rc.1", "01.4.25", "latest"):
+        with pytest.raises(ValueError):
+            validate_version_upgrade(version, "1.4.24")
+
+
+def test_release_checkout_must_be_clean_detached_exact_sha_at_stable_path() -> None:
+    validate_checkout_state(
+        checkout_root=STABLE_CHECKOUT,
+        expected_root=STABLE_CHECKOUT,
+        head_sha=SHA,
+        expected_sha=SHA,
+        branch_name="",
+        clean=True,
+    )
+
+    for state in (
+        {"checkout_root": r"E:\GitHub\qBittorrent rss rules", "clean": True, "branch_name": ""},
+        {"checkout_root": STABLE_CHECKOUT, "clean": False, "branch_name": ""},
+        {"checkout_root": STABLE_CHECKOUT, "clean": True, "branch_name": "main"},
+        {"checkout_root": STABLE_CHECKOUT, "clean": True, "branch_name": "", "head_sha": "b" * 40},
+    ):
+        with pytest.raises(ValueError):
+            validate_checkout_state(
+                checkout_root=state["checkout_root"],
+                expected_root=STABLE_CHECKOUT,
+                head_sha=state.get("head_sha", SHA),
+                expected_sha=SHA,
+                branch_name=state["branch_name"],
+                clean=state["clean"],
+            )
+
+
+def test_remote_tag_sha_peels_annotated_tags() -> None:
+    annotated = f"{'b' * 40}\trefs/tags/v1.4.25\n{SHA}\trefs/tags/v1.4.25^{{}}\n"
+    lightweight = f"{SHA}\trefs/tags/v1.4.25\n"
+
+    assert parse_remote_tag_sha(annotated, "v1.4.25") == SHA
+    assert parse_remote_tag_sha(lightweight, "v1.4.25") == SHA
+    assert parse_remote_tag_sha("not-a-ref", "v1.4.25") is None
+
+
+def test_compose_gate_requires_stable_context_and_all_expected_persistent_mounts() -> None:
+    config = _compose_config()
+
+    validate_compose_config(
+        config,
+        service="qb-rss-rules",
+        expected_context=STABLE_CHECKOUT,
+        expected_mounts=MOUNTS,
+    )
+
+    wrong_context = _compose_config(r"E:\GitHub\qBittorrent rss rules")
+    wrong_db = _compose_config()
+    wrong_db["services"]["qb-rss-rules"]["volumes"][0]["source"] = r"C:\empty\data"
+    missing_host_mount = _compose_config()
+    missing_host_mount["services"]["qb-rss-rules"]["volumes"].pop()
+
+    for invalid in (wrong_context, wrong_db, missing_host_mount):
+        with pytest.raises(ValueError):
+            validate_compose_config(
+                invalid,
+                service="qb-rss-rules",
+                expected_context=STABLE_CHECKOUT,
+                expected_mounts=MOUNTS,
+            )
+
+
+def test_compose_digest_ignores_only_build_context_and_does_not_emit_secrets() -> None:
+    key = b"test-only-local-contract-key"
+    before = _compose_config(r"E:\GitHub\qBittorrent rss rules")
+    after = _compose_config(STABLE_CHECKOUT)
+
+    baseline = compose_config_digest(before, service="qb-rss-rules", key=key)
+    assert compose_config_digest(after, service="qb-rss-rules", key=key) == baseline
+
+    changed_environment = _compose_config(STABLE_CHECKOUT)
+    changed_environment["services"]["qb-rss-rules"]["environment"]["APP_SECRET"] = "changed"
+    assert compose_config_digest(changed_environment, service="qb-rss-rules", key=key) != baseline
+
+    changed_mount = _compose_config(STABLE_CHECKOUT)
+    changed_mount["services"]["qb-rss-rules"]["volumes"][0]["source"] = r"C:\empty\data"
+    assert compose_config_digest(changed_mount, service="qb-rss-rules", key=key) != baseline
+
+    assert "secret-value" not in baseline
+
+
+def test_private_compose_contract_allows_only_build_context_change(tmp_path: Path) -> None:
+    key = b"test-only-local-contract-key"
+    original = _compose_config(r"E:\GitHub\qBittorrent rss rules")
+    promoted = _compose_config(STABLE_CHECKOUT)
+    compose_file = str(tmp_path / "docker-compose.yml")
+    env_file = str(tmp_path / ".env")
+    contract = create_compose_contract(
+        original,
+        service="qb-rss-rules",
+        repository=REPOSITORY,
+        compose_file=compose_file,
+        env_file=env_file,
+        key=key,
+        captured_at=NOW.isoformat(),
+    )
+
+    validate_compose_contract(
+        contract,
+        promoted,
+        repository=REPOSITORY,
+        compose_file=compose_file,
+        env_file=env_file,
+        expected_context=STABLE_CHECKOUT,
+        key=key,
+    )
+
+    changed = _compose_config(STABLE_CHECKOUT)
+    changed["services"]["qb-rss-rules"]["environment"]["APP_SECRET"] = "different"
+    with pytest.raises(ValueError, match="Compose configuration differs"):
+        validate_compose_contract(
+            contract,
+            changed,
+            repository=REPOSITORY,
+            compose_file=compose_file,
+            env_file=env_file,
+            expected_context=STABLE_CHECKOUT,
+            key=key,
+        )
+
+    with pytest.raises(ValueError, match="contract is invalid"):
+        validate_compose_contract(
+            {**contract, "mounts": []},
+            promoted,
+            repository=REPOSITORY,
+            compose_file=compose_file,
+            env_file=env_file,
+            expected_context=STABLE_CHECKOUT,
+            key=key,
+        )
+
+
+def test_exclusive_lock_rejects_a_second_holder_and_releases_after_exit(tmp_path: Path) -> None:
+    lock = tmp_path / "promotion.lock"
+    contender = "\n".join(
+        [
+            "import sys",
+            "from pathlib import Path",
+            "from scripts.production_promotion import exclusive_file_lock",
+            "try:",
+            "    with exclusive_file_lock(Path(sys.argv[1])):",
+            "        raise SystemExit(7)",
+            "except ValueError:",
+            "    raise SystemExit(0)",
+        ]
+    )
+
+    with exclusive_file_lock(lock):
+        result = subprocess.run([sys.executable, "-c", contender, str(lock)], check=False)
+        assert result.returncode == 0
+
+    with exclusive_file_lock(lock):
+        pass
+
+
+def test_sqlite_backup_passes_integrity_and_scratch_restore(tmp_path: Path) -> None:
+    source = tmp_path / "production.sqlite3"
+    with sqlite3.connect(source) as connection:
+        connection.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT NOT NULL)")
+        connection.execute("INSERT INTO items (value) VALUES ('representative')")
+    backup = tmp_path / "private" / "backup.sqlite3"
+
+    digest = verify_sqlite_backup(source, backup)
+
+    assert backup.is_file()
+    assert len(digest) == 64
+    with sqlite3.connect(backup) as connection:
+        assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+        assert connection.execute("SELECT value FROM items").fetchone() == ("representative",)
+
+
+def test_sqlite_backup_failure_does_not_leave_a_partial_backup(tmp_path: Path) -> None:
+    backup = tmp_path / "private" / "backup.sqlite3"
+
+    with pytest.raises(ValueError, match="SQLite backup or scratch restore failed"):
+        verify_sqlite_backup(tmp_path / "missing.sqlite3", backup)
+
+    assert not backup.exists()
+
+
+def test_failed_preflight_stops_before_deployment_backup_or_docker_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    paths = promotion_cli.PromotionPaths(
+        home=tmp_path,
+        checkout=tmp_path,
+        compose_file=tmp_path / "docker-compose.yml",
+        env_file=tmp_path / ".env",
+        private_root=tmp_path / "private",
+        stable_checkout=tmp_path / "stable",
+        docker_exe=tmp_path / "docker.exe",
+    )
+    manager = promotion_cli.PromotionManager(paths)
+    mutation_calls: list[str] = []
+
+    def reject_preflight(_tag: str, _run_id: int) -> dict[str, object]:
+        raise ValueError("invalid approval fixture")
+
+    def mutation(*_args: object, **_kwargs: object) -> int:
+        mutation_calls.append("deployment")
+        return 1
+
+    monkeypatch.setattr(promotion_cli, "WINDOWS_HOST", True)
+    monkeypatch.setattr(promotion_cli, "secure_private_root", lambda _path: None)
+    monkeypatch.setattr(promotion_cli, "exclusive_file_lock", lambda _path: nullcontext())
+    monkeypatch.setattr(manager, "preflight", reject_preflight)
+    monkeypatch.setattr(manager, "_create_deployment", mutation)
+
+    with pytest.raises(ValueError, match="invalid approval fixture"):
+        manager.promote("v1.4.25", 123)
+
+    assert mutation_calls == []
+
+
+def test_audit_retry_requires_current_production_sha_version_and_image() -> None:
+    record = {
+        "stage": "audit-pending",
+        "commit_sha": SHA,
+        "target_version": "1.4.25",
+        "health_version": "1.4.25",
+        "deployed_image_id": "sha256:" + "b" * 64,
+    }
+    deployment = {"environment": "production", "ref": SHA}
+
+    validate_audit_retry_evidence(
+        record,
+        deployment,
+        running_version="1.4.25",
+        running_image_id="sha256:" + "b" * 64,
+    )
+    with pytest.raises(ValueError, match="Live production health"):
+        validate_audit_retry_evidence(
+            record,
+            deployment,
+            running_version="1.4.24",
+            running_image_id="sha256:" + "b" * 64,
+        )
+    with pytest.raises(ValueError, match="image no longer matches"):
+        validate_audit_retry_evidence(
+            record,
+            deployment,
+            running_version="1.4.25",
+            running_image_id="sha256:" + "c" * 64,
+        )
+
+
+def test_runbook_commands_match_local_tool_and_production_boundaries() -> None:
+    runbook = Path("docs/production-promotion-runbook.md").read_text(encoding="utf-8")
+
+    assert "--capture-compose-contract --confirm-current-mounts" in runbook
+    assert "--tag v1.4.25 --approval-run-id 12345678901" in runbook
+    assert "--retry-audit-record <journal-path>" in runbook
+    assert "`/app/data` database bind mount" in runbook
+    assert "`/host/C/Users` and `/host/C/ProgramData` mounts" in runbook
+    assert "Database restoration is separate and destructive" in runbook
+    assert "production deployment remains unattempted" in runbook

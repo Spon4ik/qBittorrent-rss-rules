@@ -32,7 +32,7 @@ def _run(**overrides: object) -> dict[str, object]:
 
 def test_select_successful_run_requires_exact_sha_main_push_and_success() -> None:
     wrong_sha = _run(databaseId=1, headSha="b" * 40)
-    failed = _run(databaseId=2, conclusion="failure")
+    failed = _run(databaseId=2, conclusion="failure", createdAt="2026-09-26T10:00:00Z")
     pull_request = _run(databaseId=3, event="pull_request")
     result = _run(databaseId=4)
 
@@ -48,8 +48,11 @@ def test_select_successful_run_fails_when_no_exact_sha_success_exists() -> None:
         _run(headSha="b" * 40),
         _run(status="in_progress"),
         _run(conclusion="cancelled"),
+        _run(conclusion="skipped"),
         _run(headBranch="feature"),
         _run(event="pull_request"),
+        _run(databaseId=9, conclusion="failure", createdAt="2026-09-28T10:00:00Z"),
+        _run(databaseId=10, status="in_progress", conclusion=None, createdAt="2026-09-28T11:00:00Z"),
     ):
         assert select_successful_run([bad], workflow_name="CI", commit_sha=SHA) is None
 
@@ -172,6 +175,7 @@ def test_approval_manifest_binds_exact_release_and_evidence_runs() -> None:
         "api_run_url": api["url"],
         "approval_run_id": 789,
         "approval_run_url": "https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/789",
+        "approved_by": "Spon4ik",
         "approved_at": "2026-09-27T10:01:00Z",
     }
 

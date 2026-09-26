@@ -9,9 +9,15 @@
   exact published tag, then requires local promotion from a clean stable
   checkout through the existing finalizer. The decision-complete plan is
   [here](../superpowers/plans/2026-09-27-g5b-manual-production-promotion.md).
-  The approval workflow and local promotion gate are next. The current deployed
-  version is v1.4.24, so the first eligible target must be a newly published
-  higher version. No production runner, Environment, Compose edit, backup,
+  The exact-SHA approval workflow is pushed on PR #67. The local promotion CLI,
+  Compose contract checks, private SQLite backup/restore verification, deployment
+  recording, and operator runbook are implemented in the current checkpoint.
+  Focused approval/promotion coverage passes (25 tests), Ruff and targeted mypy
+  pass. The first implementation review found and fixed case-insensitive GitHub
+  approver matching. The current checkpoint is ready to commit and push; full
+  repository checks and exact-SHA PR Actions are still required. The current
+  deployed version is v1.4.24, so the first eligible target must be a newly
+  published higher version. No production Environment, Compose edit, backup,
   rebuild, or deployment has occurred.
 
 - Remote continuity is an explicit repository rule: push each coherent,

@@ -42,12 +42,12 @@
 
 **Interface:** `workflow_dispatch` input `release_tag`; success uploads `production-approval-manifest` JSON binding repository, tag, peeled full SHA, release URL, CI/API run IDs and URLs, approval workflow run ID/URL, and approval timestamp. Artifact is data only; reviewed local code remains authoritative.
 
-- [ ] Write contract tests rejecting non-main dispatch, missing/unpublished release, tag outside main, non-success/missing exact-SHA required runs, unpinned actions, excess permissions, secrets, and cancelling concurrency.
-- [ ] Run focused tests and confirm they fail because the workflow is absent.
-- [ ] Implement `workflow_dispatch` with `contents: read`, `actions: read`, `checks: read`, pinned actions, `production-approval` Environment, and `cancel-in-progress: false`.
-- [ ] Verify successful `CI / required` and `real-qbittorrent-webseed-api` runs for the peeled tag SHA; emit the manifest only after Environment approval.
-- [ ] Run focused tests, YAML parsing, and workflow policy assertions.
-- [ ] Commit and push the coherent workflow checkpoint; verify CI and real-qBittorrent checks against its exact pushed SHA.
+- [x] Write contract tests rejecting non-main dispatch, missing/unpublished release, tag outside main, non-success/missing exact-SHA required runs, unpinned actions, excess permissions, secrets, and cancelling concurrency.
+- [x] Run focused tests and confirm they fail because the workflow is absent.
+- [x] Implement `workflow_dispatch` with least-privilege permissions, pinned actions, `production-approval` Environment, and `cancel-in-progress: false`.
+- [x] Verify successful `CI / required` and `real-qbittorrent-webseed-api` runs for the peeled tag SHA; emit the manifest only after Environment approval.
+- [x] Run focused tests, YAML parsing, and workflow policy assertions.
+- [x] Commit and push the coherent workflow checkpoint; verify CI and real-qBittorrent checks against its exact pushed SHA.
 
 ## Task 2: Local Promotion Contracts and Preflight
 
@@ -58,13 +58,13 @@
 
 **Interfaces:** `PromotionRequest(tag: str, approval_run_id: int)` and `PromotionConfig` for repository root, stable checkout, shared Compose path, env path, private backup root, lock path, and expected mounts. CLI: `python scripts/promote_production.py --tag TAG --approval-run-id RUN_ID`.
 
-- [ ] Write tests for invalid/stale/mismatched approval, unpublished/non-main tag, dirty/wrong-SHA checkout, non-increasing version, missing exact-SHA checks, Compose service/context/mount drift, absent tools, and lock contention; assert no Docker/finalizer invocation.
-- [ ] Run focused tests and observe RED.
-- [ ] Implement GitHub queries through `gh`; download only the named approval JSON artifact to a temporary directory and validate schema and run identity.
-- [ ] Verify stable detached checkout equals the published peeled tag and is clean; allow initialization/update only under the stable directory after read-only approval checks pass.
-- [ ] Resolve `docker compose config --format json` using the shared Compose and `.env`; assert service, stable context, database source and `/app/data`, both host mounts, and service name.
-- [ ] Compare target and live `/health.app_version` with strict SemVer; reject a target not greater than the live version.
-- [ ] Run focused tests and static checks; confirm rejected preflights cause zero mutations.
+- [ ] Expand tests to cover every invalid/stale/mismatched approval, tag, checkout, Compose, tool, and lock case; current coverage includes manifest mismatch/staleness, Compose contract drift, version gating, and zero-mutation preflight rejection.
+- [x] Run focused tests and observe RED.
+- [x] Implement GitHub queries through `gh`; download only the named approval JSON artifact to a temporary directory and validate schema and run identity.
+- [x] Verify stable detached checkout equals the published peeled tag and is clean; allow initialization/update only under the stable directory after read-only approval checks pass.
+- [x] Resolve `docker compose config --format json` using the shared Compose and `.env`; assert service, stable context, database source and `/app/data`, both host mounts, and service name.
+- [x] Compare target and live `/health.app_version` with strict SemVer; reject a target not greater than the live version.
+- [ ] Run the full focused invalid-preflight matrix and static checks; initial focused suite passes (25 tests), Ruff and targeted mypy pass.
 
 ## Task 3: Lock, Backup, Finalizer and Deployment Record
 
@@ -75,13 +75,13 @@
 
 **Interfaces:** Transaction stages: `preflight`, `deployment-created`, `backup-verified`, `finalizer-running`, `health-verified`, `deployment-recorded`. Private local record is redacted JSON; GitHub Deployment payload contains release identity, approval run, and evidence digests/references, never private file paths.
 
-- [ ] Test cross-process exclusive lock and automatic release after process exit.
-- [ ] Test SQLite online backup, `PRAGMA integrity_check`, scratch restore, and early stop on integrity/restore failure.
-- [ ] Implement private backup creation and SHA-256 evidence; backup failure must stop before finalizer invocation.
-- [ ] Test retaining the currently running image by immutable image ID before rebuild.
-- [ ] Implement GitHub `production` Deployment status transitions; success requires finalizer exit zero and `/health.app_version` exactly equal to target release version.
+- [x] Test cross-process exclusive lock and automatic release after process exit.
+- [x] Test SQLite online backup, `PRAGMA integrity_check`, scratch restore, and early stop on integrity/restore failure.
+- [x] Implement private backup creation and SHA-256 evidence; backup failure must stop before finalizer invocation.
+- [x] Test retaining the currently running image by immutable image ID before rebuild.
+- [x] Implement GitHub `production` Deployment status transitions; success requires finalizer exit zero and `/health.app_version` exactly equal to target release version.
 - [ ] Test failed build/health records failure and never restores the database; test post-health GitHub update failure as audit-only retry.
-- [ ] Document one-time Compose context edit, stable checkout setup, approval, invocation, expected output, backup retention, image rollback, database recovery boundary, and evidence capture.
+- [x] Document one-time Compose context edit, stable checkout setup, approval, invocation, expected output, backup retention, image rollback, database recovery boundary, and evidence capture.
 - [ ] Run focused tests and documentation command checks.
 
 ## Task 4: CI and Readiness Closeout
@@ -92,7 +92,7 @@
 - Modify: `docs/plans/2026-09-25-native-github-delivery-governance.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] Run focused tests, `scripts/check.bat`, and all repository-required PR checks; do not run the production finalizer or alter the running Docker service during implementation validation.
+- [ ] Run focused tests, `scripts/check.bat`, and all repository-required PR checks; local `scripts/check.bat` passes Ruff, mypy (49 files), and pytest (630 passed, 0 failed, 0 errors, 1 skipped). Exact pushed-SHA PR checks remain pending. Do not run the production finalizer or alter the running Docker service during implementation validation.
 - [ ] Verify detached source against the published peeled tag SHA, then use `runtime_state.bat --require-runtime-current` after an explicitly authorized promotion; do not require an upstream branch for detached `HEAD`.
 - [ ] Record that first promotion requires a newly published version greater than currently deployed `1.4.24`; v1.4.24 is ineligible.
 - [ ] Record exact tested head, CI/API results, Environment configuration state, stable checkout path, and that production promotion remains unattempted pending explicit operator action.

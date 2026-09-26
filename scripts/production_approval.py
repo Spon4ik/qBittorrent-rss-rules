@@ -24,7 +24,7 @@ WORKFLOWS = (
     ),
 )
 APPROVAL_ENVIRONMENT = "production-approval"
-APPROVER_LOGIN = "spon4ik"
+APPROVER_LOGIN = "Spon4ik"
 
 
 def select_successful_run(
@@ -38,10 +38,13 @@ def select_successful_run(
         and run.get("headSha") == commit_sha
         and run.get("headBranch") == "main"
         and run.get("event") == "push"
-        and run.get("status") == "completed"
-        and run.get("conclusion") == "success"
     ]
-    return max(candidates, key=lambda run: str(run.get("createdAt", "")), default=None)
+    if not candidates:
+        return None
+    newest = max(candidates, key=lambda run: str(run.get("createdAt", "")))
+    if newest.get("status") != "completed" or newest.get("conclusion") != "success":
+        return None
+    return newest
 
 
 def has_successful_job(jobs: list[dict[str, Any]], expected_name: str) -> bool:
@@ -67,7 +70,11 @@ def validate_approval_environment(environment: dict[str, Any]) -> bool:
         if rule.get("type") != "required_reviewers" or rule.get("prevent_self_review") is not False:
             continue
         reviewers = rule.get("reviewers", [])
-        if len(reviewers) == 1 and reviewers[0].get("reviewer", {}).get("login", "").lower() == APPROVER_LOGIN:
+        if (
+            len(reviewers) == 1
+            and reviewers[0].get("reviewer", {}).get("login", "").casefold()
+            == APPROVER_LOGIN.casefold()
+        ):
             return True
     return False
 
@@ -118,6 +125,7 @@ def build_approval_manifest(
         "api_run_url": api_run["url"],
         "approval_run_id": approval_run_id,
         "approval_run_url": approval_run_url,
+        "approved_by": APPROVER_LOGIN,
         "approved_at": approved_at,
     }
 
@@ -172,7 +180,6 @@ def validate_release(tag: str, repo: str) -> tuple[str, str, dict[str, Any], dic
                 "head_sha": commit_sha,
                 "branch": "main",
                 "event": "push",
-                "status": "completed",
                 "per_page": "100",
             }
         )
@@ -194,6 +201,12 @@ def validate_release(tag: str, repo: str) -> tuple[str, str, dict[str, Any], dic
         chosen = select_successful_run(runs, workflow_name=workflow_name, commit_sha=commit_sha)
         if chosen is None:
             raise ValueError(f"No successful exact-SHA {workflow_name} run exists")
+        if (
+            not isinstance(chosen.get("databaseId"), int)
+            or not isinstance(chosen.get("url"), str)
+            or not chosen["url"].startswith("https://github.com/")
+        ):
+            raise ValueError(f"Exact-SHA {workflow_name} run metadata is incomplete")
         jobs_response = _api(
             f"repos/{repo}/actions/runs/{chosen['databaseId']}/jobs?per_page=100"
         )

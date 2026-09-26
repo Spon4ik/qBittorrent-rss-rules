@@ -2,9 +2,14 @@
 
 ## Current focus
 
-- Governance G1 test isolation and G2 hosted CI/main protection are complete on
-  `main`. G3 repository-local English issue forms, PR template, and contribution
-  guidance are prepared in the current PR. G3's native Project inventory and
+- Governance G1 test isolation, G2 hosted CI/main protection, and G3a repository
+  templates are complete on `main`. PR #46 added English bug/feature/question
+  forms, a PR template tying changes to issue acceptance and test evidence, and
+  contribution guidance. The forms pass YAML/schema assertions; all PR checks
+  passed. Exact post-merge SHA `d227db3bb438163ac0f1b759248a189fc1750b91` passed
+  main CI run [36243525969](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36243525969)
+  and real-qBittorrent API run [36243525914](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36243525914).
+  G3b native Project inventory and
   workflow verification remain pending because the authenticated CLI lacks
   `read:project`; there are no repository milestones, and no Project state is
   claimed. The repo remains under `Spon4ik`; organization-only issue types/fields

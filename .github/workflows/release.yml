@@ -1,0 +1,227 @@
+name: Stage Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version already prepared and merged to main (for example 1.4.24)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  verify-main:
+    name: Verify protected main and green CI
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      checks: read
+      contents: read
+      actions: read
+    steps:
+      - name: Check out exact main commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify version and required workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import json, os, subprocess, tomllib
+          version = os.environ["RELEASE_VERSION"].removeprefix("v")
+          with open("pyproject.toml", "rb") as f:
+              project_version = tomllib.load(f)["project"]["version"]
+          if version != project_version:
+              raise SystemExit(f"Requested {version}, source declares {project_version}")
+          runs = json.loads(subprocess.check_output([
+              "gh", "run", "list", "--commit", os.environ["SOURCE_SHA"],
+              "--json", "workflowName,status,conclusion,headSha,createdAt", "--limit", "100"
+          ], text=True))
+          for workflow in ("CI", "qBittorrent web-seed API integration"):
+              matching = sorted(
+                  (r for r in runs if r["workflowName"] == workflow and r["headSha"] == os.environ["SOURCE_SHA"]),
+                  key=lambda r: r["createdAt"],
+                  reverse=True,
+              )
+              if not matching or matching[0]["status"] != "completed" or matching[0]["conclusion"] != "success":
+                  raise SystemExit(f"No successful completed {workflow} run for {os.environ['SOURCE_SHA']}")
+          PY
+
+      - name: Reject an existing tag or release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          $tag = "v$env:RELEASE_VERSION"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) { throw "Release $tag already exists" }
+          git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
+          if ($LASTEXITCODE -eq 0) { throw "Tag $tag already exists" }
+        shell: pwsh
+
+  build-windows:
+    name: Build portable Windows bundle
+    needs: verify-main
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact main commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: 10.0.401
+
+      - name: Build bundle dependencies
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python -m pip install --upgrade pip
+          .venv\Scripts\python -m pip install -r requirements-release.txt
+          .venv\Scripts\python -m pip install --no-build-isolation --no-deps .
+
+      - name: Restore locked WinUI dependencies
+        run: dotnet restore QbRssRulesDesktop/QbRssRulesDesktop.csproj --locked-mode
+
+      - name: Package Windows app
+        shell: pwsh
+        run: ./scripts/package_desktop_bundle.ps1 -Configuration Release -Platform x64 -CreateZip
+
+      - name: Verify portable bundle contents
+        shell: pwsh
+        run: |
+          $expanded = Join-Path $env:RUNNER_TEMP "release-bundle"
+          Expand-Archive -Path "dist\qB RSS Rules Desktop-win-x64.zip" -DestinationPath $expanded
+          $bundle = Join-Path $expanded "qB RSS Rules Desktop-win-x64"
+          @(
+            "QbRssRulesDesktop.exe",
+            "python\python.exe",
+            "app\main.py",
+            "scripts\install_desktop_bundle.ps1",
+            "INSTALL.txt"
+          ) | ForEach-Object {
+            if (-not (Test-Path (Join-Path $bundle $_))) { throw "Bundle is missing $_" }
+          }
+          $hash = (Get-FileHash "dist\qB RSS Rules Desktop-win-x64.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  qB RSS Rules Desktop-win-x64.zip" | Set-Content "dist\qB RSS Rules Desktop-win-x64.zip.sha256" -Encoding ascii
+
+      - name: Upload Windows bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qB-RSS-Rules-Desktop-win-x64-${{ inputs.version }}
+          path: |
+            dist/qB RSS Rules Desktop-win-x64.zip
+            dist/qB RSS Rules Desktop-win-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  smoke-container:
+    name: Smoke disposable source container
+    needs: verify-main
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact main commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Build and smoke the backend container without host mounts
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          image="qb-rss-rules-release-smoke:${GITHUB_SHA}"
+          container="qb-rss-rules-release-smoke-${GITHUB_RUN_ID}"
+          docker build --tag "$image" .
+          docker run --detach --name "$container" --publish 127.0.0.1:18000:8000 "$image"
+          trap 'docker rm --force "$container" >/dev/null 2>&1 || true' EXIT
+          python - <<'PY'
+          import json, os, time, urllib.request
+          url = "http://127.0.0.1:18000/health"
+          deadline = time.monotonic() + 60
+          while True:
+              try:
+                  with urllib.request.urlopen(url, timeout=3) as response:
+                      payload = json.load(response)
+                  break
+              except Exception:
+                  if time.monotonic() >= deadline:
+                      raise
+                  time.sleep(2)
+          assert payload.get("app_version") == os.environ["RELEASE_VERSION"], payload
+          print(f"Container health and version contract passed: {payload['app_version']}")
+          PY
+
+  stage-draft-release:
+    name: Stage draft release and source tag
+    needs: [verify-main, build-windows, smoke-container]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Check out exact main commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download Windows bundle
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v4
+        with:
+          name: qB-RSS-Rules-Desktop-win-x64-${{ inputs.version }}
+          path: dist
+
+      - name: Extract version-specific release notes
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          version = os.environ["RELEASE_VERSION"].removeprefix("v")
+          lines = Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+          heading = f"## [{version}]"
+          start = next((i for i, line in enumerate(lines) if line.startswith(heading)), None)
+          if start is None:
+              raise SystemExit(f"CHANGELOG.md has no release section for {version}")
+          end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+          Path("dist/RELEASE_NOTES.md").write_text("\n".join(lines[start:end]).strip() + "\n", encoding="utf-8")
+          PY
+
+      - name: Create draft GitHub Release from this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          gh release create "v$RELEASE_VERSION" \
+            "dist/qB RSS Rules Desktop-win-x64.zip" \
+            "dist/qB RSS Rules Desktop-win-x64.zip.sha256" \
+            --draft --target "$SOURCE_SHA" \
+            --title "qB RSS Rules v$RELEASE_VERSION" \
+            --notes-file dist/RELEASE_NOTES.md

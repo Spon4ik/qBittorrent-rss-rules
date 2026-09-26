@@ -2,6 +2,15 @@
 
 ## Current focus
 
+- G5a Windows/source release staging is in progress on
+  `codex/g5a-windows-release-lane`. Scope is the portable Windows x64 bundle
+  and GitHub source archives; GHCR publication is excluded. The draft release
+  workflow checks successful CI and qBittorrent API integration runs on the
+  same protected-main SHA, uses Python and NuGet locks, smoke-tests an isolated
+  container, and only then creates a draft/tag. Production deployment remains
+  G5b. Local workflow validation and PR checks are pending; no release has been
+  tagged or published by this work.
+
 - Governance G1 test isolation, G2 hosted CI/main protection, and G3a repository
   templates are complete on `main`. PR #46 added English bug/feature/question
   forms, a PR template tying changes to issue acceptance and test evidence, and

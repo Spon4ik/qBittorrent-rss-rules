@@ -380,9 +380,11 @@ def test_quality_option_choices_preserve_seed_order_and_groups(tmp_path, monkeyp
 
     choices = quality_option_choices()
 
-    assert [item["value"] for item in choices[:6]] == [
+    assert [item["value"] for item in choices[:8]] == [
         "sd",
+        "240p",
         "360p",
+        "400p",
         "480p",
         "hd",
         "720p",

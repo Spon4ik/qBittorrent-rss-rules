@@ -29,8 +29,12 @@
   actors. Issue #48 is closed; full-finalizer recovery is tracked in issue #50.
   Post-merge `Finalize-Backend` passed Ruff/mypy but stopped before Docker:
   pytest had `576 passed, 7 failed, 1 skipped` (one startup timing test and six
-  resolution-quality expectations). Runtime remains at v1.4.21; v1.4.22 is not
-  deployed or released until issue #50 restores the full gate.
+  resolution-quality expectations). A v1.4.23 candidate restores the missing
+  `240p`/`400p` resolution taxonomy entries and replaces the startup wall-clock
+  threshold with an event-coordinated concurrency assertion. The targeted issue
+  #50 regressions and the full local check pass (`583 passed, 1 skipped`). This
+  candidate is not merged; the post-merge finalizer, Docker deployment, and release
+  remain pending. Runtime remains at v1.4.21.
 
 - The `v1.4.20` qB diagnostics rule-header repair and its unrelated full-suite
   isolation repair are implemented and deployed. The maintained UI suite

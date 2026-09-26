@@ -2,7 +2,7 @@
 
 ## Status and goal
 
-**Status: IN PROGRESS.** Adopt the repository's maintained local validation into
+**Status: COMPLETE.** Adopt the repository's maintained local validation into
 GitHub Actions so every pull request and push to `main` runs the same checks on
 clean workers. Keep CI separate from Docker deployment and release publication.
 
@@ -33,25 +33,26 @@ Ruff excludes `.agents`, which contains vendored skill sources rather than proje
 code. Their lint findings must not break application CI, and vendored files are not
 rewritten by repository checks.
 
-## Acceptance and current blocker
+## Acceptance evidence
 
-The new workflow must pass on a pull request and on the exact resulting `main`
-commit before `CI / required` is added to the main ruleset. Capture the workflow
-run and tested SHA for both platforms and the Windows UI/desktop lanes. Never merge
-or treat a red full-suite run as success.
+The first CI run exposed backend failures tracked by
+[issue #50](https://github.com/Spon4ik/qBittorrent-rss-rules/issues/50), plus two
+test races on the first main run. PR #52 added the full workflow and taxonomy
+repair; PR #53 stabilized startup-session coverage and qBittorrent's eventual
+torrent-info readback. Both PR heads and the exact resulting main commit passed.
 
-The first full CI run exposed seven failures tracked by
-[issue #50](https://github.com/Spon4ik/qBittorrent-rss-rules/issues/50). The
-candidate repair restores the missing `240p`/`400p` packaged taxonomy entries,
-replaces the startup timing threshold with an event-coordinated regression, and
-isolates pytest from persistent checkout runtime data. The CI migration merged
-as PR #52 (`ba0595c3`). All lanes passed on PR head `9f9b6fa4`, but the first
-exact-main run still failed: Ubuntu's startup-sync regression did not reach the
-mocked sync call, and the separate qB integration occasionally read the torrent
-list before qBittorrent indexed the new torrent. A follow-up isolates scheduler
-and database setup in the startup test and waits up to ten seconds for actual API
-readback. Its focused local checks pass; the follow-up PR and exact-main Actions
-runs are still required before adding `CI / required` to the ruleset.
+- PR #52 head `9f9b6fa4`: CI run `36208838978` and integration run
+  `36208838975` passed.
+- PR #53 head `e63ec9ad`: CI run `36209537199` and integration run
+  `36209537313` passed.
+- Exact main commit `c7cb4d5ffe93310251cdbbb5680d3dc7cce2ee4e`: CI run
+  `36209791955` and integration run `36209791977` passed.
+- Protected-main ruleset `24023362` now requires `required` and
+  `real-qbittorrent-webseed-api`.
+
+The CI workflow validates code and UI; Docker deployment and release publication
+remain separate delivery steps. Issue #50's v1.4.23 closeout passed the required
+backend finalizer and deployed runtime-version check.
 
 No application deployment, production runner access, release, or tag is part of
 this CI change.

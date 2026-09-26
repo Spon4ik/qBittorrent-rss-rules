@@ -44,10 +44,14 @@ The first full CI run exposed seven failures tracked by
 [issue #50](https://github.com/Spon4ik/qBittorrent-rss-rules/issues/50). The
 candidate repair restores the missing `240p`/`400p` packaged taxonomy entries,
 replaces the startup timing threshold with an event-coordinated regression, and
-isolates pytest from persistent checkout runtime data. Its local full gate passed;
-the updated Windows and Ubuntu Actions runs are the acceptance proof still
-pending. Keep this draft until both platform lanes, browser UI, desktop build, and
-the aggregate job pass on the same PR head.
+isolates pytest from persistent checkout runtime data. The CI migration merged
+as PR #52 (`ba0595c3`). All lanes passed on PR head `9f9b6fa4`, but the first
+exact-main run still failed: Ubuntu's startup-sync regression did not reach the
+mocked sync call, and the separate qB integration occasionally read the torrent
+list before qBittorrent indexed the new torrent. A follow-up isolates scheduler
+and database setup in the startup test and waits up to ten seconds for actual API
+readback. Its focused local checks pass; the follow-up PR and exact-main Actions
+runs are still required before adding `CI / required` to the ruleset.
 
 No application deployment, production runner access, release, or tag is part of
 this CI change.

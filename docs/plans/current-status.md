@@ -2,16 +2,17 @@
 
 ## Current focus
 
-- Full local-check adoption into GitHub Actions is in progress. The proposed
-  `.github/workflows/ci.yml` has Windows and Ubuntu backend-check lanes, the
-  maintained Windows browser UI suite, the WinUI build, and a stable aggregate
-  `required` job. Standard hosted runners are free for this public repository, so
-  these jobs do not consume billable Actions minutes. Existing CI currently
-  requires only the focused qBittorrent integration check. The first full CI run
-  exposed issue #50 regressions; the candidate repair is now included in this PR
-  and has passed the local full gate. The updated Windows and Ubuntu Actions runs
-  must pass on the same PR head and exact `main` commit before the aggregate becomes
-  a required ruleset check. See [CI adoption plan](ci-migration.md).
+- Full local-check adoption is merged as PR #52 (`ba0595c3`). The new workflow has
+  Windows and Ubuntu backend checks, the Windows UI suite, the WinUI build, and a
+  stable `CI / required` aggregate. Hosted runners cost no billable minutes for
+  this public repository. Every lane passed on PR head `9f9b6fa4`, including the
+  real-qBittorrent integration. The exact-main run exposed two test races: the
+  startup-sync regression depended on real session setup, and qB readback could
+  occur before its torrent-info list updated. A follow-up now isolates those
+  paths and adds bounded readback polling; local focused checks pass, while exact
+  main/PR Actions validation remains pending. Do not require `CI / required` in
+  the ruleset until the follow-up passes on its PR and exact main SHA. See
+  [CI adoption plan](ci-migration.md).
 
 - `v1.4.22` fixes the Real-Debrid/qBittorrent webseed failure tracked by
   [issue #48](https://github.com/Spon4ik/qBittorrent-rss-rules/issues/48).

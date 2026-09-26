@@ -269,6 +269,13 @@ It receives no production environment or host access. Only G5b may create a
 production deployment record or touch the production Compose/runtime paths, after
 the separate production design and operator gate are satisfied.
 
+G5a release scope is the portable x64 Windows desktop ZIP and GitHub's source
+archives for the matching source tag. The workflow is manually dispatched from
+protected `main`, verifies both required workflow runs against the selected SHA,
+uses locked Python/NuGet dependencies, and stages a draft GitHub Release only
+after Windows packaging and a no-host-mount disposable-container smoke pass.
+An operator reviews and publishes the draft; no container image is published.
+
 Serialize production deployment with `cancel-in-progress: false`. Prevent stale
 queued commits from replacing a newer deployment. Check exact source identity and
 image digest before promotion; do not execute arbitrary artifact-supplied scripts.
@@ -305,7 +312,7 @@ policy. Planning-only documentation does not bump the application version.
 | G3a | Add English GitHub issue forms, PR template, and contribution guidance for reproducible scope, acceptance evidence, privacy, and test proof; no CODEOWNERS without additional owners | G0 | **COMPLETE** in PR #46, merged as `d227db3`. YAML/schema validation, all PR checks, and exact-main CI plus real-qBittorrent integration passed. |
 | G3b | Inspect and configure one native Project, fields/status workflows, milestones, and native issue hierarchy/dependencies if useful | G0; Project API access | **CONFIGURED; lifecycle observation pending.** Private user Project #2 is linked to this repository at [qBittorrent RSS Rules](https://github.com/users/Spon4ik/projects/2). Status options are Backlog, Ready, In Progress, In Review, Done; Priority is the only custom triage field. The Delivery flow board groups by Status and shows milestone, priority, parent issue, and sub-issue progress. Seven native workflows are enabled: auto-add all open repository issues/PRs, add new items to Backlog, set In Review for linked PRs, In Progress for requested changes, Ready for reopened items, Done for closed issues, and auto-add sub-issues. Issue #47 is tracked in Backlog. No milestone exists or fits that unrelated issue; no hierarchy/dependency was invented. Keep G3b open until a real item naturally demonstrates a transition through review and closure; do not close/reopen a real issue just to test the automation. |
 | G4 | **DEFERRED.** Retain standard hosted runners; revisit self-hosted only for a demonstrated capability gap or separate explicit infrastructure request. | No current dependency; separate access/host-safety review required | Standard hosted Windows and Ubuntu are free for this public repo. Before any self-hosted execution, prove isolated ephemeral hosts, safe public-PR routing, scoped repo/workflow access, no production access, exact job assignment, cleanup/update/recovery. |
-| G5a | Reproducible build/staging/release lane: `.github/workflows/release.yml`, dependency lock/constraints, `scripts/release_prep.py`, release/deployment runbook | G2b; G4 only if technically needed | Version touchpoints synchronized; trusted main SHA equals tag/artifact source; disposable-container health/contract smoke; staged release assets; no accidental live mounts |
+| G5a | Reproducible build/staging/release lane: `.github/workflows/release.yml`, dependency lock/constraints, `scripts/release_prep.py`, release/deployment runbook | G2b; G4 only if technically needed | Version touchpoints synchronized; trusted main SHA equals tag/artifact source; disposable-container health/contract smoke; staged Windows bundle and source archives; no accidental live mounts |
 | G5b | Design and implement gated production promotion, environment/concurrency, backup/restore and provenance; reconcile finalizer, updater and `AGENTS.md` before automation | G5a and separately approved production design | Existing finalizer gate or approved proven successor; verified backup restore in scratch environment; exact deployed SHA/digest and health; rollback drill; recorded approval; delivery item closed only with evidence |
 | G6 | Native security/dependency maintenance and compact governance upkeep: `.github/dependabot.yml`, `SECURITY.md`, default CodeQL where suitable, dependency review, release checklist | G2b, G3 | Update PR traverses normal gate; supported Python/.NET/Actions dependencies covered; initial findings triaged; redacted artifacts; no scheduled AI issue hunting |
 

@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
+- Stage portable Windows releases and matching GitHub source archives from a
+  validated protected-main commit, with locked build dependencies and isolated
+  container smoke coverage.
+
 - Add issue forms and a pull request template that request reproducible scope,
   acceptance evidence, and sanitized validation details.
 

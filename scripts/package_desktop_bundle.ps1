@@ -81,7 +81,7 @@ if ($CreateZip -and (Test-Path $zipPath)) {
 }
 
 Write-Output "Publishing WinUI desktop app ($Configuration/$Platform)..."
-& $dotnetCmd publish $desktopProject -c $Configuration -p:Platform=$Platform -p:PublishProfile=$publishProfile -p:PublishTrimmed=false -p:PublishReadyToRun=false
+& $dotnetCmd publish $desktopProject -c $Configuration -p:Platform=$Platform -p:PublishProfile=$publishProfile -p:PublishTrimmed=false -p:PublishReadyToRun=false -p:RestoreLockedMode=true
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE."
 }

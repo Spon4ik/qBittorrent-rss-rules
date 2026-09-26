@@ -79,3 +79,32 @@ def test_ensure_changelog_entry_scaffolds_release_heading(tmp_path: Path) -> Non
     assert "## [Unreleased]" in text
     assert "## [0.9.1] - 2026-04-17" in text
     assert "- Release prep in progress." in text
+
+
+def test_ensure_changelog_entry_preserves_unreleased_notes(tmp_path: Path) -> None:
+    _seed_release_files(tmp_path)
+    changelog_path = tmp_path / "CHANGELOG.md"
+    changelog_path.write_text(
+        "# Changelog\n\n"
+        "## [Unreleased]\n\n"
+        "- Keep the first pending change.\n"
+        "  Keep its wrapped explanation too.\n\n"
+        "- Keep the second pending change.\n\n"
+        "## [0.9.0] - 2026-04-01\n\n"
+        "- Previously released change.\n",
+        encoding="utf-8",
+    )
+
+    ensure_changelog_entry(tmp_path, new_version="0.9.1", release_date=date(2026, 4, 17))
+
+    text = changelog_path.read_text(encoding="utf-8")
+    assert text.index("## [Unreleased]") < text.index("## [0.9.1] - 2026-04-17")
+    unreleased, release_and_history = text.split("## [0.9.1] - 2026-04-17", maxsplit=1)
+    assert "- No entries yet." in unreleased
+    assert "Keep the first pending change." not in unreleased
+    assert (
+        "- Keep the first pending change.\n"
+        "  Keep its wrapped explanation too.\n\n"
+        "- Keep the second pending change."
+    ) in release_and_history
+    assert "- Previously released change." in release_and_history

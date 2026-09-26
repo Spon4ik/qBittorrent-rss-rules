@@ -12,8 +12,13 @@
   SHA-256 file, and matching GitHub source tag after same-SHA CI/API and
   disposable-container smoke checks. GHCR and production access are excluded;
   production deployment remains G5b. The first end-to-end draft-release run is
-  pending a future merged version-preparation change; this work did not create
-  or publish a release. See the [release runbook](../releases.md).
+  being exercised through the active `codex/release-v1.4.24` preparation PR.
+  That branch preserves the pending changelog notes, synchronizes the `1.4.24`
+  version touchpoints, and adds a regression for changelog preservation. Focused
+  release/version tests and the health-version test pass; the WinUI desktop
+  rebuild passes. No tag or release exists yet. Next: pass PR checks, merge,
+  confirm exact-SHA `main` workflows, then manually stage the draft release.
+  See the [release runbook](../releases.md).
 
 - Governance G1 test isolation, G2 hosted CI/main protection, and G3a repository
   templates are complete on `main`. PR #46 added English bug/feature/question

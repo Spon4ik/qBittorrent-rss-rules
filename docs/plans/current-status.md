@@ -17,7 +17,9 @@
   are pinned by commit SHA in both workflows; their PR permissions remain read-only
   with no secrets or `pull_request_target`. Focused regression passed (`12 passed`);
   `scripts/check.bat` passed Ruff, mypy, and pytest (`597 passed, 1 skipped`). The
-  exact GitHub follow-up run remains pending its PR.
+  first PR run caught a missing checkout in the lightweight aggregate job while
+  all five other checks passed. The gate now checks out source; updated-head GitHub
+  confirmation is pending.
 
 - `v1.4.22` fixes the Real-Debrid/qBittorrent webseed failure tracked by
   [issue #48](https://github.com/Spon4ik/qBittorrent-rss-rules/issues/48).

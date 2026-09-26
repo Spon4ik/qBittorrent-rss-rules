@@ -67,8 +67,11 @@ The fail-closed aggregate regression is covered by
 `tests/test_ci_required_gate.py` and runs as part of the full backend suite. On
 2026-09-26, the focused cases passed (`12 passed`), and `scripts/check.bat` passed
 Ruff, mypy, and pytest (`597 passed, 0 failed, 0 errors, 1 skipped`). The actual
-aggregate workflow invokes the tested helper with live lane results; GitHub
-verification of this follow-up is pending its PR run.
+aggregate workflow invokes the tested helper with live lane results. Its first PR
+run correctly failed the aggregate because that lightweight job had not checked
+out the helper script; the three test/build lanes and qBittorrent integration all
+passed. The aggregate now checks out source before invoking the helper; the updated
+exact-head run must pass before G2a closeout.
 
 The CI workflow validates code and UI; Docker deployment and release publication
 remain separate delivery steps. Issue #50's v1.4.23 closeout passed the required

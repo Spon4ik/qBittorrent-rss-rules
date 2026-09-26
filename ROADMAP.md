@@ -8,7 +8,9 @@
   runners plus gated deployment only when needed.
 - G1 test isolation, G2 hosted CI/main protection, and G3a issue/PR templates are
   implemented. G3b native Project configuration awaits API access. Phase 44 remains
-  a separate active product phase.
+  a separate active product phase. G4 self-hosted runners are deferred: standard
+  hosted runners are free for this public repository, and persistent self-hosted
+  execution adds unnecessary exposure to untrusted public pull requests.
 
 ## Current release state: v1.4.23 published; Phase 44 active
 

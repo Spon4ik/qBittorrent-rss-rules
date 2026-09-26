@@ -5,9 +5,11 @@
 **Status: IN PROGRESS.** This plan was prepared on 2026-09-25 and is being executed
 in small, separately validated pull requests. G1 test isolation and G2 hosted CI /
 main protection are complete on `main`; repository ownership remains `Spon4ik` and
-no transfer is in scope. G3 is next. Its repository-local templates can proceed
-now; native Project inspection and configuration await Project API access. G4-G6
-remain future work and are not implied by this update.
+no transfer is in scope. G3a repository templates are complete; G3b native Project
+inspection and configuration await Project API access. G4 self-hosted runner
+adoption is deferred: standard hosted runners are free for this public repo, while
+persistent self-hosted public-PR execution carries a materially higher security
+cost. G5-G6 remain future work.
 
 Scope: deterministic TDD, isolated validation, CI/CD, protected `main`, native
 GitHub work tracking, dependency/security maintenance, and truthful release evidence.
@@ -39,9 +41,11 @@ that alone is not a reason to transfer. [Issue types][types], [issue fields][fie
 | Repository-scoped self-hosted runner | Possible without transfer | Possible, but avoid unnecessary duplicate infrastructure |
 | Native merge queue | Not this personal-repository option | Possible for public organization repos; deferred until needed |
 
-GitHub documents runner scopes and merge queue availability in [runner access][runner-access]
-and [deployment concepts][merge-queue]. The recommendation above is a design choice
-for this project, not a GitHub requirement to move.
+GitHub documents runner scopes, billing, and merge queue availability in [runner
+access][runner-access], [Actions billing][actions-billing], and [deployment
+concepts][merge-queue]. Standard GitHub-hosted runners are free for public
+repositories. The recommendation above is a design choice for this project, not a
+GitHub requirement to move.
 
 ### Transfer gate: separate, explicitly authorized operation
 
@@ -101,6 +105,24 @@ Audit APIs: repository metadata; `branches/main/protection`; `rulesets`;
 `actions/workflows`; `actions/runners`; `milestones`; org metadata and
 `orgs/Spon4ik-Labs/actions/runner-groups`. Preserve future inventories as small,
 redacted artifacts with date, repository ID, and observed commit.
+
+### Runner cost and access recheck (2026-09-26)
+
+GitHub's current billing documentation states that standard GitHub-hosted runners
+are free for public repositories. The existing workflow uses standard `windows-latest`
+and Ubuntu runners; it does not use chargeable larger runners. The live repository
+runner inventory is empty. The organization pool has three online/idle Windows
+runners (`generic-01`, `generic-02`, and `browser-01`), but its `Default` group allows
+all organization repositories, permits public repositories, and is not restricted
+to selected workflows. Since this repository remains personal, that organization
+pool is not currently available to it. Do not broaden group access or register a
+persistent repository runner merely to avoid a compute charge that does not apply.
+
+GitHub warns against self-hosted runners for public repositories because arbitrary
+contributors can execute pull-request code and compromise persistent runner hosts.
+Reopen G4 only for a demonstrated capability gap or a separate explicit
+infrastructure request, with an isolated ephemeral host and safe routing proven
+before changing `runs-on`.
 
 ## 3. What to reuse from tab-rule-manager
 
@@ -282,15 +304,16 @@ policy. Planning-only documentation does not bump the application version.
 | G2b | Enable native main ruleset, squash-only repository merge settings, and document policy | G2a working on default branch; G0-T if selected | **COMPLETE** on main. Ruleset `24023362` requires the exact CI and real-qBittorrent contexts; PR-only, up-to-date, resolved conversations, squash-only, no force-push/deletion or bypass. |
 | G3a | Add English GitHub issue forms, PR template, and contribution guidance for reproducible scope, acceptance evidence, privacy, and test proof; no CODEOWNERS without additional owners | G0 | **COMPLETE** in PR #46, merged as `d227db3`. YAML/schema validation, all PR checks, and exact-main CI plus real-qBittorrent integration passed. |
 | G3b | Inspect and configure one native Project, fields/status workflows, milestones, and native issue hierarchy/dependencies if useful | G0; Project API access | Project inventory recorded; one real item follows backlog → ready → in progress → review → done with acceptance evidence; no duplicate custom tracker or double-counted parent/child milestone. |
-| G4 | Optional trusted runner onboarding; changes in runner-pool repo and selected access policy, not application fixture hacks; `docs/ci-runner-operations.md` | G2b, explicit need, org access decision | Dedicated identity/host boundary, repo/workflow restrictions, no production access, exact runner/job assignment, cleanup/update/recovery proof; unavailable restrictions mean remain hosted |
+| G4 | **DEFERRED.** Retain standard hosted runners; revisit self-hosted only for a demonstrated capability gap or separate explicit infrastructure request. | No current dependency; separate access/host-safety review required | Standard hosted Windows and Ubuntu are free for this public repo. Before any self-hosted execution, prove isolated ephemeral hosts, safe public-PR routing, scoped repo/workflow access, no production access, exact job assignment, cleanup/update/recovery. |
 | G5a | Reproducible build/staging/release lane: `.github/workflows/release.yml`, dependency lock/constraints, `scripts/release_prep.py`, release/deployment runbook | G2b; G4 only if technically needed | Version touchpoints synchronized; trusted main SHA equals tag/artifact source; disposable-container health/contract smoke; staged release assets; no accidental live mounts |
 | G5b | Design and implement gated production promotion, environment/concurrency, backup/restore and provenance; reconcile finalizer, updater and `AGENTS.md` before automation | G5a and separately approved production design | Existing finalizer gate or approved proven successor; verified backup restore in scratch environment; exact deployed SHA/digest and health; rollback drill; recorded approval; delivery item closed only with evidence |
 | G6 | Native security/dependency maintenance and compact governance upkeep: `.github/dependabot.yml`, `SECURITY.md`, default CodeQL where suitable, dependency review, release checklist | G2b, G3 | Update PR traverses normal gate; supported Python/.NET/Actions dependencies covered; initial findings triaged; redacted artifacts; no scheduled AI issue hunting |
 
 Sequence: G0 -> G1 -> G2a -> G2b -> G3a; G3b requires Project API read/write
 access. This repo stays personal, so organization-only issue types and fields are
-not prerequisites. G0-T is not selected. G4 is optional.
-G0-T is required only for selected organization-specific dependencies. G4 is optional.
+not prerequisites. G0-T is not selected. G4 is deferred unless a concrete need
+changes the cost/security tradeoff. G0-T is required only for selected
+organization-specific dependencies.
 G5a precedes G5b; G6 follows baseline CI. A failed gate stops dependent work, not
 independent documentation. No artificial calendar dates or next app version are
 assigned before the maintainer chooses scope.
@@ -379,6 +402,7 @@ feature availability and organization policy when implementation is authorized.
 [runner-access]: https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/manage-access
 [merge-queue]: https://docs.github.com/en/pull-requests/concepts/deploying-code
 [actions-security]: https://docs.github.com/en/actions/reference/security/secure-use
+[actions-billing]: https://docs.github.com/en/billing/concepts/product-billing/github-actions
 [selfhost-security]: https://docs.github.com/en/actions/concepts/runners/self-hosted-runners
 [environments]: https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments
 [deployment-review]: https://docs.github.com/en/actions/how-tos/managing-workflow-runs-and-deployments/managing-deployments/reviewing-deployments

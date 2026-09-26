@@ -20,12 +20,14 @@ The project follows Semantic Versioning:
 3. The workflow verifies the version, rejects an existing tag/release, builds
    the portable x64 Windows ZIP from that exact `main` commit using the Python
    and NuGet locks, and smoke-tests a disposable backend container without host
-   mounts. It creates a **draft** GitHub Release and tag only after all gates
-   pass. GitHub supplies the source archives for that tag; the Windows ZIP is
-   attached as the release asset.
-4. Review the draft, changelog, source tag/commit, and Windows asset. Publish
-   the draft manually when the release is approved. Publishing is not a
-   production deployment.
+   mounts. It creates a **draft** GitHub Release for the selected version and
+   target SHA only after all gates pass. The version tag is created when the
+   approved draft is published; GitHub then supplies source archives for that
+   tag. The Windows ZIP and SHA-256 sidecar are attached release assets.
+4. Review the draft, changelog, tag target SHA, and Windows assets. Publish the
+   draft manually when the release is approved, then verify that the tag resolves
+   to the validated SHA and the tagged source archives are available. Publishing
+   is not a production deployment.
 5. Record known limitations and upgrade notes in the changelog.
 
 The workflow does not publish a container image or access production. Keep

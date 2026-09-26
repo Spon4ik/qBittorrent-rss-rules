@@ -6,7 +6,8 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
-- No entries yet.
+- Clarify release draft publication, tag creation, and source archive verification
+  steps.
 
 ## [1.4.24] - 2026-09-26
 

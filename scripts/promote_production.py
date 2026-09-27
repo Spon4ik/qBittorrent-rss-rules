@@ -277,6 +277,18 @@ class PromotionManager:
         context = build.get("context") if isinstance(build, dict) else None
         if not isinstance(context, str):
             raise RuntimeError("Current production service has no resolved build context")
+        volumes = service.get("volumes") if isinstance(service, dict) else None
+        database_mount = next(
+            (
+                volume
+                for volume in volumes or []
+                if isinstance(volume, dict) and volume.get("target") == "/app/data"
+            ),
+            None,
+        )
+        database_source = database_mount.get("source") if isinstance(database_mount, dict) else None
+        if not isinstance(database_source, str) or not (Path(database_source) / "qb_rules.db").is_file():
+            raise RuntimeError("Current production SQLite database is missing from the /app/data mount")
 
         key = secrets.token_bytes(32)
         try:

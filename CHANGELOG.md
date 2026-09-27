@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.27] - 2026-09-27
+
+- Allow the production database bind mount to remain at its persistent host path when the stable build context changes.
+
 ## [1.4.26] - 2026-09-27
 
 - Preserve access to private promotion locks and evidence files across repeated ACL hardening.

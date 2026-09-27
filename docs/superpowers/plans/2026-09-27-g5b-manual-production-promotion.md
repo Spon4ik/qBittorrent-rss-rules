@@ -94,7 +94,7 @@
 
 - [x] Run focused tests, `scripts/check.bat`, and all repository-required PR checks; local `scripts/check.bat` passes Ruff, mypy (49 files), and pytest (634 passed, 0 failed, 0 errors, 1 skipped) on implementation/test head `35fb44f6`. The 30-test focused approval/promotion suite, Ruff, and targeted mypy pass on code/test head `6f6a9904ca3b6d612e77da2ebdbf7904c4a24e44`; all five required PR checks pass on that exact SHA (CI `36282852559`, qB API `36282852551`). Do not run the production finalizer or alter the running Docker service during implementation validation.
 - [ ] Verify detached source against the published peeled tag SHA, then use `runtime_state.bat --require-runtime-current` after an explicitly authorized promotion; do not require an upstream branch for detached `HEAD`.
-- [ ] Record that first promotion requires a newly published version greater than currently deployed `1.4.24`; v1.4.24 is ineligible.
+- [x] Record that first promotion requires a newly published version greater than currently deployed `1.4.24`; v1.4.24 is ineligible in the runbook and current status.
 - [x] Record exact tested head, CI/API results, Environment configuration state, stable checkout path, and that production promotion remains unattempted pending explicit operator action. The `production-approval` Environment currently returns 404; `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent; runtime is current at v1.4.24.
 - [x] Commit and push each validated checkpoint; update PR #67 with exact head, validation, blockers, and next action.
 

@@ -75,12 +75,20 @@
   v1.4.27 is published from this main SHA with Windows app and source; stage run
   `36314247007` passed and the Windows ZIP matches its SHA-256 sidecar. Exact-tag
   approval run `36314501098` passed release/CI validation and is waiting at the
-  protected `production-approval` Environment. The v1.4.26 approval run
-  `36313002028` was canceled as ineligible. The stable deployment checkout is
-  clean and detached at v1.4.27; runtime remains healthy on v1.4.24. A private
-  Compose contract and key are captured and validate against the current
-  resolved configuration; the persistent database file exists. No database,
-  backup, container, or runtime change occurred. The active `main` ruleset
+  protected `production-approval` Environment. The first approved run
+  `36314501098` became stale after a docs-only `main` commit; current-main
+  approval run `36316712436` succeeded for the same tag. The promotion CLI then
+  verified and retained a SQLite backup and prior image, but failed to invoke
+  the Windows batch finalizer because its `cmd.exe` quoting treated the whole
+  command as an executable. The GitHub deployment was marked failed; no backend
+  checks or container rebuild ran, and production remains healthy on v1.4.24.
+  Do not retry v1.4.27. A Windows regression now reproduces batch invocation
+  from a checkout path containing spaces; v1.4.28 is being prepared with the
+  corrected command. The clean stable checkout remains detached at v1.4.27. A
+  private Compose contract and key remain captured and validate against the
+  current resolved configuration; the persistent database file exists. The
+  verified backup and retained prior image are preserved for audit/recovery.
+  The active `main` ruleset
   requires PRs, resolved review threads, linear history, squash-only merges,
   and the `required` plus `real-qbittorrent-webseed-api` checks; it currently
   requires zero approving reviews.

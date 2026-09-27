@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.28] - 2026-09-27
+
+- Fix the Windows production promotion tool so it invokes the backend finalizer through `cmd.exe` correctly.
+
 ## [1.4.27] - 2026-09-27
 
 - Allow the production database bind mount to remain at its persistent host path when the stable build context changes.

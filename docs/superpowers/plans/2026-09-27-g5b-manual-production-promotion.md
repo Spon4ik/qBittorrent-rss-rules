@@ -94,10 +94,10 @@
 - Modify: `docs/plans/2026-09-25-native-github-delivery-governance.md`
 - Modify: `CHANGELOG.md`
 
-- [x] Run focused tests, `scripts/check.bat`, and all repository-required PR checks after timeout-tree recovery; the focused approval/promotion suite passes (37 tests), and `scripts/check.bat` passes Ruff, mypy (49 files), and pytest (642 passed, 0 failed, 0 errors, 1 skipped) at code head `185b420dfa18fb4340ca02b4fe7c5b2150b1402b`. All required checks pass on that exact head (CI `36285442249`, qB API `36285442243`). Do not run the production finalizer or alter the running Docker service during implementation validation.
+- [x] Run focused tests, `scripts/check.bat`, and all repository-required PR checks after adding real Windows process-tree coverage; the focused approval/promotion suite passes (38 tests), and `scripts/check.bat` passes Ruff, mypy (49 files), and pytest (643 passed, 0 failed, 0 errors, 1 skipped) at code head `279b2e067a0ad7f3029d6d0a770344fc3349f278`. All required checks pass on that exact head (CI `36286469514`, qB API `36286469581`). Do not run the production finalizer or alter the running Docker service during implementation validation.
 - [ ] Verify detached source against the published peeled tag SHA, then use `runtime_state.bat --require-runtime-current` after an explicitly authorized promotion; do not require an upstream branch for detached `HEAD`.
 - [x] Record that first promotion requires a newly published version greater than currently deployed `1.4.24`; v1.4.24 is ineligible in the runbook and current status.
-- [x] Record exact tested head, CI/API results, Environment configuration state, stable checkout path, and that production promotion remains unattempted pending explicit operator action. The `production-approval` Environment currently returns 404; `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent; runtime is current at v1.4.24.
+- [x] Record exact tested head, CI/API results, Environment configuration state, stable checkout path, and that production promotion remains unattempted pending explicit operator action. The `production-approval` Environment requires reviewer `Spon4ik`, allows protected branches only, and disables administrator bypass; `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent; runtime is current at v1.4.24.
 - [x] Commit and push each validated checkpoint; update PR #67 with exact head, validation, blockers, and next action.
 
 ## Production Acceptance (separate operator action)

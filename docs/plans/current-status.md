@@ -95,8 +95,14 @@
   `36307476398`, and API run `36307476358`. The running service remains
   v1.4.24; the current developer checkout is v1.4.25 and reports stale runtime
   status as expected before promotion. The stable deployment checkout
-  `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent. No production
-  files, database, Docker service, or runtime were changed.
+  `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent and must be
+  prepared manually before promotion; the local command verifies but does not
+  initialize or replace it. A fresh read-only host check after PR #74 confirms
+  the shared Compose build context still points to the developer checkout and
+  `qb-rss-rules` is healthy on v1.4.24. No production files, database, Docker
+  service, or runtime were changed. The next step remains the runbook's manual
+  deployment-checkout and Compose-contract setup, followed by separately
+  authorized local promotion.
 
 - Remote continuity is an explicit repository rule: push each coherent,
   validated checkpoint on its feature branch, keep its PR or handoff current,

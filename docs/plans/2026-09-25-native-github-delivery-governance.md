@@ -300,9 +300,10 @@ Implementation is active on PR #67; production Environment configuration,
 shared Compose edits, backup, rebuild, and deployment remain separate operator
 actions and have not occurred.
 Implementation/test head `35fb44f6` passes local `scripts/check.bat` (634
-passed, 1 skipped). Current code/test head
-`6f6a9904ca3b6d612e77da2ebdbf7904c4a24e44` passes all five required GitHub
-checks (CI run `36282852559`, qB API run `36282852551`). Manager-level failure and
+passed, 1 skipped). Current journal-failure code head
+`0ba48cba7ec7cf5fb6107c9d473f5b8f95bc78dd` passes local `scripts/check.bat`
+(637 passed, 1 skipped) and all five required GitHub checks (CI run
+`36284149016`, qB API run `36284149018`). Manager-level failure and
 audit-retry regressions verify that backup, finalizer, and health failures are
 recorded without automatic restoration, and a failed GitHub success-status
 update can be retried without repeating deployment mutations. The approval

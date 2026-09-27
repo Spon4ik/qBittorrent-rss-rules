@@ -16,11 +16,13 @@
   pass. Manager-level regressions cover backup failure, finalizer failure,
   health mismatch, and audit-only retry without repeating the finalizer or
   Docker mutation. Full `scripts/check.bat` passes (634 passed, 0 failed, 0
-  errors, 1 skipped). Exact pushed head
-  `35fb44f6dba197feaa469b0f1b7d2ea875c27665` passes CI run
-  [36281814895](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36281814895)
+  errors, 1 skipped) at implementation/test head `35fb44f6`.
+  The final preflight-ordering regression passes in the current 29-test focused
+  suite. Current pushed head
+  `9ab9a3d7663fc562d16677bf863563f4a7858dcb` passes CI run
+  [36282200001](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36282200001)
   and real-qBittorrent API run
-  [36281814915](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36281814915).
+  [36282200032](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36282200032).
   The branch is clean and synced. `runtime_state.bat` confirms running and
   checkout versions both remain v1.4.24. GitHub currently has no
   `production-approval` Environment (API 404), and the stable deployment

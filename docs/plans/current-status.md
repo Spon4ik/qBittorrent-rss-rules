@@ -70,12 +70,24 @@
   requires PRs, resolved review threads, linear history, squash-only merges,
   and the `required` plus `real-qbittorrent-webseed-api` checks; it currently
   requires zero approving reviews.
-  The accepted Production Acceptance sequence is now advancing through the
-  release-preparation step: branch `codex/release-v1.4.25` contains the
-  synchronized `1.4.25` patch bump required to make the first target newer than
-  the live `1.4.24` runtime. The version PR, exact-main validation, Windows
-  staging draft, release publication, and later approval/promotion remain
-  pending.
+  The accepted Production Acceptance sequence has a v1.4.25 release candidate
+  staged. PR #72 synchronized the app, WinUI, `/health` test, and changelog
+  version; it was squash-merged as main SHA
+  `3a634b4c0e9602dbd525ad1357615a24242e94cd`. Exact-main CI run
+  [36307476398](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36307476398)
+  and qB API run
+  [36307476358](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36307476358)
+  passed. Stage Windows release run
+  [36307685873](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36307685873)
+  passed its main/SHA/version guard, Windows bundle build, and disposable
+  source-container smoke; it created the v1.4.25 draft
+  [release](https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/untagged-9ba18545799021a1195a).
+  The downloaded Windows ZIP's SHA-256 matches its sidecar
+  (`ffc3e5c04b909004279f85670ae928625c188cfb23c3e7c2ac9db842f3223405`).
+  Publication is pending review: the v1.4.25 tag and tagged source archives do
+  not exist until the draft is published. Approval dispatch and production
+  promotion also remain pending; no production files, database, Docker service,
+  or runtime were changed.
 
 - Remote continuity is an explicit repository rule: push each coherent,
   validated checkpoint on its feature branch, keep its PR or handoff current,

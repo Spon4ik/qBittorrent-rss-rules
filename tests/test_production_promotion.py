@@ -227,13 +227,36 @@ def test_compose_contract_capture_allows_source_checkout_ahead_of_live_runtime(
     )
     manager = promotion_cli.PromotionManager(paths)
     monkeypatch.setattr(promotion_cli, "WINDOWS_HOST", True)
-    monkeypatch.setattr(manager, "_compose_config", lambda: _compose_config(r"E:\GitHub\qBittorrent rss rules"))
+    config = _compose_config(r"E:\GitHub\qBittorrent rss rules")
+    data_dir = tmp_path / "active-data"
+    data_dir.mkdir()
+    (data_dir / "qb_rules.db").write_bytes(b"test database")
+    config["services"]["qb-rss-rules"]["volumes"][0]["source"] = str(data_dir)
+    monkeypatch.setattr(manager, "_compose_config", lambda: config)
     monkeypatch.setattr(promotion_cli, "_read_health", lambda: {"app_version": "1.4.24"})
 
     manager.capture_compose_contract()
 
     assert manager.contract_file.is_file()
     assert manager.contract_key_file.is_file()
+
+    missing_database_config = _compose_config(r"E:\GitHub\qBittorrent rss rules")
+    missing_database_config["services"]["qb-rss-rules"]["volumes"][0]["source"] = str(
+        tmp_path / "missing-data"
+    )
+    missing_paths = promotion_cli.PromotionPaths(
+        home=tmp_path,
+        checkout=tmp_path,
+        compose_file=tmp_path / "docker-compose.yml",
+        env_file=env_file,
+        private_root=tmp_path / "private-missing",
+        stable_checkout=tmp_path / "stable",
+        docker_exe=tmp_path / "docker.exe",
+    )
+    missing_manager = promotion_cli.PromotionManager(missing_paths)
+    monkeypatch.setattr(missing_manager, "_compose_config", lambda: missing_database_config)
+    with pytest.raises(RuntimeError, match="SQLite database is missing"):
+        missing_manager.capture_compose_contract()
 
 
 MOUNTS = [
@@ -367,6 +390,40 @@ def test_compose_digest_ignores_only_build_context_and_does_not_emit_secrets() -
     assert compose_config_digest(changed_mount, service="qb-rss-rules", key=key) != baseline
 
     assert "secret-value" not in baseline
+
+
+def test_compose_contract_allows_persistent_data_mount_outside_build_context(
+    tmp_path: Path,
+) -> None:
+    config = _compose_config(STABLE_CHECKOUT)
+    config["services"]["qb-rss-rules"]["volumes"][0]["source"] = (
+        r"E:\GitHub\qBittorrent rss rules\data"
+    )
+
+    contract = create_compose_contract(
+        config,
+        service="qb-rss-rules",
+        repository=REPOSITORY,
+        compose_file=str(tmp_path / "docker-compose.yml"),
+        env_file=str(tmp_path / ".env"),
+        key=b"test-only-local-contract-key",
+        captured_at=NOW.isoformat(),
+    )
+
+    assert contract["mounts"][0]["source"] == r"e:\github\qbittorrent rss rules\data"
+    assert contract["original_build_context"] == STABLE_CHECKOUT.lower()
+
+    config["services"]["qb-rss-rules"]["volumes"][0]["source"] = "relative-data"
+    with pytest.raises(ValueError, match="absolute host path"):
+        create_compose_contract(
+            config,
+            service="qb-rss-rules",
+            repository=REPOSITORY,
+            compose_file=str(tmp_path / "docker-compose.yml"),
+            env_file=str(tmp_path / ".env"),
+            key=b"test-only-local-contract-key",
+            captured_at=NOW.isoformat(),
+        )
 
 
 def test_private_compose_contract_allows_only_build_context_change(tmp_path: Path) -> None:
@@ -972,7 +1029,7 @@ def test_runbook_commands_match_local_tool_and_production_boundaries() -> None:
     runbook = Path("docs/production-promotion-runbook.md").read_text(encoding="utf-8")
 
     assert "--capture-compose-contract --confirm-current-mounts" in runbook
-    assert "--tag v1.4.26 --approval-run-id 12345678901" in runbook
+    assert "--tag v1.4.27 --approval-run-id 12345678901" in runbook
     assert "--retry-audit-record <journal-path>" in runbook
     assert "`/app/data` database bind mount" in runbook
     assert "`/host/C/Users` and `/host/C/ProgramData` mounts" in runbook

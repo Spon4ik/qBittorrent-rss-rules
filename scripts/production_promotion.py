@@ -241,8 +241,8 @@ def create_compose_contract(
     ):
         raise ValueError("Current Compose mounts do not match the production path contract")
     database_mount = next(mount for mount in mounts if mount["target"] == "/app/data")
-    if database_mount["source"] != normalize_windows_path(ntpath.join(context, "data")):
-        raise ValueError("Current production database mount is not the active checkout data directory")
+    if not ntpath.isabs(database_mount["source"]):
+        raise ValueError("Current production database mount must use an absolute host path")
     contract = {
         "schema_version": 1,
         "repository": repository,

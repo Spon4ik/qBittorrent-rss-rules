@@ -63,17 +63,25 @@
   also passed. PR #67's pre-merge head was
   `c5a1593056e10c9d57c7b5518b82f05dae064fe3`; all required checks passed on that
   exact head before merge. G5b's approval and local promotion implementation is
-  merged and CI-validated, but production acceptance exposed two CLI defects
-  before any production mutation: contract capture rejected a healthy runtime
-  older than the source checkout, and repeated ACL hardening made the existing
-  private lock unreadable. The fix is in branch `codex/g5b-private-storage-acl`;
-  RED/GREEN regressions reproduce both defects, and `scripts/check.bat` passes
-  Ruff, mypy (49 files), and pytest (645 passed, 0 failed, 0 errors, 1 skipped).
-  Do not promote v1.4.25 or reuse its approval run. The stable deployment
-  checkout `%USERPROFILE%\deployments\qBittorrent-rss-rules` exists clean at
-  v1.4.25; production remains healthy on v1.4.24, and shared Compose still
-  targets the developer checkout. No Compose edit, backup, rebuild, or
-  deployment occurred. The active `main` ruleset
+  merged and CI-validated at main SHA
+  `2d098181f793d693ea8275235c071cd6b08763d1`; exact-main CI/API runs
+  `36312518028` / `36312518073` passed. v1.4.26 was published with the Windows
+  app and source after staging run `36312785819` passed, but do not promote it:
+  live contract capture showed the CLI incorrectly required the `/app/data`
+  host path to be under the build context. Production acceptance also found
+  that the shared Compose file points `qb-rss-rules.build.context` to the stable
+  checkout while keeping `/app/data` on the developer checkout's persistent
+  `data` directory. This is the intended database preservation arrangement.
+  Branch `codex/g5b-compose-data-mount-contract` removes that invalid coupling,
+  confirms the mounted SQLite file exists before contract capture, and adds
+  regressions for distinct paths and missing databases. Focused regressions and
+  `scripts/check.bat` pass (Ruff, mypy 49 files, 646 passed, 0 failed, 0 errors,
+  1 skipped). v1.4.27 touchpoints are synchronized. The v1.4.26 approval run
+  `36313002028` was canceled as ineligible. The stable deployment checkout is
+  clean at v1.4.26; runtime remains healthy on v1.4.24. A private Compose
+  contract and key are now captured and validate against the current resolved
+  configuration; the persistent database file exists. No database, Compose,
+  backup, container, or runtime change occurred. The active `main` ruleset
   requires PRs, resolved review threads, linear history, squash-only merges,
   and the `required` plus `real-qbittorrent-webseed-api` checks; it currently
   requires zero approving reviews.
@@ -97,15 +105,18 @@
   passed protected-main dispatch and exact-tag/CI validation, then uploaded the
   `production-approval-manifest` artifact. The manifest identifies reviewer
   `Spon4ik`, tag `v1.4.25`, release SHA above, approval run `36308571410`, CI run
-  `36307476398`, and API run `36307476358`. The running service remains v1.4.24; the current developer checkout is v1.4.26
-  and reports stale runtime status as expected before promotion. The stable
-  deployment checkout `%USERPROFILE%\deployments\qBittorrent-rss-rules` exists
-  clean at v1.4.25 with its Python environment. The shared Compose build context
-  still points to the developer checkout and `qb-rss-rules` is healthy on
-  v1.4.24. Contract capture has not succeeded, but failed attempts made no
-  Compose or runtime changes. The replacement release and fresh approval must
-  come from the merged ACL/contract-capture fix; then update the stable checkout,
-  capture the contract, and continue the runbook.
+  `36307476398`, and API run `36307476358`. The running service remains v1.4.24;
+  the current developer checkout is on `codex/g5b-compose-data-mount-contract`
+  and the stable deployment checkout
+  `%USERPROFILE%\deployments\qBittorrent-rss-rules` remains clean at v1.4.26. The
+  shared Compose build context now points to the stable checkout, while its
+  database bind source remains `E:\GitHub\qBittorrent rss rules\data`. The
+  corrected candidate captured a private contract and key; read-only validation
+  confirmed all current resolved Compose values match that contract and the
+  mounted SQLite file exists. The failed v1.4.26 capture created no files; the
+  later successful capture changed only private contract/key files. After
+  merging the separate-mount fix, publish and approve v1.4.27, update the stable
+  checkout, verify its approved identity and the captured contract, then promote.
 
 - Remote continuity is an explicit repository rule: push each coherent,
   validated checkpoint on its feature branch, keep its PR or handoff current,

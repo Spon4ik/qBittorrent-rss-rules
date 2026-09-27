@@ -17,12 +17,22 @@
   `is` filters include `issue` and `open` ([docs](https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/adding-items-automatically)); its linked-PR workflow sets the linked issue's status ([announcement](https://github.com/orgs/community/discussions/178930)).
 - Archived PR Project items #60-#84 after recording the exact 25-item list;
   PR history and merge state were untouched. The live board now has two issue
-  items: #47 Backlog (historical state remains uncertain) and #85 In Review.
-  Documentation PR #86 (`007046f`) is linked to #85; the native linked-PR
-  workflow moved #85 from In Progress to In Review, and PR #86 was not added as
-  a Project card. Its protected merge uses `Closes #85`; verify the issue closes
-  and its Project item becomes Done before closing G3b. No application, Docker,
-  database, provider, or recovery state was touched.
+  items: #47 Backlog (historical state remains uncertain) and #85 Done. PR #86
+  (`Closes #85`) was squash-merged as `5b426eb7b59f6195e5c39ae0952590bc06c2e506`.
+  The #85 issue naturally traversed In Progress → In Review → Done: PR #86's
+  link moved it to In Review and the linked merge closed it, after which the
+  issue-only Item closed workflow set Done. PR #86 was never a Project card.
+  The two active issue items now distribute as Backlog=1 and Done=1; Ready,
+  In Progress, and In Review are empty. The PR #86 head passed all required
+  checks on PR head `eef5d97d` (CI run
+  [36356470293](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36356470293),
+  API run
+  [36356470271](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36356470271)).
+  Exact merge SHA `5b426eb7b59f6195e5c39ae0952590bc06c2e506` passed main CI run
+  [36356703116](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36356703116)
+  and qBittorrent API run
+  [36356703114](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36356703114).
+  No application, Docker, database, provider, or recovery state was touched.
 
 ## 2026-09-27 live database recovery reassessment
 
@@ -259,10 +269,9 @@
   this repository. Its issue-centric model, exact live configuration, pre/post
   inventory, and #85 lifecycle evidence are recorded in the 2026-09-28 section
   above. #47 remains Backlog because its historical priority/readiness is
-  uncertain; PR #86 naturally moved #85 to In Review without a PR Project card.
-  The issue-close → Done check remains pending on that protected PR's merge. No
-  milestones or hierarchy were invented. Do not simulate lifecycle events on an
-  unrelated issue.
+  uncertain; #85 completed its real In Progress → In Review → Done lifecycle via
+  PR #86, without a PR Project card. No milestones or hierarchy were invented.
+  Do not simulate lifecycle events on an unrelated issue.
   The repository stays under `Spon4ik`; organization-only issue types/fields and
   a transfer are out of scope. The scheduled Codex maintainer is paused, and
   existing forms use standard labels without issue-triage bot assumptions. See

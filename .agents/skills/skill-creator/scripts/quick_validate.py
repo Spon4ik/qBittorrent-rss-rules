@@ -20,7 +20,7 @@ def validate_skill(skill_path):
     if not skill_md.exists():
         return False, "SKILL.md not found"
 
-    content = skill_md.read_text()
+    content = skill_md.read_text(encoding="utf-8")
     if not content.startswith("---"):
         return False, "No YAML frontmatter found"
 
@@ -37,7 +37,14 @@ def validate_skill(skill_path):
     except yaml.YAMLError as e:
         return False, f"Invalid YAML in frontmatter: {e}"
 
-    allowed_properties = {"name", "description", "license", "allowed-tools", "metadata"}
+    allowed_properties = {
+        "name",
+        "description",
+        "license",
+        "compatibility",
+        "allowed-tools",
+        "metadata",
+    }
 
     unexpected_keys = set(frontmatter.keys()) - allowed_properties
     if unexpected_keys:

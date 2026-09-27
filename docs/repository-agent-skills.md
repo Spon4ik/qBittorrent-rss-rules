@@ -7,6 +7,7 @@ This repository stores portable Agent Skills under `.agents/skills/`. GitHub Cop
 - `qb-repository-governance`: protected `main`, GitHub-native issue hierarchy/milestones/progress, CI/CD, runner safety and project maintenance. Composes the skills below.
 - `qb-tdd`: deterministic regression-first implementation and validation.
 - `qb-runner-operations`: self-hosted runner and workflow operations.
+- `docker-destructive-guardrails`, `docker-compose-patterns`, `docker-build-strategies`: Docker-authored guardrails for destructive operations, Compose configurations, and image builds; pinned to Docker Skills `v0.3.0`.
 - `github-issues`, `breakdown-plan`, `repo-standardizer`, `github-actions-hardening`, `github-actions-efficiency`: source-pinned skills from GitHub's community-contributed `awesome-copilot` collection.
 - `gh-fix-ci`, `security-best-practices`, `skill-creator`: source-pinned skills from OpenAI's curated/system catalog.
 

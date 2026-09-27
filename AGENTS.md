@@ -110,6 +110,8 @@ If the finalizer stops before Docker rebuild, say explicitly that deployment was
 
 ## Backend completion gate and Docker runtime
 
+For Docker, Compose, image-build, and runtime operations, use applicable Docker-authored skills installed in `.agents/skills/`. Consult `docker-destructive-guardrails` before operations that can stop, remove, recreate, prune, or modify persistent Docker state.
+
 After a coherent backend code change is ready for final validation, use the repository's deterministic finalizer rather than remembering local checks and Docker refresh as separate steps:
 
 ```powershell

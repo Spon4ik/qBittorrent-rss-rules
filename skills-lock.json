@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "skills": {
+    "docker-build-strategies": {
+      "source": "docker/skills",
+      "ref": "v0.3.0",
+      "sourceType": "github",
+      "skillPath": "skills/docker-build-strategies/SKILL.md",
+      "computedHash": "6b3d320e5672cae202222136cb89ae557474130f197e4f93542dbc490ece0034"
+    },
+    "docker-compose-patterns": {
+      "source": "docker/skills",
+      "ref": "v0.3.0",
+      "sourceType": "github",
+      "skillPath": "skills/docker-compose-patterns/SKILL.md",
+      "computedHash": "f12ea950a20697d3a024ca5db00a5a05ec66e906a80caae846deefd5a6d46675"
+    },
+    "docker-destructive-guardrails": {
+      "source": "docker/skills",
+      "ref": "v0.3.0",
+      "sourceType": "github",
+      "skillPath": "skills/docker-destructive-guardrails/SKILL.md",
+      "computedHash": "0a99d68e4fab5f6765aa9afca95a302ef83f102c11b1ad5d3211d350a2bdc5e5"
+    }
+  }
+}

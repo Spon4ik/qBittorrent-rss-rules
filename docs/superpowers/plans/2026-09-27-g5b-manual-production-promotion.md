@@ -58,13 +58,13 @@
 
 **Interfaces:** `PromotionRequest(tag: str, approval_run_id: int)` and `PromotionConfig` for repository root, stable checkout, shared Compose path, env path, private backup root, lock path, and expected mounts. CLI: `python scripts/promote_production.py --tag TAG --approval-run-id RUN_ID`.
 
-- [ ] Expand tests to cover every invalid/stale/mismatched approval, tag, checkout, Compose, tool, and lock case; current coverage includes manifest mismatch/staleness, Compose contract drift, version gating, and zero-mutation preflight rejection.
+- [x] Cover invalid/stale/mismatched approval, unpublished/non-main tags, dirty/wrong-SHA checkout, non-increasing version, missing exact-SHA checks, Compose service/context/mount drift, unavailable Docker, lock contention, and zero-mutation preflight rejection.
 - [x] Run focused tests and observe RED.
 - [x] Implement GitHub queries through `gh`; download only the named approval JSON artifact to a temporary directory and validate schema and run identity.
 - [x] Verify stable detached checkout equals the published peeled tag and is clean; allow initialization/update only under the stable directory after read-only approval checks pass.
 - [x] Resolve `docker compose config --format json` using the shared Compose and `.env`; assert service, stable context, database source and `/app/data`, both host mounts, and service name.
 - [x] Compare target and live `/health.app_version` with strict SemVer; reject a target not greater than the live version.
-- [ ] Run the full focused invalid-preflight matrix and static checks; initial focused suite passes (25 tests), Ruff and targeted mypy pass.
+- [x] Run the focused invalid-preflight matrix and static checks; approval/promotion tests pass (30), Ruff and targeted mypy pass. Full repository check and exact-SHA Actions evidence are tracked separately below.
 
 ## Task 3: Lock, Backup, Finalizer and Deployment Record
 

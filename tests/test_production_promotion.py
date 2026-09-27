@@ -349,6 +349,81 @@ def test_failed_preflight_stops_before_deployment_backup_or_docker_mutation(
     assert mutation_calls == []
 
 
+def test_missing_docker_cli_is_rejected_by_real_preflight_before_any_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    paths = promotion_cli.PromotionPaths(
+        home=tmp_path,
+        checkout=tmp_path / "stable",
+        compose_file=tmp_path / "docker-compose.yml",
+        env_file=tmp_path / ".env",
+        private_root=tmp_path / "private",
+        stable_checkout=tmp_path / "stable",
+        docker_exe=tmp_path / "missing-docker.exe",
+    )
+    manager = promotion_cli.PromotionManager(paths)
+    database_dir = tmp_path / "production-data"
+    database_dir.mkdir()
+    (database_dir / "qb_rules.db").write_bytes(b"sqlite fixture")
+    manager.contract_file.parent.mkdir(parents=True)
+    manager.contract_file.write_text(
+        json.dumps(
+            {
+                "mounts": [{"target": "/app/data", "source": str(database_dir)}],
+                "compose_hmac": "digest",
+            }
+        ),
+        encoding="utf-8",
+    )
+    manager.contract_key_file.write_bytes(b"k" * 32)
+    manifest = _manifest()
+    release_url = str(manifest["release_url"])
+    run_url = str(manifest["approval_run_url"])
+    monkeypatch.setattr(promotion_cli, "WINDOWS_HOST", True)
+    monkeypatch.setattr(promotion_cli, "secure_private_root", lambda _path: None)
+    monkeypatch.setattr(promotion_cli, "exclusive_file_lock", lambda _path: nullcontext())
+    monkeypatch.setattr(
+        manager,
+        "_validate_approval",
+        lambda _tag, _run_id: (manifest, SHA, {"html_url": run_url}),
+    )
+    monkeypatch.setattr(
+        promotion_cli,
+        "validate_release",
+        lambda _tag, _repo: (
+            SHA,
+            release_url,
+            {"databaseId": 10, "url": manifest["ci_run_url"]},
+            {"databaseId": 11, "url": manifest["api_run_url"]},
+        ),
+    )
+    monkeypatch.setattr(promotion_cli, "validate_approval_manifest", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(promotion_cli, "_project_version", lambda _root: "1.4.25")
+    monkeypatch.setattr(manager, "_checkout_preflight", lambda _tag, _sha: None)
+    monkeypatch.setattr(manager, "_compose_config", lambda: {})
+    monkeypatch.setattr(promotion_cli, "validate_compose_contract", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(promotion_cli, "_read_health", lambda: {"app_version": "1.4.24"})
+    deployment_calls: list[dict[str, object]] = []
+    command_calls: list[list[str]] = []
+    backup_calls: list[Path] = []
+    monkeypatch.setattr(manager, "_create_deployment", lambda evidence: deployment_calls.append(evidence) or 99)
+    monkeypatch.setattr(promotion_cli, "_run", lambda args, **_kwargs: command_calls.append(args))
+    monkeypatch.setattr(
+        promotion_cli,
+        "verify_sqlite_backup",
+        lambda _source, backup: backup_calls.append(backup) or "a" * 64,
+    )
+
+    with pytest.raises(ValueError, match="Docker Desktop CLI is missing"):
+        manager.promote("v1.4.25", 12)
+
+    assert deployment_calls == []
+    assert command_calls == []
+    assert backup_calls == []
+    assert not manager.journal_dir.exists()
+
+
 @pytest.mark.parametrize(
     ("backup_fails", "finalizer_exit_code", "health_version"),
     [(False, 1, "1.4.25"), (False, 0, "1.4.24"), (True, 0, "1.4.25")],

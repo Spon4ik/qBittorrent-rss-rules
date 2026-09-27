@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import csv
 import json
+import os
 import sqlite3
 import subprocess
 import sys
+import time
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -125,6 +128,39 @@ def test_terminate_process_tree_fails_closed_when_taskkill_does_not_confirm(
 
     with pytest.raises(promotion_cli.FinalizerCleanupUncertainError, match="not found"):
         promotion_cli._terminate_process_tree(987)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="taskkill process-tree behavior is Windows-specific")
+def test_windows_finalizer_timeout_kills_real_descendant_process(tmp_path: Path) -> None:
+    child_pid_path = tmp_path / "child.pid"
+    child_code = "import time; time.sleep(60)"
+    launcher_code = (
+        "import pathlib, subprocess, sys, time; "
+        f"child = subprocess.Popen([sys.executable, '-c', {child_code!r}]); "
+        f"pathlib.Path({str(child_pid_path)!r}).write_text(str(child.pid)); "
+        "time.sleep(60)"
+    )
+    with (tmp_path / "finalizer-tree.log").open("w", encoding="utf-8") as log:
+        with pytest.raises(RuntimeError, match="process tree terminated"):
+            promotion_cli._run_finalizer(
+                [sys.executable, "-c", launcher_code], tmp_path, log, timeout=2
+            )
+
+    child_pid = child_pid_path.read_text(encoding="utf-8")
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        result = subprocess.run(
+            ["tasklist.exe", "/FI", f"PID eq {child_pid}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
+        )
+        rows = list(csv.reader(result.stdout.splitlines()))
+        if not any(len(row) > 1 and row[1] == child_pid for row in rows):
+            return
+        time.sleep(0.1)
+    pytest.fail(f"Timed-out finalizer descendant process {child_pid} is still running")
 
 
 def _compose_config(context: str = STABLE_CHECKOUT) -> dict[str, object]:

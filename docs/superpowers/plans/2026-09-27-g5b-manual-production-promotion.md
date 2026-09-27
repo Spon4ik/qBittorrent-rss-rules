@@ -82,7 +82,7 @@
 - [x] Test retaining the currently running image by immutable image ID before rebuild.
 - [x] Implement GitHub `production` Deployment status transitions; success requires finalizer exit zero and `/health.app_version` exactly equal to target release version.
 - [x] Test backup, finalizer, and health failures record failure without automatic database or image rollback; test initial and failure-journal write failures still attempt GitHub failure status; test post-health GitHub update failure and verify audit retry performs no backup, finalizer, or Docker mutation.
-- [x] Contain timed-out finalizer descendants with `taskkill /T /F`; confirm process-tree termination and reap the parent before recording a terminal failure, and fail closed with a cleanup-required record if termination is uncertain.
+- [x] Contain timed-out finalizer descendants with `taskkill /T /F`; confirm process-tree termination and reap the parent before recording a terminal failure, and fail closed with a cleanup-required record if termination is uncertain. Unit tests cover the kill command and uncertain cleanup; a Windows integration test launches a real parent/child process tree and confirms the child is gone.
 - [x] Document one-time Compose context edit, stable checkout setup, approval, invocation, expected output, backup retention, image rollback, database recovery boundary, and evidence capture.
 - [x] Run focused tests and documentation command checks (32 focused tests pass).
 

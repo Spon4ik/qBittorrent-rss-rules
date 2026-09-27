@@ -5,11 +5,12 @@
 **Status: IN PROGRESS.** This plan was prepared on 2026-09-25 and is being executed
 in small, separately validated pull requests. G1 test isolation and G2 hosted CI /
 main protection are complete on `main`; repository ownership remains `Spon4ik` and
-no transfer is in scope. G3a repository templates are complete; G3b native Project
-inspection and configuration await Project API access. G4 self-hosted runner
-adoption is deferred: standard hosted runners are free for this public repo, while
-persistent self-hosted public-PR execution carries a materially higher security
-cost. G5-G6 remain future work.
+no transfer is in scope. G3a repository templates are complete. G3b's issue-centric
+Project correction is in progress under issue #85; the exact live audit and current
+workflow model are recorded in the governance plan and current-status handoff.
+G4 self-hosted runner adoption is deferred: standard hosted runners are free for
+this public repo, while persistent self-hosted public-PR execution carries a
+materially higher security cost. G5-G6 remain future work.
 
 Scope: deterministic TDD, isolated validation, CI/CD, protected `main`, native
 GitHub work tracking, dependency/security maintenance, and truthful release evidence.
@@ -344,18 +345,18 @@ policy. Planning-only documentation does not bump the application version.
 | G2a | Establish hosted CI in `.github/workflows/ci.yml`; deterministic aggregate; pin reviewed action/tool inputs | G1 | **COMPLETE** on main. Windows/Ubuntu checks, maintained Windows UI suite, WinUI build, stable required aggregate, and separate real-qBittorrent API lane pass on main. |
 | G2b | Enable native main ruleset, squash-only repository merge settings, and document policy | G2a working on default branch; G0-T if selected | **COMPLETE** on main. Ruleset `24023362` requires the exact CI and real-qBittorrent contexts; PR-only, up-to-date, resolved conversations, squash-only, no force-push/deletion or bypass. |
 | G3a | Add English GitHub issue forms, PR template, and contribution guidance for reproducible scope, acceptance evidence, privacy, and test proof; no CODEOWNERS without additional owners | G0 | **COMPLETE** in PR #46, merged as `d227db3`. YAML/schema validation, all PR checks, and exact-main CI plus real-qBittorrent integration passed. |
-| G3b | Inspect and configure one native Project, fields/status workflows, milestones, and native issue hierarchy/dependencies if useful | G0; Project API access | **CONFIGURED; lifecycle observation pending.** Private user Project #2 is linked to this repository at [qBittorrent RSS Rules](https://github.com/users/Spon4ik/projects/2). Status options are Backlog, Ready, In Progress, In Review, Done; Priority is the only custom triage field. The Delivery flow board groups by Status and shows milestone, priority, parent issue, and sub-issue progress. Seven native workflows are enabled: auto-add all open repository issues/PRs, add new items to Backlog, set In Review for linked PRs, In Progress for requested changes, Ready for reopened items, Done for closed issues, and auto-add sub-issues. Issue #47 is tracked in Backlog. No milestone exists or fits that unrelated issue; no hierarchy/dependency was invented. Keep G3b open until a real item naturally demonstrates a transition through review and closure; do not close/reopen a real issue just to test the automation. |
+| G3b | Inspect and configure one native Project, fields/status workflows, milestones, and native issue hierarchy/dependencies if useful | G0; Project API access | **ISSUE-CENTRIC CONFIGURATION LIVE; #85 lifecycle canary in progress.** Private user Project #2 is linked to this repository at [qBittorrent RSS Rules](https://github.com/users/Spon4ik/projects/2). Status options remain Backlog, Ready, In Progress, In Review, Done; Priority is the only custom triage field. Delivery flow is a Status-grouped board. Auto-add filter `is:issue is:open` adds open issues only. “Item added” applies to issues and sets Backlog; “Item closed” applies to issues and sets Done; “Item reopened” applies to issues and sets Ready. “Pull request linked to issue” sets the linked issue to In Review (GitHub's [Projects announcement](https://github.com/orgs/community/discussions/178930)); “Code changes requested” is disabled because it acts on PR cards, so a requested-changes return to In Progress is manual. “Auto-add sub-issues” remains enabled. The “Pull request merged” workflow is disabled; timeline evidence for merged PRs #60-#84 shows no Done transition, while their added-to-project status was Backlog. Those 25 PR Project items were archived; repository PR records were untouched. Current issue items are #47 Backlog and #85 In Review. Linked PR #86 naturally transitioned #85 from In Progress to In Review and was excluded as an independent Project card. The protected PR merge with `Closes #85` remains the issue-close → Done canary; do not manufacture lifecycle events. No milestone or hierarchy/dependency was invented. See current-status.md for the full audit, pre/post counts, and evidence. |
 | G4 | **DEFERRED.** Retain standard hosted runners; revisit self-hosted only for a demonstrated capability gap or separate explicit infrastructure request. | No current dependency; separate access/host-safety review required | Standard hosted Windows and Ubuntu are free for this public repo. Before any self-hosted execution, prove isolated ephemeral hosts, safe public-PR routing, scoped repo/workflow access, no production access, exact job assignment, cleanup/update/recovery. |
 | G5a | Reproducible build/staging/release lane: `.github/workflows/release.yml`, dependency lock/constraints, `scripts/release_prep.py`, release/deployment runbook | G2b; G4 only if technically needed | Version touchpoints synchronized; trusted main SHA equals tag/artifact source; disposable-container health/contract smoke; staged Windows bundle and source archives; no accidental live mounts |
 | G5b | **IMPLEMENTED; production acceptance in progress.** PR #67 adds the protected approval workflow and gated local Windows promotion path; squash-merged as `36cbda52db1af3c8115a77824d904221e3d379b6`. | G5a and separately approved production design | Implementation gates, backup/restore preflight, exact-SHA provenance, and promotion failure recovery are covered by tests and exact-main CI/API runs `36306016659` / `36306016619`. Release v1.4.25 is published from validated main SHA `3a634b4c0e9602dbd525ad1357615a24242e94cd`; exact-tag Environment approval run `36308571410` produced the approval manifest. Remaining acceptance requires stable checkout setup, explicitly authorized local promotion, health/deployment evidence, and rollback drill. No production change has occurred. |
 | G6 | Native security/dependency maintenance and compact governance upkeep: `.github/dependabot.yml`, `SECURITY.md`, default CodeQL where suitable, dependency review, release checklist | G2b, G3 | Update PR traverses normal gate; supported Python/.NET/Actions dependencies covered; initial findings triaged; redacted artifacts; no scheduled AI issue hunting |
 
-Sequence: G0 -> G1 -> G2a -> G2b -> G3a; G3b's Project setup is configured, with
-natural lifecycle observation pending. Project API read/write access is now
-available. This repo stays personal, so organization-only issue types and fields
-are not prerequisites. G0-T is not selected. G4 is deferred unless a concrete
-need changes the cost/security tradeoff. G0-T is required only for selected
-organization-specific dependencies.
+Sequence: G0 -> G1 -> G2a -> G2b -> G3a; G3b's issue-centric configuration is
+live, with natural lifecycle observation in progress on #85. Project API
+read/write access is available. This repo stays personal, so organization-only
+issue types and fields are not prerequisites. G0-T is not selected. G4 is
+deferred unless a concrete need changes the cost/security tradeoff. G0-T is
+required only for selected organization-specific dependencies.
 G5a precedes G5b; G6 follows baseline CI. A failed gate stops dependent work, not
 independent documentation. No artificial calendar dates or next app version are
 assigned before the maintainer chooses scope.

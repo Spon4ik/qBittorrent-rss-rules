@@ -564,7 +564,21 @@ class PromotionManager:
                 "deployed_image_id": "",
                 "finalizer_exit_code": None,
             }
-            self._write_journal(record)
+            try:
+                self._write_journal(record)
+            except Exception as exc:
+                try:
+                    self._set_deployment_status(
+                        deployment_id,
+                        state="failure",
+                        description=f"Promotion stopped for {tag}; private journal could not be created",
+                        log_url=evidence["approval_run_url"],
+                    )
+                except Exception:
+                    print("GitHub failure status is pending; the private deployment journal could not be created.")
+                raise RuntimeError(
+                    "Could not persist the private deployment journal; production mutation did not start."
+                ) from exc
             try:
                 self._set_deployment_status(
                     deployment_id,
@@ -664,7 +678,10 @@ class PromotionManager:
             except Exception as exc:
                 record["stage"] = "failure"
                 record["failure"] = f"{exc.__class__.__name__}: {str(exc)[:300]}"
-                self._write_journal(record)
+                try:
+                    self._write_journal(record)
+                except Exception:
+                    print("Private failure journal update failed; GitHub failure status will still be attempted.")
                 try:
                     self._set_deployment_status(
                         deployment_id,

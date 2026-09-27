@@ -80,9 +80,9 @@
 - [x] Implement private backup creation and SHA-256 evidence; backup failure must stop before finalizer invocation.
 - [x] Test retaining the currently running image by immutable image ID before rebuild.
 - [x] Implement GitHub `production` Deployment status transitions; success requires finalizer exit zero and `/health.app_version` exactly equal to target release version.
-- [x] Test backup, finalizer, and health failures record failure without automatic database or image rollback; test post-health GitHub update failure and verify audit retry performs no backup, finalizer, or Docker mutation.
+- [x] Test backup, finalizer, and health failures record failure without automatic database or image rollback; test initial and failure-journal write failures still attempt GitHub failure status; test post-health GitHub update failure and verify audit retry performs no backup, finalizer, or Docker mutation.
 - [x] Document one-time Compose context edit, stable checkout setup, approval, invocation, expected output, backup retention, image rollback, database recovery boundary, and evidence capture.
-- [x] Run focused tests and documentation command checks (29 focused tests pass).
+- [x] Run focused tests and documentation command checks (32 focused tests pass).
 
 ## Task 4: CI and Readiness Closeout
 
@@ -92,7 +92,7 @@
 - Modify: `docs/plans/2026-09-25-native-github-delivery-governance.md`
 - Modify: `CHANGELOG.md`
 
-- [x] Run focused tests, `scripts/check.bat`, and all repository-required PR checks; local `scripts/check.bat` passes Ruff, mypy (49 files), and pytest (634 passed, 0 failed, 0 errors, 1 skipped) on implementation/test head `35fb44f6`. The 30-test focused approval/promotion suite, Ruff, and targeted mypy pass on code/test head `6f6a9904ca3b6d612e77da2ebdbf7904c4a24e44`; all five required PR checks pass on that exact SHA (CI `36282852559`, qB API `36282852551`). Do not run the production finalizer or alter the running Docker service during implementation validation.
+- [ ] Run focused tests, `scripts/check.bat`, and all repository-required PR checks; the current worktree passes Ruff, mypy (49 files), and pytest (637 passed, 0 failed, 0 errors, 1 skipped), and the 32-test focused approval/promotion suite passes. Previous pushed head `6f6a9904ca3b6d612e77da2ebdbf7904c4a24e44` passed exact-SHA CI (`36282852559`) and qB API (`36282852551`); push this journal-failure fix and require exact-SHA PR checks before closing implementation validation. Do not run the production finalizer or alter the running Docker service during implementation validation.
 - [ ] Verify detached source against the published peeled tag SHA, then use `runtime_state.bat --require-runtime-current` after an explicitly authorized promotion; do not require an upstream branch for detached `HEAD`.
 - [x] Record that first promotion requires a newly published version greater than currently deployed `1.4.24`; v1.4.24 is ineligible in the runbook and current status.
 - [x] Record exact tested head, CI/API results, Environment configuration state, stable checkout path, and that production promotion remains unattempted pending explicit operator action. The `production-approval` Environment currently returns 404; `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent; runtime is current at v1.4.24.

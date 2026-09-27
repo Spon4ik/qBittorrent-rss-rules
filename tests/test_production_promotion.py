@@ -349,6 +349,126 @@ def test_failed_preflight_stops_before_deployment_backup_or_docker_mutation(
     assert mutation_calls == []
 
 
+def test_initial_journal_failure_marks_created_deployment_failed_before_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    paths = promotion_cli.PromotionPaths(
+        home=tmp_path,
+        checkout=tmp_path / "stable",
+        compose_file=tmp_path / "docker-compose.yml",
+        env_file=tmp_path / ".env",
+        private_root=tmp_path / "private",
+        stable_checkout=tmp_path / "stable",
+        docker_exe=tmp_path / "docker.exe",
+    )
+    manager = promotion_cli.PromotionManager(paths)
+    evidence = {
+        "tag": "v1.4.25",
+        "commit_sha": SHA,
+        "approval_run_url": "https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/12",
+        "target_version": "1.4.25",
+        "database_path": str(tmp_path / "production.sqlite3"),
+        "previous_image_id": "sha256:" + "b" * 64,
+    }
+    status_calls: list[tuple[str, str]] = []
+    mutation_calls: list[str] = []
+    monkeypatch.setattr(promotion_cli, "WINDOWS_HOST", True)
+    monkeypatch.setattr(promotion_cli, "secure_private_root", lambda _path: None)
+    monkeypatch.setattr(promotion_cli, "exclusive_file_lock", lambda _path: nullcontext())
+    monkeypatch.setattr(manager, "preflight", lambda _tag, _run_id: evidence)
+    monkeypatch.setattr(manager, "_create_deployment", lambda _evidence: 99)
+
+    def write_status(_deployment_id: int, *, state: str, **_kwargs: str) -> None:
+        status_calls.append((state, "record status"))
+
+    def fail_journal(_record: dict[str, object]) -> Path:
+        raise OSError("private storage is unavailable")
+
+    monkeypatch.setattr(manager, "_set_deployment_status", write_status)
+    monkeypatch.setattr(manager, "_write_journal", fail_journal)
+    monkeypatch.setattr(
+        promotion_cli,
+        "verify_sqlite_backup",
+        lambda *_args, **_kwargs: mutation_calls.append("backup") or "a" * 64,
+    )
+    monkeypatch.setattr(promotion_cli, "_run", lambda *_args, **_kwargs: mutation_calls.append("docker"))
+    monkeypatch.setattr(
+        promotion_cli.subprocess,
+        "run",
+        lambda *_args, **_kwargs: mutation_calls.append("finalizer")
+        or subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+    )
+
+    with pytest.raises(RuntimeError, match="Could not persist the private deployment journal"):
+        manager.promote("v1.4.25", 12)
+
+    assert status_calls == [("failure", "record status")]
+    assert mutation_calls == []
+
+
+def test_failure_status_is_attempted_when_failure_journal_update_also_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    paths = promotion_cli.PromotionPaths(
+        home=tmp_path,
+        checkout=tmp_path / "stable",
+        compose_file=tmp_path / "docker-compose.yml",
+        env_file=tmp_path / ".env",
+        private_root=tmp_path / "private",
+        stable_checkout=tmp_path / "stable",
+        docker_exe=tmp_path / "docker.exe",
+    )
+    manager = promotion_cli.PromotionManager(paths)
+    evidence = {
+        "tag": "v1.4.25",
+        "commit_sha": SHA,
+        "approval_run_url": "https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/12",
+        "target_version": "1.4.25",
+        "database_path": str(tmp_path / "production.sqlite3"),
+        "previous_image_id": "sha256:" + "b" * 64,
+    }
+    journal_writes = 0
+    states: list[str] = []
+    mutation_calls: list[str] = []
+    monkeypatch.setattr(promotion_cli, "WINDOWS_HOST", True)
+    monkeypatch.setattr(promotion_cli, "secure_private_root", lambda _path: None)
+    monkeypatch.setattr(promotion_cli, "exclusive_file_lock", lambda _path: nullcontext())
+    monkeypatch.setattr(manager, "preflight", lambda _tag, _run_id: evidence)
+    monkeypatch.setattr(manager, "_create_deployment", lambda _evidence: 99)
+
+    def write_journal(_record: dict[str, object]) -> Path:
+        nonlocal journal_writes
+        journal_writes += 1
+        if journal_writes == 3:
+            raise OSError("disk became unavailable")
+        return manager.journal_dir / "fixture.json"
+
+    def write_status(_deployment_id: int, *, state: str, **_kwargs: str) -> None:
+        states.append(state)
+
+    def fail_backup(*_args: object, **_kwargs: object) -> str:
+        raise ValueError("backup integrity failed")
+
+    monkeypatch.setattr(manager, "_write_journal", write_journal)
+    monkeypatch.setattr(manager, "_set_deployment_status", write_status)
+    monkeypatch.setattr(promotion_cli, "verify_sqlite_backup", fail_backup)
+    monkeypatch.setattr(promotion_cli, "_run", lambda *_args, **_kwargs: mutation_calls.append("docker"))
+    monkeypatch.setattr(
+        promotion_cli.subprocess,
+        "run",
+        lambda *_args, **_kwargs: mutation_calls.append("finalizer"),
+    )
+
+    with pytest.raises(ValueError, match="backup integrity failed"):
+        manager.promote("v1.4.25", 12)
+
+    assert journal_writes == 3
+    assert states == ["in_progress", "failure"]
+    assert mutation_calls == []
+
+
 def test_missing_docker_cli_is_rejected_by_real_preflight_before_any_mutation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

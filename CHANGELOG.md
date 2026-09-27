@@ -9,6 +9,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 - Add the gated G5b manual production-promotion workflow, local preflight and
   backup/restore verification, deployment evidence recording, and operator
   runbook. Production has not been promoted.
+- Preserve GitHub failure status reporting when private deployment-journal writes fail.
 - Draft the G5b gated manual production-promotion design; no production changes
   are included.
 - Accept the G5b design and define its implementation plan; no production

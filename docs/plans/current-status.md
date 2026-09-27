@@ -12,19 +12,19 @@
   The exact-SHA approval workflow is pushed on PR #67. The local promotion CLI,
   Compose contract checks, private SQLite backup/restore verification, deployment
   recording, and operator runbook are implemented in the current checkpoint.
-  Focused approval/promotion coverage passes (30 tests), Ruff and targeted mypy
+  Focused approval/promotion coverage passes (32 tests), Ruff and targeted mypy
   pass. Manager-level regressions cover backup failure, finalizer failure,
-  health mismatch, and audit-only retry without repeating the finalizer or
-  Docker mutation. Full `scripts/check.bat` passes (634 passed, 0 failed, 0
-  errors, 1 skipped) at implementation/test head `35fb44f6`.
-  The 30-test focused suite also covers unavailable Docker on the real preflight
-  path. Current code/test head
+  health mismatch, initial journal failure, failure-journal write failure, and
+  audit-only retry without repeating the finalizer or Docker mutation. The
+  focused suite also covers unavailable Docker on the real preflight path.
+  Full `scripts/check.bat` passes on the current worktree (637 passed, 0 failed,
+  0 errors, 1 skipped). The previous pushed code/test head
   `6f6a9904ca3b6d612e77da2ebdbf7904c4a24e44` passes CI run
   [36282852559](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36282852559)
   and real-qBittorrent API run
   [36282852551](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36282852551),
-  including the required aggregate.
-  The branch is clean and synced. `runtime_state.bat` confirms running and
+  including the required aggregate. The current journal-failure fix is ready to
+  commit and push for exact-SHA Actions validation. `runtime_state.bat` confirms running and
   checkout versions both remain v1.4.24. GitHub currently has no
   `production-approval` Environment (API 404), and the stable deployment
   checkout `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent. Neither

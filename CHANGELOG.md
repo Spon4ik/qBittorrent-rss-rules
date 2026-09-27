@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
+- No entries yet.
+
+## [1.4.25] - 2026-09-27
+
 - Add the gated G5b manual production-promotion workflow, local preflight and
   backup/restore verification, deployment evidence recording, and operator
   runbook. Production has not been promoted.

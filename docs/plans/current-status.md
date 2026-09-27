@@ -72,19 +72,28 @@
   path, confirms the mounted SQLite file exists before contract capture, and
   adds regressions for distinct paths and missing databases. `scripts/check.bat`
   passes (Ruff, mypy 49 files, 646 passed, 0 failed, 0 errors, 1 skipped).
-  v1.4.27 is published from this main SHA with Windows app and source; stage run
-  `36314247007` passed and the Windows ZIP matches its SHA-256 sidecar. Exact-tag
-  approval run `36314501098` passed release/CI validation and is waiting at the
-  protected `production-approval` Environment. The first approved run
-  `36314501098` became stale after a docs-only `main` commit; current-main
-  approval run `36316712436` succeeded for the same tag. The promotion CLI then
+  v1.4.27 is published from its validated main SHA; stage run `36314247007`
+  passed and its Windows ZIP matches the sidecar. Approval runs `36314501098`
+  and `36316712436` authorized v1.4.27, but promotion exposed the Windows
+  finalizer invocation defect described below. PR #79 fixed the invocation and
+  added a Windows batch-execution regression. It was squash-merged as
+  `331c0d4b0f18dd9a3808b60f5ee21a8e414521d9`; exact-main CI run `36317618914`
+  and qBittorrent API run `36317618965` passed. Stage run `36317858947`
+  published [v1.4.28](https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.28)
+  with Windows app and source. The ZIP SHA-256
+  `0b3ff1c995be145916ffa569ee1c6dfc273da1c7cb1d726588340a0a1a4fc0fc` matches
+  its sidecar, and both source archive endpoints return HTTP 200. The first
+  approved run `36314501098` became stale after a docs-only `main` commit;
+  current-main approval run `36316712436` succeeded for the same tag. The
+  promotion CLI then
   verified and retained a SQLite backup and prior image, but failed to invoke
   the Windows batch finalizer because its `cmd.exe` quoting treated the whole
   command as an executable. The GitHub deployment was marked failed; no backend
   checks or container rebuild ran, and production remains healthy on v1.4.24.
   Do not retry v1.4.27. A Windows regression now reproduces batch invocation
-  from a checkout path containing spaces; v1.4.28 is being prepared with the
-  corrected command. The clean stable checkout remains detached at v1.4.27. A
+  from a checkout path containing spaces. A fresh protected approval for
+  v1.4.28 and a promotion attempt from its exact stable tag remain. The stable
+  checkout is still detached at v1.4.27. A
   private Compose contract and key remain captured and validate against the
   current resolved configuration; the persistent database file exists. The
   verified backup and retained prior image are preserved for audit/recovery.

@@ -26,9 +26,8 @@
   including the required aggregate. The initial and failure-journal persistence
   errors both trigger a GitHub failure status attempt before the operation
   exits. `runtime_state.bat` confirms running and
-  checkout versions both remain v1.4.24. GitHub currently has no
-  `production-approval` Environment (API 404), and the stable deployment
-  checkout `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent. The
+  checkout versions both remain v1.4.24. The stable deployment checkout
+  `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent. The
   `production-approval` Environment is configured and verified with the
   application's fail-closed validator: reviewer `Spon4ik`, protected branches
   only, administrator bypass disabled. Self-review prevention remains disabled
@@ -54,6 +53,12 @@
   [36286469581](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36286469581).
   The process-tree cleanup failure path was not exercised against production;
   no approval dispatch or Docker finalizer/deployment was run.
+  PR #67 is ready for review at head
+  `ab6300bc7264d76818f7f174925be228c9d9ba8a`; all required checks pass there
+  (CI `36286794525`, qBittorrent API `36286794521`). Its active `main` ruleset
+  requires PRs, resolved review threads, linear history, squash-only merges,
+  and the `required` plus `real-qbittorrent-webseed-api` checks; it currently
+  requires zero approving reviews. The PR has not been merged.
 
 - Remote continuity is an explicit repository rule: push each coherent,
   validated checkpoint on its feature branch, keep its PR or handoff current,

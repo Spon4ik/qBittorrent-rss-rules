@@ -80,9 +80,9 @@
 - [x] Implement private backup creation and SHA-256 evidence; backup failure must stop before finalizer invocation.
 - [x] Test retaining the currently running image by immutable image ID before rebuild.
 - [x] Implement GitHub `production` Deployment status transitions; success requires finalizer exit zero and `/health.app_version` exactly equal to target release version.
-- [ ] Test failed build/health records failure and never restores the database; test post-health GitHub update failure as audit-only retry.
+- [x] Test backup, finalizer, and health failures record failure without automatic database or image rollback; test post-health GitHub update failure and verify audit retry performs no backup, finalizer, or Docker mutation.
 - [x] Document one-time Compose context edit, stable checkout setup, approval, invocation, expected output, backup retention, image rollback, database recovery boundary, and evidence capture.
-- [ ] Run focused tests and documentation command checks.
+- [x] Run focused tests and documentation command checks (29 focused tests pass).
 
 ## Task 4: CI and Readiness Closeout
 
@@ -92,7 +92,7 @@
 - Modify: `docs/plans/2026-09-25-native-github-delivery-governance.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] Run focused tests, `scripts/check.bat`, and all repository-required PR checks; local `scripts/check.bat` passes Ruff, mypy (49 files), and pytest (630 passed, 0 failed, 0 errors, 1 skipped). Exact pushed-SHA PR checks remain pending. Do not run the production finalizer or alter the running Docker service during implementation validation.
+- [ ] Run focused tests, `scripts/check.bat`, and all repository-required PR checks; local `scripts/check.bat` passes Ruff, mypy (49 files), and pytest (634 passed, 0 failed, 0 errors, 1 skipped). All five required PR checks passed on exact SHA `6fd70e6c0cf92e9fd18e3ea983c0792c9cd6be03`; the new uncommitted test checkpoint still needs push and exact-SHA CI. Do not run the production finalizer or alter the running Docker service during implementation validation.
 - [ ] Verify detached source against the published peeled tag SHA, then use `runtime_state.bat --require-runtime-current` after an explicitly authorized promotion; do not require an upstream branch for detached `HEAD`.
 - [ ] Record that first promotion requires a newly published version greater than currently deployed `1.4.24`; v1.4.24 is ineligible.
 - [ ] Record exact tested head, CI/API results, Environment configuration state, stable checkout path, and that production promotion remains unattempted pending explicit operator action.

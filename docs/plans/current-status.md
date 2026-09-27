@@ -12,10 +12,13 @@
   The exact-SHA approval workflow is pushed on PR #67. The local promotion CLI,
   Compose contract checks, private SQLite backup/restore verification, deployment
   recording, and operator runbook are implemented in the current checkpoint.
-  Focused approval/promotion coverage passes (25 tests), Ruff and targeted mypy
-  pass. The first implementation review found and fixed case-insensitive GitHub
-  approver matching. The current checkpoint is ready to commit and push; full
-  repository checks and exact-SHA PR Actions are still required. The current
+  Focused approval/promotion coverage passes (29 tests), Ruff and targeted mypy
+  pass. Manager-level regressions cover backup failure, finalizer failure,
+  health mismatch, and audit-only retry without repeating the finalizer or
+  Docker mutation. Full `scripts/check.bat` passes (634 passed, 0 failed, 0
+  errors, 1 skipped); all five required PR checks passed on exact head
+  `6fd70e6c0cf92e9fd18e3ea983c0792c9cd6be03`. The new test checkpoint is ready
+  to commit and push; its exact-SHA Actions checks remain pending. The current
   deployed version is v1.4.24, so the first eligible target must be a newly
   published higher version. No production Environment, Compose edit, backup,
   rebuild, or deployment has occurred.

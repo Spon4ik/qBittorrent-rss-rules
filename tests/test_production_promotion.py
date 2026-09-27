@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import subprocess
 import sys
@@ -346,6 +347,215 @@ def test_failed_preflight_stops_before_deployment_backup_or_docker_mutation(
         manager.promote("v1.4.25", 123)
 
     assert mutation_calls == []
+
+
+@pytest.mark.parametrize(
+    ("backup_fails", "finalizer_exit_code", "health_version"),
+    [(False, 1, "1.4.25"), (False, 0, "1.4.24"), (True, 0, "1.4.25")],
+    ids=["finalizer-failure", "health-version-mismatch", "backup-failure"],
+)
+def test_failed_promotion_records_failure_without_database_or_image_rollback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    backup_fails: bool,
+    finalizer_exit_code: int,
+    health_version: str,
+) -> None:
+    paths = promotion_cli.PromotionPaths(
+        home=tmp_path,
+        checkout=tmp_path / "stable",
+        compose_file=tmp_path / "docker-compose.yml",
+        env_file=tmp_path / ".env",
+        private_root=tmp_path / "private",
+        stable_checkout=tmp_path / "stable",
+        docker_exe=tmp_path / "docker.exe",
+    )
+    manager = promotion_cli.PromotionManager(paths)
+    previous_image = "sha256:" + "b" * 64
+    docker_commands: list[list[str]] = []
+    deployment_states: list[str] = []
+    backup_calls: list[Path] = []
+    monkeypatch.setattr(promotion_cli, "WINDOWS_HOST", True)
+    monkeypatch.setattr(promotion_cli, "secure_private_root", lambda _path: None)
+    monkeypatch.setattr(promotion_cli, "exclusive_file_lock", lambda _path: nullcontext())
+    monkeypatch.setattr(
+        manager,
+        "preflight",
+        lambda _tag, _run_id: {
+            "tag": "v1.4.25",
+            "commit_sha": SHA,
+            "approval_run_url": "https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/12",
+            "database_path": str(tmp_path / "production.sqlite3"),
+            "previous_image_id": previous_image,
+            "target_version": "1.4.25",
+            "release_url": "https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.25",
+            "approval_run_id": 12,
+            "ci_run_id": 10,
+            "api_run_id": 11,
+        },
+    )
+    monkeypatch.setattr(manager, "_create_deployment", lambda _evidence: 99)
+
+    def set_status(_deployment_id: int, *, state: str, **_kwargs: str) -> None:
+        deployment_states.append(state)
+
+    monkeypatch.setattr(manager, "_set_deployment_status", set_status)
+
+    def docker_run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        docker_commands.append(args)
+        output = previous_image if "image" in args else previous_image
+        return subprocess.CompletedProcess(args, 0, stdout=output, stderr="")
+
+    monkeypatch.setattr(promotion_cli, "_run", docker_run)
+    def verify_backup(_source: Path, backup: Path) -> str:
+        backup_calls.append(backup)
+        if backup_fails:
+            raise ValueError("backup integrity gate rejected the backup")
+        return "c" * 64
+
+    monkeypatch.setattr(promotion_cli, "verify_sqlite_backup", verify_backup)
+    finalizer_calls: list[list[str]] = []
+
+    def run_finalizer(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        finalizer_calls.append(args)
+        exit_code = finalizer_exit_code if len(finalizer_calls) == 1 else 0
+        return subprocess.CompletedProcess(args, exit_code, stdout="", stderr="")
+
+    monkeypatch.setattr(promotion_cli.subprocess, "run", run_finalizer)
+    monkeypatch.setattr(promotion_cli, "_read_health", lambda: {"app_version": health_version})
+
+    expected_error = ValueError if backup_fails else RuntimeError
+    with pytest.raises(expected_error):
+        manager.promote("v1.4.25", 12)
+
+    journal = json.loads(next(manager.journal_dir.glob("*.json")).read_text(encoding="utf-8"))
+    assert journal["stage"] == "failure"
+    assert journal["private_backup_path"]
+    assert len(backup_calls) == 1
+    assert deployment_states == ["in_progress", "failure"]
+    if backup_fails:
+        assert journal["backup_sha256"] == ""
+        assert docker_commands == []
+        assert finalizer_calls == []
+        return
+    assert journal["backup_sha256"] == "c" * 64
+    assert len(docker_commands) == 2
+    assert docker_commands[0][1:3] == ["image", "tag"]
+    assert docker_commands[1][1:3] == ["image", "inspect"]
+    assert len(finalizer_calls) == 1
+    if finalizer_exit_code != 0:
+        assert journal["finalizer_exit_code"] == finalizer_exit_code
+        assert journal["deployed_image_id"] == ""
+    else:
+        assert journal["failure"].startswith("RuntimeError:")
+
+
+def test_success_status_failure_retries_audit_without_repeating_promotion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    paths = promotion_cli.PromotionPaths(
+        home=tmp_path,
+        checkout=tmp_path / "stable",
+        compose_file=tmp_path / "docker-compose.yml",
+        env_file=tmp_path / ".env",
+        private_root=tmp_path / "private",
+        stable_checkout=tmp_path / "stable",
+        docker_exe=tmp_path / "docker.exe",
+    )
+    manager = promotion_cli.PromotionManager(paths)
+    previous_image = "sha256:" + "b" * 64
+    deployed_image = "sha256:" + "d" * 64
+    docker_commands: list[list[str]] = []
+    deployment_states: list[str] = []
+    backup_calls: list[Path] = []
+    finalizer_calls: list[list[str]] = []
+    monkeypatch.setattr(promotion_cli, "WINDOWS_HOST", True)
+    monkeypatch.setattr(promotion_cli, "secure_private_root", lambda _path: None)
+    monkeypatch.setattr(promotion_cli, "exclusive_file_lock", lambda _path: nullcontext())
+    monkeypatch.setattr(
+        manager,
+        "preflight",
+        lambda _tag, _run_id: {
+            "tag": "v1.4.25",
+            "commit_sha": SHA,
+            "approval_run_url": "https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/12",
+            "database_path": str(tmp_path / "production.sqlite3"),
+            "previous_image_id": previous_image,
+            "target_version": "1.4.25",
+            "release_url": "https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.25",
+            "approval_run_id": 12,
+            "ci_run_id": 10,
+            "api_run_id": 11,
+        },
+    )
+    monkeypatch.setattr(manager, "_create_deployment", lambda _evidence: 99)
+
+    def set_status(_deployment_id: int, *, state: str, **_kwargs: str) -> None:
+        deployment_states.append(state)
+        if state == "success" and deployment_states.count("success") == 1:
+            raise RuntimeError("GitHub status endpoint unavailable")
+
+    monkeypatch.setattr(manager, "_set_deployment_status", set_status)
+
+    def run_command(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        docker_commands.append(args)
+        output = deployed_image if "{{.Image}}" in args else previous_image
+        if "rev-parse" in args:
+            output = SHA
+        elif "branch" in args:
+            output = ""
+        elif "status" in args:
+            output = ""
+        return subprocess.CompletedProcess(args, 0, stdout=output, stderr="")
+
+    monkeypatch.setattr(promotion_cli, "_run", run_command)
+    monkeypatch.setattr(
+        promotion_cli,
+        "verify_sqlite_backup",
+        lambda _source, backup: backup_calls.append(backup) or "c" * 64,
+    )
+    monkeypatch.setattr(
+        promotion_cli,
+        "_read_health",
+        lambda: {"app_version": "1.4.25"},
+    )
+
+    def run_process(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        finalizer_calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(promotion_cli.subprocess, "run", run_process)
+    with pytest.raises(RuntimeError, match="Retry audit recording without redeploying"):
+        manager.promote("v1.4.25", 12)
+
+    journal_path = next(manager.journal_dir.glob("*.json"))
+    record = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert record["stage"] == "audit-pending"
+    assert record["health_version"] == "1.4.25"
+    assert record["deployed_image_id"] == deployed_image
+    docker_commands.clear()
+    finalizer_count = len(finalizer_calls)
+
+    def api(path: str) -> object:
+        if path.endswith("/deployments/99"):
+            return {"environment": "production", "ref": SHA}
+        if path.endswith("/statuses?per_page=100"):
+            return []
+        raise AssertionError(f"Unexpected GitHub API request: {path}")
+
+    monkeypatch.setattr(manager, "_api", api)
+    manager.retry_audit(journal_path)
+
+    updated = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert updated["stage"] == "deployment-recorded"
+    assert deployment_states == ["in_progress", "success", "success"]
+    assert len(backup_calls) == 1
+    assert len(finalizer_calls) == finalizer_count
+    docker_cli_calls = [command for command in docker_commands if str(paths.docker_exe) in command[0]]
+    assert len(docker_cli_calls) == 1
+    assert "inspect" in docker_cli_calls[0]
+    assert not any("tag" in command for command in docker_cli_calls)
 
 
 def test_audit_retry_requires_current_production_sha_version_and_image() -> None:

@@ -84,16 +84,24 @@
   `0b3ff1c995be145916ffa569ee1c6dfc273da1c7cb1d726588340a0a1a4fc0fc` matches
   its sidecar, and both source archive endpoints return HTTP 200. The first
   approved run `36314501098` became stale after a docs-only `main` commit;
-  current-main approval run `36316712436` succeeded for the same tag. The
-  promotion CLI then
-  verified and retained a SQLite backup and prior image, but failed to invoke
+  current-main approval run `36316712436` succeeded for the same tag. That
+  promotion attempt verified and retained a SQLite backup and prior image, but failed to invoke
   the Windows batch finalizer because its `cmd.exe` quoting treated the whole
   command as an executable. The GitHub deployment was marked failed; no backend
-  checks or container rebuild ran, and production remains healthy on v1.4.24.
-  Do not retry v1.4.27. A Windows regression now reproduces batch invocation
-  from a checkout path containing spaces. A fresh protected approval for
-  v1.4.28 and a promotion attempt from its exact stable tag remain. The stable
-  checkout is still detached at v1.4.27. A
+  checks or container rebuild ran, and production remained on v1.4.24 at that
+  point. Do not retry v1.4.27. A Windows regression now reproduces batch
+  invocation from a checkout path containing spaces. Current-main approval run
+  `36318438634` approved v1.4.28. Promotion deployment `6692087490` completed
+  successfully from the stable checkout at exact tag SHA
+  `331c0d4b0f18dd9a3808b60f5ee21a8e414521d9`. The 279,392,256-byte SQLite
+  backup passed integrity and scratch-restore verification; the prior image
+  was retained. The finalizer passed Ruff, mypy, and pytest (647 passed, 1
+  skipped), rebuilt only `qb-rss-rules`, and verified health at v1.4.28. The
+  running container is healthy at immutable image
+  `sha256:42e2af30178766f27e8124662e95101fb96aca0fafa39f11e5ee425a048ef90e`;
+  GitHub's production Deployment is successful. `runtime_state.bat
+  --require-runtime-current` reports current_version, and the stable checkout is
+  clean and detached at v1.4.28. A
   private Compose contract and key remain captured and validate against the
   current resolved configuration; the persistent database file exists. The
   verified backup and retained prior image are preserved for audit/recovery.

@@ -14,6 +14,24 @@ unfinished Phase 44 work separate from governance commits.
 In implementation. UI/API behavior is implemented and live-smoke-tested; automatic
 Codex heartbeat pickup remains pending end-to-end proof after the active task yields.
 
+## Provider and production-start follow-up (2026-09-28)
+
+- Issue #88 re-queried Real-Debrid read-only using the existing unexpired access
+  token. One exact-infohash torrent remains `downloaded` at 100%, added
+  `2026-08-13T04:53:50Z`, ended `2026-08-13T05:07:41Z`. This does not prove that
+  it belonged to the lost acceleration job. MyJDownloader is enabled but
+  disconnected and has no saved password, so no inventory was queried. No
+  provider or database state was changed. The lost job remains unresolved.
+- Issue #89 found no retained Docker lifecycle event for the historical start.
+  The scheduled Docker maintenance task failed before the container was created
+  and did not target `qb-rss-rules`; the last updater log also predates the
+  container. The supported updater now appends secret-free Compose start intent
+  and exit-result records to ignored local `logs/docker/container-lifecycle.jsonl`.
+  This covers starts through the maintained updater, not arbitrary Docker
+  Desktop/CLI starts or caller identity. Focused tests and PowerShell parsing
+  pass; no production Compose command or restart was run. Branch
+  `fix/container-start-intent-audit` is pending PR validation.
+
 ## Deterministic maintenance follow-up (2026-09-26)
 
 The `docs/repository-agent-skills` branch carries two additional application
@@ -26,7 +44,12 @@ passes (`32 passed`); Ruff and mypy pass; the full suite passes (`605 passed,
 build context and database bind mount must be changed intentionally. Production
 deployment remains pending.
 
-## Active follow-up: Real-Debrid WebSeed 400 (issue #48)
+## Closed historical follow-up: Real-Debrid WebSeed 400 (issue #48)
+
+Issue #48 was closed after PR #49 fixed percent-encoding for qBittorrent's
+`addWebSeeds` contract and verified the exact job's WebSeed readback and Range
+response. Current provider reconciliation for the separate lost historical job
+is tracked in issue #88 above.
 
 The selected Real-Debrid file was unrestricted and its HTTP Range proxy worked,
 but qBittorrent rejected `addWebSeeds` with HTTP 400. The cause was qBittorrent's

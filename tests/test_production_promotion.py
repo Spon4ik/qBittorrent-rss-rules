@@ -79,6 +79,24 @@ def test_finalizer_timeout_terminates_and_reaps_process_tree(monkeypatch: pytest
     assert events == [("wait", 10), ("terminate-tree", 321), ("wait", 30)]
 
 
+@pytest.mark.skipif(os.name != "nt", reason="cmd.exe batch invocation is Windows-specific")
+def test_finalizer_command_runs_batch_file_from_checkout_with_argument(tmp_path: Path) -> None:
+    finalizer = tmp_path / "Finalize-Backend.cmd"
+    args_file = tmp_path / "received-args.txt"
+    finalizer.write_text(
+        f'@echo off\r\n> "{args_file}" echo %*\r\nexit /b 0\r\n',
+        encoding="utf-8",
+    )
+    command = promotion_cli._finalizer_command(finalizer)
+
+    with (tmp_path / "finalizer.log").open("w", encoding="utf-8") as log:
+        result = promotion_cli._run_finalizer(command, tmp_path, log, timeout=10)
+
+    assert result.returncode == 0
+    assert args_file.read_text(encoding="utf-8").strip() == "--no-pause"
+    assert command == ["cmd.exe", "/d", "/c", "call", finalizer.name, "--no-pause"]
+
+
 @pytest.mark.skipif(os.name != "nt", reason="production storage ACLs are Windows-specific")
 def test_secure_private_root_preserves_reopenable_lock_file(tmp_path: Path) -> None:
     lock_path = tmp_path / "production.lock"
@@ -1029,9 +1047,9 @@ def test_runbook_commands_match_local_tool_and_production_boundaries() -> None:
     runbook = Path("docs/production-promotion-runbook.md").read_text(encoding="utf-8")
 
     assert "--capture-compose-contract --confirm-current-mounts" in runbook
-    assert "--tag v1.4.27 --approval-run-id 12345678901" in runbook
+    assert "--tag v1.4.28 --approval-run-id 12345678901" in runbook
     assert "--retry-audit-record <journal-path>" in runbook
     assert "`/app/data` database bind mount" in runbook
     assert "`/host/C/Users` and `/host/C/ProgramData` mounts" in runbook
     assert "Database restoration is separate and destructive" in runbook
-    assert "production deployment remains unattempted" in runbook
+    assert "A failed promotion attempt remains incomplete" in runbook

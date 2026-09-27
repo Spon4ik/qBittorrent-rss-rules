@@ -40,7 +40,7 @@ The stable checkout directory must be created and prepared manually before promo
 4. From the clean stable checkout at that exact release tag, run:
 
    ```powershell
-   .\.venv\Scripts\python.exe scripts\promote_production.py --tag v1.4.27 --approval-run-id 12345678901
+   .\.venv\Scripts\python.exe scripts\promote_production.py --tag v1.4.28 --approval-run-id 12345678901
    ```
 
    Replace the example tag and run ID with the values from the approved run. The command downloads the data-only manifest to a temporary directory, revalidates the current main workflow and approval, acquires an exclusive host lock, and runs read-only preflight checks before creating a GitHub `production` Deployment record.
@@ -66,4 +66,4 @@ The local journal and backup are stored under `%USERPROFILE%\docker-config\qbrss
 
 ## Verification boundary
 
-Focused tests and GitHub PR checks prove checkout behavior. They do not prove production is configured or deployed. G5b production acceptance requires a newly published higher release, successful protected approval, explicit local operator invocation, verified backup restore, finalizer success, exact source/image/health evidence, and a successful GitHub `production` Deployment record. Until that operator action is authorized and completed, production deployment remains unattempted.
+Focused tests and GitHub PR checks prove checkout behavior. They do not prove production is configured or deployed. G5b production acceptance requires a newly published higher release, successful protected approval, explicit local operator invocation, verified backup restore, finalizer success, exact source/image/health evidence, and a successful GitHub `production` Deployment record. A failed promotion attempt remains incomplete until a validated release passes the full sequence.

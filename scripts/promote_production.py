@@ -151,6 +151,11 @@ def _run_finalizer(command: list[str], cwd: Path, log: Any, timeout: int = 3600)
     return subprocess.CompletedProcess(command, returncode, stdout="", stderr="")
 
 
+def _finalizer_command(finalizer: Path) -> list[str]:
+    """Build a cmd.exe invocation that runs the batch file from its checkout."""
+    return ["cmd.exe", "/d", "/c", "call", finalizer.name, "--no-pause"]
+
+
 def _read_health(url: str = HEALTH_URL, timeout: float = 5.0) -> dict[str, Any]:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
@@ -686,10 +691,9 @@ class PromotionManager:
                 log_path = self.paths.private_root / "logs" / f"{tag}-{deployment_id}-finalizer.log"
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 finalizer = self.paths.checkout / "Finalize-Backend.cmd"
-                command = f'""{finalizer}" --no-pause"'
                 with log_path.open("w", encoding="utf-8", newline="\n") as log:
                     finalizer_result = _run_finalizer(
-                        ["cmd.exe", "/d", "/s", "/c", command], self.paths.checkout, log
+                        _finalizer_command(finalizer), self.paths.checkout, log
                     )
                 record["finalizer_exit_code"] = finalizer_result.returncode
                 record["finalizer_log_path"] = str(log_path)

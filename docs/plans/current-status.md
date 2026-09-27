@@ -12,7 +12,7 @@
   The exact-SHA approval workflow is pushed on PR #67. The local promotion CLI,
   Compose contract checks, private SQLite backup/restore verification, deployment
   recording, and operator runbook are implemented in the current checkpoint.
-  Focused approval/promotion coverage passes (32 tests), Ruff and targeted mypy
+  Focused approval/promotion coverage passes (37 tests), Ruff and targeted mypy
   pass. Manager-level regressions cover backup failure, finalizer failure,
   health mismatch, initial journal failure, failure-journal write failure, and
   audit-only retry without repeating the finalizer or Docker mutation. The
@@ -34,6 +34,21 @@
   deployed version is v1.4.24, so the first eligible target must be a newly
   published higher version. No production Environment, Compose edit, backup,
   rebuild, or deployment has occurred.
+  The timeout recovery review finding is fixed: the finalizer now runs with a
+  retained process handle, uses `taskkill /T /F` on timeout, and waits for the
+  parent process to exit before marking the deployment failed. If Windows cannot
+  confirm tree termination, the local journal remains `finalizer-cleanup-required`
+  and GitHub is left without a terminal deployment status. Four deterministic
+  regressions cover confirmed termination/reaping, uncertain cleanup, the exact
+  taskkill command, and the nonzero taskkill path. Full `scripts/check.bat`
+  passes at code head `185b420dfa18fb4340ca02b4fe7c5b2150b1402b` (Ruff, mypy 49
+  files, 642 passed, 0 failed, 0 errors, 1 skipped). All required checks pass
+  on that exact code head: CI run
+  [36285442249](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36285442249)
+  and qBittorrent API run
+  [36285442243](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36285442243).
+  The process-tree cleanup failure path was not exercised against production;
+  no Docker finalizer or deployment was run.
 
 - Remote continuity is an explicit repository rule: push each coherent,
   validated checkpoint on its feature branch, keep its PR or handoff current,

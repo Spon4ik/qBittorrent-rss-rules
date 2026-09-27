@@ -51,8 +51,9 @@
   [36286469514](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36286469514)
   and qBittorrent API run
   [36286469581](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36286469581).
-  The process-tree cleanup failure path was not exercised against production;
-  no approval dispatch or Docker finalizer/deployment was run.
+  The process-tree cleanup failure path was not exercised against production.
+  During PR implementation validation no approval dispatch or Docker
+  finalizer/deployment was run.
   PR #67 was squash-merged to protected `main` as
   `36cbda52db1af3c8115a77824d904221e3d379b6`. Exact merge-SHA CI run
   [36306016659](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36306016659)
@@ -62,16 +63,17 @@
   also passed. PR #67's pre-merge head was
   `c5a1593056e10c9d57c7b5518b82f05dae064fe3`; all required checks passed on that
   exact head before merge. G5b's approval and local promotion implementation is
-  merged and CI-validated. Production acceptance remains pending: no approval
-  run was dispatched, no production Compose edit, backup, rebuild, or deployment
-  occurred, and the stable deployment checkout remains absent. The running
-  version is still v1.4.24, so promotion requires a newly published higher
-  version and a separate explicit operator action. The active `main` ruleset
+  merged and CI-validated. v1.4.25 is published and its protected approval run
+  completed successfully; the run's manifest binds the tag to its exact SHA and
+  CI/API evidence. Production promotion remains pending: the stable deployment
+  checkout is absent, the running service remains v1.4.24, and no production
+  Compose edit, backup, rebuild, or deployment occurred. Running the local
+  promotion still requires separate explicit operator authorization. The active `main` ruleset
   requires PRs, resolved review threads, linear history, squash-only merges,
   and the `required` plus `real-qbittorrent-webseed-api` checks; it currently
   requires zero approving reviews.
-  The accepted Production Acceptance sequence has a v1.4.25 release candidate
-  staged. PR #72 synchronized the app, WinUI, `/health` test, and changelog
+  The accepted Production Acceptance sequence has published v1.4.25. PR #72
+  synchronized the app, WinUI, `/health` test, and changelog
   version; it was squash-merged as main SHA
   `3a634b4c0e9602dbd525ad1357615a24242e94cd`. Exact-main CI run
   [36307476398](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36307476398)
@@ -80,14 +82,21 @@
   passed. Stage Windows release run
   [36307685873](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36307685873)
   passed its main/SHA/version guard, Windows bundle build, and disposable
-  source-container smoke; it created the v1.4.25 draft
-  [release](https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/untagged-9ba18545799021a1195a).
-  The downloaded Windows ZIP's SHA-256 matches its sidecar
-  (`ffc3e5c04b909004279f85670ae928625c188cfb23c3e7c2ac9db842f3223405`).
-  Publication is pending review: the v1.4.25 tag and tagged source archives do
-  not exist until the draft is published. Approval dispatch and production
-  promotion also remain pending; no production files, database, Docker service,
-  or runtime were changed.
+  source-container smoke and staged the Windows bundle. The draft was reviewed
+  and published as [release v1.4.25](https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.25).
+  The tag resolves to the validated SHA above; GitHub's source ZIP and TAR
+  archive endpoints return HTTP 200. The Windows ZIP SHA-256 matches its
+  sidecar (`ffc3e5c04b909004279f85670ae928625c188cfb23c3e7c2ac9db842f3223405`).
+  Production release approval workflow run
+  [36308571410](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36308571410)
+  passed protected-main dispatch and exact-tag/CI validation, then uploaded the
+  `production-approval-manifest` artifact. The manifest identifies reviewer
+  `Spon4ik`, tag `v1.4.25`, release SHA above, approval run `36308571410`, CI run
+  `36307476398`, and API run `36307476358`. The running service remains
+  v1.4.24; the current developer checkout is v1.4.25 and reports stale runtime
+  status as expected before promotion. The stable deployment checkout
+  `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent. No production
+  files, database, Docker service, or runtime were changed.
 
 - Remote continuity is an explicit repository rule: push each coherent,
   validated checkpoint on its feature branch, keep its PR or handoff current,

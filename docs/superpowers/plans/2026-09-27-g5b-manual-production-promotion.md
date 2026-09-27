@@ -14,7 +14,7 @@
 
 - Never expose production credentials, Docker access, database paths, backup contents, or host access to a GitHub-hosted runner.
 - Do not deploy from the developer checkout or a transient CI checkout.
-- Use the stable checkout `C:\Users\nucc\deployments\qBittorrent-rss-rules`; its directory is currently absent and must be created only by an explicit local promotion invocation.
+- Use the stable checkout `C:\Users\nucc\deployments\qBittorrent-rss-rules`; it must be manually prepared as a clean detached checkout of the approved tag, with its virtual environment and test dependencies, before promotion. The promotion command verifies this checkout and never initializes or replaces it.
 - Keep the existing production database bind mount and both host mounts unchanged; only the `qb-rss-rules` build context may point to the stable checkout.
 - Require a published release tag whose peeled commit is on protected `main`, with successful exact-SHA required CI and real-qBittorrent API runs.
 - Record approval separately from production deployment success; only exact-version runtime health can mark a production deployment successful.

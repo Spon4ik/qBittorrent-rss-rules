@@ -63,12 +63,17 @@
   also passed. PR #67's pre-merge head was
   `c5a1593056e10c9d57c7b5518b82f05dae064fe3`; all required checks passed on that
   exact head before merge. G5b's approval and local promotion implementation is
-  merged and CI-validated. v1.4.25 is published and its protected approval run
-  completed successfully; the run's manifest binds the tag to its exact SHA and
-  CI/API evidence. Production promotion remains pending: the stable deployment
-  checkout is absent, the running service remains v1.4.24, and no production
-  Compose edit, backup, rebuild, or deployment occurred. Running the local
-  promotion still requires separate explicit operator authorization. The active `main` ruleset
+  merged and CI-validated, but production acceptance exposed two CLI defects
+  before any production mutation: contract capture rejected a healthy runtime
+  older than the source checkout, and repeated ACL hardening made the existing
+  private lock unreadable. The fix is in branch `codex/g5b-private-storage-acl`;
+  RED/GREEN regressions reproduce both defects, and `scripts/check.bat` passes
+  Ruff, mypy (49 files), and pytest (645 passed, 0 failed, 0 errors, 1 skipped).
+  Do not promote v1.4.25 or reuse its approval run. The stable deployment
+  checkout `%USERPROFILE%\deployments\qBittorrent-rss-rules` exists clean at
+  v1.4.25; production remains healthy on v1.4.24, and shared Compose still
+  targets the developer checkout. No Compose edit, backup, rebuild, or
+  deployment occurred. The active `main` ruleset
   requires PRs, resolved review threads, linear history, squash-only merges,
   and the `required` plus `real-qbittorrent-webseed-api` checks; it currently
   requires zero approving reviews.
@@ -92,17 +97,15 @@
   passed protected-main dispatch and exact-tag/CI validation, then uploaded the
   `production-approval-manifest` artifact. The manifest identifies reviewer
   `Spon4ik`, tag `v1.4.25`, release SHA above, approval run `36308571410`, CI run
-  `36307476398`, and API run `36307476358`. The running service remains
-  v1.4.24; the current developer checkout is v1.4.25 and reports stale runtime
-  status as expected before promotion. The stable deployment checkout
-  `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent and must be
-  prepared manually before promotion; the local command verifies but does not
-  initialize or replace it. A fresh read-only host check after PR #74 confirms
-  the shared Compose build context still points to the developer checkout and
-  `qb-rss-rules` is healthy on v1.4.24. No production files, database, Docker
-  service, or runtime were changed. The next step remains the runbook's manual
-  deployment-checkout and Compose-contract setup, followed by separately
-  authorized local promotion.
+  `36307476398`, and API run `36307476358`. The running service remains v1.4.24; the current developer checkout is v1.4.26
+  and reports stale runtime status as expected before promotion. The stable
+  deployment checkout `%USERPROFILE%\deployments\qBittorrent-rss-rules` exists
+  clean at v1.4.25 with its Python environment. The shared Compose build context
+  still points to the developer checkout and `qb-rss-rules` is healthy on
+  v1.4.24. Contract capture has not succeeded, but failed attempts made no
+  Compose or runtime changes. The replacement release and fresh approval must
+  come from the merged ACL/contract-capture fix; then update the stable checkout,
+  capture the contract, and continue the runbook.
 
 - Remote continuity is an explicit repository rule: push each coherent,
   validated checkpoint on its feature branch, keep its PR or handoff current,

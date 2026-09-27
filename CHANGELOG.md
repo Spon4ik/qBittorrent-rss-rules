@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.26] - 2026-09-27
+
+- Preserve access to private promotion locks and evidence files across repeated ACL hardening.
+- Allow Compose contract capture when its source checkout is ahead of the running production version.
+
 ## [1.4.25] - 2026-09-27
 
 - Add the gated G5b manual production-promotion workflow, local preflight and

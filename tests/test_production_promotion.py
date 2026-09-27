@@ -79,6 +79,22 @@ def test_finalizer_timeout_terminates_and_reaps_process_tree(monkeypatch: pytest
     assert events == [("wait", 10), ("terminate-tree", 321), ("wait", 30)]
 
 
+@pytest.mark.skipif(os.name != "nt", reason="production storage ACLs are Windows-specific")
+def test_secure_private_root_preserves_reopenable_lock_file(tmp_path: Path) -> None:
+    lock_path = tmp_path / "production.lock"
+    backup_path = tmp_path / "backups" / "backup.sqlite3"
+
+    promotion_cli.secure_private_root(tmp_path)
+    with exclusive_file_lock(lock_path):
+        backup_path.parent.mkdir()
+        backup_path.write_bytes(b"private backup")
+
+    promotion_cli.secure_private_root(tmp_path)
+    with exclusive_file_lock(lock_path):
+        pass
+    assert backup_path.read_bytes() == b"private backup"
+
+
 def test_finalizer_timeout_requires_cleanup_before_reporting_terminal_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -192,6 +208,32 @@ def _compose_config(context: str = STABLE_CHECKOUT) -> dict[str, object]:
             }
         }
     }
+
+
+def test_compose_contract_capture_allows_source_checkout_ahead_of_live_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("", encoding="utf-8")
+    paths = promotion_cli.PromotionPaths(
+        home=tmp_path,
+        checkout=tmp_path,
+        compose_file=tmp_path / "docker-compose.yml",
+        env_file=env_file,
+        private_root=tmp_path / "private",
+        stable_checkout=tmp_path / "stable",
+        docker_exe=tmp_path / "docker.exe",
+    )
+    manager = promotion_cli.PromotionManager(paths)
+    monkeypatch.setattr(promotion_cli, "WINDOWS_HOST", True)
+    monkeypatch.setattr(manager, "_compose_config", lambda: _compose_config(r"E:\GitHub\qBittorrent rss rules"))
+    monkeypatch.setattr(promotion_cli, "_read_health", lambda: {"app_version": "1.4.24"})
+
+    manager.capture_compose_contract()
+
+    assert manager.contract_file.is_file()
+    assert manager.contract_key_file.is_file()
 
 
 MOUNTS = [
@@ -930,7 +972,7 @@ def test_runbook_commands_match_local_tool_and_production_boundaries() -> None:
     runbook = Path("docs/production-promotion-runbook.md").read_text(encoding="utf-8")
 
     assert "--capture-compose-contract --confirm-current-mounts" in runbook
-    assert "--tag v1.4.25 --approval-run-id 12345678901" in runbook
+    assert "--tag v1.4.26 --approval-run-id 12345678901" in runbook
     assert "--retry-audit-record <journal-path>" in runbook
     assert "`/app/data` database bind mount" in runbook
     assert "`/host/C/Users` and `/host/C/ProgramData` mounts" in runbook

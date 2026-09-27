@@ -6,7 +6,6 @@
 - `app/main.py` (`FastAPI(..., version="…")`) — must match `pyproject.toml`
 - `QbRssRulesDesktop/Views/MainPage.xaml.cs` (`RequiredDesktopBackendAppVersion`) — WinUI shell refuses backends whose `/health` `app_version` differs from this literal
 - `tests/test_routes.py` (`test_health_endpoint` asserts `app_version`) — locks the `/health` contract the desktop consumes
-- `tests/test_stremio_addon.py` (manifest `version` assert, `{semver}+stremio.1`) — Stremio manifest version tracks the app semver
 - Runtime constants (`__version__`, API version fields) when present
 
 ## Desktop compatibility (not SemVer bumps, but must stay paired)
@@ -28,7 +27,7 @@ After any change to `RequiredDesktopBackendAppVersion` (or a fresh checkout), **
 ## Update Sequence
 
 1. Decide target version and record bump rationale.
-2. Prefer `python scripts/release_prep.py <patch|minor|major> --apply` (repo root, active `.venv`) to bump `pyproject.toml`, `app/main.py`, WinUI `RequiredDesktopBackendAppVersion`, and the health/manifest regression asserts in one step; then edit `CHANGELOG.md` body and planning docs as needed.
+2. Prefer `python scripts/release_prep.py <patch|minor|major> --apply` (repo root, active `.venv`) to bump `pyproject.toml`, `app/main.py`, WinUI `RequiredDesktopBackendAppVersion`, and the `/health` regression assert in one step; then edit `CHANGELOG.md` body and planning docs as needed. If a Stremio add-on manifest is reintroduced, add a version regression for its `{semver}+stremio.1` contract.
 3. If you edit versions by hand, touch every authoritative source in the list above before merging.
 4. Update changelog and release/upgrade notes.
 5. Update roadmap and planning docs if release scope or ordering changed.

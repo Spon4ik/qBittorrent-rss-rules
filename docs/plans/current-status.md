@@ -70,6 +70,12 @@
   requires PRs, resolved review threads, linear history, squash-only merges,
   and the `required` plus `real-qbittorrent-webseed-api` checks; it currently
   requires zero approving reviews.
+  The accepted Production Acceptance sequence is now advancing through the
+  release-preparation step: branch `codex/release-v1.4.25` contains the
+  synchronized `1.4.25` patch bump required to make the first target newer than
+  the live `1.4.24` runtime. The version PR, exact-main validation, Windows
+  staging draft, release publication, and later approval/promotion remain
+  pending.
 
 - Remote continuity is an explicit repository rule: push each coherent,
   validated checkpoint on its feature branch, keep its PR or handoff current,

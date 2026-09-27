@@ -102,7 +102,7 @@
 
 ## Production Acceptance (separate operator action)
 
-- [ ] Publish a new Windows app + source release from validated protected `main`, with version greater than deployed v1.4.24.
+- [ ] Publish a new Windows app + source release from validated protected `main`, with version greater than deployed v1.4.24. The synchronized v1.4.25 patch bump is being prepared on `codex/release-v1.4.25`; merge its PR and pass exact-main checks before staging the Windows draft, then review and publish the draft.
 - [ ] Dispatch approval for that tag and record the approving Environment run.
 - [ ] After explicit operator authorization, run local promotion on production Windows; verify backup integrity and scratch restore before finalizer.
 - [ ] Verify tag SHA, container image identity, `/health.app_version`, and `runtime_state.bat --require-runtime-current` from the stable detached checkout.

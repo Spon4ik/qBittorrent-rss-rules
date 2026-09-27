@@ -1,5 +1,28 @@
 # Current Status
 
+## 2026-09-28 GitHub Project #85 issue-centric delivery tracking
+
+- Audited Project #2 before changing it: 27 active items were all in Backlog
+  (2 issues, 25 PRs, 0 drafts). PRs #60-#84 were all merged and none had a
+  closing-issue reference. The auto-add filter was `is:issue,pr is:open`, and
+  “Item added to project” set both issues and PRs to Backlog. The separate
+  “Pull request merged” workflow was disabled; PR timeline evidence showed no
+  status transition on merge, explaining why merged PR cards stayed in Backlog.
+- Configured issue-centric tracking: auto-add is now `is:issue is:open`;
+  “Item added,” “Item closed,” and “Item reopened” apply to issues only and set
+  Backlog, Done, and Ready respectively. “Pull request linked to issue” remains
+  enabled at In Review and targets the linked issue. “Code changes requested”
+  is disabled because its trigger acts on a PR item. “Auto-add sub-issues” stays
+  enabled; the merged-PR workflow stays disabled. GitHub's supported auto-add
+  `is` filters include `issue` and `open` ([docs](https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/adding-items-automatically)); its linked-PR workflow sets the linked issue's status ([announcement](https://github.com/orgs/community/discussions/178930)).
+- Archived PR Project items #60-#84 after recording the exact 25-item list;
+  PR history and merge state were untouched. The live board now has two issue
+  items: #47 Backlog (historical state remains uncertain) and #85 In Progress.
+  #85 is the natural lifecycle canary. Next: link the documentation PR, verify
+  #85 enters In Review (set it manually if native linking does not), then merge
+  with `Closes #85` and verify issue-closed → Done. No application, Docker,
+  database, provider, or recovery state was touched.
+
 ## 2026-09-27 live database recovery reassessment
 
 - The production SQLite database is healthy and no database restore is required.
@@ -232,15 +255,12 @@
   and real-qBittorrent API run [36243525914](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36243525914).
   G3b's native Project is configured at
   [qBittorrent RSS Rules](https://github.com/users/Spon4ik/projects/2), linked to
-  this repository. It has a five-state Status field, one Priority field, a
-  status-grouped Delivery flow board, and seven enabled native workflows. All
-  open repository issues and pull requests are auto-added; new items enter
-  Backlog, linked pull requests set In Review, requested changes set In Progress,
-  reopened items set Ready, and closed issues set Done. Existing issue #47 is the
-  first item and remains in Backlog. No repository milestones exist, so no
-  unrelated milestone was created; no parent/child hierarchy was needed. The
-  configuration is live, while observing an issue traverse natural review and
-  closure events remains pending; do not simulate those events on a real bug.
+  this repository. Its issue-centric model, exact live configuration, pre/post
+  inventory, and #85 lifecycle evidence are recorded in the 2026-09-28 section
+  above. #47 remains Backlog because its historical priority/readiness is
+  uncertain; #85 is the active canary. The lifecycle review and closure checks
+  are pending through #85's real documentation PR. No milestones or hierarchy
+  were invented. Do not simulate lifecycle events on an unrelated issue.
   The repository stays under `Spon4ik`; organization-only issue types/fields and
   a transfer are out of scope. The scheduled Codex maintainer is paused, and
   existing forms use standard labels without issue-triage bot assumptions. See

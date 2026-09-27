@@ -99,6 +99,58 @@ def _run(
     return result
 
 
+class FinalizerCleanupUncertainError(RuntimeError):
+    """The finalizer timed out and its process tree could not be confirmed stopped."""
+
+
+def _terminate_process_tree(pid: int) -> None:
+    """Stop a timed-out Windows command and every descendant before failing promotion."""
+    try:
+        result = subprocess.run(
+            ["taskkill.exe", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise FinalizerCleanupUncertainError(
+            f"Could not confirm termination of finalizer process tree {pid}: {exc}"
+        ) from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "taskkill returned a nonzero status").strip()
+        raise FinalizerCleanupUncertainError(
+            f"Could not confirm termination of finalizer process tree {pid}: {detail[:200]}"
+        )
+
+
+def _run_finalizer(command: list[str], cwd: Path, log: Any, timeout: int = 3600) -> subprocess.CompletedProcess[str]:
+    """Run the production finalizer and stop its full process tree on timeout."""
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+    )
+    try:
+        returncode = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        try:
+            _terminate_process_tree(process.pid)
+        except FinalizerCleanupUncertainError:
+            raise
+        try:
+            process.wait(timeout=30)
+        except subprocess.TimeoutExpired as wait_exc:
+            raise FinalizerCleanupUncertainError(
+                f"Finalizer process {process.pid} remained alive after process-tree termination"
+            ) from wait_exc
+        raise RuntimeError(f"Backend finalizer timed out after {timeout} seconds; process tree terminated") from exc
+    return subprocess.CompletedProcess(command, returncode, stdout="", stderr="")
+
+
 def _read_health(url: str = HEALTH_URL, timeout: float = 5.0) -> dict[str, Any]:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
@@ -626,15 +678,8 @@ class PromotionManager:
                 finalizer = self.paths.checkout / "Finalize-Backend.cmd"
                 command = f'""{finalizer}" --no-pause"'
                 with log_path.open("w", encoding="utf-8", newline="\n") as log:
-                    finalizer_result = subprocess.run(
-                        ["cmd.exe", "/d", "/s", "/c", command],
-                        cwd=self.paths.checkout,
-                        stdout=log,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        encoding="utf-8",
-                        timeout=3600,
-                        check=False,
+                    finalizer_result = _run_finalizer(
+                        ["cmd.exe", "/d", "/s", "/c", command], self.paths.checkout, log
                     )
                 record["finalizer_exit_code"] = finalizer_result.returncode
                 record["finalizer_log_path"] = str(log_path)
@@ -675,6 +720,17 @@ class PromotionManager:
                     }
                 )
                 self._write_journal(record)
+            except FinalizerCleanupUncertainError as exc:
+                record["stage"] = "finalizer-cleanup-required"
+                record["failure"] = f"{exc.__class__.__name__}: {str(exc)[:300]}"
+                try:
+                    self._write_journal(record)
+                except Exception:
+                    print(
+                        "Finalizer cleanup could not be confirmed and the private journal update failed; "
+                        "do not retry promotion until the host process tree is inspected."
+                    )
+                raise
             except Exception as exc:
                 record["stage"] = "failure"
                 record["failure"] = f"{exc.__class__.__name__}: {str(exc)[:300]}"

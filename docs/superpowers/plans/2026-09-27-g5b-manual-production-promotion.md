@@ -31,6 +31,7 @@
 - Detached release checkout: verify source identity explicitly without fabricating an upstream branch.
 - Compose drift: compare resolved service, database mount, and host mounts before any rebuild.
 - Promotion collision or interruption: hold an exclusive OS file lock for the full operation and release it on process exit.
+- Finalizer timeout: terminate the full Windows process tree and reap its parent before marking failure; if termination cannot be confirmed, leave deployment in progress with a cleanup-required local record and no terminal GitHub status.
 - SQLite backup integrity: restore the backup to isolated scratch storage before rebuilding.
 - Failed health or audit API update: retain prior image identity, distinguish failure from audit-only retry, and never imply success without observed health.
 
@@ -81,6 +82,7 @@
 - [x] Test retaining the currently running image by immutable image ID before rebuild.
 - [x] Implement GitHub `production` Deployment status transitions; success requires finalizer exit zero and `/health.app_version` exactly equal to target release version.
 - [x] Test backup, finalizer, and health failures record failure without automatic database or image rollback; test initial and failure-journal write failures still attempt GitHub failure status; test post-health GitHub update failure and verify audit retry performs no backup, finalizer, or Docker mutation.
+- [x] Contain timed-out finalizer descendants with `taskkill /T /F`; confirm process-tree termination and reap the parent before recording a terminal failure, and fail closed with a cleanup-required record if termination is uncertain.
 - [x] Document one-time Compose context edit, stable checkout setup, approval, invocation, expected output, backup retention, image rollback, database recovery boundary, and evidence capture.
 - [x] Run focused tests and documentation command checks (32 focused tests pass).
 
@@ -93,6 +95,7 @@
 - Modify: `CHANGELOG.md`
 
 - [x] Run focused tests, `scripts/check.bat`, and all repository-required PR checks; `scripts/check.bat` passes Ruff, mypy (49 files), and pytest (637 passed, 0 failed, 0 errors, 1 skipped). The 32-test focused approval/promotion suite passes. Exact journal-failure code head `0ba48cba7ec7cf5fb6107c9d473f5b8f95bc78dd` passes all five required checks (CI `36284149016`, qB API `36284149018`). Do not run the production finalizer or alter the running Docker service during implementation validation.
+- [ ] Re-run the full local gate and exact-head PR checks after the reviewer-requested timeout-tree recovery change; do not run the production finalizer or alter the running Docker service during implementation validation.
 - [ ] Verify detached source against the published peeled tag SHA, then use `runtime_state.bat --require-runtime-current` after an explicitly authorized promotion; do not require an upstream branch for detached `HEAD`.
 - [x] Record that first promotion requires a newly published version greater than currently deployed `1.4.24`; v1.4.24 is ineligible in the runbook and current status.
 - [x] Record exact tested head, CI/API results, Environment configuration state, stable checkout path, and that production promotion remains unattempted pending explicit operator action. The `production-approval` Environment currently returns 404; `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent; runtime is current at v1.4.24.

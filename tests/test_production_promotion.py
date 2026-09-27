@@ -51,6 +51,82 @@ def _manifest(**overrides: object) -> dict[str, object]:
     }
 
 
+def test_finalizer_timeout_terminates_and_reaps_process_tree(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    events: list[object] = []
+
+    class TimedOutProcess:
+        pid = 321
+
+        def wait(self, *, timeout: int) -> int:
+            events.append(("wait", timeout))
+            if timeout == 10:
+                raise subprocess.TimeoutExpired("finalizer", timeout)
+            return -9
+
+    monkeypatch.setattr(promotion_cli.subprocess, "Popen", lambda *_args, **_kwargs: TimedOutProcess())
+    monkeypatch.setattr(
+        promotion_cli,
+        "_terminate_process_tree",
+        lambda pid: events.append(("terminate-tree", pid)),
+    )
+    with (tmp_path / "finalizer.log").open("w", encoding="utf-8") as log:
+        with pytest.raises(RuntimeError, match="process tree terminated"):
+            promotion_cli._run_finalizer(["cmd.exe"], tmp_path, log, timeout=10)
+
+    assert events == [("wait", 10), ("terminate-tree", 321), ("wait", 30)]
+
+
+def test_finalizer_timeout_requires_cleanup_before_reporting_terminal_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class TimedOutProcess:
+        pid = 654
+
+        def wait(self, *, timeout: int) -> int:
+            raise subprocess.TimeoutExpired("finalizer", timeout)
+
+    monkeypatch.setattr(promotion_cli.subprocess, "Popen", lambda *_args, **_kwargs: TimedOutProcess())
+    monkeypatch.setattr(
+        promotion_cli,
+        "_terminate_process_tree",
+        lambda _pid: (_ for _ in ()).throw(
+            promotion_cli.FinalizerCleanupUncertainError("taskkill failed")
+        ),
+    )
+    with (tmp_path / "finalizer.log").open("w", encoding="utf-8") as log:
+        with pytest.raises(promotion_cli.FinalizerCleanupUncertainError, match="taskkill failed"):
+            promotion_cli._run_finalizer(["cmd.exe"], tmp_path, log, timeout=10)
+
+
+def test_terminate_process_tree_uses_taskkill_tree_force(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    monkeypatch.setattr(
+        promotion_cli.subprocess,
+        "run",
+        lambda args, **kwargs: calls.append((args, kwargs))
+        or subprocess.CompletedProcess(args, 0, stdout="SUCCESS", stderr=""),
+    )
+
+    promotion_cli._terminate_process_tree(987)
+
+    assert calls[0][0] == ["taskkill.exe", "/PID", "987", "/T", "/F"]
+    assert calls[0][1]["timeout"] == 60
+
+
+def test_terminate_process_tree_fails_closed_when_taskkill_does_not_confirm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        promotion_cli.subprocess,
+        "run",
+        lambda args, **_kwargs: subprocess.CompletedProcess(args, 128, stdout="", stderr="not found"),
+    )
+
+    with pytest.raises(promotion_cli.FinalizerCleanupUncertainError, match="not found"):
+        promotion_cli._terminate_process_tree(987)
+
+
 def _compose_config(context: str = STABLE_CHECKOUT) -> dict[str, object]:
     return {
         "services": {
@@ -545,9 +621,14 @@ def test_missing_docker_cli_is_rejected_by_real_preflight_before_any_mutation(
 
 
 @pytest.mark.parametrize(
-    ("backup_fails", "finalizer_exit_code", "health_version"),
-    [(False, 1, "1.4.25"), (False, 0, "1.4.24"), (True, 0, "1.4.25")],
-    ids=["finalizer-failure", "health-version-mismatch", "backup-failure"],
+    ("backup_fails", "finalizer_exit_code", "health_version", "cleanup_uncertain"),
+    [
+        (False, 1, "1.4.25", False),
+        (False, 0, "1.4.24", False),
+        (True, 0, "1.4.25", False),
+        (False, 0, "1.4.25", True),
+    ],
+    ids=["finalizer-failure", "health-version-mismatch", "backup-failure", "finalizer-cleanup-uncertain"],
 )
 def test_failed_promotion_records_failure_without_database_or_image_rollback(
     monkeypatch: pytest.MonkeyPatch,
@@ -555,6 +636,7 @@ def test_failed_promotion_records_failure_without_database_or_image_rollback(
     backup_fails: bool,
     finalizer_exit_code: int,
     health_version: str,
+    cleanup_uncertain: bool,
 ) -> None:
     paths = promotion_cli.PromotionPaths(
         home=tmp_path,
@@ -611,12 +693,21 @@ def test_failed_promotion_records_failure_without_database_or_image_rollback(
     monkeypatch.setattr(promotion_cli, "verify_sqlite_backup", verify_backup)
     finalizer_calls: list[list[str]] = []
 
-    def run_finalizer(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def run_finalizer(
+        args: list[str], _cwd: Path, _log: object
+    ) -> subprocess.CompletedProcess[str]:
         finalizer_calls.append(args)
+        if cleanup_uncertain:
+            raise promotion_cli.FinalizerCleanupUncertainError("process-tree termination could not be confirmed")
         exit_code = finalizer_exit_code if len(finalizer_calls) == 1 else 0
         return subprocess.CompletedProcess(args, exit_code, stdout="", stderr="")
 
-    monkeypatch.setattr(promotion_cli.subprocess, "run", run_finalizer)
+    monkeypatch.setattr(promotion_cli, "_run_finalizer", run_finalizer)
+    monkeypatch.setattr(
+        promotion_cli.subprocess,
+        "run",
+        lambda args, **_kwargs: subprocess.CompletedProcess(args, 0, stdout="", stderr=""),
+    )
     monkeypatch.setattr(promotion_cli, "_read_health", lambda: {"app_version": health_version})
 
     expected_error = ValueError if backup_fails else RuntimeError
@@ -624,6 +715,13 @@ def test_failed_promotion_records_failure_without_database_or_image_rollback(
         manager.promote("v1.4.25", 12)
 
     journal = json.loads(next(manager.journal_dir.glob("*.json")).read_text(encoding="utf-8"))
+    if cleanup_uncertain:
+        assert journal["stage"] == "finalizer-cleanup-required"
+        assert "do not retry" not in journal["failure"].lower()
+        assert deployment_states == ["in_progress"]
+        assert journal["finalizer_exit_code"] is None
+        assert len(finalizer_calls) == 1
+        return
     assert journal["stage"] == "failure"
     assert journal["private_backup_path"]
     assert len(backup_calls) == 1
@@ -716,11 +814,18 @@ def test_success_status_failure_retries_audit_without_repeating_promotion(
         lambda: {"app_version": "1.4.25"},
     )
 
-    def run_process(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def run_process(
+        args: list[str], _cwd: Path, _log: object
+    ) -> subprocess.CompletedProcess[str]:
         finalizer_calls.append(args)
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(promotion_cli.subprocess, "run", run_process)
+    monkeypatch.setattr(promotion_cli, "_run_finalizer", run_process)
+    monkeypatch.setattr(
+        promotion_cli.subprocess,
+        "run",
+        lambda args, **_kwargs: subprocess.CompletedProcess(args, 0, stdout="", stderr=""),
+    )
     with pytest.raises(RuntimeError, match="Retry audit recording without redeploying"):
         manager.promote("v1.4.25", 12)
 

@@ -292,7 +292,23 @@ was then published at
 `refs/tags/v1.4.24` resolves directly to the validated main SHA, and GitHub's
 tagged source ZIP/TAR endpoints both return HTTP 200. No GHCR image or
 production deployment was created. G5a staging and publication acceptance are
-complete; G5b remains separate.
+complete. The G5b design in
+`docs/superpowers/specs/2026-09-26-g5b-manual-production-promotion-design.md`
+is accepted for implementation. The decision-complete implementation plan is
+`docs/superpowers/plans/2026-09-27-g5b-manual-production-promotion.md`.
+Implementation is active on PR #67; production Environment configuration,
+shared Compose edits, backup, rebuild, and deployment remain separate operator
+actions and have not occurred.
+Implementation/test head `35fb44f6` passes local `scripts/check.bat` (634
+passed, 1 skipped). Current journal-failure code head
+`0ba48cba7ec7cf5fb6107c9d473f5b8f95bc78dd` passes local `scripts/check.bat`
+(637 passed, 1 skipped) and all five required GitHub checks (CI run
+`36284149016`, qB API run `36284149018`). Manager-level failure and
+audit-retry regressions verify that backup, finalizer, and health failures are
+recorded without automatic restoration, and a failed GitHub success-status
+update can be retried without repeating deployment mutations. The approval
+Environment remains unconfigured (404), the stable deployment checkout is
+absent, and `/health` plus checkout still report v1.4.24.
 
 Serialize production deployment with `cancel-in-progress: false`. Prevent stale
 queued commits from replacing a newer deployment. Check exact source identity and

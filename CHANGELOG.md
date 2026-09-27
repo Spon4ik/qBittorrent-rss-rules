@@ -6,6 +6,15 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
+- Add the gated G5b manual production-promotion workflow, local preflight and
+  backup/restore verification, deployment evidence recording, and operator
+  runbook. Production has not been promoted.
+- Preserve GitHub failure status reporting when private deployment-journal writes fail.
+- Terminate and reap the full finalizer process tree before recording a timeout failure.
+- Draft the G5b gated manual production-promotion design; no production changes
+  are included.
+- Accept the G5b design and define its implementation plan; no production
+  changes are included.
 - Keep resumable task checkpoints committed and pushed on their feature branches,
   with the pull request or status handoff recording the exact remote commit and
   next step.

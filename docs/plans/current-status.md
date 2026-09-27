@@ -53,12 +53,11 @@
   [36286469581](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36286469581).
   The process-tree cleanup failure path was not exercised against production;
   no approval dispatch or Docker finalizer/deployment was run.
-  PR #67 is ready for review at head
-  `ab6300bc7264d76818f7f174925be228c9d9ba8a`; all required checks pass there
-  (CI `36286794525`, qBittorrent API `36286794521`). Its active `main` ruleset
-  requires PRs, resolved review threads, linear history, squash-only merges,
-  and the `required` plus `real-qbittorrent-webseed-api` checks; it currently
-  requires zero approving reviews. The PR has not been merged.
+  PR #67 remains open and ready for review; its current head and exact check
+  outcomes are tracked on GitHub. The active `main` ruleset requires PRs,
+  resolved review threads, linear history, squash-only merges, and the
+  `required` plus `real-qbittorrent-webseed-api` checks; it currently requires
+  zero approving reviews. The PR has not been merged.
 
 - Remote continuity is an explicit repository rule: push each coherent,
   validated checkpoint on its feature branch, keep its PR or handoff current,

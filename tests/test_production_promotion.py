@@ -340,7 +340,7 @@ def test_failed_preflight_stops_before_deployment_backup_or_docker_mutation(
     monkeypatch.setattr(promotion_cli, "WINDOWS_HOST", True)
     monkeypatch.setattr(promotion_cli, "secure_private_root", lambda _path: None)
     monkeypatch.setattr(promotion_cli, "exclusive_file_lock", lambda _path: nullcontext())
-    monkeypatch.setattr(manager, "preflight", reject_preflight)
+    monkeypatch.setattr(manager, "_validate_approval", reject_preflight)
     monkeypatch.setattr(manager, "_create_deployment", mutation)
 
     with pytest.raises(ValueError, match="invalid approval fixture"):

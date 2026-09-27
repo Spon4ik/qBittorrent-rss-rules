@@ -98,13 +98,15 @@
 - [x] Verify the published peeled tag `v1.4.25` resolves to the validated release SHA `3a634b4c0e9602dbd525ad1357615a24242e94cd`; verify GitHub source ZIP and TAR archive endpoints return HTTP 200.
 - [ ] After explicitly authorized promotion, verify the stable detached checkout and use `runtime_state.bat --require-runtime-current`; do not require an upstream branch for detached `HEAD`.
 - [x] Record that first promotion requires a newly published version greater than currently deployed `1.4.24`; v1.4.24 is ineligible in the runbook and current status.
-- [x] Record exact tested head, CI/API results, Environment configuration state, stable checkout path, and that production promotion remains unattempted pending explicit operator action. The `production-approval` Environment requires reviewer `Spon4ik`, allows protected branches only, and disables administrator bypass; `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent; production runtime is v1.4.24 while release checkout is v1.4.25.
+- [x] Record exact tested head, CI/API results, Environment configuration state, stable checkout path, and that production promotion remains unattempted pending explicit operator action. The `production-approval` Environment requires reviewer `Spon4ik`, allows protected branches only, and disables administrator bypass; the stable checkout is currently at v1.4.25 while production runtime remains v1.4.24.
 - [x] Commit and push each validated checkpoint; PR #67 was updated with exact head, validation, blockers, and next action, then squash-merged as `36cbda52db1af3c8115a77824d904221e3d379b6` after all required checks passed.
 
 ## Production Acceptance (separate operator action)
 
 - [x] Publish a new Windows app + source release from validated protected `main`, with version greater than deployed v1.4.24. PR #72 merged the synchronized v1.4.25 patch bump at `3a634b4c0e9602dbd525ad1357615a24242e94cd`; exact-main CI/API passed (`36307476398` / `36307476358`). Stage Windows release run `36307685873` built the bundle and sidecar and passed disposable-container smoke. The v1.4.25 release is published; its tag resolves to the target SHA, source archive endpoints return HTTP 200, and downloaded ZIP SHA-256 matches its sidecar.
 - [x] Dispatch approval for v1.4.25 and record the approving Environment run. Run `36308571410` passed protected-main and exact tag/CI checks, then uploaded a data-only `production-approval-manifest` binding the tag, SHA, approver, and exact CI/API runs.
-- [ ] After explicit operator authorization, run local promotion on production Windows; verify backup integrity and scratch restore before finalizer.
+- [ ] Publish replacement v1.4.26 after merging the ACL and contract-capture regressions; v1.4.25 is not eligible for promotion because its local CLI cannot preserve the private lock ACL across repeated invocations.
+- [ ] Obtain exact-tag approval for v1.4.26, update the stable detached checkout to that tag, capture the resolved Compose contract, and point only `qb-rss-rules.build.context` at the stable checkout.
+- [ ] Run local promotion on production Windows; verify backup integrity and scratch restore before finalizer.
 - [ ] Verify tag SHA, container image identity, `/health.app_version`, and `runtime_state.bat --require-runtime-current` from the stable detached checkout.
 - [ ] Confirm GitHub `production` Deployment success and matching private local evidence.

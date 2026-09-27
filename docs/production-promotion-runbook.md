@@ -25,7 +25,7 @@ The approval Environment must have exactly one required reviewer, `Spon4ik`, sel
    .\.venv\Scripts\python.exe scripts\promote_production.py --capture-compose-contract --confirm-current-mounts
    ```
 
-   This reads resolved Compose configuration and `/health`, then writes a private contract and random HMAC key under `%USERPROFILE%\docker-config\qbrss-private`. It does not copy the Compose file, database, credentials, or resolved environment values. The contract protects every resolved Compose setting except the one build-context value that will change.
+   This reads resolved Compose configuration and verifies that `/health` responds, then writes a private contract and random HMAC key under `%USERPROFILE%\docker-config\qbrss-private`. It does not copy the Compose file, database, credentials, or resolved environment values. The contract protects every resolved Compose setting except the one build-context value that will change. The source checkout may be newer than the running version; the promotion preflight separately verifies that the approved target is newer than live production.
 
 4. Intentionally edit `%USERPROFILE%\docker-config\docker-compose.yml` once. For service `qb-rss-rules`, change only `build.context` to `%USERPROFILE%\deployments\qBittorrent-rss-rules`. Keep the same Compose file, `.env`, image name, service name, `/app/data` database bind mount, and read-only `/host/C/Users` and `/host/C/ProgramData` mounts. The local command stops if the resulting resolved Compose configuration differs from the captured contract in any other way.
 5. Configure the GitHub `production-approval` Environment with the protections above. Do not add secrets to it. A missing or weaker Environment causes the approval workflow and local promotion command to stop.
@@ -40,7 +40,7 @@ The stable checkout directory must be created and prepared manually before promo
 4. From the clean stable checkout at that exact release tag, run:
 
    ```powershell
-   .\.venv\Scripts\python.exe scripts\promote_production.py --tag v1.4.25 --approval-run-id 12345678901
+   .\.venv\Scripts\python.exe scripts\promote_production.py --tag v1.4.26 --approval-run-id 12345678901
    ```
 
    Replace the example tag and run ID with the values from the approved run. The command downloads the data-only manifest to a temporary directory, revalidates the current main workflow and approval, acquires an exclusive host lock, and runs read-only preflight checks before creating a GitHub `production` Deployment record.

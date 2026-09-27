@@ -192,10 +192,10 @@ def secure_private_root(path: Path) -> None:
             f"*{user_sid}:(OI)(CI)F",
             "*S-1-5-18:(OI)(CI)F",
             "*S-1-5-32-544:(OI)(CI)F",
-            "/T",
-            "/C",
         ]
     )
+    if next(path.iterdir(), None) is not None:
+        _run(["icacls.exe", str(path / "*"), "/reset", "/T", "/C"])
 
 
 class PromotionManager:
@@ -270,15 +270,13 @@ class PromotionManager:
             raise RuntimeError("The shared Compose .env file is required")
 
         config = self._compose_config()
-        health = _read_health()
+        _read_health()
         services = config.get("services")
         service = services.get(SERVICE) if isinstance(services, dict) else None
         build = service.get("build") if isinstance(service, dict) else None
         context = build.get("context") if isinstance(build, dict) else None
         if not isinstance(context, str):
             raise RuntimeError("Current production service has no resolved build context")
-        if _project_version(Path(context)) != health["app_version"]:
-            raise RuntimeError("Running production version does not match the current Compose source")
 
         key = secrets.token_bytes(32)
         try:

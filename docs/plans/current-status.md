@@ -17,14 +17,13 @@
   health mismatch, and audit-only retry without repeating the finalizer or
   Docker mutation. Full `scripts/check.bat` passes (634 passed, 0 failed, 0
   errors, 1 skipped) at implementation/test head `35fb44f6`.
-  The final preflight-ordering regression passes in the current 29-test focused
-  suite. Current pushed head
-  `9ab9a3d7663fc562d16677bf863563f4a7858dcb` passes CI run
-  [36282200001](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36282200001)
+  The 30-test focused suite also covers unavailable Docker on the real preflight
+  path. Current code/test head
+  `6f6a9904ca3b6d612e77da2ebdbf7904c4a24e44` passes CI run
+  [36282852559](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36282852559)
   and real-qBittorrent API run
-  [36282200032](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36282200032).
-  These checks were on pushed head `9ab9a3d7`; the additional unavailable-Docker
-  real-preflight regression and this handoff update are in the next checkpoint.
+  [36282852551](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36282852551),
+  including the required aggregate.
   The branch is clean and synced. `runtime_state.bat` confirms running and
   checkout versions both remain v1.4.24. GitHub currently has no
   `production-approval` Environment (API 404), and the stable deployment

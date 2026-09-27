@@ -9,7 +9,7 @@
   exact published tag, then requires local promotion from a clean stable
   checkout through the existing finalizer. The decision-complete plan is
   [here](../superpowers/plans/2026-09-27-g5b-manual-production-promotion.md).
-  The exact-SHA approval workflow is pushed on PR #67. The local promotion CLI,
+  The exact-SHA approval workflow and local promotion CLI,
   Compose contract checks, private SQLite backup/restore verification, deployment
   recording, and operator runbook are implemented in the current checkpoint.
   Focused approval/promotion coverage passes (38 tests), Ruff and targeted mypy
@@ -53,11 +53,23 @@
   [36286469581](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36286469581).
   The process-tree cleanup failure path was not exercised against production;
   no approval dispatch or Docker finalizer/deployment was run.
-  PR #67 remains open and ready for review; its current head and exact check
-  outcomes are tracked on GitHub. The active `main` ruleset requires PRs,
-  resolved review threads, linear history, squash-only merges, and the
-  `required` plus `real-qbittorrent-webseed-api` checks; it currently requires
-  zero approving reviews. The PR has not been merged.
+  PR #67 was squash-merged to protected `main` as
+  `36cbda52db1af3c8115a77824d904221e3d379b6`. Exact merge-SHA CI run
+  [36306016659](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36306016659)
+  passed the Windows and Ubuntu backend checks, maintained Browser UI suite,
+  WinUI desktop build, and required aggregate; real-qBittorrent API run
+  [36306016619](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36306016619)
+  also passed. PR #67's pre-merge head was
+  `c5a1593056e10c9d57c7b5518b82f05dae064fe3`; all required checks passed on that
+  exact head before merge. G5b's approval and local promotion implementation is
+  merged and CI-validated. Production acceptance remains pending: no approval
+  run was dispatched, no production Compose edit, backup, rebuild, or deployment
+  occurred, and the stable deployment checkout remains absent. The running
+  version is still v1.4.24, so promotion requires a newly published higher
+  version and a separate explicit operator action. The active `main` ruleset
+  requires PRs, resolved review threads, linear history, squash-only merges,
+  and the `required` plus `real-qbittorrent-webseed-api` checks; it currently
+  requires zero approving reviews.
 
 - Remote continuity is an explicit repository rule: push each coherent,
   validated checkpoint on its feature branch, keep its PR or handoff current,

@@ -1,5 +1,49 @@
 # Current Status
 
+## 2026-09-27 live database recovery reassessment
+
+- The production SQLite database is healthy and no database restore is required.
+  A read-only-source SQLite Online Backup API snapshot was captured from the
+  running container at `2026-09-27T16:39:57Z` to
+  `data/recovery/live-db-online-backup-20260927T163957Z.db` (279,392,256 bytes,
+  SHA-256 `DA4B98057B3A44AB18F26E5171E293614F1F3E8EE8433049DA6D725ADEE85335`).
+  Its journal mode is `delete`, `integrity_check` is `ok`, and
+  `foreign_key_check` reports zero violations. The September preserved copy
+  remains unchanged and still passes its recorded hash.
+- The schema is identical to the September copy. Rules, snapshots, acceleration
+  jobs, import batches, and catalog retain the same primary-key sets. All 713
+  acceleration-job rows have identical normalized content and status/retry
+  distributions. The 364 added sync events are 268 `update/ok` and 96 `skip/ok`
+  events immediately after the container started; rule differences are limited
+  to sync timestamps/payloads. Settings differences are run timestamps/messages
+  and refreshed Real-Debrid token state. These are consistent with normal
+  forward application activity.
+- The historical job ID, qBittorrent identity, and info hash have no remaining
+  reference in the captured snapshot or current live database. qBittorrent has
+  no torrent with that hash. Real-Debrid's complete current torrent inventory
+  contains one exact-hash record, marked `downloaded` at 100%, added and ended
+  on 2026-08-13; it is an external orphan requiring separate reconciliation.
+  The application row's historical relationship to that provider record is not
+  proven. MyJDownloader is enabled in settings but has no usable configured
+  connection, and the maintained repository client does not expose a
+  read-only download/job inventory query, so that provider remains unsearched.
+- The historical row remains unresolved data loss, but the old August
+  `qb_rules.recovered-candidate.db` is obsolete forensic evidence, not a
+  restoration candidate. Its known SHA-256 was rechecked. No provider or
+  production database state was changed.
+- The healthy container is still the same ID, running v1.4.28. Docker reports
+  `RestartCount=0` and an `unless-stopped` policy: it was created at
+  `12:26:03Z`, exited cleanly at `13:46:20Z`, and was started at `14:42:44Z`.
+  Docker event history returned no retained lifecycle event attributing the
+  start to a host process. The daily maintenance task excludes this service and
+  failed earlier while pulling Jackett. The initiating start command is
+  undetermined.
+- The historical classifier defect is not present in maintained main-branch
+  recovery tooling; no matching current issue was found, so no issue or recovery
+  code change was created. The final assessment is **current DB healthy —
+  external reconciliation still required**; do not restore from the old
+  candidate.
+
 ## Current focus
 
 - G5a is complete and v1.4.24 is published. G5b's manual Windows production

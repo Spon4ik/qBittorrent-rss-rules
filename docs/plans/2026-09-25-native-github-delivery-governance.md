@@ -299,6 +299,14 @@ is accepted for implementation. The decision-complete implementation plan is
 Implementation is active on PR #67; production Environment configuration,
 shared Compose edits, backup, rebuild, and deployment remain separate operator
 actions and have not occurred.
+Exact branch head `35fb44f6dba197feaa469b0f1b7d2ea875c27665` passes local
+`scripts/check.bat` (634 passed, 1 skipped) and all five required GitHub checks
+(CI run `36281814895`, qB API run `36281814915`). Manager-level failure and
+audit-retry regressions verify that backup, finalizer, and health failures are
+recorded without automatic restoration, and a failed GitHub success-status
+update can be retried without repeating deployment mutations. The approval
+Environment remains unconfigured (404), the stable deployment checkout is
+absent, and `/health` plus checkout still report v1.4.24.
 
 Serialize production deployment with `cancel-in-progress: false`. Prevent stale
 queued commits from replacing a newer deployment. Check exact source identity and

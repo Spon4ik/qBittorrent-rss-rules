@@ -92,11 +92,11 @@
 - Modify: `docs/plans/2026-09-25-native-github-delivery-governance.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] Run focused tests, `scripts/check.bat`, and all repository-required PR checks; local `scripts/check.bat` passes Ruff, mypy (49 files), and pytest (634 passed, 0 failed, 0 errors, 1 skipped). All five required PR checks passed on exact SHA `6fd70e6c0cf92e9fd18e3ea983c0792c9cd6be03`; the new uncommitted test checkpoint still needs push and exact-SHA CI. Do not run the production finalizer or alter the running Docker service during implementation validation.
+- [x] Run focused tests, `scripts/check.bat`, and all repository-required PR checks; local `scripts/check.bat` passes Ruff, mypy (49 files), and pytest (634 passed, 0 failed, 0 errors, 1 skipped). All five required PR checks passed on exact SHA `35fb44f6dba197feaa469b0f1b7d2ea875c27665` (CI `36281814895`, qB API `36281814915`). Do not run the production finalizer or alter the running Docker service during implementation validation.
 - [ ] Verify detached source against the published peeled tag SHA, then use `runtime_state.bat --require-runtime-current` after an explicitly authorized promotion; do not require an upstream branch for detached `HEAD`.
 - [ ] Record that first promotion requires a newly published version greater than currently deployed `1.4.24`; v1.4.24 is ineligible.
-- [ ] Record exact tested head, CI/API results, Environment configuration state, stable checkout path, and that production promotion remains unattempted pending explicit operator action.
-- [ ] Commit and push each validated checkpoint; update PR #67 with exact head, validation, blockers, and next action.
+- [x] Record exact tested head, CI/API results, Environment configuration state, stable checkout path, and that production promotion remains unattempted pending explicit operator action. The `production-approval` Environment currently returns 404; `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent; runtime is current at v1.4.24.
+- [x] Commit and push each validated checkpoint; update PR #67 with exact head, validation, blockers, and next action.
 
 ## Production Acceptance (separate operator action)
 

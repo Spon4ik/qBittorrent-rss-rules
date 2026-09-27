@@ -16,9 +16,17 @@
   pass. Manager-level regressions cover backup failure, finalizer failure,
   health mismatch, and audit-only retry without repeating the finalizer or
   Docker mutation. Full `scripts/check.bat` passes (634 passed, 0 failed, 0
-  errors, 1 skipped); all five required PR checks passed on exact head
-  `6fd70e6c0cf92e9fd18e3ea983c0792c9cd6be03`. The new test checkpoint is ready
-  to commit and push; its exact-SHA Actions checks remain pending. The current
+  errors, 1 skipped). Exact pushed head
+  `35fb44f6dba197feaa469b0f1b7d2ea875c27665` passes CI run
+  [36281814895](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36281814895)
+  and real-qBittorrent API run
+  [36281814915](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36281814915).
+  The branch is clean and synced. `runtime_state.bat` confirms running and
+  checkout versions both remain v1.4.24. GitHub currently has no
+  `production-approval` Environment (API 404), and the stable deployment
+  checkout `%USERPROFILE%\deployments\qBittorrent-rss-rules` is absent. Neither
+  was created; no production Compose edit, backup, rebuild, or deployment has
+  occurred. The current
   deployed version is v1.4.24, so the first eligible target must be a newly
   published higher version. No production Environment, Compose edit, backup,
   rebuild, or deployment has occurred.

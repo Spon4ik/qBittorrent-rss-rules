@@ -14,6 +14,9 @@ $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $ComposeEnvFile = Join-Path (Split-Path -Parent $ComposeFile) ".env"
 $LogDir = Join-Path $RepoRoot "logs\docker"
 $LogFile = Join-Path $LogDir "update-docker-last.log"
+$LifecycleAuditFile = Join-Path $LogDir "container-lifecycle.jsonl"
+$LifecycleAuditModule = Join-Path $PSScriptRoot "DockerLifecycleAudit.psm1"
+Import-Module $LifecycleAuditModule -Force
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 Set-Content -LiteralPath $LogFile -Encoding UTF8 -Value @(
@@ -23,6 +26,7 @@ Set-Content -LiteralPath $LogFile -Encoding UTF8 -Value @(
     "Compose: $ComposeFile",
     "Environment: $ComposeEnvFile",
     "Service: $Service",
+    "Lifecycle audit: $LifecycleAuditFile",
     ""
 )
 
@@ -249,13 +253,20 @@ try {
 
     Write-Host "Building and restarting only '$Service' (full output is captured to the log)..."
     $upArgs = $composeBaseArgs + @("up", "--build", "-d", $Service)
+    $lifecycleRunId = [Guid]::NewGuid().ToString("N")
+    $lifecycleAttempt = 1
+    Write-DockerLifecycleAuditRecord -AuditPath $LifecycleAuditFile -RunId $lifecycleRunId -Attempt $lifecycleAttempt -Event "compose_up_intent" -Service $Service -Commit $commit
     $composeExit = Invoke-DockerLogged -DockerArguments $upArgs
+    Write-DockerLifecycleAuditRecord -AuditPath $LifecycleAuditFile -RunId $lifecycleRunId -Attempt $lifecycleAttempt -Event "compose_up_result" -Service $Service -Commit $commit -ExitCode $composeExit
 
     if ($composeExit -ne 0 -and (Test-KnownDesktopMountStateFailure)) {
         if (Restart-DockerDesktopForMountRecovery) {
             Write-Host "Retrying Docker Compose once after Docker Desktop restart..."
             Add-Log "Retrying Compose up once after Docker Desktop restart."
+            $lifecycleAttempt++
+            Write-DockerLifecycleAuditRecord -AuditPath $LifecycleAuditFile -RunId $lifecycleRunId -Attempt $lifecycleAttempt -Event "compose_up_intent" -Service $Service -Commit $commit
             $composeExit = Invoke-DockerLogged -DockerArguments $upArgs
+            Write-DockerLifecycleAuditRecord -AuditPath $LifecycleAuditFile -RunId $lifecycleRunId -Attempt $lifecycleAttempt -Event "compose_up_result" -Service $Service -Commit $commit -ExitCode $composeExit
         }
     }
 
@@ -303,6 +314,7 @@ try {
     }
     Write-Host "Health: $HealthUrl"
     Write-Host "Full log: $LogFile"
+    Write-Host "Lifecycle audit: $LifecycleAuditFile"
     exit 0
 }
 catch {

@@ -34,6 +34,46 @@
   [36356703114](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36356703114).
   No application, Docker, database, provider, or recovery state was touched.
 
+## 2026-09-28 provider reconciliation and container start attribution
+
+- Issues #88 and #89 were created after searching the complete live issue list;
+  the existing closed Real-Debrid issue #48 covers a separate WebSeed defect.
+  #88 is closed and Done; #89 remains In Progress on Project #2.
+- #88 read-only provider reconciliation: the current production DB was opened
+  with SQLite `mode=ro&immutable=1`; no token refresh or provider mutation was
+  performed. Real-Debrid was queried with its unexpired saved access token and
+  still returns one exact-infohash torrent, status `downloaded`, progress 100%,
+  added `2026-08-13T04:53:50Z`, ended `2026-08-13T05:07:41Z`. The provider record
+  does not independently prove ownership by historical job
+  `55df8121-bb01-4525-98aa-a833af2f7ccf`; its disposition remains unresolved.
+  MyJDownloader is enabled but disconnected, with no saved password. Its
+  inventory could not be queried without changing credentials. No database or
+  provider state was modified.
+- #89 startup attribution: the deployed container remains ID
+  `55a5b3c54783…`, created `2026-09-27T12:26:03Z`, cleanly exited at
+  `13:46:20Z`, started at `14:42:44Z`, `RestartCount=0`, policy
+  `unless-stopped`. No retained Docker lifecycle start/stop events were found
+  for the interval. The scheduled `Docker Container Maintenance` task last ran
+  at `2026-09-27T03:00:01+03:00`, failed with result 1, and its action does not
+  mention this service; it predates container creation. The supported
+  `scripts/update_docker.ps1` path runs Compose `up --build -d qb-rss-rules`,
+  while promotion reaches it through the finalizer. Its overwritten
+  `update-docker-last.log` entry predates this container, so it does not
+  attribute the historical start. Docker Desktop auto-start/restart policy,
+  direct Docker CLI/UI use, and other host automation remain possible but
+  unproven.
+- A bounded forward audit was added to `scripts/update_docker.ps1`: each Compose
+  start attempt records an intent and its exit result to ignored local
+  `logs/docker/container-lifecycle.jsonl`. Records contain UTC time, run ID,
+  attempt, event, service, commit, and exit code only. This attributes starts
+  made by the maintained updater; it cannot identify arbitrary Docker
+  Desktop/CLI starts or the human caller. Focused pytest and PowerShell parser
+  checks pass. No Compose command, Docker restart, production DB operation, or
+  provider mutation was run. Work is on branch
+  `fix/container-start-intent-audit`; PR/CI are pending.
+- After #89 is validated, re-triage the only pre-existing open product issue
+  #47 from current Stremio sync state before deciding its implementation scope.
+
 ## 2026-09-27 live database recovery reassessment
 
 - The production SQLite database is healthy and no database restore is required.

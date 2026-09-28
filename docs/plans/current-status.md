@@ -36,45 +36,57 @@
 
 ## 2026-09-28 provider reconciliation and container start attribution
 
-- Issues #88 and #89 were created after searching the complete live issue list;
-  the existing closed Real-Debrid issue #48 covers a separate WebSeed defect.
-  #88 and #89 are closed and Done on Project #2.
-- #88 read-only provider reconciliation: the current production DB was opened
-  with SQLite `mode=ro&immutable=1`; no token refresh or provider mutation was
-  performed. Real-Debrid was queried with its unexpired saved access token and
-  still returns one exact-infohash torrent, status `downloaded`, progress 100%,
-  added `2026-08-13T04:53:50Z`, ended `2026-08-13T05:07:41Z`. The provider record
-  does not independently prove ownership by historical job
-  `55df8121-bb01-4525-98aa-a833af2f7ccf`; its disposition remains unresolved.
-  MyJDownloader is enabled but disconnected, with no saved password. Its
-  inventory could not be queried without changing credentials. No database or
-  provider state was modified.
-- #89 startup attribution: the deployed container remains ID
-  `55a5b3c54783…`, created `2026-09-27T12:26:03Z`, cleanly exited at
-  `13:46:20Z`, started at `14:42:44Z`, `RestartCount=0`, policy
-  `unless-stopped`. No retained Docker lifecycle start/stop events were found
-  for the interval. The scheduled `Docker Container Maintenance` task last ran
-  at `2026-09-27T03:00:01+03:00`, failed with result 1, and its action does not
-  mention this service; it predates container creation. The supported
-  `scripts/update_docker.ps1` path runs Compose `up --build -d qb-rss-rules`,
-  while promotion reaches it through the finalizer. Its overwritten
-  `update-docker-last.log` entry predates this container, so it does not
-  attribute the historical start. Docker Desktop auto-start/restart policy,
-  direct Docker CLI/UI use, and other host automation remain possible but
-  unproven.
-- A bounded forward audit was added to `scripts/update_docker.ps1`: each Compose
-  start attempt records an intent and its exit result to ignored local
-  `logs/docker/container-lifecycle.jsonl`. Records contain UTC time, run ID,
-  attempt, event, service, commit, and exit code only. This attributes starts
-  made by the maintained updater; it cannot identify arbitrary Docker
-  Desktop/CLI starts or the human caller. Focused pytest and PowerShell parser
-  checks pass. No Compose command, Docker restart, production DB operation, or
-  provider mutation was run. Issue #89 is closed and Done on Project #2.
-- PR #90 merged as `f6e2e83f9ed053f0e0016ac1e591c321a257bb3b`; all checks pass
-  on both PR head `d632ff6b661b111a23390d50b3e501b5b8a6ce7f` and exact main SHA.
-  Main CI run `36360260282` and qBittorrent API run `36360260280` passed. The
-  runtime remains v1.4.28 and current; production deployment/release were not
-  attempted because the change only affects the host updater script.
+- Issues #88 and #89 are closed and Done on Project #2. #88 is classified as
+  **cleanup recommended but not required**. #89 closed through PR #92.
+- #88 read-only reconciliation used SQLite `mode=ro&immutable=1` and the
+  existing unexpired Real-Debrid token. The exact-hash object remains
+  `downloaded` at 100%; the historical job ID and hash have zero current
+  acceleration-job references, and the matched provider object ID has zero
+  current job references. A read-only sweep of every persisted textual/JSON
+  table column found no reference to that hash or provider object ID. No
+  provider ID was inferred from hash equality.
+  `GET /torrents/activeCount` returned 0 active torrents of a limit of 100, so
+  this completed object consumes no current active-torrent slot. The official
+  API documents deletion as removing an entry from the user's torrent list but
+  does not establish a separate storage quota or retention guarantee. Maintained
+  app cleanup removes only app-owned qBittorrent web-seed URLs and the local job;
+  it does not delete Real-Debrid torrents. Optional account-list cleanup was not
+  performed. MyJDownloader remains disconnected without saved credentials, so
+  its inventory is unknown. No provider, credential, database, qBittorrent, or
+  production runtime state was changed.
+- #89's historical event remains unattributed. The container had
+  `RestartCount=0` and `unless-stopped`; no retained Docker lifecycle event
+  identifies its start. The scheduled maintenance task last ran at
+  `2026-09-27T03:00:01+03:00`, failed with result 1, and was configured for only
+  Jackett and Audiobookshelf, ruling it out for the later `qb-rss-rules` start.
+  The supported maintained path is `scripts/update_docker.ps1` through the
+  Docker wrapper/finalizer; approved production promotion invokes that
+  finalizer. Docker Desktop/UI/CLI, the runbook's direct Compose rollback, and
+  daemon restart-policy activity remain possible external paths.
+- PR #92 adds per-attempt UTC records to ignored local
+  `logs/docker/container-lifecycle.jsonl`: one run ID, unique attempt ID,
+  service, full checkout SHA, `compose_up` intent, before/after target container
+  and image IDs, prior/resulting state and health, Compose exit code, identity
+  change, and whether exactly one matching service container is running. The
+  writer records allowlisted fields only. A zero Compose exit without proof of
+  the target running is recorded unproven and fails the updater. Retry attempts
+  share the run ID and have distinct IDs. This covers the maintained updater;
+  it cannot attribute arbitrary Docker Desktop/CLI starts or identify the human
+  caller.
+- Focused tests pass (`4 passed`), Ruff passes for the changed Python test, and
+  both PowerShell files parse successfully. PR #92 head
+  `afb353ffe75b9bf60c5eb3919257f14f3a2701ef` passed CI run
+  [36428213720](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36428213720)
+  and qBittorrent API run
+  [36428213754](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36428213754).
+  It merged as exact main SHA `36d2b4545b78dafea09b6d4dbd0c61c4abaeaf8d`;
+  exact-main CI run
+  [36428825970](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36428825970)
+  and qBittorrent API run
+  [36428826266](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36428826266)
+  both passed. No production Docker operation, deployment, database/volume
+  operation, provider mutation, or release was attempted. The running app stays
+  on v1.4.28; the change is host-updater audit behavior only.
 - The only pre-existing open product issue is #47. A fresh read-only Stremio
   library query through the configured local-storage session returned 539 raw
   items, with zero raw references to `tt39062868`; the current DB has no exact

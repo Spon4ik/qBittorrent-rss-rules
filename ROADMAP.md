@@ -18,9 +18,15 @@
   Live read-only inspection found no `tt39062868` in the configured library and
   no matching app rule; the report is not currently reproducible. Keep it in
   Backlog until the title is confirmed in the intended Stremio account/library.
-- Historical provider reconciliation (#88) and production start attribution
-  (#89) are closed. The latter added local updater intent/result records; direct
-  Docker Desktop/CLI starts remain outside that attribution path.
+- Historical provider reconciliation (#88) is closed as **cleanup recommended
+  but not required**: its completed Real-Debrid object has no current app
+  reference or active-torrent-slot cost; any account-list cleanup is optional,
+  and provider storage retention remains undocumented.
+- Production start attribution (#89) is closed by [PR #92](https://github.com/Spon4ik/qBittorrent-rss-rules/pull/92).
+  The maintained updater now records before/after container and image identity,
+  state/health, Compose result, and a proven-running flag. Direct Docker
+  Desktop/CLI, manual rollback, daemon restart-policy activity, and caller
+  identity remain outside this attribution boundary.
 
 ### Validated locally
 

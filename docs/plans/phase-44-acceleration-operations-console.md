@@ -16,23 +16,31 @@ Codex heartbeat pickup remains pending end-to-end proof after the active task yi
 
 ## Provider and production-start follow-up (2026-09-28)
 
-- Issue #88 re-queried Real-Debrid read-only using the existing unexpired access
-  token. One exact-infohash torrent remains `downloaded` at 100%, added
-  `2026-08-13T04:53:50Z`, ended `2026-08-13T05:07:41Z`. This does not prove that
-  it belonged to the lost acceleration job. MyJDownloader is enabled but
-  disconnected and has no saved password, so no inventory was queried. No
-  provider or database state was changed. The lost job remains unresolved.
-- Issue #89 found no retained Docker lifecycle event for the historical start.
-  The scheduled Docker maintenance task failed before the container was created
-  and did not target `qb-rss-rules`; the last updater log also predates the
-  container. The supported updater now appends secret-free Compose start intent
-  and exit-result records to ignored local `logs/docker/container-lifecycle.jsonl`.
-  This covers starts through the maintained updater, not arbitrary Docker
-  Desktop/CLI starts or caller identity. Focused tests and PowerShell parsing
-  pass; no production Compose command or restart was run. PR #90 merged as
-  `f6e2e83f9ed053f0e0016ac1e591c321a257bb3b`. All checks passed on its exact
-  head and on main (`36360260282` CI, `36360260280` qBittorrent API); issue #89
-  is closed. The production runtime remains v1.4.28 and was not restarted.
+- Issue #88 is closed as **cleanup recommended but not required**. The completed
+  Real-Debrid object has no current app job reference by hash or provider ID and
+  no persisted text/JSON record refers to either identifier. It consumes no
+  active-torrent slot (`0/100`). Maintained app cleanup does not delete provider
+  torrents. Optional removal from the account's torrent list was not performed;
+  provider storage retention/cost and historical ownership remain unknown. No
+  provider or database state changed.
+- Issue #89 is closed through PR #92. The maintained updater records before and
+  after container/image identity, state/health, Compose result, identity change,
+  unique attempt ID, shared run ID, and whether one matching service container
+  is proven running. A successful Compose exit without that proof fails the
+  updater. Mocked-output tests cover identity, retries, false-success rejection,
+  and secret exclusion. CI and qBittorrent API checks passed on PR head
+  `afb353ffe75b9bf60c5eb3919257f14f3a2701ef` and exact main
+  `36d2b4545b78dafea09b6d4dbd0c61c4abaeaf8d`.
+- Maintained start path: `scripts/update_docker.ps1` through its wrapper and
+  finalizer; approved production promotion invokes that finalizer. Possible
+  external/manual paths are Docker Desktop/UI/CLI, the runbook's direct Compose
+  rollback, and Docker daemon restart-policy activity. Scheduled maintenance
+  targeted only Jackett and Audiobookshelf and failed before the historical
+  start. Retained lifecycle events do not identify the historical caller.
+  Attribution remains limited to the maintained updater. No production Docker
+  operation, deployment, database/volume operation, provider mutation, or
+  release was performed; production remains at v1.4.28. Full evidence is in
+  [current-status](current-status.md).
 - The only pre-existing open product issue, #47, was re-triaged against current
   state. A read-only Stremio library query returned 539 raw items with no
   `tt39062868` reference, and the DB contains no exact rule. The latest persisted

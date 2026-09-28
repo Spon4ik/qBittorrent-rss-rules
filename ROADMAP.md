@@ -1,18 +1,26 @@
 # Roadmap
 
-## Active governance track (2026-09-26)
+## Active governance track (2026-09-28)
 
 - [Native GitHub delivery and project governance](docs/plans/2026-09-25-native-github-delivery-governance.md):
   decide repository ownership, prove test isolation/TDD, establish hosted CI before
   required main checks, adopt native issue/Project tracking, and qualify trusted
   runners plus gated deployment only when needed.
-- G1 test isolation, G2 hosted CI/main protection, and G3a issue/PR templates are
-  implemented. G3b native Project configuration awaits API access. Phase 44 remains
-  a separate active product phase. G4 self-hosted runners are deferred: standard
+- G1 test isolation, G2 hosted CI/main protection, G3a issue/PR templates, and
+  G3b native issue-centric Project configuration are implemented on `main`.
+  Phase 44 remains a separate active product phase. G4 self-hosted runners are deferred: standard
   hosted runners are free for this public repository, and persistent self-hosted
   execution adds unnecessary exposure to untrusted public pull requests.
 
-## Current release state: v1.4.23 published; Phase 44 active
+## Current release state: v1.4.28 published; Phase 44 active (2026-09-28)
+
+- The only pre-existing open product issue is #47, a Stremio library sync report.
+  Live read-only inspection found no `tt39062868` in the configured library and
+  no matching app rule; the report is not currently reproducible. Keep it in
+  Backlog until the title is confirmed in the intended Stremio account/library.
+- Historical provider reconciliation (#88) and production start attribution
+  (#89) are closed. The latter added local updater intent/result records; direct
+  Docker Desktop/CLI starts remain outside that attribution path.
 
 ### Validated locally
 

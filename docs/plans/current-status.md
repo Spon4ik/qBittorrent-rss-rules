@@ -38,7 +38,7 @@
 
 - Issues #88 and #89 were created after searching the complete live issue list;
   the existing closed Real-Debrid issue #48 covers a separate WebSeed defect.
-  #88 is closed and Done; #89 remains In Progress on Project #2.
+  #88 and #89 are closed and Done on Project #2.
 - #88 read-only provider reconciliation: the current production DB was opened
   with SQLite `mode=ro&immutable=1`; no token refresh or provider mutation was
   performed. Real-Debrid was queried with its unexpired saved access token and
@@ -69,10 +69,19 @@
   made by the maintained updater; it cannot identify arbitrary Docker
   Desktop/CLI starts or the human caller. Focused pytest and PowerShell parser
   checks pass. No Compose command, Docker restart, production DB operation, or
-  provider mutation was run. Work is on branch
-  `fix/container-start-intent-audit`; PR/CI are pending.
-- After #89 is validated, re-triage the only pre-existing open product issue
-  #47 from current Stremio sync state before deciding its implementation scope.
+  provider mutation was run. Issue #89 is closed and Done on Project #2.
+- PR #90 merged as `f6e2e83f9ed053f0e0016ac1e591c321a257bb3b`; all checks pass
+  on both PR head `d632ff6b661b111a23390d50b3e501b5b8a6ce7f` and exact main SHA.
+  Main CI run `36360260282` and qBittorrent API run `36360260280` passed. The
+  runtime remains v1.4.28 and current; production deployment/release were not
+  attempted because the change only affects the host updater script.
+- The only pre-existing open product issue is #47. A fresh read-only Stremio
+  library query through the configured local-storage session returned 539 raw
+  items, with zero raw references to `tt39062868`; the current DB has no exact
+  rule. Auto-sync is enabled and its latest persisted run succeeded at
+  `2026-09-27 14:43:35`. The current provider state does not reproduce the
+  report, so #47 remains Backlog pending confirmation that the title is still
+  in the intended Stremio account/library. No Stremio or app state was changed.
 
 ## 2026-09-27 live database recovery reassessment
 

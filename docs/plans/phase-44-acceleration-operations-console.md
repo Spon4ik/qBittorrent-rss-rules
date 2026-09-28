@@ -29,8 +29,15 @@ Codex heartbeat pickup remains pending end-to-end proof after the active task yi
   and exit-result records to ignored local `logs/docker/container-lifecycle.jsonl`.
   This covers starts through the maintained updater, not arbitrary Docker
   Desktop/CLI starts or caller identity. Focused tests and PowerShell parsing
-  pass; no production Compose command or restart was run. Branch
-  `fix/container-start-intent-audit` is pending PR validation.
+  pass; no production Compose command or restart was run. PR #90 merged as
+  `f6e2e83f9ed053f0e0016ac1e591c321a257bb3b`. All checks passed on its exact
+  head and on main (`36360260282` CI, `36360260280` qBittorrent API); issue #89
+  is closed. The production runtime remains v1.4.28 and was not restarted.
+- The only pre-existing open product issue, #47, was re-triaged against current
+  state. A read-only Stremio library query returned 539 raw items with no
+  `tt39062868` reference, and the DB contains no exact rule. The latest persisted
+  auto-sync succeeded; the issue is not currently reproducible and remains
+  Backlog pending confirmation that the title is still in the intended library.
 
 ## Deterministic maintenance follow-up (2026-09-26)
 

@@ -190,6 +190,7 @@ try {
 
     $branch = Get-GitValue -GitArguments @("branch", "--show-current")
     $commit = Get-GitValue -GitArguments @("rev-parse", "--short", "HEAD")
+    $checkoutSha = Get-GitValue -GitArguments @("rev-parse", "HEAD")
     $gitLabel = if ($branch -and $commit) { "$branch @ $commit" } elseif ($commit) { $commit } else { "unknown" }
 
     Write-Host "Updating Docker service '$Service'..."
@@ -255,23 +256,110 @@ try {
     $upArgs = $composeBaseArgs + @("up", "--build", "-d", $Service)
     $lifecycleRunId = [Guid]::NewGuid().ToString("N")
     $lifecycleAttempt = 1
-    Write-DockerLifecycleAuditRecord -AuditPath $LifecycleAuditFile -RunId $lifecycleRunId -Attempt $lifecycleAttempt -Event "compose_up_intent" -Service $Service -Commit $commit
+    $lifecycleAttemptId = [Guid]::NewGuid().ToString("N")
+    $dockerInvoker = {
+        param($DockerArguments, $OutputMode)
+        Invoke-DockerNative -DockerArguments $DockerArguments -OutputMode $OutputMode
+    }
+    $beforeSnapshot = Get-DockerLifecycleTargetSnapshot `
+        -ComposeArguments $composeBaseArgs `
+        -Service $Service `
+        -DockerInvoker $dockerInvoker
+    Write-DockerLifecycleAuditRecord `
+        -AuditPath $LifecycleAuditFile `
+        -RunId $lifecycleRunId `
+        -AttemptId $lifecycleAttemptId `
+        -Attempt $lifecycleAttempt `
+        -Event "compose_up_intent" `
+        -Service $Service `
+        -CheckoutSha $checkoutSha `
+        -Operation "compose_up" `
+        -BeforeSnapshot $beforeSnapshot
     $composeExit = Invoke-DockerLogged -DockerArguments $upArgs
-    Write-DockerLifecycleAuditRecord -AuditPath $LifecycleAuditFile -RunId $lifecycleRunId -Attempt $lifecycleAttempt -Event "compose_up_result" -Service $Service -Commit $commit -ExitCode $composeExit
+    $afterSnapshot = Get-DockerLifecycleTargetSnapshot `
+        -ComposeArguments $composeBaseArgs `
+        -Service $Service `
+        -DockerInvoker $dockerInvoker
+    $identityChanged = $null
+    if ($beforeSnapshot.QuerySucceeded -and $afterSnapshot.QuerySucceeded -and
+        $beforeSnapshot.ContainerCount -le 1 -and $afterSnapshot.ContainerCount -le 1) {
+        $identityChanged = ([string]$beforeSnapshot.ContainerId -ne [string]$afterSnapshot.ContainerId)
+    }
+    $startProven = Test-DockerLifecycleProvenRunning `
+        -Snapshot $afterSnapshot `
+        -Service $Service `
+        -ComposeExitCode $composeExit
+    Write-DockerLifecycleAuditRecord `
+        -AuditPath $LifecycleAuditFile `
+        -RunId $lifecycleRunId `
+        -AttemptId $lifecycleAttemptId `
+        -Attempt $lifecycleAttempt `
+        -Event "compose_up_result" `
+        -Service $Service `
+        -CheckoutSha $checkoutSha `
+        -Operation "compose_up" `
+        -BeforeSnapshot $beforeSnapshot `
+        -AfterSnapshot $afterSnapshot `
+        -ComposeExitCode $composeExit `
+        -IdentityChanged $identityChanged `
+        -ExpectedServiceProvenRunning $startProven
 
     if ($composeExit -ne 0 -and (Test-KnownDesktopMountStateFailure)) {
         if (Restart-DockerDesktopForMountRecovery) {
             Write-Host "Retrying Docker Compose once after Docker Desktop restart..."
             Add-Log "Retrying Compose up once after Docker Desktop restart."
             $lifecycleAttempt++
-            Write-DockerLifecycleAuditRecord -AuditPath $LifecycleAuditFile -RunId $lifecycleRunId -Attempt $lifecycleAttempt -Event "compose_up_intent" -Service $Service -Commit $commit
+            $lifecycleAttemptId = [Guid]::NewGuid().ToString("N")
+            $beforeSnapshot = Get-DockerLifecycleTargetSnapshot `
+                -ComposeArguments $composeBaseArgs `
+                -Service $Service `
+                -DockerInvoker $dockerInvoker
+            Write-DockerLifecycleAuditRecord `
+                -AuditPath $LifecycleAuditFile `
+                -RunId $lifecycleRunId `
+                -AttemptId $lifecycleAttemptId `
+                -Attempt $lifecycleAttempt `
+                -Event "compose_up_intent" `
+                -Service $Service `
+                -CheckoutSha $checkoutSha `
+                -Operation "compose_up" `
+                -BeforeSnapshot $beforeSnapshot
             $composeExit = Invoke-DockerLogged -DockerArguments $upArgs
-            Write-DockerLifecycleAuditRecord -AuditPath $LifecycleAuditFile -RunId $lifecycleRunId -Attempt $lifecycleAttempt -Event "compose_up_result" -Service $Service -Commit $commit -ExitCode $composeExit
+            $afterSnapshot = Get-DockerLifecycleTargetSnapshot `
+                -ComposeArguments $composeBaseArgs `
+                -Service $Service `
+                -DockerInvoker $dockerInvoker
+            $identityChanged = $null
+            if ($beforeSnapshot.QuerySucceeded -and $afterSnapshot.QuerySucceeded -and
+                $beforeSnapshot.ContainerCount -le 1 -and $afterSnapshot.ContainerCount -le 1) {
+                $identityChanged = ([string]$beforeSnapshot.ContainerId -ne [string]$afterSnapshot.ContainerId)
+            }
+            $startProven = Test-DockerLifecycleProvenRunning `
+                -Snapshot $afterSnapshot `
+                -Service $Service `
+                -ComposeExitCode $composeExit
+            Write-DockerLifecycleAuditRecord `
+                -AuditPath $LifecycleAuditFile `
+                -RunId $lifecycleRunId `
+                -AttemptId $lifecycleAttemptId `
+                -Attempt $lifecycleAttempt `
+                -Event "compose_up_result" `
+                -Service $Service `
+                -CheckoutSha $checkoutSha `
+                -Operation "compose_up" `
+                -BeforeSnapshot $beforeSnapshot `
+                -AfterSnapshot $afterSnapshot `
+                -ComposeExitCode $composeExit `
+                -IdentityChanged $identityChanged `
+                -ExpectedServiceProvenRunning $startProven
         }
     }
 
     if ($composeExit -ne 0) {
         throw "Docker Compose build/start failed with exit code $composeExit."
+    }
+    if (-not $startProven) {
+        throw "Docker Compose exited successfully, but target service '$Service' could not be proven present and running."
     }
 
     Write-Host "Waiting for backend health..."

@@ -41,12 +41,13 @@ guard; no shared Compose or production state changed. See
 ### Version policy path coverage follow-up (#105)
 
 Review after #103 merged found that `scripts/check_version_policy.py` omitted
-some inputs copied or used by Docker and Windows release packaging. Issue #105
-is a child of #97 and blocks parent completion. The follow-up adds Alembic,
+some inputs copied or used by Docker and Windows release packaging. Issue #105,
+a child of #97, is complete through PR #106. The follow-up adds Alembic,
 Docker build-context, and desktop package/install paths to the deployable
-classifier with deterministic coverage. It is on branch
-`fix/version-policy-deployable-inputs` from main `f6f36276`; focused tests,
-Ruff, mypy, and whitespace validation pass. PR and protected CI are pending.
+classifier with deterministic coverage. PR CI and exact-main CI/API checks
+passed; exact current main is `a0b86d93fc7b1663a545e870f88b443d800d8953`.
+Because this follow-up changes policy tooling and tests only, no app-version
+bump or release was needed; commit SHA remains the source identity.
 
 ## Provider and production-start follow-up (2026-09-28)
 

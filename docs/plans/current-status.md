@@ -46,13 +46,13 @@
   builds from `C:\Users\nucc\deployments\qBittorrent-rss-rules`, not this
   checkout. No Compose or production state was changed. Promotion and ordinary
   Stremio synchronization await owner approval and the stable-checkout flow.
-- Follow-up issue #105 is being implemented from exact current-main SHA
-  `f6f36276cfe6910e9e7f335d29465152b3e41f60` on branch
-  `fix/version-policy-deployable-inputs`. The checker now classifies Alembic
-  migrations/configuration, `.dockerignore`, and the three desktop package or
-  installer scripts as deployable. Focused version-policy tests, Ruff, mypy,
-  and `git diff --check` pass; protected PR CI is pending.
-
+- Follow-up #105 is complete through PR #106. It added Alembic migrations and
+  configuration, `.dockerignore`, and desktop package/installer scripts to the
+  deployable classifier while preserving commit-SHA identity for docs, tests,
+  and tooling-only changes. PR checks passed, and exact-main CI/API checks passed
+  on `a0b86d93fc7b1663a545e870f88b443d800d8953`. Because this follow-up changes
+  policy tooling and tests only, no application version bump or new release was
+  needed; the checker identifies this source as commit `a0b86d93fc7b`.
 ## 2026-09-29 selective qBittorrent queue 404 repair
 
 - A reported missing-only series queue failed after the client received HTTP

@@ -38,6 +38,16 @@ Production remains v1.4.28. The local finalizer stopped at its Compose-context
 guard; no shared Compose or production state changed. See
 [current status](current-status.md) for the resumable handoff.
 
+### Version policy path coverage follow-up (#105)
+
+Review after #103 merged found that `scripts/check_version_policy.py` omitted
+some inputs copied or used by Docker and Windows release packaging. Issue #105
+is a child of #97 and blocks parent completion. The follow-up adds Alembic,
+Docker build-context, and desktop package/install paths to the deployable
+classifier with deterministic coverage. It is on branch
+`fix/version-policy-deployable-inputs` from main `f6f36276`; focused tests,
+Ruff, mypy, and whitespace validation pass. PR and protected CI are pending.
+
 ## Provider and production-start follow-up (2026-09-28)
 
 - Issue #88 is closed as **cleanup recommended but not required**. The completed

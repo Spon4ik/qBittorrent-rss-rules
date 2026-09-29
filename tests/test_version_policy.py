@@ -11,12 +11,18 @@ from scripts.check_version_policy import (
 @pytest.mark.parametrize(
     "path",
     [
+        "alembic/versions/001_new_column.py",
+        "./.dockerignore",
+        "alembic.ini",
         "app/services/stremio.py",
         "app/static/app.js",
-        "QbRssRulesDesktop/Views/MainPage.xaml.cs",
         "Dockerfile",
+        "QbRssRulesDesktop/Views/MainPage.xaml.cs",
         "pyproject.toml",
         "requirements-release.txt",
+        "scripts/install_desktop_bundle.cmd",
+        "scripts/install_desktop_bundle.ps1",
+        "scripts/package_desktop_bundle.ps1",
     ],
 )
 def test_deployable_changes_require_an_app_version(path: str) -> None:

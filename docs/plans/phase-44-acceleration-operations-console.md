@@ -21,8 +21,8 @@ audit reconciliation is tracked by #113.
 
 The published v1.4.30 release is superseded and must not be promoted. Its
 approval run `36563977371` failed at the protected approval step. Corrective
-review reopened #99, #100, and #101; #97 remains open, #98/#105 remain closed,
-and #102 tracks v1.4.31 promotion and acceptance. PR #109 merged as
+review reopened #99, #100, and #101; #98/#105 remain closed, and #102 tracks
+v1.4.31 promotion and acceptance. PR #109 merged as
 `c2abf87db7172b8444fb3b8b7c159f6e21735c20`; current main is
 `81295202747f224a4aac0e6da2024c8e11e43f0f`. Fresh approval run `36612074541`
 passed all jobs from current main and remains bound to published v1.4.31 at the
@@ -61,21 +61,26 @@ status. Its first lifecycle audit recorded one container ID and Compose exit
 0, but Docker inspect failed both before and after Compose, leaving metadata
 empty. A later canonical updater run from the same approved checkout
 successfully audited the running healthy service with the same single-argument
-inspect template. An isolated mocked lifecycle snapshot using that template
-also passes. The initial failure is not reproduced; there is no demonstrated
+inspect template. Its argument list was `inspect`, `--format`, the complete
+Go-template string as one element, and the container ID; PowerShell splatting
+through the same Compose argument array succeeded in a fresh read-only live
+snapshot. An isolated mocked lifecycle snapshot using that template also
+passes. The initial failure is not reproduced; there is no demonstrated
 source/template defect, and the earlier undefined-`com` diagnosis is
 withdrawn. Its exact cause is unknown because the original updater log was
 overwritten by the successful later run. A separate follow-up should support
 recovery evidence when a later deterministic
 audit proves runtime after the deployment status has become immutable-failed.
-The series code and queue retry remain covered by merged regression tests;
-the open series acceptance is only the historical production reproduction
-boundary. Project #2 must track this separately from audit recovery.
+The series code and queue retry remain covered by merged regression tests.
+Historical production acceptance was assessed as C against the original
+The Boys target, so #97 is closed with that limitation recorded rather than
+left open for an unavailable past provider state. Issues #99-#102 are closed;
+Project #2 tracks the separate, still-open audit recovery in #113.
 
 Issues #97-#102 tracked a reproduced series queue defect and initial fixes. PR
 #103 merged head `9b0c486cac3d05a2ab8f45a21a80a6c2d1bb6501` to protected main
 as `31c5c0fdf01c7b3657489bdd1945a4b7e462253e`. Corrective review found
-acceptance gaps; #99-#101 are reopened and #97 remains In Progress.
+acceptance gaps, which led to the corrective v1.4.31 work described above.
 Stremio completion is now derived from its catalog episode bitfield; a selected
 episode ID or aggregate watch time alone cannot mark an in-progress episode as
 watched. Queueing can optionally retry existing-but-unwatched files for one

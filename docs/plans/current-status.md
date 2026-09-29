@@ -72,10 +72,12 @@
   snapshots using the same inspect template, proving the healthy running
   `qb-rss-rules` container. The service-label `index` template is passed as a
   single PowerShell native argument and an isolated mocked snapshot with that
-  expression passes. The first failure was not reproduced; no source/template
-  defect is established, and the prior undefined-`com` diagnosis is withdrawn.
-  Its exact cause is unknown because the original updater log was overwritten
-  by the successful later run. A separate
+  expression passes. A fresh read-only call through the same Compose argument
+  array and splatted Docker invoker also returned exactly one running, healthy
+  `qb-rss-rules` container on the expected image. The first failure was not
+  reproduced; no source/template defect is established, and the prior
+  undefined-`com` diagnosis is withdrawn. Its exact cause is unknown because
+  the original updater log was overwritten by the successful later run. A separate
   follow-up is needed for supported reconciliation when a later deterministic
   audit proves runtime after an immutable failed deployment status.
 - Queue behavior is covered by the exact-release full suite (692 passed, 1
@@ -86,12 +88,15 @@
 - GitHub approval and release binding remain valid; v1.4.30 stays published and
   superseded. #99's implementation and #100/#101's shipped behavior are
   supported by merged code and exact-release regressions; #102's release and
-  approved healthy runtime criteria are complete. #97's remaining historical
-  live reproduction is unprovable because the original target has moved on.
-  Corrected issue #97 and #99-#102 acceptance/handoff to reflect the available
-  evidence. The independent promotion-audit reconciliation is tracked in #113.
-  Project #2 keeps #97/#99-#102 in review for this evidence correction and #113
-  in Backlog. No production torrent was queued for testing.
+  approved healthy runtime criteria are complete. PR #103 regressions
+  deterministically cover The Boys (`tt1190634`) with episodes 1-8 complete,
+  episode 9 selected/incomplete, and a stale floor of 11. Current production
+  evidence for that original target is C (historical state no longer
+  reproducible, not failed), so #97's acceptance assessment is complete and
+  the issue is closed with that boundary recorded. #99-#102 are closed/Done;
+  independent promotion-audit reconciliation #113 remains open/In Progress.
+  Project #2 reflects those lifecycles. No production torrent was queued for
+  testing.
 - Prior corrective-branch validation: `scripts/check.bat` passed Ruff, mypy,
   and 692 tests (1 skipped); WinUI Debug/x64 built with 0 warnings/errors;
   `P44-03` browser QA passed both search surfaces. The production canonical

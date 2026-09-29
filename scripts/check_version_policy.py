@@ -10,10 +10,11 @@ import sys
 import tomllib
 from collections.abc import Mapping, Sequence
 
-from app.services.release_versioning import VersionParts
-
 DEPLOYABLE_PREFIXES = ("app/", "qbrssrulesdesktop/")
 DEPLOYABLE_FILES = {"dockerfile", "pyproject.toml", "requirements-release.txt"}
+SEMVER_PATTERN = re.compile(
+    r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)$"
+)
 VERSION_TOUCHPOINTS = (
     "pyproject.toml",
     "app/main.py",
@@ -51,16 +52,12 @@ def check_version_policy(
 
     errors: list[str] = []
     try:
-        base_parts = VersionParts.parse(base_version)
-        project_parts = VersionParts.parse(head_versions.get("pyproject.toml", ""))
+        base_parts = _parse_semver(base_version)
+        project_parts = _parse_semver(head_versions.get("pyproject.toml", ""))
     except ValueError as exc:
         return [str(exc)]
 
-    if (project_parts.major, project_parts.minor, project_parts.patch) <= (
-        base_parts.major,
-        base_parts.minor,
-        base_parts.patch,
-    ):
+    if project_parts <= base_parts:
         errors.append(f"version must be greater than base version {base_version}")
 
     missing_touchpoints = [path for path in VERSION_TOUCHPOINTS if path not in head_versions]
@@ -78,6 +75,17 @@ def check_version_policy(
     if errors:
         errors.insert(0, "Deployable changes: " + ", ".join(sorted(deployable_paths)))
     return errors
+
+
+def _parse_semver(value: str) -> tuple[int, int, int]:
+    match = SEMVER_PATTERN.fullmatch(str(value or "").strip())
+    if match is None:
+        raise ValueError(f"Unsupported semantic version: {value!r}")
+    return (
+        int(match.group("major")),
+        int(match.group("minor")),
+        int(match.group("patch")),
+    )
 
 
 def _has_release_notes(changelog: str, version: str) -> bool:

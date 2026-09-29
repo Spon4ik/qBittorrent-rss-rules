@@ -42,34 +42,53 @@
   `C:\ProgramData`. Stable checkout remains clean at
   `c2abf87db7172b8444fb3b8b7c159f6e21735c20`; resolved Compose preserves the
   intended database bind and both read-only host mounts.
-- Ordinary Stremio sync was run through Settings > Stremio > Save + Sync Stremio
-  on 2026-09-29. It completed for 321 active titles with 0 errors (5 updated,
-  2 re-enabled, 314 unchanged, 7 pushed to qB, 15 watch-progress matches, 3
-  writes). The affected rule is Running Point (`tt14879018`): Jellyfin state has
-  S02E01-08 watched and S02E09-10 present but unwatched, while its saved floor
-  remains S02E11. Stremio's current library item has no selected `video_id` and
-  an empty/invalid watched bitfield, so sync has no authoritative Stremio
-  completion evidence to reconcile the ahead floor to episode 9. Episode 9 is
-  not present in the Stremio watched keys, but the required effective floor 9
-  acceptance is not met. Follow-up operation status is idle (0 active). Stop
-  production mutations and diagnose the missing Stremio watch state before
-  another sync/retry.
-- Read-only provider payload recheck confirms this is absent source evidence,
-  not a parser mismatch: Stremio returns `season=0`, `episode=0`, no `video_id`,
-  and an empty `watched` string; the release parser correctly marks the
-  bitfield invalid. Rule search builds its episode floor directly from saved
-  `start_season/start_episode`, so effective search floor is S02E11. The normal
-  sync correction path only corrects an ahead floor when a valid Stremio
-  bitfield supplies watched episodes.
+- The original #97/#99 regression target is The Boys (`tt1190634`), established
+  by PR #103's deterministic series-progress tests and #99's episode-9
+  acceptance scenario. Running Point (`tt14879018`) was selected later because
+  its live state happened to resemble that scenario; it was an inferred
+  substitute, not the reproduced rule. Current read-only production DB state
+  for The Boys is saved floor S05E09, Jellyfin watched S05E01-08, no current
+  existing-unwatched episodes, and Stremio-known episodes through S05E08 with
+  no persisted watched keys. This no longer reproduces the historical season-1
+  stale-floor case. The former provider payload evidence concerned Running
+  Point and cannot establish The Boys' current raw Stremio payload. Production
+  acceptance is therefore C: the historical case is presently unprovable,
+  not failed; no implementation defect is demonstrated. No production
+  database or provider state was changed to manufacture evidence.
+- The effective current The Boys search floor is the saved S05E09, because
+  rule search reads `start_season/start_episode`. Running Point's prior
+  S02E11 observation is retained only as a separate rule observation and is
+  removed from #97 acceptance conclusions. Do not run another Stremio sync,
+  edit the DB, queue a production torrent, or treat either live rule as the
+  historical episode-9 reproduction.
+- Promotion Deployment `6742723277` and its private journal remain unchanged
+  with the original failed status. The first lifecycle audit record shows a
+  successful Compose exit and one container ID, but the Docker inspect query
+  was marked unsuccessful both before and after Compose; consequently image,
+  state, health, and service fields were empty. The canonical updater's later
+  run from the same approved checkout recorded successful before/after
+  snapshots using the same inspect template, proving the healthy running
+  `qb-rss-rules` container. The service-label `index` template is passed as a
+  single PowerShell native argument and an isolated mocked snapshot with that
+  expression passes. The first failure was not reproduced; no source/template
+  defect is established, and the prior undefined-`com` diagnosis is withdrawn.
+  Classify it as a transient/invocation-level inspect failure. A separate
+  follow-up is needed for supported reconciliation when a later deterministic
+  audit proves runtime after an immutable failed deployment status.
 - Queue behavior is covered by the exact-release full suite (692 passed, 1
   skipped): existing-file exclusion by default, retry selection for existing
   unwatched episodes, continued exclusion of watched episodes, series-only
   visibility, rejection without a series rule, and one-request reset on failed
   submission. No production torrent was queued for testing.
 - GitHub approval and release binding remain valid; v1.4.30 stays published and
-  superseded. Issues #99-#101, #102, #97 and Project #2 remain open/in progress.
-  Do not close or mark done until the Running Point floor and remaining
-  acceptance evidence are green. No production torrent was queued for testing.
+  superseded. #99's implementation and #100/#101's shipped behavior are
+  supported by merged code and exact-release regressions; #102's release and
+  approved healthy runtime criteria are complete. #97's remaining historical
+  live reproduction is unprovable because the original target has moved on.
+  Corrected issue #97 and #99-#102 acceptance/handoff to reflect the available
+  evidence. The independent promotion-audit reconciliation is tracked in #113.
+  Project #2 keeps #97/#99-#102 in review for this evidence correction and #113
+  in Backlog. No production torrent was queued for testing.
 - Prior corrective-branch validation: `scripts/check.bat` passed Ruff, mypy,
   and 692 tests (1 skipped); WinUI Debug/x64 built with 0 warnings/errors;
   `P44-03` browser QA passed both search surfaces. The production canonical

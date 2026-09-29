@@ -11,8 +11,9 @@ unfinished Phase 44 work separate from governance commits.
 
 ## Status
 
-In implementation. UI/API behavior is implemented and live-smoke-tested; automatic
-Codex heartbeat pickup remains pending end-to-end proof after the active task yields.
+Implementation is complete through v1.4.31 and protected approval. The current
+series acceptance/handoff correction is in PR #112; the independent promotion
+audit reconciliation is tracked by #113.
 
 ## Series progress and selective queue recovery (2026-09-29)
 
@@ -38,25 +39,35 @@ and private journal at failure; a subsequent canonical updater run succeeded,
 but the promotion tool does not support audit retry from that failure stage.
 The verified online SQLite backup remains private and intact.
 
-Ordinary Settings > Stremio > Save + Sync completed for 321 active titles with
-0 errors. The affected rule is Running Point (`tt14879018`): Jellyfin records
-S02E01-08 watched and S02E09-10 present but unwatched; saved floor remains
-S02E11. Stremio currently returns no selected `video_id` and an empty/invalid
-watched bitfield for the item, so normal sync has no authoritative completion
-evidence to correct the ahead floor to S02E09. Episode 9 is not in the
-Stremio-watched keys, but required floor acceptance is not met. Do not run
-another sync, alter the production database, or close #99-#102/#97 until the
-missing Stremio watch state and failed deployment audit are diagnosed. Queue
-retry remains off by default and limited to a one-request series option; no
-production torrent was queued for testing. Project #2 remains In Progress.
+The original #97/#99 regression target is The Boys (`tt1190634`), established
+by PR #103's deterministic tests and #99's episode-9 acceptance case. Running
+Point (`tt14879018`) was chosen later as an inferred substitute because its
+live state resembled the scenario; it is not the reproduced target. The
+current read-only production DB has The Boys at floor S05E09, Jellyfin watched
+through S05E08, no existing-unwatched episodes, and Stremio-known episodes
+through S05E08 with no persisted watched keys. This does not reproduce the
+historical season-1 stale-floor case. The old raw provider payload observation
+was for Running Point and cannot establish The Boys' current raw payload.
+Classify production acceptance as C: historical reproduction is presently
+unprovable, not failed, and no implementation defect is demonstrated. Its
+effective search floor is the persisted S05E09. Do not change provider/DB
+state, run another sync, queue a production torrent, or use Running Point as
+acceptance evidence.
 
-The follow-up read-only provider query confirms Stremio itself returns
-`season=0`, `episode=0`, no `video_id`, and an empty `watched` string for
-Running Point. Release code correctly treats that bitfield as invalid. The
-effective search floor is the persisted S02E11 because rule fetching consumes
-`start_season/start_episode` directly; there is no separate derived episode-9
-floor. Retry only after authoritative Stremio watch state exists and a new
-ordinary sync can establish the required S02E09 progress.
+Deployment `6742723277` and its private journal retain their original failed
+status. Its first lifecycle audit recorded one container ID and Compose exit
+0, but Docker inspect failed both before and after Compose, leaving metadata
+empty. A later canonical updater run from the same approved checkout
+successfully audited the running healthy service with the same single-argument
+inspect template. An isolated mocked lifecycle snapshot using that template
+also passes. The initial failure is not reproduced; there is no demonstrated
+source/template defect, and the earlier undefined-`com` diagnosis is
+withdrawn. Treat it as a transient/invocation-level inspect failure. A
+separate follow-up should support recovery evidence when a later deterministic
+audit proves runtime after the deployment status has become immutable-failed.
+The series code and queue retry remain covered by merged regression tests;
+the open series acceptance is only the historical production reproduction
+boundary. Project #2 must track this separately from audit recovery.
 
 Issues #97-#102 tracked a reproduced series queue defect and initial fixes. PR
 #103 merged head `9b0c486cac3d05a2ab8f45a21a80a6c2d1bb6501` to protected main

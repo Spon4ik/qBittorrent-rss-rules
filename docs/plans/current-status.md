@@ -2,9 +2,11 @@
 
 ## 2026-09-29 series playback and selective queue recovery (#97-#102)
 
-- Issues #97-#102 are open with dependency links: #100 depends on #99; #102
-  depends on #98-#101. This feature branch starts from exact
-  `origin/main` commit `2636742861e83412644f154dcb4d8e33a7cea061`.
+- Issues #98-#101 are closed through PR #103. Parent #97 remains In Progress
+  until the release is promoted; #102 is In Progress at the approval gate.
+  Dependency links remain #100 blocked by #99 and #102 blocked by #98-#101.
+- PR #103 head `9b0c486cac3d05a2ab8f45a21a80a6c2d1bb6501` merged to exact main
+  SHA `31c5c0fdf01c7b3657489bdd1945a4b7e462253e`.
 - The implementation uses Stremio's catalog-aligned completed-watch bitfield
   as authoritative series progress, so an incomplete current episode or
   cumulative watch time cannot advance the floor. It adds an opt-in one-request
@@ -18,11 +20,28 @@
   and required-gate tests pass. The full backend gate passed Ruff and mypy; all
   679 tests passed with 1 skipped. Maintained browser check `P44-03` passes, and
   a route regression verifies the one-request option reaches queue selection.
-- WinUI Debug/x64 builds with 0 warnings and 0 errors. Docker promotion was
-  blocked by the updater's safety guard: shared Compose points at
-  `C:\Users\nucc\deployments\qBittorrent-rss-rules`, not this feature checkout.
-  The Compose context was not changed. The deployed runtime remains v1.4.28;
-  PR CI, protected merge, release and approval-gated promotion remain pending.
+- PR CI run [36562483624](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36562483624)
+  and qBittorrent API run [36562483619](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36562483619)
+  passed on the PR head. Exact-main CI
+  [36562937382](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36562937382)
+  and API integration [36562937387](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36562937387)
+  passed on merge SHA `31c5c0fdf01c7b3657489bdd1945a4b7e462253e`. WinUI
+  Debug/x64 built locally with 0 warnings and 0 errors.
+- Release staging [36563514258](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36563514258)
+  passed its Windows packaging and disposable-container smoke gates. Release
+  [v1.4.30](https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.30)
+  is published from the exact merge SHA. The 127,041,792-byte Windows ZIP
+  SHA-256 `61acda043af1cbe0e0da2eadeb788c99807d7a2980938effeda8f9f4a74026b9`
+  matches its sidecar.
+- The stale v1.4.29 approval run `36546031927` was cancelled after v1.4.30
+  source and release validation passed. New production approval run
+  [36563977371](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36563977371)
+  passed validation and waits at the protected `production-approval`
+  Environment. Production has not been promoted; `/health` remains v1.4.28.
+  The backend finalizer also stopped at its context guard because shared Compose
+  builds from `C:\Users\nucc\deployments\qBittorrent-rss-rules`, not this
+  checkout. No Compose or production state was changed. Promotion and ordinary
+  Stremio synchronization await owner approval and the stable-checkout flow.
 
 ## 2026-09-29 selective qBittorrent queue 404 repair
 

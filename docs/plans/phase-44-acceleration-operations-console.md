@@ -16,8 +16,10 @@ Codex heartbeat pickup remains pending end-to-end proof after the active task yi
 
 ## Series progress and selective queue recovery (2026-09-29)
 
-Issues #97-#102 track a new reproduced series queue defect and fixes. The
-implementation branch starts from `2636742861e83412644f154dcb4d8e33a7cea061`.
+Issues #97-#102 tracked a reproduced series queue defect and its fixes. PR #103
+merged head `9b0c486cac3d05a2ab8f45a21a80a6c2d1bb6501` to protected main as
+`31c5c0fdf01c7b3657489bdd1945a4b7e462253e`. Issues #98-#101 are Done; #97 and
+#102 remain In Progress until promotion and post-sync confirmation.
 Stremio completion is now derived from its catalog episode bitfield; a selected
 episode ID or aggregate watch time alone cannot mark an in-progress episode as
 watched. Queueing can optionally retry existing-but-unwatched files for one
@@ -27,12 +29,14 @@ for deployable changes, with commit SHA identity used for non-deployable-only
 changes. The coordinated application release target is v1.4.30.
 
 Focused regressions and maintained UI check `P44-03` pass. The full backend
-gate passes Ruff/mypy and 679 tests (1 skipped); WinUI Debug/x64 builds without
-warnings. The finalizer's Docker updater stopped at its context guard because
-shared Compose builds the protected stable checkout, not this feature branch.
-No shared Compose or production state changed. PR checks/merge and v1.4.30
-release/promotion remain pending; see [current status](current-status.md) for
-the resumable handoff.
+gate passes Ruff/mypy and 679 tests (1 skipped); WinUI Debug/x64 builds with no
+warnings. PR and exact-main CI, qBittorrent API integration, Windows packaging,
+and disposable-container smoke passed. Release v1.4.30 is published. Approval
+run [36563977371](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36563977371)
+passed source validation and waits at the protected production Environment.
+Production remains v1.4.28. The local finalizer stopped at its Compose-context
+guard; no shared Compose or production state changed. See
+[current status](current-status.md) for the resumable handoff.
 
 ## Provider and production-start follow-up (2026-09-28)
 

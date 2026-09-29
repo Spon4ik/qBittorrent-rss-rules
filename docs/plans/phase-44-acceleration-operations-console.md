@@ -43,11 +43,13 @@ The original #97/#99 regression target is The Boys (`tt1190634`), established
 by PR #103's deterministic tests and #99's episode-9 acceptance case. Running
 Point (`tt14879018`) was chosen later as an inferred substitute because its
 live state resembled the scenario; it is not the reproduced target. The
-current read-only production DB has The Boys at floor S05E09, Jellyfin watched
-through S05E08, no existing-unwatched episodes, and Stremio-known episodes
-through S05E08 with no persisted watched keys. This does not reproduce the
-historical season-1 stale-floor case. The old raw provider payload observation
-was for Running Point and cannot establish The Boys' current raw payload.
+current read-only production DB has The Boys at floor S05E09, Stremio-known
+episodes through S05E08, and no persisted Stremio-watched keys. A direct
+read-only Stremio library fetch returned `video_id=tt1190634:5:8`; the watched
+bitfield parsed as valid but yielded no watched episode keys. The configured
+live Jellyfin library has no matching `tt1190634` item, so current Jellyfin
+episode state is unavailable and any cached Jellyfin summary is historical
+only. This does not reproduce the historical season-1 stale-floor case.
 Classify production acceptance as C: historical reproduction is presently
 unprovable, not failed, and no implementation defect is demonstrated. Its
 effective search floor is the persisted S05E09. Do not change provider/DB
@@ -62,8 +64,9 @@ successfully audited the running healthy service with the same single-argument
 inspect template. An isolated mocked lifecycle snapshot using that template
 also passes. The initial failure is not reproduced; there is no demonstrated
 source/template defect, and the earlier undefined-`com` diagnosis is
-withdrawn. Treat it as a transient/invocation-level inspect failure. A
-separate follow-up should support recovery evidence when a later deterministic
+withdrawn. Its exact cause is unknown because the original updater log was
+overwritten by the successful later run. A separate follow-up should support
+recovery evidence when a later deterministic
 audit proves runtime after the deployment status has become immutable-failed.
 The series code and queue retry remain covered by merged regression tests;
 the open series acceptance is only the historical production reproduction

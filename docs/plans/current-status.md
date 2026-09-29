@@ -47,14 +47,16 @@
   acceptance scenario. Running Point (`tt14879018`) was selected later because
   its live state happened to resemble that scenario; it was an inferred
   substitute, not the reproduced rule. Current read-only production DB state
-  for The Boys is saved floor S05E09, Jellyfin watched S05E01-08, no current
-  existing-unwatched episodes, and Stremio-known episodes through S05E08 with
-  no persisted watched keys. This no longer reproduces the historical season-1
-  stale-floor case. The former provider payload evidence concerned Running
-  Point and cannot establish The Boys' current raw Stremio payload. Production
-  acceptance is therefore C: the historical case is presently unprovable,
-  not failed; no implementation defect is demonstrated. No production
-  database or provider state was changed to manufacture evidence.
+  for The Boys is saved floor S05E09, Stremio-known episodes through S05E08,
+  and no persisted Stremio-watched keys. A direct read-only Stremio library
+  fetch returned `video_id=tt1190634:5:8`; its watched bitfield parsed as valid
+  but yielded no watched episode keys. The configured live Jellyfin library
+  has no matching `tt1190634` item, so current Jellyfin episode state is
+  unavailable; any cached Jellyfin summary is historical only. This does not
+  reproduce the historical season-1 stale-floor case. Production acceptance
+  is therefore C: the historical case is presently unprovable, not failed; no
+  implementation defect is demonstrated. No production database or provider
+  state was changed to manufacture evidence.
 - The effective current The Boys search floor is the saved S05E09, because
   rule search reads `start_season/start_episode`. Running Point's prior
   S02E11 observation is retained only as a separate rule observation and is
@@ -72,7 +74,8 @@
   single PowerShell native argument and an isolated mocked snapshot with that
   expression passes. The first failure was not reproduced; no source/template
   defect is established, and the prior undefined-`com` diagnosis is withdrawn.
-  Classify it as a transient/invocation-level inspect failure. A separate
+  Its exact cause is unknown because the original updater log was overwritten
+  by the successful later run. A separate
   follow-up is needed for supported reconciliation when a later deterministic
   audit proves runtime after an immutable failed deployment status.
 - Queue behavior is covered by the exact-release full suite (692 passed, 1

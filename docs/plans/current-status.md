@@ -46,7 +46,7 @@
   builds from `C:\Users\nucc\deployments\qBittorrent-rss-rules`, not this
   checkout. No Compose or production state was changed. Promotion and ordinary
   Stremio synchronization await owner approval and the stable-checkout flow.
-- Follow-up #105 is complete through PR #106. It added Alembic migrations and
+- Follow-up #105 is complete through PR #106. The documentation closeout merged as PR #107 / main SHA `98ad9a0a34e97e41ae2e69e927093ff8b007cdcb`; PR checks passed and exact-main qB API run [36568690415](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36568690415) passed. Exact-main CI [36568690910](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36568690910) is still running. It added Alembic migrations and
   configuration, `.dockerignore`, and desktop package/installer scripts to the
   deployable classifier while preserving commit-SHA identity for docs, tests,
   and tooling-only changes. PR checks passed, and exact-main CI/API checks passed

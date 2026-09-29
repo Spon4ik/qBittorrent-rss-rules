@@ -12,7 +12,12 @@
   hosted runners are free for this public repository, and persistent self-hosted
   execution adds unnecessary exposure to untrusted public pull requests.
 
-## Current release state: v1.4.28 published; Phase 44 active (2026-09-28)
+## Current release state: v1.4.29 published; Phase 44 active (2026-09-29)
+
+- v1.4.29 fixes selective qBittorrent series queueing: file-priority 404s now
+  preserve the API's hash-not-found error, and selection waits for the added
+  torrent to become visible before setting priorities. Release is published;
+  production promotion awaits the protected approval and stable-checkout flow.
 
 - The only pre-existing open product issue is #47, a Stremio library sync report.
   Live read-only inspection found no `tt39062868` in the configured library and

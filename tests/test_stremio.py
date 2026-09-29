@@ -440,17 +440,46 @@ def test_stremio_collect_watch_progress_ignores_whole_series_watched_flags_for_e
         },
     )
 
-    monkeypatch.setattr(
-        service,
-        "_series_video_ids",
-        lambda imdb_id: ["tt1190634:5:1", "tt1190634:5:2", "tt1190634:5:5"],
-    )
+    monkeypatch.setattr(service, "_series_video_ids", lambda imdb_id: [])
 
     record = service._watch_progress_record_from_payload(payload)
 
     assert record is not None
     assert record.item_key == "tt1190634:S05E05"
     assert not record.completed
+
+
+def test_stremio_series_progress_uses_completed_bitfield_not_selected_episode_or_aggregate_time(
+    monkeypatch,
+) -> None:
+    service = StremioService(AppSettings(id="default"))
+    video_ids = [f"tt1190634:1:{episode}" for episode in range(1, 11)]
+    watched = ""
+    for video_id in video_ids[:8]:
+        watched = service._watched_bitfield_set_video(
+            watched, "tt1190634", video_id, True
+        )
+    payload = stremio_library_item(
+        "tt1190634",
+        "The Boys",
+        state_overrides={
+            "video_id": "tt1190634:1:9",
+            "watched": watched,
+            "timeWatched": 29_000,
+            "overallTimeWatched": 1_436_084,
+            "duration": 30_000,
+        },
+    )
+    monkeypatch.setattr(service, "_series_video_ids", lambda _imdb_id: video_ids)
+
+    item = service._library_item_from_payload(payload)
+    record = service._watch_progress_record_from_payload(payload)
+
+    assert item is not None
+    assert item.latest_watched_episode_key == "S01E08"
+    assert record is not None
+    assert record.item_key == "tt1190634:S01E09"
+    assert record.completed is False
 
 
 def test_stremio_write_watch_progress_clears_episode_bit_for_in_progress_record(
@@ -595,6 +624,122 @@ def test_stremio_sync_creates_missing_managed_rule(
     assert created_rule.add_paused is True
     assert created_rule.feed_urls == ["http://feed.example/default"]
     assert created_rule.assigned_category.startswith("Series/3 Body Problem")
+
+
+def test_stremio_sync_corrects_incomplete_current_episode_to_bitfield_progress(
+    db_session, monkeypatch, tmp_path
+) -> None:
+    storage_path = create_stremio_local_storage(tmp_path)
+    settings = AppSettings(
+        id="default",
+        stremio_local_storage_path=str(storage_path),
+        stremio_auto_sync_enabled=True,
+        stremio_auto_sync_interval_seconds=30,
+    )
+    rule = Rule(
+        rule_name="The Boys",
+        content_name="The Boys",
+        normalized_title="The Boys",
+        imdb_id="tt1190634",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=1,
+        start_episode=9,
+        stremio_library_item_id="tt1190634",
+        stremio_library_item_type="series",
+        stremio_managed=True,
+        stremio_known_episode_numbers=[f"S01E{episode:02d}" for episode in range(1, 11)],
+        stremio_watched_episode_numbers=[f"S01E{episode:02d}" for episode in range(1, 9)]
+        + ["S01E09"],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    service = StremioService(settings)
+    video_ids = [f"tt1190634:1:{episode}" for episode in range(1, 11)]
+    watched = ""
+    for video_id in video_ids[:8]:
+        watched = service._watched_bitfield_set_video(watched, "tt1190634", video_id, True)
+    monkeypatch.setattr(service, "_series_video_ids", lambda _imdb_id: video_ids)
+    _install_stremio_api(
+        monkeypatch,
+        items=[
+            stremio_library_item(
+                "tt1190634",
+                "The Boys",
+                state_overrides={
+                    "video_id": "tt1190634:1:9",
+                    "watched": watched,
+                    "timeWatched": 29_000,
+                    "overallTimeWatched": 1_436_084,
+                    "duration": 30_000,
+                },
+            )
+        ],
+    )
+
+    service.sync_rules(db_session)
+    db_session.refresh(rule)
+
+    assert (rule.start_season, rule.start_episode) == (1, 9)
+    assert "S01E09" not in rule.stremio_watched_episode_numbers
+
+
+def test_stremio_sync_does_not_advance_past_failed_in_progress_episode(
+    db_session, monkeypatch, tmp_path
+) -> None:
+    storage_path = create_stremio_local_storage(tmp_path)
+    settings = AppSettings(
+        id="default",
+        stremio_local_storage_path=str(storage_path),
+        stremio_auto_sync_enabled=True,
+        stremio_auto_sync_interval_seconds=30,
+    )
+    rule = Rule(
+        rule_name="The Boys",
+        content_name="The Boys",
+        normalized_title="The Boys",
+        imdb_id="tt1190634",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=1,
+        start_episode=11,
+        stremio_library_item_id="tt1190634",
+        stremio_library_item_type="series",
+        stremio_managed=True,
+        stremio_known_episode_numbers=[f"S01E{episode:02d}" for episode in range(1, 11)],
+        stremio_watched_episode_numbers=[f"S01E{episode:02d}" for episode in range(1, 8)],
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+    service = StremioService(settings)
+    video_ids = [f"tt1190634:1:{episode}" for episode in range(1, 11)]
+    monkeypatch.setattr(service, "_series_video_ids", lambda _imdb_id: video_ids)
+    watched = ""
+    for video_id in video_ids[:8]:
+        watched = service._watched_bitfield_set_video(watched, "tt1190634", video_id, True)
+    _install_stremio_api(
+        monkeypatch,
+        items=[
+            stremio_library_item(
+                "tt1190634",
+                "The Boys",
+                state_overrides={
+                    "video_id": "tt1190634:1:9",
+                    "watched": watched,
+                    "timeWatched": 29_000,
+                    "overallTimeWatched": 1_436_084,
+                    "duration": 30_000,
+                },
+            )
+        ],
+    )
+
+    service.sync_rules(db_session)
+    db_session.refresh(rule)
+
+    assert (rule.start_season, rule.start_episode) == (1, 9)
+    assert "S01E09" not in rule.stremio_watched_episode_numbers
 
 
 def test_stremio_sync_repairs_existing_unseen_rule_defaults(
@@ -804,6 +949,15 @@ def test_stremio_sync_disables_finished_series_when_latest_known_episode_is_watc
         "_known_episode_numbers_for_season",
         lambda self, **kwargs: [1, 2, 3] if kwargs["season_number"] == 1 else None,
     )
+    monkeypatch.setattr(
+        StremioService,
+        "_series_video_ids",
+        lambda self, imdb_id: [f"{imdb_id}:1:{episode}" for episode in range(1, 4)],
+    )
+    completion_service = StremioService(settings)
+    watched = completion_service._watched_bitfield_set_video(
+        "", "tt1234500", "tt1234500:1:3", True
+    )
     _install_stremio_api(
         monkeypatch,
         items=[
@@ -811,7 +965,7 @@ def test_stremio_sync_disables_finished_series_when_latest_known_episode_is_watc
                 "tt1234500",
                 "Finished Show",
                 item_type="series",
-                state_overrides={"video_id": "tt1234500:1:3"},
+                state_overrides={"video_id": "tt1234500:1:3", "watched": watched},
             )
         ],
     )

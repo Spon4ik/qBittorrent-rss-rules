@@ -3521,6 +3521,21 @@ function initResultQueueActions(root = document) {
 
   const queueOptionContainers = Array.from(root.querySelectorAll("[data-result-queue-options]"));
   const statusElements = Array.from(root.querySelectorAll("[data-result-queue-status]"));
+  const statusWraps = Array.from(root.querySelectorAll("[data-result-queue-status-wrap]"));
+
+  for (const dismissButton of root.querySelectorAll("[data-result-queue-dismiss]")) {
+    dismissButton.addEventListener("click", () => {
+      const wrap = dismissButton.closest("[data-result-queue-status-wrap]");
+      const status = wrap?.querySelector("[data-result-queue-status]");
+      if (status) {
+        status.textContent = "";
+        status.style.color = "";
+      }
+      if (wrap) {
+        wrap.hidden = true;
+      }
+    });
+  }
 
   const resolveQueueOptionContainer = (button) => {
     const localScope = button.closest("[data-search-page], #inline-search-results");
@@ -3548,6 +3563,10 @@ function initResultQueueActions(root = document) {
     for (const statusElement of resolveStatusTargets(button)) {
       statusElement.textContent = message;
       statusElement.style.color = isError ? "var(--danger)" : "";
+      const wrap = statusElement.closest("[data-result-queue-status-wrap]");
+      if (wrap) {
+        wrap.hidden = !message;
+      }
     }
   };
 
@@ -3556,10 +3575,12 @@ function initResultQueueActions(root = document) {
     const pausedInput = optionsContainer?.querySelector('[data-result-queue-option="paused"]');
     const sequentialInput = optionsContainer?.querySelector('[data-result-queue-option="sequential"]');
     const firstLastInput = optionsContainer?.querySelector('[data-result-queue-option="first_last_piece_prio"]');
+    const retryExistingInput = optionsContainer?.querySelector('[data-result-queue-option="retry_existing_unwatched"]');
     return {
       addPaused: pausedInput ? Boolean(pausedInput.checked) : true,
       sequentialDownload: Boolean(sequentialInput?.checked),
       firstLastPiecePrio: Boolean(firstLastInput?.checked),
+      retryExistingUnwatched: Boolean(retryExistingInput?.checked),
     };
   };
 
@@ -3604,6 +3625,7 @@ function initResultQueueActions(root = document) {
             add_paused: queueOptions.addPaused,
             sequential_download: queueOptions.sequentialDownload,
             first_last_piece_prio: queueOptions.firstLastPiecePrio,
+            retry_existing_unwatched: queueOptions.retryExistingUnwatched,
             source_kind: sourceKind,
             provider_id: providerId || null,
             queue_capability: queueCapability,
@@ -3628,6 +3650,10 @@ function initResultQueueActions(root = document) {
           .filter(Boolean)
           .join(" ");
         setQueueStatus(button, queueSummary);
+        const retryExistingInput = resolveQueueOptionContainer(button)?.querySelector('[data-result-queue-option="retry_existing_unwatched"]');
+        if (retryExistingInput) {
+          retryExistingInput.checked = false;
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Could not queue this result.";
         setQueueStatus(button, message, true);

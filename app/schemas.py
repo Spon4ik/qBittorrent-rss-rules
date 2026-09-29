@@ -465,6 +465,7 @@ class SearchQueueRequest(BaseModel):
     add_paused: bool | None = None
     sequential_download: bool = False
     first_last_piece_prio: bool = False
+    retry_existing_unwatched: bool = False
     source_kind: SearchSourceKind = SearchSourceKind.JACKETT_ACTIVE_SEARCH
     provider_id: str | None = None
     queue_capability: str = "qbittorrent"

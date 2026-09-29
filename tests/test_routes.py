@@ -99,7 +99,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.29"
+    assert payload["app_version"] == "1.4.30"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -4322,6 +4322,28 @@ def test_queue_search_result_api_uses_rule_defaults(app_client, db_session, monk
     }
 
 
+def test_retry_existing_unwatched_is_rejected_without_series_rule(app_client, db_session) -> None:
+    settings = AppSettings(
+        id="default",
+        qb_base_url="http://localhost:8080",
+        qb_username="admin",
+        qb_password_encrypted=obfuscate_secret("secret"),
+    )
+    db_session.add(settings)
+    db_session.commit()
+
+    response = app_client.post(
+        "/api/search/queue",
+        json={
+            "link": "https://example.com/result.torrent",
+            "retry_existing_unwatched": True,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "only for a series rule" in response.json()["error"]
+
+
 def test_queue_search_result_api_defaults_paused_without_rule_and_allows_one_time_override(
     app_client, db_session, monkeypatch
 ) -> None:
@@ -4928,15 +4950,21 @@ def test_queue_search_result_api_reports_missing_only_selection_details(
     db_session.add_all([settings, rule])
     db_session.commit()
 
-    monkeypatch.setattr(
-        "app.routes.api.queue_result_with_optional_file_selection",
-        lambda **kwargs: SimpleNamespace(
-            message="Queued only missing/unseen episode files (2 selected, 1 skipped).",
-            selected_file_count=2,
-            skipped_file_count=1,
+    captured: dict[str, object] = {}
+
+    def fake_queue_result(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            message="Queued only existing unwatched episode files (1 selected, 0 skipped).",
+            selected_file_count=1,
+            skipped_file_count=0,
             deferred_file_selection=False,
             queued_via_torrent_file=True,
-        ),
+        )
+
+    monkeypatch.setattr(
+        "app.routes.api.queue_result_with_optional_file_selection",
+        fake_queue_result,
     )
 
     response = app_client.post(
@@ -4944,16 +4972,18 @@ def test_queue_search_result_api_reports_missing_only_selection_details(
         json={
             "link": "https://example.com/shrinking-s03.torrent",
             "rule_id": rule.id,
+            "retry_existing_unwatched": True,
         },
     )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["message"] == "Queued only missing/unseen episode files (2 selected, 1 skipped)."
-    assert payload["selected_file_count"] == 2
-    assert payload["skipped_file_count"] == 1
+    assert payload["message"] == "Queued only existing unwatched episode files (1 selected, 0 skipped)."
+    assert payload["selected_file_count"] == 1
+    assert payload["skipped_file_count"] == 0
     assert payload["queued_via_torrent_file"] is True
     assert payload["deferred_file_selection"] is False
+    assert captured["retry_existing_unwatched"] is True
 
 
 def test_queue_search_result_api_uses_grouped_queue_flow(app_client, db_session, monkeypatch) -> None:

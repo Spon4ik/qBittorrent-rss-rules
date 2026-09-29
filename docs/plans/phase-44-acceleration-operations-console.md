@@ -14,6 +14,26 @@ unfinished Phase 44 work separate from governance commits.
 In implementation. UI/API behavior is implemented and live-smoke-tested; automatic
 Codex heartbeat pickup remains pending end-to-end proof after the active task yields.
 
+## Series progress and selective queue recovery (2026-09-29)
+
+Issues #97-#102 track a new reproduced series queue defect and fixes. The
+implementation branch starts from `2636742861e83412644f154dcb4d8e33a7cea061`.
+Stremio completion is now derived from its catalog episode bitfield; a selected
+episode ID or aggregate watch time alone cannot mark an in-progress episode as
+watched. Queueing can optionally retry existing-but-unwatched files for one
+request, while still excluding watched episodes. Result queue errors can be
+dismissed. CI also requires a synchronized SemVer increment and release notes
+for deployable changes, with commit SHA identity used for non-deployable-only
+changes. The coordinated application release target is v1.4.30.
+
+Focused regressions and maintained UI check `P44-03` pass. The full backend
+gate passes Ruff/mypy and 679 tests (1 skipped); WinUI Debug/x64 builds without
+warnings. The finalizer's Docker updater stopped at its context guard because
+shared Compose builds the protected stable checkout, not this feature branch.
+No shared Compose or production state changed. PR checks/merge and v1.4.30
+release/promotion remain pending; see [current status](current-status.md) for
+the resumable handoff.
+
 ## Provider and production-start follow-up (2026-09-28)
 
 - Issue #88 is closed as **cleanup recommended but not required**. The completed

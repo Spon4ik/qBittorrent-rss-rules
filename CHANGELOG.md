@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.30] - 2026-09-29
+
+- Correct Stremio series progress from completed episode watches, add an opt-in one-request retry for existing unwatched files, and make queue status messages dismissible.
+- Enforce synchronized SemVer increments for deployable application changes in CI; use the exact commit SHA as the identity for documentation and tooling-only changes.
+
 ## [1.4.29] - 2026-09-29
 
 - Fix selective series queueing by waiting for qBittorrent to register the torrent before applying file priorities; preserve the API's original 404 when its hash is not found.

@@ -1,5 +1,29 @@
 # Current Status
 
+## 2026-09-29 series playback and selective queue recovery (#97-#102)
+
+- Issues #97-#102 are open with dependency links: #100 depends on #99; #102
+  depends on #98-#101. This feature branch starts from exact
+  `origin/main` commit `2636742861e83412644f154dcb4d8e33a7cea061`.
+- The implementation uses Stremio's catalog-aligned completed-watch bitfield
+  as authoritative series progress, so an incomplete current episode or
+  cumulative watch time cannot advance the floor. It adds an opt-in one-request
+  retry for files already present but still unwatched; Jellyfin-watched files
+  remain excluded. Queue result messages now have a dismiss control.
+- CI gains a required version-policy lane: deployable code, desktop, Docker, or
+  release dependency changes require a synchronized higher SemVer and release
+  notes; docs/tests/tooling-only changes retain their exact commit SHA as the
+  identity. The coordinated app version is `1.4.30`.
+- Focused Stremio, watch-state, queue-selection, route, UI-asset, version-policy,
+  and required-gate tests pass. The full backend gate passed Ruff and mypy; all
+  679 tests passed with 1 skipped. Maintained browser check `P44-03` passes, and
+  a route regression verifies the one-request option reaches queue selection.
+- WinUI Debug/x64 builds with 0 warnings and 0 errors. Docker promotion was
+  blocked by the updater's safety guard: shared Compose points at
+  `C:\Users\nucc\deployments\qBittorrent-rss-rules`, not this feature checkout.
+  The Compose context was not changed. The deployed runtime remains v1.4.28;
+  PR CI, protected merge, release and approval-gated promotion remain pending.
+
 ## 2026-09-29 selective qBittorrent queue 404 repair
 
 - A reported missing-only series queue failed after the client received HTTP

@@ -108,6 +108,9 @@ class StremioLibraryItem:
     temp: bool
     completed: bool
     latest_watched_episode_key: str | None = None
+    known_episode_keys: tuple[str, ...] = ()
+    watched_episode_keys: tuple[str, ...] = ()
+    watched_bitfield_valid: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,16 +237,12 @@ def _stremio_state_indicates_completion(value: object) -> bool:
         return True
     if _stremio_int(value.get("timesWatched")) > 0:
         return True
-    watched_marker = str(value.get("watched") or "").strip()
-    if watched_marker:
+    if str(value.get("watched") or "").strip():
         return True
     duration = _stremio_int(value.get("duration"))
     if duration <= 0:
         return False
-    watched_time = max(
-        _stremio_int(value.get("overallTimeWatched")),
-        _stremio_int(value.get("timeWatched")),
-    )
+    watched_time = _stremio_int(value.get("timeWatched"))
     return watched_time >= int(duration * 0.95)
 
 
@@ -253,10 +252,7 @@ def _stremio_state_position_is_complete(value: object) -> bool:
     duration = _stremio_int(value.get("duration"))
     if duration <= 0:
         return False
-    watched_time = max(
-        _stremio_int(value.get("overallTimeWatched")),
-        _stremio_int(value.get("timeWatched")),
-    )
+    watched_time = _stremio_int(value.get("timeWatched"))
     return watched_time >= int(duration * 0.95)
 
 
@@ -281,6 +277,20 @@ def _stremio_video_id_from_watch_record(record: WatchProgressRecord) -> str | No
         f"{int(match.group('season'))}:"
         f"{int(match.group('episode'))}"
     )
+
+
+def _stremio_video_id_episode_key(video_id: str) -> str | None:
+    parts = str(video_id or "").split(":")
+    if len(parts) < 3:
+        return None
+    try:
+        season_number = int(parts[1])
+        episode_number = int(parts[2])
+    except ValueError:
+        return None
+    if season_number < 0 or episode_number < 0:
+        return None
+    return f"S{season_number:02d}E{episode_number:02d}"
 
 
 def _pack_watched_bitfield(values: list[bool]) -> str:
@@ -703,13 +713,14 @@ class StremioService:
             item_key = f"{imdb_id}:S{season_number:02d}E{episode_number:02d}"
             media_type = "episode"
             provider_video_id = video_id
-            completed = _stremio_state_position_is_complete(state)
-            if not completed:
-                completed = self._watched_bitfield_get_video(
-                    str(state.get("watched") or ""),
-                    self._series_video_ids(imdb_id),
-                    video_id,
+            video_ids = self._series_video_ids(imdb_id)
+            completed = (
+                self._watched_bitfield_get_video(
+                    str(state.get("watched") or ""), video_ids, video_id
                 )
+                if video_ids
+                else False
+            )
 
         if position_ms <= 0 and not completed:
             return None
@@ -813,7 +824,11 @@ class StremioService:
             return serialized
         values = self._watched_bitfield_values(serialized, video_ids)
         values[video_ids.index(video_id)] = watched
-        return f"{video_ids[-1]}:{len(video_ids)}:{_pack_watched_bitfield(values)}"
+        last_index = max(index for index, candidate in enumerate(video_ids) if candidate == video_id) + 1
+        return (
+            f"{video_ids[last_index - 1]}:{last_index}:{last_index}:"
+            f"{_pack_watched_bitfield(values[:last_index])}"
+        )
 
     @staticmethod
     def _watched_bitfield_values(serialized: str, video_ids: list[str]) -> list[bool]:
@@ -826,15 +841,25 @@ class StremioService:
             return blank
         serialized_payload = components[-1]
         try:
-            previous_length = int(components[-2])
+            if len(components) >= 4 and components[-3] == components[-2]:
+                previous_length = int(components[-3])
+                previous_last_video_id = ":".join(components[:-3])
+            else:
+                previous_length = int(components[-2])
+                previous_last_video_id = ":".join(components[:-2])
         except ValueError:
             return blank
-        previous_last_video_id = ":".join(components[:-2])
         try:
             previous_values = _unpack_watched_bitfield(serialized_payload, previous_length)
         except (ValueError, zlib.error):
             return blank
-        previous_last_index = video_ids.index(previous_last_video_id) if previous_last_video_id in video_ids else -1
+        previous_last_index = (
+            video_ids.index(previous_last_video_id)
+            if previous_last_video_id in video_ids
+            else -1
+        )
+        if previous_last_index < 0 and previous_last_video_id.split(":")[-1].isdigit():
+            previous_last_index = int(previous_last_video_id.split(":")[-1]) - 1
         offset = (previous_length - 1) - previous_last_index
         if previous_last_index == -1 or offset < 0:
             return blank
@@ -854,6 +879,12 @@ class StremioService:
             return False
         values = self._watched_bitfield_values(serialized, video_ids)
         return values[video_ids.index(video_id)]
+
+    @staticmethod
+    def _watched_bitfield_video_ids(serialized: str, video_ids: list[str]) -> list[str]:
+        """Return catalog episode IDs marked watched by Stremio's serialized bitfield."""
+        values = StremioService._watched_bitfield_values(serialized, video_ids)
+        return [video_id for video_id, watched in zip(video_ids, values, strict=True) if watched]
 
     def _fetch_library_meta(self, auth_key: str) -> list[tuple[str, int]]:
         payload = {
@@ -923,6 +954,9 @@ class StremioService:
             return None
         completed = False
         latest_watched_episode_key = None
+        known_episode_keys: tuple[str, ...] = ()
+        watched_episode_keys: tuple[str, ...] = ()
+        watched_bitfield_valid = False
         state = payload.get("state")
         if isinstance(state, dict):
             if media_type == MediaType.MOVIE:
@@ -930,16 +964,29 @@ class StremioService:
             elif media_type == MediaType.SERIES:
                 video_id_str = str(state.get("video_id") or "").strip()
                 watched_str = str(state.get("watched") or "").strip()
-                match_str = video_id_str or watched_str
-                if match_str and ":" in match_str:
-                    parts = match_str.split(":")
-                    if len(parts) >= 3:
-                        try:
-                            season_num = int(parts[1])
-                            episode_num = int(parts[2])
-                            latest_watched_episode_key = f"S{season_num:02d}E{episode_num:02d}"
-                        except ValueError:
-                            pass
+                video_ids = self._series_video_ids(_stremio_item_imdb_id(item_id) or "")
+                watched_bitfield_valid = self._has_valid_watched_bitfield(
+                    watched_str, video_ids
+                )
+                known_episode_keys = tuple(
+                    episode_key
+                    for video_id in video_ids
+                    if (episode_key := _stremio_video_id_episode_key(video_id)) is not None
+                )
+                watched_episode_keys = tuple(
+                    episode_key
+                    for video_id in (
+                        self._watched_bitfield_video_ids_validated(watched_str, video_ids)
+                        if watched_bitfield_valid
+                        else ([video_id_str] if video_id_str and ":" in video_id_str else [])
+                    )
+                    if (episode_key := _stremio_video_id_episode_key(video_id)) is not None
+                )
+                if watched_episode_keys:
+                    latest_watched_episode_key = max(
+                        watched_episode_keys,
+                        key=lambda key: (int(key[1:3]), int(key[4:6])),
+                    )
 
         return StremioLibraryItem(
             item_id=item_id,
@@ -952,7 +999,35 @@ class StremioService:
             temp=bool(payload.get("temp", False)),
             completed=completed,
             latest_watched_episode_key=latest_watched_episode_key,
+            known_episode_keys=known_episode_keys,
+            watched_episode_keys=watched_episode_keys,
+            watched_bitfield_valid=watched_bitfield_valid,
         )
+
+    @staticmethod
+    def _has_valid_watched_bitfield(serialized: str, video_ids: list[str]) -> bool:
+        components = str(serialized or "").strip().split(":")
+        if len(components) < 3 or not video_ids:
+            return False
+        try:
+            if len(components) >= 4 and components[-3] == components[-2]:
+                length = int(components[-3])
+                last_video_id = ":".join(components[:-3])
+            else:
+                length = int(components[-2])
+                last_video_id = ":".join(components[:-2])
+            _unpack_watched_bitfield(components[-1], length)
+        except (ValueError, zlib.error):
+            return False
+        return length > 0 and (last_video_id in video_ids or last_video_id.split(":")[-1].isdigit())
+
+    @staticmethod
+    def _watched_bitfield_video_ids_validated(
+        serialized: str, video_ids: list[str]
+    ) -> list[str]:
+        if not StremioService._has_valid_watched_bitfield(serialized, video_ids):
+            return []
+        return StremioService._watched_bitfield_video_ids(serialized, video_ids)
 
     @staticmethod
     def _active_sync_items(items: list[StremioLibraryItem]) -> list[StremioLibraryItem]:
@@ -1253,19 +1328,33 @@ class StremioService:
         item: StremioLibraryItem,
         rule: Rule,
     ) -> WatchStateDerivedFloor | None:
-        episode_keys = [item.latest_watched_episode_key] if item.latest_watched_episode_key else []
-        remembered_known = normalize_stremio_episode_keys(
-            list(getattr(rule, "stremio_known_episode_numbers", []) or [])
-        )
+        episode_keys = list(item.known_episode_keys)
+        bitfield_valid = item.watched_bitfield_valid
+        if not episode_keys and item.latest_watched_episode_key:
+            episode_keys = [item.latest_watched_episode_key]
         remembered_watched = normalize_stremio_episode_keys(
             list(getattr(rule, "stremio_watched_episode_numbers", []) or [])
+        )
+        watched_episode_keys = (
+            list(item.watched_episode_keys)
+            if item.watched_episode_keys or bitfield_valid
+            else remembered_watched
+        )
+        remembered_known = normalize_stremio_episode_keys(
+            list(getattr(rule, "stremio_known_episode_numbers", []) or [])
         )
         return derive_watch_state_floor(
             source_label="Stremio",
             current_episode_numbers=episode_keys,
-            current_watched_episode_numbers=episode_keys,
-            remembered_known_episode_numbers=remembered_known,
-            remembered_watched_episode_numbers=remembered_watched,
+            current_watched_episode_numbers=watched_episode_keys,
+            remembered_known_episode_numbers=(
+                remembered_known if not item.known_episode_keys else []
+            ),
+            remembered_watched_episode_numbers=(
+                remembered_watched
+                if not bitfield_valid
+                else [key for key in remembered_watched if key in watched_episode_keys]
+            ),
             next_floor_after_episode=lambda current_episode: self._next_floor_after_episode(
                 item=item,
                 rule=rule,
@@ -1295,6 +1384,10 @@ class StremioService:
                 getattr(rule, "jellyfin_search_existing_unseen", False)
             ),
             source_label="Stremio",
+            correct_ahead_floor=(
+                item.watched_bitfield_valid
+                and bool(derived_floor.watched_episode_numbers)
+            ),
         )
         series_completion = self._series_completion_selection(
             item=item,
@@ -1365,7 +1458,11 @@ class StremioService:
             current_enabled=current_enabled,
             current_auto_disabled=current_auto_disabled,
             keep_searching_existing_unseen=keep_searching_existing_unseen,
-            existing_unseen_episode_numbers=derived_floor.existing_unseen_episode_numbers,
+            existing_unseen_episode_numbers=(
+                derived_floor.existing_unseen_episode_numbers
+                if keep_searching_existing_unseen
+                else []
+            ),
         )
 
     def _series_is_finished_and_watched(
@@ -1377,7 +1474,12 @@ class StremioService:
     ) -> bool:
         latest_known = latest_watch_state_episode_tuple(derived_floor.known_episode_numbers)
         latest_watched = latest_watch_state_episode_tuple(derived_floor.watched_episode_numbers)
-        if latest_known is None or latest_watched is None or latest_watched < latest_known:
+        if (
+            latest_known is None
+            or latest_watched is None
+            or latest_watched < latest_known
+            or (item.known_episode_keys and not item.watched_bitfield_valid)
+        ):
             return False
         catalog_imdb_id = self._resolve_catalog_imdb_id(item=item, rule=rule)
         if self._series_catalog.series_is_known_ended(catalog_imdb_id) is False:

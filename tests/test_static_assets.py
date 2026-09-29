@@ -55,6 +55,20 @@ def test_queue_ui_exposes_only_rule_and_one_time_pause_overrides() -> None:
     assert 'data-result-queue-option="paused"' in search_template
 
 
+def test_result_queue_status_messages_can_be_dismissed_and_retry_option_is_off_by_default() -> None:
+    rule_template = RULE_FORM_TEMPLATE_PATH.read_text(encoding="utf-8")
+    search_template = SEARCH_TEMPLATE_PATH.read_text(encoding="utf-8")
+    js = APP_JS_PATH.read_text(encoding="utf-8")
+
+    for template in (rule_template, search_template):
+        assert 'data-result-queue-option="retry_existing_unwatched"' in template
+        assert 'data-result-queue-dismiss' in template
+        assert 'data-result-queue-status-wrap' in template
+        assert 'checked' not in template.split('data-result-queue-option="retry_existing_unwatched"', 1)[1].split(">", 1)[0]
+    assert 'dismissButton.addEventListener("click"' in js
+    assert 'wrap.hidden = true' in js
+
+
 def test_result_toolbar_uses_shared_non_reflowing_menu_contract() -> None:
     rule_template = RULE_FORM_TEMPLATE_PATH.read_text(encoding="utf-8")
     search_template = SEARCH_TEMPLATE_PATH.read_text(encoding="utf-8")

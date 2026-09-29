@@ -317,11 +317,20 @@
           <input type="checkbox" data-result-queue-option="first_last_piece_prio" {% if queue_defaults.first_last_piece_prio %}checked{% endif %} />
           <span>First and last pieces first</span>
         </label>
+        {% if search_run.rule_id %}
+        <label class="toggle">
+          <input type="checkbox" data-result-queue-option="retry_existing_unwatched" />
+          <span>Retry existing unwatched episodes once</span>
+        </label>
+        {% endif %}
         </div>
       </details>
     </div>
   </div>
-  <p class="helper-text" data-result-queue-status aria-live="polite"></p>
+  <div class="queue-status-wrap" data-result-queue-status-wrap hidden>
+    <p class="helper-text" data-result-queue-status aria-live="polite"></p>
+    <button type="button" class="button-link queue-status-dismiss" data-result-queue-dismiss aria-label="Dismiss queue message">Dismiss</button>
+  </div>
 </section>
 </div>
 <section class="summary-strip search-summary" data-search-summary="combined">

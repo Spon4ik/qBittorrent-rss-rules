@@ -686,6 +686,103 @@ def test_queue_result_with_optional_file_selection_rejects_torrents_without_miss
         )
 
 
+def test_queue_result_with_optional_file_selection_can_retry_existing_unwatched_episodes(
+    monkeypatch,
+) -> None:
+    torrent_bytes = _build_multi_file_torrent_bytes("Shrinking.S03E09.mkv")
+    rule = Rule(
+        rule_name="Shrinking Rule",
+        content_name="Shrinking",
+        normalized_title="Shrinking",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=3,
+        start_episode=9,
+        jellyfin_known_episode_numbers=["S03E09"],
+        jellyfin_watched_episode_numbers=["S03E08"],
+        feed_urls=["http://feed.example/shrinking"],
+    )
+    monkeypatch.setattr(
+        "app.services.selective_queue._download_torrent_bytes",
+        lambda link: (torrent_bytes, "shrinking-s03.torrent"),
+    )
+    queued: list[bytes] = []
+    monkeypatch.setattr(
+        "app.services.selective_queue.QbittorrentClient.add_torrent_file",
+        lambda _self, **kwargs: queued.append(kwargs["torrent_bytes"]),
+    )
+    monkeypatch.setattr(
+        "app.services.selective_queue._wait_for_qb_torrent", lambda _client, _info_hash: True
+    )
+    monkeypatch.setattr(
+        "app.services.selective_queue.QbittorrentClient.set_file_priority",
+        lambda _self, *_args, **_kwargs: None,
+    )
+
+    result = queue_result_with_optional_file_selection(
+        qb_base_url="http://127.0.0.1:8080",
+        qb_username="admin",
+        qb_password="secret",
+        link="https://example.com/shrinking-s03.torrent",
+        category="Series/Shrinking",
+        save_path="/data/shrinking",
+        paused=False,
+        sequential_download=True,
+        first_last_piece_prio=True,
+        rule=rule,
+        retry_existing_unwatched=True,
+    )
+
+    assert result.selected_file_count == 1
+    assert "existing unwatched" in result.message
+    assert queued == [torrent_bytes]
+
+    with pytest.raises(SelectiveQueueError, match="No missing/unseen episode files"):
+        queue_result_with_optional_file_selection(
+            qb_base_url="http://127.0.0.1:8080",
+            qb_username="admin",
+            qb_password="secret",
+            link="https://example.com/shrinking-s03.torrent",
+            category="Series/Shrinking",
+            save_path="/data/shrinking",
+            paused=False,
+            sequential_download=True,
+            first_last_piece_prio=True,
+            rule=rule,
+        )
+
+
+def test_retry_existing_unwatched_still_excludes_watched_episodes() -> None:
+    rule = Rule(
+        rule_name="Series",
+        content_name="Series",
+        normalized_title="Series",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        start_season=1,
+        start_episode=1,
+        jellyfin_known_episode_numbers=["S01E01", "S01E02", "S01E03"],
+        jellyfin_watched_episode_numbers=["S01E01"],
+    )
+
+    plan = build_episode_file_selection_plan(rule)
+    assert plan is not None
+    from app.services.selective_queue import _episode_file_selection_plan
+
+    retry_plan = _episode_file_selection_plan(rule, include_existing_unwatched=True)
+    assert retry_plan is not None
+    result = select_missing_episode_file_ids(
+        [
+            TorrentFileEntry(file_id=0, path="Series.S01E01.mkv"),
+            TorrentFileEntry(file_id=1, path="Series.S01E02.mkv"),
+            TorrentFileEntry(file_id=2, path="Series.S01E03.mkv"),
+        ],
+        retry_plan,
+    )
+
+    assert result.selected_file_ids == [1, 2]
+
+
 def test_build_magnet_link_includes_display_name_and_unique_trackers() -> None:
     magnet_link = build_magnet_link(
         info_hash="abcdef1234567890abcdef1234567890abcdef12",

@@ -5,11 +5,12 @@ from __future__ import annotations
 import os
 import sys
 
-REQUIRED_LANES = ("backend-checks", "browser-ui", "desktop-build")
+REQUIRED_LANES = ("backend-checks", "browser-ui", "desktop-build", "version-policy")
 _RESULT_ENV = {
     "backend-checks": "BACKEND_CHECKS_RESULT",
     "browser-ui": "BROWSER_UI_RESULT",
     "desktop-build": "DESKTOP_BUILD_RESULT",
+    "version-policy": "VERSION_POLICY_RESULT",
 }
 
 

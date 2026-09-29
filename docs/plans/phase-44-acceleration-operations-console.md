@@ -27,7 +27,7 @@ valid watched-bitfield-only completion evidence, remembered-history fallback,
 failed-request retry reset and series-only controls, and real browser coverage
 of standalone plus rule inline-search dismissal. Continue from protected main
 `94679fe44f5b740fb74ba2bb61f6358a687bbfd8` on the corrective feature branch.
-Production must remain untouched until a fresh v1.4.31 approval is accepted.
+Production remains v1.4.28. Continue only after owner approval; then promote through the documented stable-checkout flow and verify the ordinary Stremio sync.
 
 Issues #97-#102 tracked a reproduced series queue defect and initial fixes. PR
 #103 merged head `9b0c486cac3d05a2ab8f45a21a80a6c2d1bb6501` to protected main

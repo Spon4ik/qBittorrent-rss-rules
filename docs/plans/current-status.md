@@ -1,67 +1,33 @@
 # Current Status
 
-## 2026-09-29 corrective series playback and selective queue recovery (#97-#102)
+## 2026-09-29 v1.4.31 corrective release and production approval gate (#97-#102)
 
-- Issues #99-#101 were reopened because review found acceptance gaps in missing
-  watched-bitfield fallback, failed-request option reset/series-only visibility,
-  and two-surface browser evidence. #97 remains open. #98 and #105 remain
-  closed. #102 now tracks corrective v1.4.31 validation, release, and later
-  production approval/promotion. Do not promote v1.4.30.
-- PR #103 head `9b0c486cac3d05a2ab8f45a21a80a6c2d1bb6501` merged to exact main
-  SHA `31c5c0fdf01c7b3657489bdd1945a4b7e462253e`.
-- v1.4.30 remains published from `31c5c0fdf01c7b3657489bdd1945a4b7e462253e`
-  but is superseded and not approved for production. Do not delete or move its
-  tag/release. The production approval run
-  [36563977371](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36563977371)
-  ended in failure at `Record production approval`; production remains v1.4.28.
-- Corrective implementation removes selected `video_id` fallback to watched
-  episode keys while preserving remembered history when the bitfield is
-  invalid/unavailable. The queue retry choice is captured and reset before
-  awaiting the request, and is exposed only for series rules. Browser QA now
-  exercises standalone search and rule inline-search status dismissal.
-- Corrective branch `fix/v1.4.31-series-queue-corrections` is based on protected
-  main `94679fe44f5b740fb74ba2bb61f6358a687bbfd8`. Local validation: full
-  `scripts/check.bat` passed Ruff, mypy, and 692 tests (1 skipped); WinUI
-  Debug/x64 build passed with 0 warnings/errors; focused `P44-03` passed on
-  both search surfaces. Version policy passes for 8 deployable paths.
-- PR #109 is open at head `4057d098b0280023b06ce433e3db065b437e8e32`:
-  [PR #109](https://github.com/Spon4ik/qBittorrent-rss-rules/pull/109).
-  CI run [36584322024](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36584322024)
-  and qBittorrent API run
-  [36584322368](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36584322368)
-  are queued. Docker finalization/deployment was not attempted to preserve the
-  production boundary. Next: wait for exact-head checks, address any failures,
-  then merge only with required checks green. Production remains v1.4.28.
-- CI gains a required version-policy lane: deployable code, desktop, Docker, or
-  release dependency changes require a synchronized higher SemVer and release
-  notes; docs/tests/tooling-only changes retain their exact commit SHA as the
-  identity. Corrective application version is `1.4.31`.
-- Focused Stremio, watch-state, queue-selection, route, UI-asset, version-policy,
-  and required-gate tests pass. The full backend gate passed Ruff and mypy; all
-  679 tests passed with 1 skipped. Maintained browser check `P44-03` passes, and
-  a route regression verifies the one-request option reaches queue selection.
-- PR CI run [36562483624](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36562483624)
-  and qBittorrent API run [36562483619](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36562483619)
-  passed on the PR head. Exact-main CI
-  [36562937382](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36562937382)
-  and API integration [36562937387](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36562937387)
-  passed on merge SHA `31c5c0fdf01c7b3657489bdd1945a4b7e462253e`. WinUI
-  Debug/x64 built locally with 0 warnings and 0 errors.
-- Release staging [36563514258](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36563514258)
-  passed its Windows packaging and disposable-container smoke gates. Release
-  [v1.4.30](https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.30)
-  is published from the exact merge SHA. The 127,041,792-byte Windows ZIP
-  SHA-256 `61acda043af1cbe0e0da2eadeb788c99807d7a2980938effeda8f9f4a74026b9`
-  matches its sidecar.
-- The stale v1.4.29 approval run `36546031927` was cancelled after v1.4.30
-  source and release validation passed. New production approval run
-  [36563977371](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36563977371)
-  passed validation and waits at the protected `production-approval`
-  Environment. Production has not been promoted; `/health` remains v1.4.28.
-  The backend finalizer also stopped at its context guard because shared Compose
-  builds from `C:\Users\nucc\deployments\qBittorrent-rss-rules`, not this
-  checkout. No Compose or production state was changed. Promotion and ordinary
-  Stremio synchronization await owner approval and the stable-checkout flow.
+- Corrective implementation merged through PR #109 as protected main
+  `c2abf87db7172b8444fb3b8b7c159f6e21735c20`. Issues #99-#101 are reopened
+  pending post-promotion acceptance evidence; #97 and #102 remain open. #98 and
+  #105 remain closed. Project #2 tracks #97/#99-#102 as In Progress.
+- PR checks passed on head `b86e2125e0f7b66a2a2ed0db9ae0c126615c7ba5`:
+  CI `36584403297`, qBittorrent API `36584403376`. Exact-main CI
+  `36585145309` and API `36585145327` passed on merge SHA above.
+- Release staging `36585744385` passed Windows packaging and disposable
+  container smoke. Published [v1.4.31](https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.31)
+  targets the exact merge SHA. Windows ZIP is 127,041,920 bytes; SHA-256
+  `0f169bf933ab10e405f2ed29964c255c4f2483390d8fc0611f1c1dbb2fd76e7a` matches
+  its sidecar.
+- Fresh production approval run
+  [36586275445](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36586275445)
+  is validating v1.4.31 and must stop at the protected owner Environment.
+  Read-only runtime state is checkout v1.4.31/main `c2abf87d`, clean and synced;
+  deployed `/health` remains v1.4.28 (stale). Do not promote before owner
+  approval. No Docker finalizer, production deployment, or Stremio sync was run.
+- Local validation on the corrective branch: `scripts/check.bat` passed Ruff,
+  mypy, and 692 tests (1 skipped); WinUI Debug/x64 built with 0 warnings/errors;
+  `P44-03` browser QA passed both search surfaces. The canonical finalizer was
+  not run because it invokes the updater that restarts the production service.
+- Superseded v1.4.30 remains published from
+  `31c5c0fdf01c7b3657489bdd1945a4b7e462253e`; do not delete/move its tag or
+  release and do not promote it. Its approval run `36563977371` failed at
+  `Record production approval`.
 - Follow-up #105 is complete through PR #106. The documentation closeout merged as PR #107 / main SHA `98ad9a0a34e97e41ae2e69e927093ff8b007cdcb`; PR checks passed and exact-main qB API run [36568690415](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36568690415) passed. Exact-main CI [36568690910](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36568690910) is still running. It added Alembic migrations and
   configuration, `.dockerignore`, and desktop package/installer scripts to the
   deployable classifier while preserving commit-SHA identity for docs, tests,

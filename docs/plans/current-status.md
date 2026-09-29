@@ -74,10 +74,11 @@
   single PowerShell native argument and an isolated mocked snapshot with that
   expression passes. A fresh read-only call through the same Compose argument
   array and splatted Docker invoker also returned exactly one running, healthy
-  `qb-rss-rules` container on the expected image. The first failure was not
-  reproduced; no source/template defect is established, and the prior
-  undefined-`com` diagnosis is withdrawn. Its exact cause is unknown because
-  the original updater log was overwritten by the successful later run. A separate
+  `qb-rss-rules` container on the expected image. Classify the initial failure
+  as unreproduced environment/invocation evidence; no source/template defect
+  is established, and the prior undefined-`com` diagnosis is withdrawn. Its
+  exact cause is unknown because the original updater log was overwritten by
+  the successful later run. A separate
   follow-up is needed for supported reconciliation when a later deterministic
   audit proves runtime after an immutable failed deployment status.
 - Queue behavior is covered by the exact-release full suite (692 passed, 1

@@ -65,11 +65,11 @@ inspect template. Its argument list was `inspect`, `--format`, the complete
 Go-template string as one element, and the container ID; PowerShell splatting
 through the same Compose argument array succeeded in a fresh read-only live
 snapshot. An isolated mocked lifecycle snapshot using that template also
-passes. The initial failure is not reproduced; there is no demonstrated
-source/template defect, and the earlier undefined-`com` diagnosis is
-withdrawn. Its exact cause is unknown because the original updater log was
-overwritten by the successful later run. A separate follow-up should support
-recovery evidence when a later deterministic
+passes. Classify the initial failure as unreproduced environment/invocation
+evidence; there is no demonstrated source/template defect, and the earlier
+undefined-`com` diagnosis is withdrawn. Its exact cause is unknown because the
+original updater log was overwritten by the successful later run. A separate
+follow-up should support recovery evidence when a later deterministic
 audit proves runtime after the deployment status has become immutable-failed.
 The series code and queue retry remain covered by merged regression tests.
 Historical production acceptance was assessed as C against the original

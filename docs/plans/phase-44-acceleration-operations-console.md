@@ -18,15 +18,45 @@ Codex heartbeat pickup remains pending end-to-end proof after the active task yi
 
 ### Corrective v1.4.31 continuation (2026-09-29)
 
-The published v1.4.30 release is superseded and must not be promoted. Live
-approval run `36563977371` completed with failure at the protected approval
-step; production remains v1.4.28. Corrective review reopened #99, #100, and
-#101; #97 remains open, #98/#105 remain closed, and #102 now tracks v1.4.31
-plus a fresh owner approval and eventual promotion. The correction requires
-valid watched-bitfield-only completion evidence, remembered-history fallback,
-failed-request retry reset and series-only controls, and real browser coverage
-of standalone plus rule inline-search dismissal. Corrective PR #109 merged as `c2abf87db7172b8444fb3b8b7c159f6e21735c20`; docs-only PR #110 advanced current main to `814f7b5d9f45b3784fe22670be6ff51779d554e8`. Fresh approval run `36586275445` is waiting at the protected owner Environment.
-Production remains v1.4.28. Continue only after owner approval; then promote through the documented stable-checkout flow and verify the ordinary Stremio sync.
+The published v1.4.30 release is superseded and must not be promoted. Its
+approval run `36563977371` failed at the protected approval step. Corrective
+review reopened #99, #100, and #101; #97 remains open, #98/#105 remain closed,
+and #102 tracks v1.4.31 promotion and acceptance. PR #109 merged as
+`c2abf87db7172b8444fb3b8b7c159f6e21735c20`; current main is
+`81295202747f224a4aac0e6da2024c8e11e43f0f`. Fresh approval run `36612074541`
+passed all jobs from current main and remains bound to published v1.4.31 at the
+exact PR #109 merge SHA. Docs-only main commits were not deployed.
+
+Production promotion Deployment `6742723277` used the documented stable
+checkout and canonical finalizer. Ruff, mypy, and pytest passed (692 passed, 1
+skipped); the service now runs healthy on image
+`sha256:b668f091553797bdbb797f9ee9dfdb96c2ac92c42e8afb373ab0a769f0167cac`,
+`/health.app_version` is 1.4.31, and stable checkout is clean at the approved
+SHA. Compose still mounts the intended persistent database and read-only host
+paths. The first updater verification failed and left the GitHub Deployment
+and private journal at failure; a subsequent canonical updater run succeeded,
+but the promotion tool does not support audit retry from that failure stage.
+The verified online SQLite backup remains private and intact.
+
+Ordinary Settings > Stremio > Save + Sync completed for 321 active titles with
+0 errors. The affected rule is Running Point (`tt14879018`): Jellyfin records
+S02E01-08 watched and S02E09-10 present but unwatched; saved floor remains
+S02E11. Stremio currently returns no selected `video_id` and an empty/invalid
+watched bitfield for the item, so normal sync has no authoritative completion
+evidence to correct the ahead floor to S02E09. Episode 9 is not in the
+Stremio-watched keys, but required floor acceptance is not met. Do not run
+another sync, alter the production database, or close #99-#102/#97 until the
+missing Stremio watch state and failed deployment audit are diagnosed. Queue
+retry remains off by default and limited to a one-request series option; no
+production torrent was queued for testing. Project #2 remains In Progress.
+
+The follow-up read-only provider query confirms Stremio itself returns
+`season=0`, `episode=0`, no `video_id`, and an empty `watched` string for
+Running Point. Release code correctly treats that bitfield as invalid. The
+effective search floor is the persisted S02E11 because rule fetching consumes
+`start_season/start_episode` directly; there is no separate derived episode-9
+floor. Retry only after authoritative Stremio watch state exists and a new
+ordinary sync can establish the required S02E09 progress.
 
 Issues #97-#102 tracked a reproduced series queue defect and initial fixes. PR
 #103 merged head `9b0c486cac3d05a2ab8f45a21a80a6c2d1bb6501` to protected main

@@ -1,11 +1,13 @@
 # Current Status
 
-## 2026-09-29 v1.4.31 corrective release and production approval gate (#97-#102)
+## 2026-09-29 v1.4.31 corrective release and production acceptance (#97-#102)
 
-- Corrective implementation merged through PR #109 as protected main
-  `c2abf87db7172b8444fb3b8b7c159f6e21735c20`. Issues #99-#101 are reopened
-  pending post-promotion acceptance evidence; #97 and #102 remain open. #98 and
-  #105 remain closed. Project #2 tracks #97/#99-#102 as In Progress.
+- Corrective implementation merged through PR #109 at approved release source
+  `c2abf87db7172b8444fb3b8b7c159f6e21735c20`. Published v1.4.31 remains bound
+  to that exact source. Approval run `36612074541` completed successfully on
+  current protected main `81295202747f224a4aac0e6da2024c8e11e43f0f`; every job,
+  including `Record production approval`, passed. Docs-only main commits were
+  not deployed. Superseded v1.4.30 remains published and not for production.
 - PR checks passed on head `b86e2125e0f7b66a2a2ed0db9ae0c126615c7ba5`:
   CI `36584403297`, qBittorrent API `36584403376`. Exact-main CI
   `36585145309` and API `36585145327` passed on merge SHA above.
@@ -14,18 +16,93 @@
   targets the exact merge SHA. Windows ZIP is 127,041,920 bytes; SHA-256
   `0f169bf933ab10e405f2ed29964c255c4f2483390d8fc0611f1c1dbb2fd76e7a` matches
   its sidecar.
-- Fresh production approval run
-  [36586275445](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36586275445)
-  is validating v1.4.31 and must stop at the protected owner Environment.
-  At approval dispatch, checkout was v1.4.31/main `c2abf87d`. Docs-only PR #110
-  later advanced main to `814f7b5d9f45b3784fe22670be6ff51779d554e8`; runtime
-  state now confirms that checkout is clean and synced while deployed `/health`
-  remains v1.4.28 (stale). Do not promote before owner approval. No Docker
-  finalizer, production deployment, or Stremio sync was run.
-- Local validation on the corrective branch: `scripts/check.bat` passed Ruff,
-  mypy, and 692 tests (1 skipped); WinUI Debug/x64 built with 0 warnings/errors;
-  `P44-03` browser QA passed both search surfaces. The canonical finalizer was
-  not run because it invokes the updater that restarts the production service.
+- Stable deployment checkout is clean, detached at the exact release tag/SHA.
+  Promotion used approval run `36612074541` and created production Deployment
+  `6742723277`. The private online SQLite backup passed integrity and scratch
+  restore; its SHA-256 is
+  `77509ebf7b48dae938b066c7e0c46dcbc8b2578c5bcbd6b3eb571881cd90dc8d` and it
+  remains under the host's private backup directory. The database was not
+  edited or restored.
+- Canonical `Finalize-Backend.cmd --no-pause` passed Ruff, mypy (49 files), and
+  pytest (692 passed, 1 skipped), then rebuilt/recreated only `qb-rss-rules`.
+  Its first updater attempt returned failure during lifecycle inspection.
+  A subsequent canonical `scripts/update_docker.ps1` run from the same stable
+  checkout completed successfully; the lifecycle audit now proves one
+  `qb-rss-rules` container running and healthy on image
+  `sha256:b668f091553797bdbb797f9ee9dfdb96c2ac92c42e8afb373ab0a769f0167cac`,
+  and `/health.app_version` is v1.4.31. Runtime-state reports
+  `current_version`; stable checkout remains clean at the approved SHA. GitHub
+  production Deployment `6742723277` and the local promotion journal remain
+  failed because the first finalizer exited 1; the promotion tool does not
+  permit audit retry from a failure-stage journal. Do not rewrite that journal
+  or misstate the deployment record.
+- Resolved Compose uses the stable checkout as build context and preserves
+  `/app/data` from `E:\GitHub\qBittorrent rss rules\data`, `/host/C/Users`
+  read-only from `C:\Users`, and `/host/C/ProgramData` read-only from
+  `C:\ProgramData`. Stable checkout remains clean at
+  `c2abf87db7172b8444fb3b8b7c159f6e21735c20`; resolved Compose preserves the
+  intended database bind and both read-only host mounts.
+- The original #97/#99 regression target is The Boys (`tt1190634`), established
+  by PR #103's deterministic series-progress tests and #99's episode-9
+  acceptance scenario. Running Point (`tt14879018`) was selected later because
+  its live state happened to resemble that scenario; it was an inferred
+  substitute, not the reproduced rule. Current read-only production DB state
+  for The Boys is saved floor S05E09, Stremio-known episodes through S05E08,
+  and no persisted Stremio-watched keys. A direct read-only Stremio library
+  fetch returned `video_id=tt1190634:5:8`; its watched bitfield parsed as valid
+  but yielded no watched episode keys. The configured live Jellyfin library
+  has no matching `tt1190634` item, so current Jellyfin episode state is
+  unavailable; any cached Jellyfin summary is historical only. This does not
+  reproduce the historical season-1 stale-floor case. Production acceptance
+  is therefore C: the historical case is presently unprovable, not failed; no
+  implementation defect is demonstrated. No production database or provider
+  state was changed to manufacture evidence.
+- The effective current The Boys search floor is the saved S05E09, because
+  rule search reads `start_season/start_episode`. Running Point's prior
+  S02E11 observation is retained only as a separate rule observation and is
+  removed from #97 acceptance conclusions. Do not run another Stremio sync,
+  edit the DB, queue a production torrent, or treat either live rule as the
+  historical episode-9 reproduction.
+- Promotion Deployment `6742723277` and its private journal remain unchanged
+  with the original failed status. The first lifecycle audit record shows a
+  successful Compose exit and one container ID, but the Docker inspect query
+  was marked unsuccessful both before and after Compose; consequently image,
+  state, health, and service fields were empty. The canonical updater's later
+  run from the same approved checkout recorded successful before/after
+  snapshots using the same inspect template, proving the healthy running
+  `qb-rss-rules` container. The service-label `index` template is passed as a
+  single PowerShell native argument and an isolated mocked snapshot with that
+  expression passes. A fresh read-only call through the same Compose argument
+  array and splatted Docker invoker also returned exactly one running, healthy
+  `qb-rss-rules` container on the expected image. Classify the initial failure
+  as unreproduced environment/invocation evidence; no source/template defect
+  is established, and the prior undefined-`com` diagnosis is withdrawn. Its
+  exact cause is unknown because the original updater log was overwritten by
+  the successful later run. A separate
+  follow-up is needed for supported reconciliation when a later deterministic
+  audit proves runtime after an immutable failed deployment status.
+- Queue behavior is covered by the exact-release full suite (692 passed, 1
+  skipped): existing-file exclusion by default, retry selection for existing
+  unwatched episodes, continued exclusion of watched episodes, series-only
+  visibility, rejection without a series rule, and one-request reset on failed
+  submission. No production torrent was queued for testing.
+- GitHub approval and release binding remain valid; v1.4.30 stays published and
+  superseded. #99's implementation and #100/#101's shipped behavior are
+  supported by merged code and exact-release regressions; #102's release and
+  approved healthy runtime criteria are complete. PR #103 regressions
+  deterministically cover The Boys (`tt1190634`) with episodes 1-8 complete,
+  episode 9 selected/incomplete, and a stale floor of 11. Current production
+  evidence for that original target is C (historical state no longer
+  reproducible, not failed), so #97's acceptance assessment is complete and
+  the issue is closed with that boundary recorded. #99-#102 are closed/Done;
+  independent promotion-audit reconciliation #113 remains open/In Progress.
+  Project #2 reflects those lifecycles. No production torrent was queued for
+  testing.
+- Prior corrective-branch validation: `scripts/check.bat` passed Ruff, mypy,
+  and 692 tests (1 skipped); WinUI Debug/x64 built with 0 warnings/errors;
+  `P44-03` browser QA passed both search surfaces. The production canonical
+  finalizer has since run; its first updater verification failed, while the
+  subsequent canonical updater run succeeded as recorded above.
 - Superseded v1.4.30 remains published from
   `31c5c0fdf01c7b3657489bdd1945a4b7e462253e`; do not delete/move its tag or
   release and do not promote it. Its approval run `36563977371` failed at

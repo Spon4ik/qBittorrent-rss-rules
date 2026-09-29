@@ -655,10 +655,12 @@
               />
               <span>First and last pieces first</span>
             </label>
+            {% if form_data.media_type == "series" %}
             <label class="toggle">
               <input type="checkbox" data-result-queue-option="retry_existing_unwatched" />
               <span>Retry existing unwatched episodes once</span>
             </label>
+            {% endif %}
             </div>
           </details>
         </div>

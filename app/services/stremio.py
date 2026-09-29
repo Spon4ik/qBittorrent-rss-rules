@@ -973,12 +973,15 @@ class StremioService:
                     for video_id in video_ids
                     if (episode_key := _stremio_video_id_episode_key(video_id)) is not None
                 )
+                current_episode_key = _stremio_video_id_episode_key(video_id_str)
+                if current_episode_key and current_episode_key not in known_episode_keys:
+                    known_episode_keys = (*known_episode_keys, current_episode_key)
                 watched_episode_keys = tuple(
                     episode_key
                     for video_id in (
                         self._watched_bitfield_video_ids_validated(watched_str, video_ids)
                         if watched_bitfield_valid
-                        else ([video_id_str] if video_id_str and ":" in video_id_str else [])
+                        else []
                     )
                     if (episode_key := _stremio_video_id_episode_key(video_id)) is not None
                 )

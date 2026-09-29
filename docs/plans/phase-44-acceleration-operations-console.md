@@ -16,27 +16,38 @@ Codex heartbeat pickup remains pending end-to-end proof after the active task yi
 
 ## Series progress and selective queue recovery (2026-09-29)
 
-Issues #97-#102 tracked a reproduced series queue defect and its fixes. PR #103
-merged head `9b0c486cac3d05a2ab8f45a21a80a6c2d1bb6501` to protected main as
-`31c5c0fdf01c7b3657489bdd1945a4b7e462253e`. Issues #98-#101 are Done; #97 and
-#102 remain In Progress until promotion and post-sync confirmation.
+### Corrective v1.4.31 continuation (2026-09-29)
+
+The published v1.4.30 release is superseded and must not be promoted. Live
+approval run `36563977371` completed with failure at the protected approval
+step; production remains v1.4.28. Corrective review reopened #99, #100, and
+#101; #97 remains open, #98/#105 remain closed, and #102 now tracks v1.4.31
+plus a fresh owner approval and eventual promotion. The correction requires
+valid watched-bitfield-only completion evidence, remembered-history fallback,
+failed-request retry reset and series-only controls, and real browser coverage
+of standalone plus rule inline-search dismissal. Continue from protected main
+`94679fe44f5b740fb74ba2bb61f6358a687bbfd8` on the corrective feature branch.
+Production must remain untouched until a fresh v1.4.31 approval is accepted.
+
+Issues #97-#102 tracked a reproduced series queue defect and initial fixes. PR
+#103 merged head `9b0c486cac3d05a2ab8f45a21a80a6c2d1bb6501` to protected main
+as `31c5c0fdf01c7b3657489bdd1945a4b7e462253e`. Corrective review found
+acceptance gaps; #99-#101 are reopened and #97 remains In Progress.
 Stremio completion is now derived from its catalog episode bitfield; a selected
 episode ID or aggregate watch time alone cannot mark an in-progress episode as
 watched. Queueing can optionally retry existing-but-unwatched files for one
 request, while still excluding watched episodes. Result queue errors can be
 dismissed. CI also requires a synchronized SemVer increment and release notes
 for deployable changes, with commit SHA identity used for non-deployable-only
-changes. The coordinated application release target is v1.4.30.
+changes. v1.4.30 is superseded/not for production; corrective target is v1.4.31.
 
 Focused regressions and maintained UI check `P44-03` pass. The full backend
-gate passes Ruff/mypy and 679 tests (1 skipped); WinUI Debug/x64 builds with no
-warnings. PR and exact-main CI, qBittorrent API integration, Windows packaging,
-and disposable-container smoke passed. Release v1.4.30 is published. Approval
-run [36563977371](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36563977371)
-passed source validation and waits at the protected production Environment.
-Production remains v1.4.28. The local finalizer stopped at its Compose-context
-guard; no shared Compose or production state changed. See
-[current status](current-status.md) for the resumable handoff.
+gate and WinUI/package/smoke evidence above apply to the historical v1.4.30
+source only. Approval run
+[36563977371](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36563977371)
+ended in failure at `Record production approval`; production remains v1.4.28.
+They do not qualify v1.4.30 for production. See [current
+status](current-status.md) for corrective branch validation and next steps.
 
 ### Version policy path coverage follow-up (#105)
 

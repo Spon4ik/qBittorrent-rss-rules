@@ -309,6 +309,10 @@ def check_p44_03(runtime: FocusedRuntime) -> None:
     wide_context = runtime.browser.new_context(viewport={"width": 1720, "height": 1040})
     wide_page = wide_context.new_page()
     try:
+        standalone_url = f"{runtime.app_base_url}/search?rule_id={rule_id}"
+        wide_page.goto(standalone_url, wait_until="networkidle", timeout=runtime.timeout_ms)
+        standalone_retry = wide_page.locator('[data-result-queue-option="retry_existing_unwatched"]')
+        legacy._expect(standalone_retry.count() == 1, "Standalone series-rule search must expose the one-request recovery option.")
         wide_page.goto(inline_rule_url, wait_until="networkidle", timeout=runtime.timeout_ms)
         wide_page.wait_for_selector(
             '#inline-search-results .result-toolbar-row', timeout=runtime.timeout_ms
@@ -422,32 +426,32 @@ def check_p44_03(runtime: FocusedRuntime) -> None:
             "Outside click did not close the queue menu.",
         )
 
-        wide_page.evaluate(
-            """() => {
-              const wrap = document.querySelector('[data-result-queue-status-wrap]');
-              const status = wrap?.querySelector('[data-result-queue-status]');
-              if (wrap && status) { wrap.hidden = false; status.textContent = 'A simulated queue error'; status.style.color = 'var(--danger)'; }
-            }"""
-        )
+        wide_page.goto(standalone_url, wait_until="networkidle", timeout=runtime.timeout_ms)
+        standalone_result = wide_page.locator('[data-search-row="combined"]:not([hidden]) [data-result-queue-button]').first
+        standalone_result.evaluate("button => button.dataset.resultLink = ''")
+        standalone_result.click()
+        standalone_status = wide_page.locator('[data-result-queue-status-wrap]')
+        wide_page.wait_for_function("() => [...document.querySelectorAll('[data-result-queue-status]')].some((node) => node.textContent.trim())", timeout=runtime.timeout_ms)
+        standalone_error_before = wide_page.locator('[data-result-queue-status]').first.evaluate("node => node.style.color")
+        legacy._expect("danger" in str(standalone_error_before), "Standalone failed queue request should show error styling.")
+        standalone_dismiss = wide_page.locator('[data-result-queue-dismiss]').first
+        standalone_dismiss.click()
+        legacy._expect(standalone_status.first.is_hidden(), "Pointer dismissal did not hide standalone queue status.")
+        legacy._expect(wide_page.locator('[data-result-queue-status]').first.inner_text() == "", "Standalone dismissal did not clear text.")
+        legacy._expect(wide_page.locator('[data-result-queue-status]').first.evaluate("node => node.style.color") == "", "Standalone dismissal did not clear error styling.")
+        standalone_result.click()
+        wide_page.wait_for_function("() => [...document.querySelectorAll('[data-result-queue-status]')].some((node) => node.textContent.trim())", timeout=runtime.timeout_ms)
         status_wrap = wide_page.locator('[data-result-queue-status-wrap]')
         dismiss = wide_page.locator('[data-result-queue-dismiss]')
-        legacy._expect(not status_wrap.is_hidden(), "Simulated queue status should be visible.")
-        dismiss.focus()
+        legacy._expect(not status_wrap.first.is_hidden(), "A later standalone queue action did not display a new status.")
+        dismiss.first.focus()
         wide_page.keyboard.press("Enter")
-        legacy._expect(status_wrap.is_hidden(), "Keyboard dismissal did not hide queue status.")
+        legacy._expect(status_wrap.first.is_hidden(), "Keyboard dismissal did not hide queue status.")
         legacy._expect(
-            wide_page.locator('[data-result-queue-status]').inner_text() == "",
+            wide_page.locator('[data-result-queue-status]').first.inner_text() == "",
             "Dismissed queue status text was not cleared.",
         )
-        wide_page.evaluate(
-            """() => {
-              const wrap = document.querySelector('[data-result-queue-status-wrap]');
-              const status = wrap?.querySelector('[data-result-queue-status]');
-              if (wrap && status) { wrap.hidden = false; status.textContent = 'A second simulated queue error'; }
-            }"""
-        )
-        dismiss.click()
-        legacy._expect(status_wrap.is_hidden(), "Pointer dismissal did not hide queue status.")
+        legacy._expect(wide_page.locator('[data-result-queue-status]').first.evaluate("node => node.style.color") == "", "Keyboard dismissal did not clear error styling.")
     except Exception:
         capture_failure(wide_page)
         raise
@@ -465,6 +469,21 @@ def check_p44_03(runtime: FocusedRuntime) -> None:
             '#inline-search-results [data-result-toolbar-menu].search-queue-advanced'
         )
         legacy._expect(queue_menu.count() == 1, "Expected one responsive queue-options menu.")
+        inline_result = narrow_page.locator('#inline-search-results [data-search-row="combined"]:not([hidden]) [data-result-queue-button]').first
+        inline_result.evaluate("button => button.dataset.resultLink = ''")
+        inline_result.click()
+        narrow_page.wait_for_function("() => [...document.querySelectorAll('#inline-search-results [data-result-queue-status]')].some((node) => node.textContent.trim())", timeout=runtime.timeout_ms)
+        inline_status_wrap = narrow_page.locator('#inline-search-results [data-result-queue-status-wrap]')
+        legacy._expect(not inline_status_wrap.is_hidden(), "Inline-search queue status did not become visible.")
+        inline_dismiss = narrow_page.locator('#inline-search-results [data-result-queue-dismiss]')
+        inline_dismiss.focus()
+        narrow_page.keyboard.press("Enter")
+        legacy._expect(inline_status_wrap.is_hidden(), "Keyboard dismissal did not hide inline-search queue status.")
+        legacy._expect(narrow_page.locator('#inline-search-results [data-result-queue-status]').inner_text() == "", "Inline-search dismissal did not clear text.")
+        legacy._expect(narrow_page.locator('#inline-search-results [data-result-queue-status]').evaluate("node => node.style.color") == "", "Inline-search dismissal did not clear error styling.")
+        inline_result.click()
+        narrow_page.wait_for_function("() => [...document.querySelectorAll('#inline-search-results [data-result-queue-status]')].some((node) => node.textContent.trim())", timeout=runtime.timeout_ms)
+        legacy._expect(not inline_status_wrap.is_hidden(), "A later inline queue action did not display a new status.")
         baseline = narrow_page.evaluate(
             """
             () => {

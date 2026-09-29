@@ -8,7 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
-## [1.4.30] - 2026-09-29
+## [1.4.31] - 2026-09-29
+
+- Correct Stremio progress fallback and one-request queue retry behavior; restrict retry controls to series rules and verify dismissible status on both search surfaces.
+
+## [1.4.30] - 2026-09-29 (superseded; not approved for production)
 
 - Correct Stremio series progress from completed episode watches, add an opt-in one-request retry for existing unwatched files, and make queue status messages dismissible.
 - Enforce synchronized SemVer increments for deployable application changes in CI; use the exact commit SHA as the identity for documentation and tooling-only changes.

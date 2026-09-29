@@ -3588,6 +3588,11 @@ function initResultQueueActions(root = document) {
     button.addEventListener("click", async (event) => {
       event.preventDefault();
       const resultLink = String(button.dataset.resultLink || "").trim();
+      const queueOptions = readQueueOptions(button);
+      const retryExistingInput = resolveQueueOptionContainer(button)?.querySelector('[data-result-queue-option="retry_existing_unwatched"]');
+      if (retryExistingInput) {
+        retryExistingInput.checked = false;
+      }
       if (!resultLink) {
         setQueueStatus(button, "Could not queue: missing result link.", true);
         return;
@@ -3599,7 +3604,6 @@ function initResultQueueActions(root = document) {
       const providerId = String(button.dataset.resultProviderId || "").trim();
       const queueCapability = String(button.dataset.resultQueueCapability || "qbittorrent").trim();
       const ruleId = String(button.dataset.resultRuleId || "").trim();
-      const queueOptions = readQueueOptions(button);
       const originalLabel = button.textContent;
       button.disabled = true;
       button.textContent = "Queueing...";
@@ -3650,10 +3654,6 @@ function initResultQueueActions(root = document) {
           .filter(Boolean)
           .join(" ");
         setQueueStatus(button, queueSummary);
-        const retryExistingInput = resolveQueueOptionContainer(button)?.querySelector('[data-result-queue-option="retry_existing_unwatched"]');
-        if (retryExistingInput) {
-          retryExistingInput.checked = false;
-        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Could not queue this result.";
         setQueueStatus(button, message, true);

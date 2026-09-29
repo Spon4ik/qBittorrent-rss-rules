@@ -465,16 +465,16 @@ def test_set_file_priority_posts_pipe_delimited_ids() -> None:
     assert captured_body["priority"] == ["0"]
 
 
-def test_set_file_priority_falls_back_to_legacy_command_endpoint_on_404() -> None:
-    legacy_calls: list[dict[str, list[str]]] = []
+def test_set_file_priority_does_not_treat_missing_torrent_as_missing_endpoint() -> None:
+    legacy_calls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v2/auth/login":
             return httpx.Response(200, text="Ok.")
         if request.url.path == "/api/v2/torrents/filePrio":
-            return httpx.Response(404, text="Not Found")
+            return httpx.Response(404, text="Torrent hash was not found")
         if request.url.path == "/command/setFilePrio":
-            legacy_calls.append(parse_qs(request.content.decode()))
+            legacy_calls.append(request.url.path)
             return httpx.Response(200, text="Ok.")
         return httpx.Response(404)
 
@@ -485,13 +485,10 @@ def test_set_file_priority_falls_back_to_legacy_command_endpoint_on_404() -> Non
         transport=httpx.MockTransport(handler),
     )
 
-    client.set_file_priority("abc123", [1, 3, 5], 0)
+    with pytest.raises(QbittorrentClientError, match="/api/v2/torrents/filePrio"):
+        client.set_file_priority("abc123", [1, 3, 5], 0)
 
-    assert legacy_calls == [
-        {"hash": ["abc123"], "id": ["1"], "priority": ["0"]},
-        {"hash": ["abc123"], "id": ["3"], "priority": ["0"]},
-        {"hash": ["abc123"], "id": ["5"], "priority": ["0"]},
-    ]
+    assert legacy_calls == []
 
 
 def test_add_trackers_posts_newline_delimited_urls() -> None:

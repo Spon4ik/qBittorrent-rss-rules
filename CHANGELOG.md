@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.29] - 2026-09-29
+
+- Fix selective series queueing by waiting for qBittorrent to register the torrent before applying file priorities; preserve the API's original 404 when its hash is not found.
+
 ## [1.4.28] - 2026-09-27
 
 - Fix the Windows production promotion tool so it invokes the backend finalizer through `cmd.exe` correctly.

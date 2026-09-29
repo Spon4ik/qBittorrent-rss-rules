@@ -404,26 +404,16 @@ class QbittorrentClient:
     def set_file_priority(self, info_hash: str, file_ids: list[int], priority: int) -> None:
         if not file_ids:
             return
-        payload = {
-            "hash": info_hash,
-            "id": "|".join(str(file_id) for file_id in file_ids),
-            "priority": str(int(priority)),
-        }
-        try:
-            self._request(
-                "POST",
-                "/api/v2/torrents/filePrio",
-                data=payload,
-                expect_json=False,
-            )
-        except QbittorrentClientError as exc:
-            if not self._is_missing_file_priority_endpoint_error(exc):
-                raise
-            self._set_file_priority_legacy(
-                info_hash=info_hash,
-                file_ids=file_ids,
-                priority=int(priority),
-            )
+        self._request(
+            "POST",
+            "/api/v2/torrents/filePrio",
+            data={
+                "hash": info_hash,
+                "id": "|".join(str(file_id) for file_id in file_ids),
+                "priority": str(int(priority)),
+            },
+            expect_json=False,
+        )
 
     def add_trackers(self, info_hash: str, tracker_urls: list[str]) -> None:
         cleaned_urls: list[str] = []
@@ -491,27 +481,6 @@ class QbittorrentClient:
         except httpx.HTTPError as exc:
             raise QbittorrentClientError(f"qBittorrent request failed: {exc}") from exc
         return response.text.strip()
-
-    def _set_file_priority_legacy(self, *, info_hash: str, file_ids: list[int], priority: int) -> None:
-        for file_id in file_ids:
-            self._request(
-                "POST",
-                "/command/setFilePrio",
-                data={
-                    "hash": info_hash,
-                    "id": str(int(file_id)),
-                    "priority": str(int(priority)),
-                },
-                expect_json=False,
-            )
-
-    @staticmethod
-    def _is_missing_file_priority_endpoint_error(exc: QbittorrentClientError) -> bool:
-        message = str(exc)
-        return (
-            "/api/v2/torrents/filePrio" in message
-            and "404 Not Found" in message
-        )
 
     @classmethod
     def flatten_feed_tree(cls, payload: object) -> list[FeedOption]:

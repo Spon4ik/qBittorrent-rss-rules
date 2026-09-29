@@ -1,5 +1,31 @@
 # Current Status
 
+## 2026-09-29 selective qBittorrent queue 404 repair
+
+- A reported missing-only series queue failed after the client received HTTP
+  404 from `/api/v2/torrents/filePrio`. The client misclassified every 404 as
+  an absent endpoint and retried the removed legacy `/command/setFilePrio`
+  route. qBittorrent documents 404 from the current endpoint as an unknown
+  torrent hash, so the legacy retry obscured the actual error.
+- Removed that unsafe fallback and made selective torrent-file queueing wait
+  up to six half-second checks for the just-submitted hash to appear before
+  applying file priorities. If it never appears, the error tells the user the
+  torrent was submitted but selective priorities were not applied, and advises
+  checking qBittorrent before retrying.
+- Regression coverage proves the API 404 is preserved without a legacy call,
+  and file priorities wait for torrent visibility with a bounded timeout. The
+  focused qB client, selective queue, and route tests pass (25 selected tests);
+  Ruff passes. The full finalizer deterministic checks pass (652 passed, 0
+  failed, 0 errors, 1 skipped).
+- The finalizer did not deploy: shared Compose builds from the protected stable
+  checkout `C:\Users\nucc\deployments\qBittorrent-rss-rules` at
+  `331c0d4b0f18dd9a3808b60f5ee21a8e414521d9` (`v1.4.28`), while this feature
+  branch is in `E:\GitHub\qBittorrent rss rules`. The release-promotion tool
+  requires a published tag and protected approval. The shared Compose context
+  was not changed; the deployed runtime remains `v1.4.28` pending that flow.
+- Patch version `v1.4.29` is prepared locally. GitHub persistence, release
+  publication, and production promotion remain pending.
+
 ## 2026-09-28 GitHub Project #85 issue-centric delivery tracking
 
 - Audited Project #2 before changing it: 27 active items were all in Backlog

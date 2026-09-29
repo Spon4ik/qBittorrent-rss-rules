@@ -86,6 +86,8 @@ class QueueResult:
 
 REMOTE_URL_ADD_VERIFY_ATTEMPTS = 6
 REMOTE_URL_ADD_VERIFY_INTERVAL_SECONDS = 0.5
+TORRENT_ADD_VISIBILITY_ATTEMPTS = 6
+TORRENT_ADD_VISIBILITY_INTERVAL_SECONDS = 0.5
 
 
 def find_episode_file_entry(
@@ -427,6 +429,11 @@ def queue_result_with_optional_file_selection(
             first_last_piece_prio=first_last_piece_prio,
         )
         if selection_result.parsed_episode_file_count > 0 and selection_result.selected_file_ids:
+            if not _wait_for_qb_torrent(client, parsed_torrent.info_hash):
+                raise SelectiveQueueError(
+                    "The torrent was submitted to qBittorrent but did not appear in its list; "
+                    "selective file priorities were not applied. Check qBittorrent before retrying."
+                )
             all_file_ids = [entry.file_id for entry in parsed_torrent.files]
             client.set_file_priority(parsed_torrent.info_hash, all_file_ids, 0)
             client.set_file_priority(
@@ -770,6 +777,15 @@ def _add_torrent_url_with_optional_verification(
     raise SelectiveQueueError(
         "qBittorrent accepted the remote URL fetch request, but no torrent appeared in the list."
     )
+
+
+def _wait_for_qb_torrent(client: QbittorrentClient, info_hash: str) -> bool:
+    for attempt in range(TORRENT_ADD_VISIBILITY_ATTEMPTS):
+        if client.get_torrent(info_hash) is not None:
+            return True
+        if attempt + 1 < TORRENT_ADD_VISIBILITY_ATTEMPTS:
+            time.sleep(TORRENT_ADD_VISIBILITY_INTERVAL_SECONDS)
+    return False
 
 
 def _current_qb_hashes(client: QbittorrentClient) -> set[str]:

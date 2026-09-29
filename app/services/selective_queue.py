@@ -145,7 +145,23 @@ def build_episode_file_selection_plan(rule: Rule) -> EpisodeFileSelectionPlan | 
     if rule.start_season is None or rule.start_episode is None:
         return None
 
-    if bool(getattr(rule, "jellyfin_search_existing_unseen", False)):
+    return _episode_file_selection_plan(rule, include_existing_unwatched=False)
+
+
+def _episode_file_selection_plan(
+    rule: Rule, *, include_existing_unwatched: bool
+) -> EpisodeFileSelectionPlan | None:
+    if rule.media_type != MediaType.SERIES:
+        return None
+    if rule.start_season is None or rule.start_episode is None:
+        return None
+    if include_existing_unwatched:
+        excluded_episode_keys = frozenset(
+            normalize_jellyfin_episode_keys(
+                list(getattr(rule, "jellyfin_watched_episode_numbers", []) or [])
+            )
+        )
+    elif bool(getattr(rule, "jellyfin_search_existing_unseen", False)):
         excluded_episode_keys = frozenset(
             normalize_jellyfin_episode_keys(
                 list(getattr(rule, "jellyfin_watched_episode_numbers", []) or [])
@@ -295,8 +311,19 @@ def queue_result_with_optional_file_selection(
     sequential_download: bool,
     first_last_piece_prio: bool,
     rule: Rule | None,
+    retry_existing_unwatched: bool = False,
 ) -> QueueResult:
-    selection_plan = build_episode_file_selection_plan(rule) if rule is not None else None
+    selection_plan = (
+        _episode_file_selection_plan(
+            rule, include_existing_unwatched=retry_existing_unwatched
+        )
+        if rule is not None
+        else None
+    )
+    if retry_existing_unwatched and selection_plan is None:
+        raise SelectiveQueueError(
+            "Retry existing unwatched files requires a series rule with a saved episode floor."
+        )
     magnet_info_hash = parse_magnet_info_hash(link)
     effective_link = _normalize_http_url(
         _rewrite_jackett_download_link_for_app_fetch(
@@ -441,7 +468,7 @@ def queue_result_with_optional_file_selection(
             )
             return QueueResult(
                 message=(
-                    f"Queued only missing/unseen episode files ({len(selection_result.selected_file_ids)} selected, "
+                f"Queued only {'existing unwatched' if retry_existing_unwatched else 'missing/unseen'} episode files ({len(selection_result.selected_file_ids)} selected, "
                     f"{selection_result.skipped_episode_file_count} skipped)."
                 ),
                 selected_file_count=len(selection_result.selected_file_ids),
@@ -516,6 +543,7 @@ def queue_grouped_search_results(
     sequential_download: bool,
     first_last_piece_prio: bool,
     rule: Rule | None,
+    retry_existing_unwatched: bool = False,
 ) -> QueueResult:
     normalized_links = _dedupe_tracker_urls(links)
     if not normalized_links:
@@ -534,6 +562,7 @@ def queue_grouped_search_results(
         sequential_download=sequential_download,
         first_last_piece_prio=first_last_piece_prio,
         rule=rule,
+        retry_existing_unwatched=retry_existing_unwatched,
     )
 
     effective_info_hash = str(info_hash or "").strip().casefold() or None

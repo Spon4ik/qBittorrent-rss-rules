@@ -1071,6 +1071,13 @@ def queue_search_result(
         save_path = builder.render_save_path(rule)
         if add_paused is None:
             add_paused = rule.add_paused
+    if payload.retry_existing_unwatched and (
+        rule is None or rule.media_type != MediaType.SERIES
+    ):
+        return JSONResponse(
+            {"error": "Retry existing unwatched files is available only for a series rule."},
+            status_code=400,
+        )
     if add_paused is None:
         # Queueing without a rule is always paused unless this individual
         # request explicitly opts out. Saved rule exceptions are handled above.
@@ -1117,6 +1124,7 @@ def queue_search_result(
                 sequential_download=payload.sequential_download,
                 first_last_piece_prio=payload.first_last_piece_prio,
                 rule=rule,
+                retry_existing_unwatched=payload.retry_existing_unwatched,
             )
         else:
             queue_result = queue_result_with_optional_file_selection(
@@ -1132,6 +1140,7 @@ def queue_search_result(
                 sequential_download=payload.sequential_download,
                 first_last_piece_prio=payload.first_last_piece_prio,
                 rule=rule,
+                retry_existing_unwatched=payload.retry_existing_unwatched,
             )
     except SelectiveQueueError as exc:
         refreshed_link, _refreshed_indexer_label = _refresh_stale_rule_queue_link(
@@ -1155,6 +1164,7 @@ def queue_search_result(
                     sequential_download=payload.sequential_download,
                     first_last_piece_prio=payload.first_last_piece_prio,
                     rule=rule,
+                    retry_existing_unwatched=payload.retry_existing_unwatched,
                 )
             except (SelectiveQueueError, QbittorrentClientError) as retry_exc:
                 return JSONResponse({"error": str(retry_exc)}, status_code=400)

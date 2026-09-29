@@ -10,6 +10,8 @@ At the start of each meaningful work session:
 
 ## WinUI desktop and release versions
 
+Every change to deployable app code, desktop code, Docker image inputs, or app dependencies must increment the app SemVer version in the same PR. Use the appropriate SemVer level; bug fixes use a patch bump even when small. Run scripts/release_prep.py patch --apply to synchronize touchpoints and add a changelog heading, then write the release note. Documentation, test-only, and repository-tooling changes do not need an app version; their Git commit SHA identifies the exact change. CI enforces this rule.
+
 The WinUI shell (`QbRssRulesDesktop`) embeds `RequiredDesktopBackendAppVersion` and compares it to `/health`’s `app_version`. If those diverge from `pyproject.toml` / `app/main.py`, the desktop shows an incompatible-backend error even when Python code is current.
 
 - When bumping the app version, keep **one** semver across `pyproject.toml`, `app/main.py`, `QbRssRulesDesktop/Views/MainPage.xaml.cs` (`RequiredDesktopBackendAppVersion`), and `tests/test_routes.py` (health assert). Prefer `python scripts/release_prep.py <patch|minor|major> --apply` from the repo root so those files move together. Add a manifest-version regression if a Stremio add-on manifest is reintroduced.

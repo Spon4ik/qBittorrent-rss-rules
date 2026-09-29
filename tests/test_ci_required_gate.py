@@ -35,5 +35,15 @@ def test_required_gate_cli_reads_workflow_results(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("BACKEND_CHECKS_RESULT", "success")
     monkeypatch.setenv("BROWSER_UI_RESULT", "failure")
     monkeypatch.setenv("DESKTOP_BUILD_RESULT", "success")
+    monkeypatch.setenv("VERSION_POLICY_RESULT", "success")
 
     assert main() == 1
+
+
+
+
+def test_required_gate_requires_version_policy_result() -> None:
+    results = {lane: "success" for lane in REQUIRED_LANES}
+    del results["version-policy"]
+
+    assert check_required_lanes(results) == ["version-policy must succeed; got missing"]

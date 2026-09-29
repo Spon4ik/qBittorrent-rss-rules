@@ -24,6 +24,22 @@ KNOWN_ISSUES = (
         "tests/test_qbittorrent_client.py",
     ),
     (
+        "stremio_sync_corrects_incomplete_current_episode_to_bitfield_progress",
+        "tests/test_stremio.py",
+    ),
+    (
+        "queue_result_with_optional_file_selection_can_retry_existing_unwatched_episodes",
+        "tests/test_selective_queue.py",
+    ),
+    (
+        "result_queue_status_messages_can_be_dismissed_and_retry_option_is_off_by_default",
+        "tests/test_static_assets.py",
+    ),
+    (
+        "deployable_change_requires_a_strictly_higher_version",
+        "tests/test_version_policy.py",
+    ),
+    (
         "queue_result_with_optional_file_selection_applies_qb_file_priorities",
         "tests/test_selective_queue.py",
     ),

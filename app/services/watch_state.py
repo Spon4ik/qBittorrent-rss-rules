@@ -318,27 +318,35 @@ def select_watch_state_floor(
     current_floor: tuple[int, int] | None,
     keep_searching_existing_unseen: bool,
     source_label: str,
+    correct_ahead_floor: bool = False,
 ) -> WatchStateFloorSelection:
-    floor_detail = derived_floor.known_floor_reason
     next_floor: tuple[int, int] | None = floor_tuple(
-        derived_floor.known_start_season,
-        derived_floor.known_start_episode,
+        derived_floor.watched_start_season,
+        derived_floor.watched_start_episode,
     )
-    if keep_searching_existing_unseen:
+    floor_detail = derived_floor.watched_floor_reason
+    if not keep_searching_existing_unseen and source_label.casefold() != "stremio":
         next_floor = floor_tuple(
-            derived_floor.watched_start_season,
-            derived_floor.watched_start_episode,
+            derived_floor.known_start_season,
+            derived_floor.known_start_episode,
+        )
+        floor_detail = derived_floor.known_floor_reason
+    if next_floor is None:
+        next_floor = floor_tuple(
+            derived_floor.known_start_season,
+            derived_floor.known_start_episode,
         )
         if next_floor is None:
             next_floor = current_floor
-        floor_detail = derived_floor.watched_floor_reason
-
+            floor_detail = derived_floor.known_floor_reason
     effective_floor = current_floor
     floor_changed = False
     if next_floor is not None:
         effective_floor = next_floor
         floor_changed = current_floor != next_floor
-        if current_floor is not None and current_floor >= next_floor:
+        if current_floor is not None and current_floor >= next_floor and not (
+            correct_ahead_floor and current_floor > next_floor
+        ):
             if (
                 next_floor[1] > 0
                 and current_floor[0] == next_floor[0] + 1

@@ -114,6 +114,27 @@ def test_select_watch_state_floor_corrects_next_season_zero_overadvance() -> Non
     assert selection.floor_detail == "Corrected previous next-season floor back to Jellyfin-derived progress."
 
 
+def test_select_watch_state_floor_preserves_existing_behavior_when_existing_unseen_search_is_disabled() -> None:
+    derived_floor = derive_watch_state_floor(
+        source_label="Jellyfin",
+        current_episode_numbers=["S01E01", "S01E02", "S01E03"],
+        current_watched_episode_numbers=["S01E01"],
+        remembered_known_episode_numbers=[],
+        remembered_watched_episode_numbers=[],
+        next_floor_after_episode=lambda key: ((key[0], key[1] + 1), "advanced"),
+    )
+
+    assert derived_floor is not None
+    selection = select_watch_state_floor(
+        derived_floor=derived_floor,
+        current_floor=(1, 4),
+        keep_searching_existing_unseen=False,
+        source_label="Jellyfin",
+    )
+
+    assert selection.effective_floor == (1, 4)
+
+
 def test_normalize_watch_state_source_labels_canonicalizes_and_sorts() -> None:
     assert normalize_watch_state_source_labels(
         [" Stremio ", "jellyfin", "Jellyfin", "plex-watch", ""]

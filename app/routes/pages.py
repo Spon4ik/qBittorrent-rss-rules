@@ -1797,6 +1797,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                         ),
                         "rule_prefill_summary": f"{', '.join(summary_parts)}.",
                         "source_rule_name": source_rule.rule_name if source_rule else "",
+                        "rule_id": source_rule.id if source_rule else None,
                         "ignored_full_regex": ignored_full_regex,
                     }
                 )

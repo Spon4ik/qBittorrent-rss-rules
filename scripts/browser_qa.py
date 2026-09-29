@@ -322,9 +322,14 @@ def check_p44_03(runtime: FocusedRuntime) -> None:
         queue_menu = wide_page.locator(
             '#inline-search-results [data-result-toolbar-menu].search-queue-advanced'
         )
+        retry_existing = wide_page.locator(
+            '#inline-search-results [data-result-queue-option="retry_existing_unwatched"]'
+        )
         legacy._expect(indexer_menu.count() == 1, "Expected one inline indexer-scope menu.")
         legacy._expect(category_menu.count() == 1, "Expected one inline media-category menu.")
         legacy._expect(queue_menu.count() == 1, "Expected one inline queue-options menu.")
+        legacy._expect(retry_existing.count() == 1, "Expected the series-only one-request recovery option.")
+        legacy._expect(not retry_existing.is_checked(), "Recovery option must default off.")
 
         baseline = wide_page.evaluate(
             """
@@ -370,10 +375,11 @@ def check_p44_03(runtime: FocusedRuntime) -> None:
               const table = document.querySelector('#inline-search-results [data-search-table-wrap="combined"]');
               const sequential = document.querySelector('[data-result-queue-option="sequential"]');
               const firstLast = document.querySelector('[data-result-queue-option="first_last_piece_prio"]');
+              const retryExisting = document.querySelector('[data-result-queue-option="retry_existing_unwatched"]');
               if (!toolbar || !table || !sequential || !firstLast) return null;
               const sequentialRect = sequential.closest("label")?.getBoundingClientRect();
               const firstLastRect = firstLast.closest("label")?.getBoundingClientRect();
-              if (!sequentialRect || !firstLastRect) return null;
+              if (!sequentialRect || !firstLastRect || !retryExisting) return null;
               return {
                 toolbarHeight: toolbar.getBoundingClientRect().height,
                 tableDocumentTop: table.getBoundingClientRect().top + window.scrollY,
@@ -382,6 +388,7 @@ def check_p44_03(runtime: FocusedRuntime) -> None:
                 sequentialVisible: Boolean(sequential.offsetParent),
                 firstLastVisible: Boolean(firstLast.offsetParent),
                 itemsOverlap: sequentialRect.bottom > firstLastRect.top && firstLastRect.bottom > sequentialRect.top,
+                retryExistingVisible: Boolean(retryExisting.offsetParent),
               };
             }
             """
@@ -395,6 +402,7 @@ def check_p44_03(runtime: FocusedRuntime) -> None:
             bool(queue_metrics["firstLastVisible"]),
             f"First/last pieces option is not visible: {queue_metrics}",
         )
+        legacy._expect(bool(queue_metrics["retryExistingVisible"]), f"Recovery option is not visible: {queue_metrics}")
         legacy._expect(
             not bool(queue_metrics["itemsOverlap"]),
             f"Queue options overlap: {queue_metrics}",
@@ -413,6 +421,33 @@ def check_p44_03(runtime: FocusedRuntime) -> None:
             queue_menu.get_attribute("open") is None,
             "Outside click did not close the queue menu.",
         )
+
+        wide_page.evaluate(
+            """() => {
+              const wrap = document.querySelector('[data-result-queue-status-wrap]');
+              const status = wrap?.querySelector('[data-result-queue-status]');
+              if (wrap && status) { wrap.hidden = false; status.textContent = 'A simulated queue error'; status.style.color = 'var(--danger)'; }
+            }"""
+        )
+        status_wrap = wide_page.locator('[data-result-queue-status-wrap]')
+        dismiss = wide_page.locator('[data-result-queue-dismiss]')
+        legacy._expect(not status_wrap.is_hidden(), "Simulated queue status should be visible.")
+        dismiss.focus()
+        wide_page.keyboard.press("Enter")
+        legacy._expect(status_wrap.is_hidden(), "Keyboard dismissal did not hide queue status.")
+        legacy._expect(
+            wide_page.locator('[data-result-queue-status]').inner_text() == "",
+            "Dismissed queue status text was not cleared.",
+        )
+        wide_page.evaluate(
+            """() => {
+              const wrap = document.querySelector('[data-result-queue-status-wrap]');
+              const status = wrap?.querySelector('[data-result-queue-status]');
+              if (wrap && status) { wrap.hidden = false; status.textContent = 'A second simulated queue error'; }
+            }"""
+        )
+        dismiss.click()
+        legacy._expect(status_wrap.is_hidden(), "Pointer dismissal did not hide queue status.")
     except Exception:
         capture_failure(wide_page)
         raise

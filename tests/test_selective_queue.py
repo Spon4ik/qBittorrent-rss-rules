@@ -12,6 +12,7 @@ from app.services.selective_queue import (
     QueueResult,
     SelectiveQueueError,
     TorrentFileEntry,
+    _wait_for_qb_torrent,
     build_episode_file_selection_plan,
     build_magnet_link,
     find_episode_file_entry,
@@ -180,6 +181,7 @@ def test_queue_result_with_optional_file_selection_applies_qb_file_priorities(mo
     )
 
     captured: dict[str, object] = {}
+    events: list[str] = []
 
     monkeypatch.setattr(
         "app.services.selective_queue._download_torrent_bytes",
@@ -197,11 +199,26 @@ def test_queue_result_with_optional_file_selection_applies_qb_file_priorities(mo
         sequential_download: bool = False,
         first_last_piece_prio: bool = False,
     ) -> None:
+        events.append("add")
         captured["filename"] = filename
         captured["category"] = category
         captured["save_path"] = save_path
         captured["paused"] = paused
         captured["bytes"] = torrent_bytes
+
+    torrent_info_hash = parse_torrent_info(torrent_bytes).info_hash
+    lookup_results: list[dict[str, object] | None] = [
+        None,
+        {"hash": torrent_info_hash},
+    ]
+
+    def fake_get_torrent(self, info_hash: str) -> dict[str, object] | None:
+        assert info_hash == torrent_info_hash
+        events.append("lookup")
+        return lookup_results.pop(0)
+
+    monkeypatch.setattr(QbittorrentClient, "get_torrent", fake_get_torrent)
+    monkeypatch.setattr("app.services.selective_queue.time.sleep", lambda _seconds: None)
 
     priority_calls: list[tuple[str, list[int], int]] = []
 
@@ -211,7 +228,7 @@ def test_queue_result_with_optional_file_selection_applies_qb_file_priorities(mo
         "set_file_priority",
         lambda self, info_hash, file_ids, priority: priority_calls.append(
             (info_hash, list(file_ids), priority)
-        ),
+        ) or events.append("priority"),
     )
 
     result = queue_result_with_optional_file_selection(
@@ -240,6 +257,24 @@ def test_queue_result_with_optional_file_selection_applies_qb_file_priorities(mo
     assert priority_calls[0][2] == 0
     assert priority_calls[1][1] == [1, 2]
     assert priority_calls[1][2] == 1
+    assert events == ["add", "lookup", "lookup", "priority", "priority"]
+
+
+def test_wait_for_qb_torrent_stops_after_bounded_visibility_checks(monkeypatch) -> None:
+    class MissingTorrentClient:
+        def __init__(self) -> None:
+            self.lookups = 0
+
+        def get_torrent(self, info_hash: str) -> None:
+            assert info_hash == "abc123"
+            self.lookups += 1
+            return None
+
+    client = MissingTorrentClient()
+    monkeypatch.setattr("app.services.selective_queue.time.sleep", lambda _seconds: None)
+
+    assert _wait_for_qb_torrent(client, "abc123") is False
+    assert client.lookups == 6
 
 
 def test_queue_result_with_optional_file_selection_uploads_http_torrent_file_without_rule(

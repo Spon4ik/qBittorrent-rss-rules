@@ -19,7 +19,14 @@ KNOWN_ISSUES = (
     ("login_accepts_no_content_response_with_session_cookie", "tests/test_qbittorrent_client.py"),
     ("add_torrent_url_accepts_duplicate_conflict", "tests/test_qbittorrent_client.py"),
     ("add_torrent_file_accepts_duplicate_conflict", "tests/test_qbittorrent_client.py"),
-    ("set_file_priority_falls_back_to_legacy_command_endpoint_on_404", "tests/test_qbittorrent_client.py"),
+    (
+        "set_file_priority_does_not_treat_missing_torrent_as_missing_endpoint",
+        "tests/test_qbittorrent_client.py",
+    ),
+    (
+        "queue_result_with_optional_file_selection_applies_qb_file_priorities",
+        "tests/test_selective_queue.py",
+    ),
     ("jackett_client_scoped_search_keeps_working_tracker_after_mixed_failures", "tests/test_jackett.py"),
     ("saved_indexer_scope_never_searches_aggregate_all_endpoint", "tests/test_jackett.py"),
     ("stremio_write_unwatched_movie_clears_stale_completion_markers", "tests/test_stremio.py"),

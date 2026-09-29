@@ -20,6 +20,7 @@
 | `POST /api/v2/rss/removeRule` | Remove RSS rule | Send `ruleName`. |
 | `POST /api/v2/torrents/createCategory` | Ensure category exists | Accept `409` conflict as non-fatal (already exists). |
 | `POST /api/v2/torrents/add` | Queue result/torrent URL | Send `paused` and `stopped` for cross-version pause compatibility. |
+| `POST /api/v2/torrents/filePrio` | Set selected file priorities | A `404` means the torrent hash is not present; do not retry the legacy `/command/setFilePrio` route. For newly added torrents, wait for the hash to appear in `/api/v2/torrents/info` first. |
 
 ## Mapping reminders
 

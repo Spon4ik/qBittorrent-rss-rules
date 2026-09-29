@@ -7,6 +7,18 @@
 - Final closeout passed on 2026-03-25 via `cmd.exe /c scripts\check.bat` (`227 passed`, `57 warnings`), `cmd.exe /c scripts\closeout_qa.bat` (artifacts under `logs/qa/phase-closeout-20260325T024210Z/`), and `cmd.exe /v:on /c "scripts\run_dev.bat desktop-build & echo EXITCODE:!ERRORLEVEL!"` (`EXITCODE:0`).
 - Scope is feature-focused but still compatibility-preserving: extend the current Jellyfin/qB contracts without breaking existing rule storage, existing queue actions, or current OMDb/Jackett defaults.
 
+## Post-release queue regression (2026-09-29)
+
+- A reported selective series queue received HTTP 404 from the current
+  `/api/v2/torrents/filePrio` endpoint immediately after adding the torrent.
+  qBittorrent defines that response as an unknown torrent hash; interpreting it
+  as a missing endpoint and retrying `/command/setFilePrio` hid the cause.
+- The v1.4.29 repair removes that legacy fallback and waits up to six half-second
+  checks for qBittorrent to list the added torrent before setting file
+  priorities. If it does not appear, the app reports that it was submitted and
+  advises checking qBittorrent before retrying. Deterministic regressions cover
+  both the original 404 and delayed torrent visibility.
+
 ## Goal
 
 Deliver a backward-compatible `v0.7.0` release that makes Jellyfin-derived series floors catalog-aware across season boundaries, remembers enough prior Jellyfin episode history to keep skipped content skipped after local file cleanup, and makes qB queue actions automatically prefer only the missing/unseen episode files when a queued result is a multi-file series torrent.

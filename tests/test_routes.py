@@ -99,7 +99,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.30"
+    assert payload["app_version"] == "1.4.31"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -1696,6 +1696,32 @@ def test_search_page_renders_jackett_as_separate_source(app_client) -> None:
     assert "Active Jackett search" in response.text
     assert "Not mixed with RSS feeds" in response.text
     assert "Queue Stremio Variant" not in response.text
+    assert 'data-result-queue-option="retry_existing_unwatched"' not in response.text
+
+
+def test_search_page_hides_existing_unwatched_retry_for_movie_rule(
+    app_client, db_session, monkeypatch
+) -> None:
+    rule = Rule(
+        rule_name="Movie Retry Control",
+        content_name="Movie Retry Control",
+        normalized_title="Movie Retry Control",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        feed_urls=["http://feed.example/movie-retry-control"],
+    )
+    db_session.add(rule)
+    db_session.commit()
+    monkeypatch.setattr(
+        JackettClient,
+        "search",
+        lambda self, payload: JackettSearchRun(query_variants=[payload.query], results=[]),
+    )
+
+    response = app_client.get("/search", params={"rule_id": rule.id})
+
+    assert response.status_code == 200
+    assert 'data-result-queue-option="retry_existing_unwatched"' not in response.text
 
 
 def test_search_page_prefills_new_rule_from_active_search(app_client, monkeypatch) -> None:
@@ -4342,6 +4368,42 @@ def test_retry_existing_unwatched_is_rejected_without_series_rule(app_client, db
 
     assert response.status_code == 400
     assert "only for a series rule" in response.json()["error"]
+
+
+def test_retry_existing_unwatched_option_is_captured_then_reset_on_failed_queue_request() -> None:
+    node_executable = shutil.which("node")
+    if not node_executable:
+        pytest.skip("node is required for queue option behavior validation")
+    app_js_path = Path(__file__).resolve().parents[1] / "app" / "static" / "app.js"
+    node_script = f"""
+const fs = require("fs");
+const vm = require("vm");
+const retry = {{ checked: true }};
+const button = {{ dataset: {{ resultLink: "https://example.test/a.torrent", resultLinks: "[]", resultTrackerUrls: "[]", resultRuleId: "1" }}, textContent: "Queue", disabled: false, addEventListener(name, callback) {{ if (name === "click") this.click = callback; }} }};
+const wrap = {{ hidden: true, querySelector() {{ return status; }} }};
+const status = {{ textContent: "", style: {{}}, closest() {{ return wrap; }} }};
+const options = {{ querySelector(selector) {{ return selector.includes("retry_existing") ? retry : null; }}, querySelectorAll(selector) {{ return selector === "[data-result-queue-status]" ? [status] : []; }} }};
+const scope = {{ querySelector(selector) {{ return selector === "[data-result-queue-options]" ? options : null; }} }};
+button.closest = (selector) => selector === "[data-search-page], #inline-search-results" ? scope : null;
+scope.querySelector = (selector) => selector === "[data-result-queue-options]" ? options : null;
+const dismiss = {{ addEventListener() {{}} }};
+global.document = {{ querySelectorAll(selector) {{ return selector === "[data-result-queue-button]" ? [button] : selector === "[data-result-magnet-button]" ? [] : selector === "[data-result-queue-options]" ? [options] : selector === "[data-result-queue-status]" ? [status] : selector === "[data-result-queue-status-wrap]" ? [wrap] : selector === "[data-result-queue-dismiss]" ? [dismiss] : []; }} }};
+global.document.addEventListener = () => {{}};
+global.window = {{ setTimeout() {{}}, location: {{ href: "" }} }};
+global.fetch = async (_url, request) => {{ global.sent = JSON.parse(request.body); throw new Error("queue failed"); }};
+const source = fs.readFileSync({json.dumps(str(app_js_path))}, "utf8");
+vm.runInThisContext(source);
+initResultQueueActions(document);
+button.click({{ preventDefault() {{}} }}).then(() => console.log(JSON.stringify({{ sent: global.sent.retry_existing_unwatched, reset: retry.checked }})));
+"""
+    completed = subprocess.run(
+        [node_executable, "-e", node_script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(completed.stdout.strip())
+    assert payload == {"sent": True, "reset": False}
 
 
 def test_queue_search_result_api_defaults_paused_without_rule_and_allows_one_time_override(

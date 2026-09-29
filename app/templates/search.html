@@ -317,7 +317,7 @@
           <input type="checkbox" data-result-queue-option="first_last_piece_prio" {% if queue_defaults.first_last_piece_prio %}checked{% endif %} />
           <span>First and last pieces first</span>
         </label>
-        {% if search_run.rule_id %}
+        {% if queue_defaults.retry_existing_unwatched_available %}
         <label class="toggle">
           <input type="checkbox" data-result-queue-option="retry_existing_unwatched" />
           <span>Retry existing unwatched episodes once</span>

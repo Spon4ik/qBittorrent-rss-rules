@@ -1,25 +1,35 @@
 # Current Status
 
-## 2026-09-29 series playback and selective queue recovery (#97-#102)
+## 2026-09-29 corrective series playback and selective queue recovery (#97-#102)
 
-- Issues #98-#101 are closed through PR #103. Follow-up #105 is now a sub-issue
-  of #97 and blocks parent completion: the original policy classifier missed
-  Alembic migration/configuration, Docker context, and desktop package/install
-  inputs. #105 covers those paths. Parent #97 remains In Progress until #105,
-  v1.4.30 promotion, and post-sync confirmation are complete; #102 is In
-  Progress at the owner approval gate. #100 depends on #99; #102 depends on
-  #98-#101.
+- Issues #99-#101 were reopened because review found acceptance gaps in missing
+  watched-bitfield fallback, failed-request option reset/series-only visibility,
+  and two-surface browser evidence. #97 remains open. #98 and #105 remain
+  closed. #102 now tracks corrective v1.4.31 validation, release, and later
+  production approval/promotion. Do not promote v1.4.30.
 - PR #103 head `9b0c486cac3d05a2ab8f45a21a80a6c2d1bb6501` merged to exact main
   SHA `31c5c0fdf01c7b3657489bdd1945a4b7e462253e`.
-- The implementation uses Stremio's catalog-aligned completed-watch bitfield
-  as authoritative series progress, so an incomplete current episode or
-  cumulative watch time cannot advance the floor. It adds an opt-in one-request
-  retry for files already present but still unwatched; Jellyfin-watched files
-  remain excluded. Queue result messages now have a dismiss control.
+- v1.4.30 remains published from `31c5c0fdf01c7b3657489bdd1945a4b7e462253e`
+  but is superseded and not approved for production. Do not delete or move its
+  tag/release. The production approval run
+  [36563977371](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36563977371)
+  ended in failure at `Record production approval`; production remains v1.4.28.
+- Corrective implementation removes selected `video_id` fallback to watched
+  episode keys while preserving remembered history when the bitfield is
+  invalid/unavailable. The queue retry choice is captured and reset before
+  awaiting the request, and is exposed only for series rules. Browser QA now
+  exercises standalone search and rule inline-search status dismissal.
+- Corrective branch `fix/v1.4.31-series-queue-corrections` is based on protected
+  main `94679fe44f5b740fb74ba2bb61f6358a687bbfd8`. Local validation: full
+  `scripts/check.bat` passed Ruff, mypy, and 692 tests (1 skipped); WinUI
+  Debug/x64 build passed with 0 warnings/errors; focused `P44-03` passed on
+  both search surfaces. Docker finalization/deployment was not attempted to
+  preserve the production boundary. Next: commit/push, open PR, pass protected
+  PR CI and qBittorrent API integration, then merge only with exact-head green.
 - CI gains a required version-policy lane: deployable code, desktop, Docker, or
   release dependency changes require a synchronized higher SemVer and release
   notes; docs/tests/tooling-only changes retain their exact commit SHA as the
-  identity. The coordinated app version is `1.4.30`.
+  identity. Corrective application version is `1.4.31`.
 - Focused Stremio, watch-state, queue-selection, route, UI-asset, version-policy,
   and required-gate tests pass. The full backend gate passed Ruff and mypy; all
   679 tests passed with 1 skipped. Maintained browser check `P44-03` passes, and

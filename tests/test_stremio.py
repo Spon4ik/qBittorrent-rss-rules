@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import select
 
 from app.models import AppSettings, MediaType, QualityProfile, Rule
@@ -480,6 +481,65 @@ def test_stremio_series_progress_uses_completed_bitfield_not_selected_episode_or
     assert record is not None
     assert record.item_key == "tt1190634:S01E09"
     assert record.completed is False
+
+
+@pytest.mark.parametrize("watched", ["", "not:a:valid:bitfield"])
+def test_stremio_selected_episode_is_not_watched_without_valid_bitfield(
+    monkeypatch, watched
+) -> None:
+    service = StremioService(AppSettings(id="default"))
+    video_ids = [f"tt1190634:1:{episode}" for episode in range(1, 11)]
+    payload = stremio_library_item(
+        "tt1190634",
+        "The Boys",
+        state_overrides={"video_id": "tt1190634:1:9", "watched": watched},
+    )
+    monkeypatch.setattr(service, "_series_video_ids", lambda _imdb_id: video_ids)
+
+    item = service._library_item_from_payload(payload)
+
+    assert item is not None
+    assert not item.watched_bitfield_valid
+    assert "S01E09" not in item.watched_episode_keys
+    assert item.latest_watched_episode_key is None
+
+
+def test_stremio_catalog_unavailable_does_not_promote_selected_episode(monkeypatch) -> None:
+    service = StremioService(AppSettings(id="default"))
+    payload = stremio_library_item(
+        "tt1190634", "The Boys", state_overrides={"video_id": "tt1190634:1:9"}
+    )
+    monkeypatch.setattr(service, "_series_video_ids", lambda _imdb_id: [])
+
+    item = service._library_item_from_payload(payload)
+
+    assert item is not None
+    assert item.known_episode_keys == ("S01E09",)
+    assert item.watched_episode_keys == ()
+    assert item.latest_watched_episode_key is None
+
+
+def test_stremio_floor_preserves_remembered_history_without_valid_bitfield(monkeypatch) -> None:
+    service = StremioService(AppSettings(id="default"))
+    video_ids = [f"tt1190634:1:{episode}" for episode in range(1, 11)]
+    payload = stremio_library_item(
+        "tt1190634", "The Boys", state_overrides={"video_id": "tt1190634:1:9"}
+    )
+    monkeypatch.setattr(service, "_series_video_ids", lambda _imdb_id: video_ids)
+    item = service._library_item_from_payload(payload)
+    rule = Rule(
+        rule_name="The Boys", content_name="The Boys", normalized_title="The Boys",
+        media_type=MediaType.SERIES, quality_profile=QualityProfile.PLAIN,
+        start_season=1, start_episode=9,
+        stremio_known_episode_numbers=[f"S01E{episode:02d}" for episode in range(1, 11)],
+        stremio_watched_episode_numbers=[f"S01E{episode:02d}" for episode in range(1, 9)],
+    )
+
+    assert item is not None
+    floor = service._derive_stremio_floor(item=item, rule=rule)
+
+    assert floor is not None
+    assert floor.watched_episode_numbers == [f"S01E{episode:02d}" for episode in range(1, 9)]
 
 
 def test_stremio_write_watch_progress_clears_episode_bit_for_in_progress_record(

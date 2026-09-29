@@ -1461,6 +1461,7 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
     }
     queue_defaults = {
         "rule_id": "",
+        "retry_existing_unwatched_available": False,
         "add_paused": True,
         "sequential_download": True,
         "first_last_piece_prio": True,
@@ -1506,6 +1507,9 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
                 errors = ["Rule not found for search."]
         else:
             queue_defaults["rule_id"] = source_rule.id
+            queue_defaults["retry_existing_unwatched_available"] = (
+                source_rule.media_type == MediaType.SERIES
+            )
             queue_defaults["add_paused"] = bool(source_rule.add_paused)
             payload_from_rule: JackettSearchRequest | None = None
             try:

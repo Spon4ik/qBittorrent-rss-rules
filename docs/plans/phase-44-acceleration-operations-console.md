@@ -25,8 +25,7 @@ step; production remains v1.4.28. Corrective review reopened #99, #100, and
 plus a fresh owner approval and eventual promotion. The correction requires
 valid watched-bitfield-only completion evidence, remembered-history fallback,
 failed-request retry reset and series-only controls, and real browser coverage
-of standalone plus rule inline-search dismissal. Continue from protected main
-`94679fe44f5b740fb74ba2bb61f6358a687bbfd8` on the corrective feature branch.
+of standalone plus rule inline-search dismissal. Corrective PR #109 merged as `c2abf87db7172b8444fb3b8b7c159f6e21735c20`; docs-only PR #110 advanced current main to `814f7b5d9f45b3784fe22670be6ff51779d554e8`. Fresh approval run `36586275445` is waiting at the protected owner Environment.
 Production remains v1.4.28. Continue only after owner approval; then promote through the documented stable-checkout flow and verify the ordinary Stremio sync.
 
 Issues #97-#102 tracked a reproduced series queue defect and initial fixes. PR

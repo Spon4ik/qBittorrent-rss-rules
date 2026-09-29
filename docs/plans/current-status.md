@@ -17,9 +17,11 @@
 - Fresh production approval run
   [36586275445](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36586275445)
   is validating v1.4.31 and must stop at the protected owner Environment.
-  Read-only runtime state is checkout v1.4.31/main `c2abf87d`, clean and synced;
-  deployed `/health` remains v1.4.28 (stale). Do not promote before owner
-  approval. No Docker finalizer, production deployment, or Stremio sync was run.
+  At approval dispatch, checkout was v1.4.31/main `c2abf87d`. Docs-only PR #110
+  later advanced main to `814f7b5d9f45b3784fe22670be6ff51779d554e8`; runtime
+  state now confirms that checkout is clean and synced while deployed `/health`
+  remains v1.4.28 (stale). Do not promote before owner approval. No Docker
+  finalizer, production deployment, or Stremio sync was run.
 - Local validation on the corrective branch: `scripts/check.bat` passed Ruff,
   mypy, and 692 tests (1 skipped); WinUI Debug/x64 built with 0 warnings/errors;
   `P44-03` browser QA passed both search surfaces. The canonical finalizer was

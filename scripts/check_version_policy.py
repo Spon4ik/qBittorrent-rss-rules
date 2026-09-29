@@ -10,8 +10,17 @@ import sys
 import tomllib
 from collections.abc import Mapping, Sequence
 
-DEPLOYABLE_PREFIXES = ("app/", "qbrssrulesdesktop/")
-DEPLOYABLE_FILES = {"dockerfile", "pyproject.toml", "requirements-release.txt"}
+DEPLOYABLE_PREFIXES = ("alembic/", "app/", "qbrssrulesdesktop/")
+DEPLOYABLE_FILES = {
+    ".dockerignore",
+    "alembic.ini",
+    "dockerfile",
+    "pyproject.toml",
+    "requirements-release.txt",
+    "scripts/install_desktop_bundle.cmd",
+    "scripts/install_desktop_bundle.ps1",
+    "scripts/package_desktop_bundle.ps1",
+}
 SEMVER_PATTERN = re.compile(
     r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)$"
 )
@@ -34,7 +43,9 @@ VERSION_PATTERNS = {
 
 def is_deployable_change(path: str) -> bool:
     """Return whether a changed path contributes to the shipped app or package."""
-    normalized = str(path).replace("\\", "/").casefold().lstrip("./")
+    normalized = str(path).replace("\\", "/").casefold()
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
     return normalized in DEPLOYABLE_FILES or normalized.startswith(DEPLOYABLE_PREFIXES)
 
 

@@ -2,9 +2,13 @@
 
 ## 2026-09-29 series playback and selective queue recovery (#97-#102)
 
-- Issues #98-#101 are closed through PR #103. Parent #97 remains In Progress
-  until the release is promoted; #102 is In Progress at the approval gate.
-  Dependency links remain #100 blocked by #99 and #102 blocked by #98-#101.
+- Issues #98-#101 are closed through PR #103. Follow-up #105 is now a sub-issue
+  of #97 and blocks parent completion: the original policy classifier missed
+  Alembic migration/configuration, Docker context, and desktop package/install
+  inputs. #105 covers those paths. Parent #97 remains In Progress until #105,
+  v1.4.30 promotion, and post-sync confirmation are complete; #102 is In
+  Progress at the owner approval gate. #100 depends on #99; #102 depends on
+  #98-#101.
 - PR #103 head `9b0c486cac3d05a2ab8f45a21a80a6c2d1bb6501` merged to exact main
   SHA `31c5c0fdf01c7b3657489bdd1945a4b7e462253e`.
 - The implementation uses Stremio's catalog-aligned completed-watch bitfield
@@ -42,6 +46,12 @@
   builds from `C:\Users\nucc\deployments\qBittorrent-rss-rules`, not this
   checkout. No Compose or production state was changed. Promotion and ordinary
   Stremio synchronization await owner approval and the stable-checkout flow.
+- Follow-up issue #105 is being implemented from exact current-main SHA
+  `f6f36276cfe6910e9e7f335d29465152b3e41f60` on branch
+  `fix/version-policy-deployable-inputs`. The checker now classifies Alembic
+  migrations/configuration, `.dockerignore`, and the three desktop package or
+  installer scripts as deployable. Focused version-policy tests, Ruff, mypy,
+  and `git diff --check` pass; protected PR CI is pending.
 
 ## 2026-09-29 selective qBittorrent queue 404 repair
 

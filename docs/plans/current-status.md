@@ -23,9 +23,15 @@
   main `94679fe44f5b740fb74ba2bb61f6358a687bbfd8`. Local validation: full
   `scripts/check.bat` passed Ruff, mypy, and 692 tests (1 skipped); WinUI
   Debug/x64 build passed with 0 warnings/errors; focused `P44-03` passed on
-  both search surfaces. Docker finalization/deployment was not attempted to
-  preserve the production boundary. Next: commit/push, open PR, pass protected
-  PR CI and qBittorrent API integration, then merge only with exact-head green.
+  both search surfaces. Version policy passes for 8 deployable paths.
+- PR #109 is open at head `4057d098b0280023b06ce433e3db065b437e8e32`:
+  [PR #109](https://github.com/Spon4ik/qBittorrent-rss-rules/pull/109).
+  CI run [36584322024](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36584322024)
+  and qBittorrent API run
+  [36584322368](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36584322368)
+  are queued. Docker finalization/deployment was not attempted to preserve the
+  production boundary. Next: wait for exact-head checks, address any failures,
+  then merge only with required checks green. Production remains v1.4.28.
 - CI gains a required version-policy lane: deployable code, desktop, Docker, or
   release dependency changes require a synchronized higher SemVer and release
   notes; docs/tests/tooling-only changes retain their exact commit SHA as the

@@ -18,9 +18,12 @@
   priorities. If it does not appear, the app reports that it was submitted and
   advises checking qBittorrent before retrying. Deterministic regressions cover
   both the original 404 and delayed torrent visibility.
-- The full local backend gate passed (`652 passed, 0 failed, 1 skipped`), as did
-  the WinUI build. PR CI/API and exact-main CI/API all passed. Release and
-  protected production promotion remain pending; production stays at v1.4.28.
+- Release `v1.4.29` is published from exact main SHA
+  `07486d9c76c0cd6f0b7ed5fe7c3098d714044ccd` after the full local backend gate
+  (`652 passed, 0 failed, 1 skipped`), WinUI build, PR CI/API, exact-main
+  CI/API, Windows package verification, and disposable-container smoke passed.
+  Protected production approval run `36546031927` is waiting for Environment
+  approval; production remains at v1.4.28 until the stable-checkout promotion.
 
 ## Goal
 

@@ -33,9 +33,20 @@
   [36544065860](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36544065860)
   and qBittorrent API run
   [36544065820](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36544065820).
-- Patch version `v1.4.29` is merged on `main`; release staging/publication and
-  protected production approval/promotion remain pending. The queue repair is
-  in source but is not yet running in Docker.
+- Patch release [v1.4.29](https://github.com/Spon4ik/qBittorrent-rss-rules/releases/tag/v1.4.29)
+  is published from exact main SHA
+  `07486d9c76c0cd6f0b7ed5fe7c3098d714044ccd`. Staging run
+  [36545527663](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36545527663)
+  passed its exact-main CI/API gate, portable Windows bundle, and disposable
+  container smoke. The 127,038,835-byte Windows ZIP SHA-256
+  `4cd0e58a88b906571c7ea1698d6b8801fa3c458b9e7caafc75f98facc4cfce5f`
+  matches the published sidecar.
+- Protected production approval run
+  [36546031927](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36546031927)
+  passed source and exact-SHA validation and is waiting at the
+  `production-approval` Environment. No production deployment has occurred;
+  `/health` remains v1.4.28. After approval, promotion must run from the clean
+  stable checkout at the published v1.4.29 tag using the local promotion tool.
 
 ## 2026-09-28 GitHub Project #85 issue-centric delivery tracking
 

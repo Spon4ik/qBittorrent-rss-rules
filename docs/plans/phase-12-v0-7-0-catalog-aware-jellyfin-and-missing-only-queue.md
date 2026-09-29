@@ -13,11 +13,14 @@
   `/api/v2/torrents/filePrio` endpoint immediately after adding the torrent.
   qBittorrent defines that response as an unknown torrent hash; interpreting it
   as a missing endpoint and retrying `/command/setFilePrio` hid the cause.
-- The v1.4.29 repair removes that legacy fallback and waits up to six half-second
+- The v1.4.29 repair, merged as `15f6602d6deb84a0863456bf817e30de59deb825`, removes that legacy fallback and waits up to six half-second
   checks for qBittorrent to list the added torrent before setting file
   priorities. If it does not appear, the app reports that it was submitted and
   advises checking qBittorrent before retrying. Deterministic regressions cover
   both the original 404 and delayed torrent visibility.
+- The full local backend gate passed (`652 passed, 0 failed, 1 skipped`), as did
+  the WinUI build. PR CI/API and exact-main CI/API all passed. Release and
+  protected production promotion remain pending; production stays at v1.4.28.
 
 ## Goal
 

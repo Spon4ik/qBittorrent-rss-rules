@@ -23,8 +23,19 @@
   branch is in `E:\GitHub\qBittorrent rss rules`. The release-promotion tool
   requires a published tag and protected approval. The shared Compose context
   was not changed; the deployed runtime remains `v1.4.28` pending that flow.
-- Patch version `v1.4.29` is prepared locally. GitHub persistence, release
-  publication, and production promotion remain pending.
+- Local WinUI Debug/x64 build passed with 0 warnings and 0 errors. PR #94
+  (`5a5185cd57011bfc870042124c15ca4668ac2088`) merged through protected squash
+  as `15f6602d6deb84a0863456bf817e30de59deb825`. PR CI run
+  [36543515768](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36543515768)
+  and qBittorrent API run
+  [36543515744](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36543515744)
+  passed. Both exact-main workflows passed on the merge SHA: CI run
+  [36544065860](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36544065860)
+  and qBittorrent API run
+  [36544065820](https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/36544065820).
+- Patch version `v1.4.29` is merged on `main`; release staging/publication and
+  protected production approval/promotion remain pending. The queue repair is
+  in source but is not yet running in Docker.
 
 ## 2026-09-28 GitHub Project #85 issue-centric delivery tracking
 

@@ -5,8 +5,10 @@
 - PR #114 merged to protected main as `e9961a245cda3861e97fde05d92c40e4b8b3b5bd`.
   Patch v1.4.32 is published from that exact SHA. Exact-source CI/API, release
   staging, and production approval run `37968298070` passed. PR #115 later
-  advanced main to `d02701ec035ae09610bdbfb97b03017b8c88f3ff`; the older
-  approval is no longer eligible under the current-main approval contract.
+  advanced main to `d02701ec035ae09610bdbfb97b03017b8c88f3ff`, and PR #116
+  merged the promotion-preflight correction as
+  `fb391b231b844f24aff1756fc96ef6533c29685c`. The earlier approval is no
+  longer eligible under the current-main approval contract.
 - Shared Stremio sync execution queues initial snapshot fetches for newly
   created rules in both manual and background sync. An isolated end-to-end
   probe exercised the real queue worker and fetch batch with an empty mocked
@@ -31,8 +33,8 @@
   preflight. If not, it stops before creating a Deployment, backing up SQLite,
   or mutating Docker. Regression coverage reproduced the old late failure,
   then passed after the change; promotion tests (31), Ruff, and mypy pass.
-  This tooling fix is on branch `codex/preflight-rollback-image` and is not yet
-  merged or present in the stable release checkout.
+  PR #116 passed all protected checks (run `37972319419`) and merged. This is a
+  repository-tooling fix; the immutable v1.4.32 stable tag does not contain it.
 - The exact v1.4.31 image cannot currently be recovered from a trusted local
   archive. A bounded alternative is to build a recovery image from the exact
   protected v1.4.31 source SHA and verified Compose/build inputs, validate its
@@ -47,10 +49,18 @@
   image today.
 - Production remains healthy on v1.4.31; `/health` reports `status=ok`, the
   database remains on the existing bind mount, and runtime-state reports stale
-  relative to v1.4.32. Do not run the old promoter again. Next steps: merge the
-  preflight regression through protected CI, obtain owner direction on the
-  source-rebuilt fallback guarantee, then produce the valid reviewed release /
-  tooling combination and a fresh protected approval before any promotion.
+  relative to v1.4.32. Do not run the old promoter again. The #116 PR text
+  accidentally triggered GitHub auto-close parsing despite negated wording;
+  the issue was reopened immediately because its acceptance criteria remain
+  unmet. Next executable step: obtain explicit owner approval for the
+  source-rebuilt fallback guarantee. If approved, build and validate a fallback
+  from protected v1.4.31 source and exact Compose/build inputs against a private
+  scratch DB copy; this proves source/version lineage, not byte identity. The
+  corrected promoter must then ship in a new reviewed tag: release staging
+  requires tag version == `pyproject.toml` and refuses existing tags, so a
+  tooling-bearing follow-up would need a new aligned patch release (v1.4.33 if
+  no later release exists). Obtain fresh protected approval for that current
+  release, then stop at its human Environment approval gate before promotion.
 
 ## 2026-09-29 v1.4.31 corrective release and production acceptance (#97-#102)
 

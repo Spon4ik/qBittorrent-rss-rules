@@ -121,6 +121,7 @@ from app.services.real_debrid_webseed import WebseedError, fetch_webseed_file
 from app.services.rule_builder import RuleBuilder
 from app.services.rule_fetch_ops import (
     refresh_snapshot_release_cache,
+    rule_fetch_recovery_status,
     run_rules_fetch_batch,
     run_scheduled_fetch_now,
     schedule_payload,
@@ -1289,6 +1290,7 @@ def read_operations_status(
     )
     payload["acceleration_problem_count"] = problem_count
     payload["acceleration_console_url"] = "/acceleration"
+    payload["rule_fetch_recovery"] = rule_fetch_recovery_status(session)
     return JSONResponse(payload)
 
 
@@ -1891,7 +1893,10 @@ async def create_rule(
 
     enqueue_rule_sync(rule.id)
     enqueue_rule_fetch(rule.id)
-    message = "Rule saved locally. qB sync and initial snapshot fetch are queued."
+    if rule.enabled and not (rule.movie_completion_auto_disabled or rule.jellyfin_auto_disabled):
+        message = "Rule saved locally. qB sync is queued and an initial snapshot fetch is scheduled."
+    else:
+        message = "Rule saved locally. qB sync is queued; automatic snapshot fetch is out of scope."
     level = "success"
     return RedirectResponse(
         url=f"/rules/{rule.id}?message={message}&level={level}",

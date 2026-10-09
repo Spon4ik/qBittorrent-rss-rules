@@ -99,7 +99,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.33"
+    assert payload["app_version"] == "1.4.34"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -121,6 +121,8 @@ def test_operations_status_endpoint_reports_registry_payload(app_client) -> None
 
     assert response.status_code == 200
     payload = response.json()
+    assert "rule_fetch_recovery" in payload
+    assert payload["rule_fetch_recovery"]["due_count"] == 0
     assert payload["summary"]["is_running"] is True
     assert payload["summary"]["total"] == 3
     assert payload["operations"][0]["type"] == "jackett_fetch"
@@ -6585,7 +6587,7 @@ def test_sync_stremio_settings_creates_rules_for_library_titles(
     queued_fetches: list[str] = []
     monkeypatch.setattr(
         "app.services.stremio_sync_ops.enqueue_rule_fetch",
-        lambda rule_id: queued_fetches.append(rule_id) or True,
+        lambda rule_id: queued_fetches.append(rule_id) or False,
     )
     _install_stremio_api(
         monkeypatch,
@@ -6617,6 +6619,11 @@ def test_sync_stremio_settings_creates_rules_for_library_titles(
     assert "Stremio sync completed for 1 active title(s)" in response.text
     assert "1 created" in response.text
     assert queued_fetches == [created_rule.id]
+    from app.services.rule_fetch_ops import select_due_rule_fetches
+
+    assert [item.rule_id for item in select_due_rule_fetches(db_session)] == [created_rule.id]
+    recovery = app_client.get("/api/operations/status").json()["rule_fetch_recovery"]
+    assert recovery["due_count"] == 1
 
 
 def test_sync_stremio_settings_pushes_changed_rules_to_qb_when_configured(

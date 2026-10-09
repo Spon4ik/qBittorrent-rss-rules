@@ -109,6 +109,9 @@ def test_rule_fetch_prefers_explicit_search_indexers_over_feed_urls(
 
     assert result["success"] is True
     assert "Scoped to saved Jackett search indexer: kinozal." in result["notices"]
+    snapshot = db_session.get(RuleSearchSnapshot, rule.id)
+    assert snapshot is not None
+    assert snapshot.inline_search["combined_fetched_count"] == 0
 
 
 def test_execute_rule_fetch_skips_completion_auto_disabled_rule(
@@ -382,6 +385,258 @@ def test_rules_fetch_batch_fetches_missing_then_oldest_snapshots(
     operation_status.reset_operations_for_tests()
 
 
+def test_rule_fetch_due_selector_uses_per_rule_snapshot_age_and_scope(db_session) -> None:
+    now = utcnow()
+    settings = AppSettings(
+        id="default",
+        rules_fetch_schedule_enabled=True,
+        rules_fetch_schedule_interval_minutes=60,
+        rules_fetch_schedule_scope="enabled",
+    )
+    missing = Rule(
+        rule_name="Due Missing",
+        content_name="Due Missing",
+        normalized_title="Due Missing",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    overdue = Rule(
+        rule_name="Due Boundary",
+        content_name="Due Boundary",
+        normalized_title="Due Boundary",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    fresh = Rule(
+        rule_name="Fresh Snapshot",
+        content_name="Fresh Snapshot",
+        normalized_title="Fresh Snapshot",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    disabled = Rule(
+        rule_name="Disabled Missing",
+        content_name="Disabled Missing",
+        normalized_title="Disabled Missing",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        enabled=False,
+    )
+    completed = Rule(
+        rule_name="Completion Blocked Missing",
+        content_name="Completion Blocked Missing",
+        normalized_title="Completion Blocked Missing",
+        media_type=MediaType.MOVIE,
+        quality_profile=QualityProfile.PLAIN,
+        movie_completion_auto_disabled=True,
+    )
+    db_session.add_all([settings, missing, overdue, fresh, disabled, completed])
+    db_session.flush()
+    db_session.add_all(
+        [
+            RuleSearchSnapshot(
+                rule_id=overdue.id,
+                inline_search={},
+                fetched_at=now - timedelta(minutes=60),
+            ),
+            RuleSearchSnapshot(
+                rule_id=fresh.id,
+                inline_search={},
+                fetched_at=now - timedelta(minutes=59),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    due = rule_fetch_ops.select_due_rule_fetches(db_session, now=now)
+
+    assert [(item.rule_id, item.reason) for item in due] == [
+        (missing.id, "missing_snapshot"),
+        (overdue.id, "stale_snapshot"),
+    ]
+
+    settings.rules_fetch_schedule_enabled = False
+    db_session.commit()
+    initial_only = rule_fetch_ops.select_due_rule_fetches(db_session, now=now)
+    assert [(item.rule_id, item.reason) for item in initial_only] == [
+        (missing.id, "missing_snapshot")
+    ]
+    settings.rules_fetch_schedule_enabled = True
+    settings.rules_fetch_schedule_scope = "all"
+    db_session.commit()
+    all_scope = rule_fetch_ops.select_due_rule_fetches(db_session, now=now)
+    assert {item.rule_id for item in all_scope} == {missing.id, overdue.id, disabled.id}
+
+
+def test_rule_fetch_due_selector_honors_retry_backoff(db_session) -> None:
+    now = utcnow()
+    settings = AppSettings(
+        id="default",
+        rules_fetch_schedule_enabled=False,
+        rules_fetch_schedule_interval_minutes=60,
+    )
+    rule = Rule(
+        rule_name="Retry Waiting",
+        content_name="Retry Waiting",
+        normalized_title="Retry Waiting",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+        snapshot_fetch_failure_count=2,
+        snapshot_fetch_next_attempt_at=now + timedelta(minutes=10),
+        snapshot_fetch_last_error="temporary provider failure",
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    assert rule_fetch_ops.select_due_rule_fetches(db_session, now=now) == []
+    due = rule_fetch_ops.select_due_rule_fetches(
+        db_session,
+        now=now + timedelta(minutes=10),
+    )
+    assert [(item.rule_id, item.reason) for item in due] == [(rule.id, "missing_snapshot")]
+
+
+def test_failed_snapshot_fetch_persists_redacted_retry_status(db_session, monkeypatch) -> None:
+    settings = AppSettings(
+        id="default",
+        jackett_api_url="http://jackett.test",
+        jackett_api_key_encrypted=obfuscate_secret("apikey"),
+        rules_fetch_parallelism=1,
+    )
+    rule = Rule(
+        rule_name="Retryable Fetch Failure",
+        content_name="Retryable Fetch Failure",
+        normalized_title="Retryable Fetch Failure",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+
+    def fail_fetch(session, *, rule, feed_urls_override=None, allow_completion_disabled=False):
+        return {
+            "rule_id": rule.id,
+            "rule_name": rule.rule_name,
+            "success": False,
+            "state": "error",
+            "rank": 0,
+            "filtered_count": 0,
+            "fetched_count": 0,
+            "warnings": [],
+            "notices": [],
+            "error": "provider failed: https://jackett.test/api?apikey=private-key",
+        }
+
+    monkeypatch.setattr(rule_fetch_ops, "execute_rule_fetch", fail_fetch)
+
+    result = rule_fetch_ops.run_rules_fetch_batch(
+        db_session,
+        run_all=False,
+        rule_ids=[rule.id],
+    )
+
+    db_session.refresh(rule)
+    assert result["status"] == "error"
+    assert rule.snapshot_fetch_failure_count == 1
+    assert rule.snapshot_fetch_next_attempt_at is not None
+    assert "private-key" not in str(rule.snapshot_fetch_last_error)
+    status = rule_fetch_ops.rule_fetch_recovery_status(db_session)
+    assert status["failed_count"] == 1
+    assert status["recent_failures"][0]["rule_id"] == rule.id
+    assert "<redacted>" in status["recent_failures"][0]["error"]
+
+
+def test_run_due_fetch_recovers_missing_snapshot_when_periodic_refresh_is_disabled(
+    db_session,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(
+        id="default",
+        rules_fetch_schedule_enabled=False,
+        rules_fetch_schedule_interval_minutes=60,
+    )
+    rule = Rule(
+        rule_name="Startup Missing Snapshot",
+        content_name="Startup Missing Snapshot",
+        normalized_title="Startup Missing Snapshot",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add_all([settings, rule])
+    db_session.commit()
+    observed: list[list[str]] = []
+
+    def fake_batch(session, *, run_all, rule_ids=None, include_disabled=False):
+        observed.append(list(rule_ids or []))
+        return {
+            "status": "ok",
+            "message": "completed",
+            "attempted": 1,
+            "succeeded": 1,
+            "failed": 0,
+            "results": [],
+        }
+
+    monkeypatch.setattr(rule_fetch_ops, "run_rules_fetch_batch", fake_batch)
+
+    result = rule_fetch_ops.run_due_scheduled_fetch(db_session)
+
+    assert result is not None
+    assert observed == [[rule.id]]
+    assert result["due"] == [{"rule_id": rule.id, "reason": "missing_snapshot"}]
+
+
+def test_run_due_fetch_uses_snapshot_age_even_when_global_next_run_is_future(
+    db_session,
+    monkeypatch,
+) -> None:
+    now = utcnow()
+    settings = AppSettings(
+        id="default",
+        rules_fetch_schedule_enabled=True,
+        rules_fetch_schedule_interval_minutes=60,
+        rules_fetch_schedule_scope="enabled",
+        rules_fetch_schedule_next_run_at=now + timedelta(hours=1),
+    )
+    rule = Rule(
+        rule_name="Per Rule Refresh Due",
+        content_name="Per Rule Refresh Due",
+        normalized_title="Per Rule Refresh Due",
+        media_type=MediaType.SERIES,
+        quality_profile=QualityProfile.PLAIN,
+    )
+    db_session.add_all([settings, rule])
+    db_session.flush()
+    db_session.add(
+        RuleSearchSnapshot(
+            rule_id=rule.id,
+            inline_search={},
+            fetched_at=now - timedelta(minutes=60),
+        )
+    )
+    db_session.commit()
+    observed: list[list[str]] = []
+
+    def fake_batch(session, *, run_all, rule_ids=None, include_disabled=False):
+        observed.append(list(rule_ids or []))
+        return {
+            "status": "ok",
+            "message": "completed",
+            "attempted": 1,
+            "succeeded": 1,
+            "failed": 0,
+            "results": [],
+        }
+
+    monkeypatch.setattr(rule_fetch_ops, "run_rules_fetch_batch", fake_batch)
+
+    result = rule_fetch_ops.run_due_scheduled_fetch(db_session)
+
+    assert result is not None
+    assert observed == [[rule.id]]
+    assert result["due"] == [{"rule_id": rule.id, "reason": "stale_snapshot"}]
+
+
 def test_rules_fetch_batch_limits_parallel_workers(db_session, monkeypatch) -> None:
     settings = AppSettings(
         id="default",
@@ -626,9 +881,7 @@ def test_refresh_snapshot_release_cache_requires_rule_title_identity(db_session)
         quality_profile=QualityProfile.CUSTOM,
         quality_include_tokens=[],
         quality_exclude_tokens=["1080p"],
-        feed_urls=[
-            "https://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api"
-        ],
+        feed_urls=["https://jackett.test/api/v2.0/indexers/rutracker/results/torznab/api"],
     )
     db_session.add(rule)
     db_session.flush()
@@ -682,9 +935,7 @@ def test_refresh_snapshot_release_cache_rejects_broad_imdb_backed_fallback_rows(
         quality_profile=QualityProfile.CUSTOM,
         quality_include_tokens=["hdr"],
         quality_exclude_tokens=[],
-        feed_urls=[
-            "https://jackett.test/api/v2.0/indexers/titleonly/results/torznab/api"
-        ],
+        feed_urls=["https://jackett.test/api/v2.0/indexers/titleonly/results/torznab/api"],
     )
     db_session.add(rule)
     db_session.flush()
@@ -793,12 +1044,10 @@ def test_refresh_snapshot_release_cache_keeps_multi_season_alias_pack_rows(
             "unified_raw_results": [
                 {
                     "title": (
-                        "Adventure Time with Finn & Jake [S01-10] "
-                        "(2010-2018) BDRip-HEVC 1080p"
+                        "Adventure Time with Finn & Jake [S01-10] (2010-2018) BDRip-HEVC 1080p"
                     ),
                     "text_surface": (
-                        "adventure time with finn jake s01 10 "
-                        "2010 2018 bdrip hevc 1080p"
+                        "adventure time with finn jake s01 10 2010 2018 bdrip hevc 1080p"
                     ),
                     "indexer": "rutor",
                     "query_source_key": "fallback",

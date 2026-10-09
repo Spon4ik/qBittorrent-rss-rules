@@ -5,7 +5,11 @@ import threading
 from collections import deque
 
 from app.db import get_session_factory
-from app.services.rule_fetch_ops import run_rules_fetch_batch
+from app.services.rule_fetch_ops import (
+    record_rule_fetch_failure,
+    run_rules_fetch_batch,
+    select_due_rule_fetches,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -75,16 +79,19 @@ def _worker_loop() -> None:
         session = get_session_factory()()
         retry = False
         try:
-            result = run_rules_fetch_batch(
-                session,
-                run_all=False,
-                rule_ids=[rule_id],
-                include_disabled=True,
-            )
-            retry = result.get("status") == "busy"
-        except Exception:
+            due = select_due_rule_fetches(session, rule_ids=[rule_id], limit=1)
+            if due:
+                result = run_rules_fetch_batch(
+                    session,
+                    run_all=False,
+                    rule_ids=[rule_id],
+                    include_disabled=False,
+                )
+                retry = result.get("status") == "busy"
+        except Exception as exc:
             session.rollback()
             LOGGER.exception("Failed to fetch initial snapshot for rule %s.", rule_id)
+            record_rule_fetch_failure(session, rule_id, str(exc))
         finally:
             session.close()
         with _CONDITION:

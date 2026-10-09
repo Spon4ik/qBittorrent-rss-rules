@@ -119,7 +119,8 @@ def test_native_stderr_progress_is_logged_without_failing_successful_command(
     command = f"""
 $ErrorActionPreference = 'Stop'
 Import-Module {module_path} -Force
-$nativeExe = (Get-Command {executable_literal} -CommandType Application).Source
+$nativeCommand = Get-Command {executable_literal} -CommandType Application
+$nativeExe = if ($nativeCommand.Source) {{ $nativeCommand.Source }} else {{ $nativeCommand.Path }}
 $nativePrefix = {prefix}
 $result = Invoke-DockerNativeProcess -DockerExe $nativeExe -DockerArguments ($nativePrefix + @('echo Compose progress 1>&2')) -OutputMode 'Log' -LogFile {log_path}
 if ($result.ExitCode -ne 0) {{ exit 3 }}

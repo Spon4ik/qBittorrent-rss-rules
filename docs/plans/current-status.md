@@ -67,18 +67,28 @@
   manifest, load-and-ID verification, and an owner-approved retention policy
   would preserve the exact image across daemon cleanup; none exists for this
   image today.
-- Production remains healthy on v1.4.31; `/health` reports `status=ok`, the
-  database remains on the existing bind mount, and runtime-state reports stale
-  relative to v1.4.32. Do not run the old promoter again. The #116 PR text
-  accidentally triggered GitHub auto-close parsing despite negated wording;
-  the issue was reopened immediately because its acceptance criteria remain
-  unmet. Production promotion has not been attempted. The pending approval is
-  run `37985076045`; after it succeeds, use the stable checkout at v1.4.33 and
-  explicitly pass `--allow-source-rebuilt-fallback`. Promotion still requires
-  full preflight, a new verified production backup, the canonical finalizer,
-  runtime freshness, and a successful GitHub Deployment. The stale v1.4.32
-  approval is ineligible. Current production remains healthy on v1.4.31 with
-  the original database and container image unchanged.
+- Approval run `37985076045` completed successfully on the exact v1.4.33 main
+  SHA, with approver `Spon4ik`; release and approval identity were verified
+  before promotion. The canonical promoter used the explicitly approved
+  source-rebuilt v1.4.31 fallback, preserved a new SQLite backup (SHA-256
+  `93573d3ea38fd348d721fe151118f065fcc72abadf33cd46b757c257b60758c1`), and
+  retained the rollback tag. GitHub Deployment `6970344746` is recorded as
+  failure and its private journal is unchanged. The finalizer's checks passed
+  (Ruff, mypy, and 694 passed / 0 failed / 0 errors / 1 skipped), Compose
+  rebuilt and restarted the target service, then the updater failed its
+  post-start inspect because its Docker Go template attempted to resolve
+  `com` as a template function. Do not rewrite this historical failed record.
+- Read-only runtime verification after the failure shows the service healthy
+  on v1.4.33, `/health` reports `status=ok`, `runtime_state --require-runtime-current`
+  passes, SQLite integrity is `ok`, and the existing DB bind mount is intact.
+  The failed status is an updater verification defect, not evidence that the
+  container failed to start. Fixing/releasing the promoter tooling requires a
+  fresh protected release/approval before another canonical promotion attempt.
+- Production Stremio audit currently finds 290 managed rules, 273 with
+  `RuleSearchSnapshot`, and 17 without. The three newest managed rules were
+  created at 17:07–18:23 UTC before the 20:28 UTC v1.4.33 promotion; each has
+  no snapshot. No genuine post-release Stremio title event was available, so
+  issue #47 remains open and must not be marked accepted from this inventory.
 
 ## 2026-09-29 v1.4.31 corrective release and production acceptance (#97-#102)
 

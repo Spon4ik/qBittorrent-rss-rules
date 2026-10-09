@@ -1,39 +1,56 @@
 # Current Status
 
-## 2026-10-09 Stremio-created rules miss initial snapshot fetch (#47)
+## 2026-10-09 Stremio production acceptance and rollback-image blocker (#47)
 
 - PR #114 merged to protected main as `e9961a245cda3861e97fde05d92c40e4b8b3b5bd`.
-  Patch v1.4.32 is published from that exact SHA. PR checks and exact-main CI
-  and qBittorrent API checks passed; release staging and production approval
-  also passed (`37967789084`, `37968298070`).
-- Shared Stremio sync execution queues an initial snapshot fetch for each new
-  rule in both manual and background sync. Existing rules are not force-fetched.
-  The regression asserts queueing. An isolated end-to-end probe created a
-  synthetic Stremio rule, exercised the real queue worker and fetch batch with
-  an empty mocked Jackett response, succeeded 1/1, and verified a persisted
-  `RuleSearchSnapshot`. No genuine new production rule was available, so
-  production acceptance of this path is not demonstrated.
-- Read-only production inspection found 585 Stremio library items with no
-  `tt39062868` item/IMDb ID, and 368 database rules with no matching rule. No
-  provider or application state was changed. The original missing-title report
-  remains unresolved because the title is absent from the current Stremio
-  library; this is separate from the snapshot-trigger fix.
-- Production promotion was attempted under successful protected approval. It
-  stopped at image retention before running the finalizer or replacing the
-  container: Docker no longer has the immutable image ID recorded for the
-  running v1.4.31 container. The failure is recorded in GitHub Deployment
-  `6967448936` and its private operator journal. The canonical tool created a
-  protected SQLite backup before stopping; both backup and live database pass
-  `PRAGMA integrity_check` and contain 368 rules. No standalone Docker updater
-  or database restore was run.
-- Runtime remains v1.4.31: `/health` reports `status=ok`, the sole
-  `qb-rss-rules` container is running and healthy, and runtime-state correctly
-  reports stale relative to v1.4.32. Shared Compose still points to the clean
-  stable checkout with the existing `/app/data` bind and read-only host mounts.
-- Issue #47 was updated with these findings and remains open. Do not close it
-  until the title is present in the intended Stremio library and production
-  acceptance is demonstrated. Promotion is blocked until the prior immutable
-  Docker image can be safely retained under the documented promotion flow.
+  Patch v1.4.32 is published from that exact SHA. Exact-source CI/API, release
+  staging, and production approval run `37968298070` passed. PR #115 later
+  advanced main to `d02701ec035ae09610bdbfb97b03017b8c88f3ff`; the older
+  approval is no longer eligible under the current-main approval contract.
+- Shared Stremio sync execution queues initial snapshot fetches for newly
+  created rules in both manual and background sync. An isolated end-to-end
+  probe exercised the real queue worker and fetch batch with an empty mocked
+  Jackett response, succeeded 1/1, and persisted a `RuleSearchSnapshot`. No
+  genuine new production rule was available, so production acceptance is not
+  demonstrated. The last read-only production inventory found 585 Stremio items
+  without `tt39062868` and 368 rules without a match. Issue #47 remains open.
+- Read-only Docker diagnosis classifies the missing prior image as unavailable
+  in the configured host stores (cause C), not a context mismatch: `default`
+  and `desktop-linux` resolve to the same Docker daemon ID
+  `313a88f3-b3ac-49db-8848-8f1f2fd9e83d`. The sole running container
+  `515b5b684889` records image
+  `sha256:b668f091553797bdbb797f9ee9dfdb96c2ac92c42e8afb373ab0a769f0167cac`,
+  but `docker image inspect` cannot resolve it in either context. The `local`
+  tag and retained rollback tags resolve to different image IDs. No matching
+  image archive was found under the private deployment directory, stable or
+  developer checkout, or targeted user Downloads/backup directories. The
+  private v1.4.32 SQLite backup and historical failed Deployment `6967448936`
+  remain intact; do not rewrite either record or restore the database.
+- `scripts/promote_production.py` now validates that Docker can inspect the
+  exact running image ID, and that the returned ID matches, during read-only
+  preflight. If not, it stops before creating a Deployment, backing up SQLite,
+  or mutating Docker. Regression coverage reproduced the old late failure,
+  then passed after the change; promotion tests (31), Ruff, and mypy pass.
+  This tooling fix is on branch `codex/preflight-rollback-image` and is not yet
+  merged or present in the stable release checkout.
+- The exact v1.4.31 image cannot currently be recovered from a trusted local
+  archive. A bounded alternative is to build a recovery image from the exact
+  protected v1.4.31 source SHA and verified Compose/build inputs, validate its
+  version/source and schema compatibility against a private scratch DB copy,
+  and use its new image ID as a fallback. This guarantees source/version
+  lineage, not binary identity with the missing deployed image. It requires
+  explicit owner approval to replace the exact-image rollback guarantee and
+  must be implemented as reviewed promotion tooling before use. For future
+  promotions, a private `docker save` archive with SHA-256, source/image
+  manifest, load-and-ID verification, and an owner-approved retention policy
+  would preserve the exact image across daemon cleanup; none exists for this
+  image today.
+- Production remains healthy on v1.4.31; `/health` reports `status=ok`, the
+  database remains on the existing bind mount, and runtime-state reports stale
+  relative to v1.4.32. Do not run the old promoter again. Next steps: merge the
+  preflight regression through protected CI, obtain owner direction on the
+  source-rebuilt fallback guarantee, then produce the valid reviewed release /
+  tooling combination and a fresh protected approval before any promotion.
 
 ## 2026-09-29 v1.4.31 corrective release and production acceptance (#97-#102)
 

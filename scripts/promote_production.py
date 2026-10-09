@@ -524,6 +524,27 @@ class PromotionManager:
         ).stdout.strip()
         if not image_id.startswith("sha256:"):
             raise ValueError("Current production container has no immutable image identity")
+        try:
+            retained_image_id = _run(
+                [
+                    str(self.paths.docker_exe),
+                    "image",
+                    "inspect",
+                    "--format",
+                    "{{.Id}}",
+                    image_id,
+                ]
+            ).stdout.strip()
+        except RuntimeError as exc:
+            raise ValueError(
+                f"Previous production image {image_id} is not inspectable for rollback retention; "
+                "ensure Docker can resolve this exact immutable image before retrying promotion"
+            ) from exc
+        if retained_image_id != image_id:
+            raise ValueError(
+                f"Previous production image {image_id} resolved to {retained_image_id or 'no image ID'}; "
+                "rollback retention requires the exact immutable image"
+            )
 
         venv_python = self.paths.checkout / ".venv" / "Scripts" / "python.exe"
         finalizer = self.paths.checkout / "Finalize-Backend.cmd"

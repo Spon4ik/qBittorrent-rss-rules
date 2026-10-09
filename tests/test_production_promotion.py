@@ -698,9 +698,19 @@ def test_failure_status_is_attempted_when_failure_journal_update_also_fails(
     assert mutation_calls == []
 
 
-def test_missing_docker_cli_is_rejected_by_real_preflight_before_any_mutation(
+@pytest.mark.parametrize(
+    ("docker_available", "expected_error"),
+    [
+        (False, "Docker Desktop CLI is missing"),
+        (True, "Previous production image .* is not inspectable for rollback retention"),
+    ],
+    ids=["missing-docker-cli", "orphaned-previous-image"],
+)
+def test_docker_preflight_rejects_missing_cli_or_orphaned_image_before_mutation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    docker_available: bool,
+    expected_error: str,
 ) -> None:
     paths = promotion_cli.PromotionPaths(
         home=tmp_path,
@@ -726,6 +736,8 @@ def test_missing_docker_cli_is_rejected_by_real_preflight_before_any_mutation(
         encoding="utf-8",
     )
     manager.contract_key_file.write_bytes(b"k" * 32)
+    if docker_available:
+        paths.docker_exe.write_text("docker fixture", encoding="utf-8")
     manifest = _manifest()
     release_url = str(manifest["release_url"])
     run_url = str(manifest["approval_run_url"])
@@ -757,20 +769,37 @@ def test_missing_docker_cli_is_rejected_by_real_preflight_before_any_mutation(
     command_calls: list[list[str]] = []
     backup_calls: list[Path] = []
     monkeypatch.setattr(manager, "_create_deployment", lambda evidence: deployment_calls.append(evidence) or 99)
-    monkeypatch.setattr(promotion_cli, "_run", lambda args, **_kwargs: command_calls.append(args))
+
+    def run_command(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        command_calls.append(args)
+        if args[1:3] == ["image", "inspect"]:
+            raise RuntimeError("docker.exe failed with exit code 1")
+        if args[1:3] == ["inspect", "--format"]:
+            return subprocess.CompletedProcess(args, 0, stdout="sha256:" + "b" * 64, stderr="")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(promotion_cli, "_run", run_command)
     monkeypatch.setattr(
         promotion_cli,
         "verify_sqlite_backup",
         lambda _source, backup: backup_calls.append(backup) or "a" * 64,
     )
 
-    with pytest.raises(ValueError, match="Docker Desktop CLI is missing"):
+    with pytest.raises(ValueError, match=expected_error):
         manager.promote("v1.4.25", 12)
 
     assert deployment_calls == []
-    assert command_calls == []
+    if docker_available:
+        assert [args[1:3] for args in command_calls] == [
+            ["info"],
+            ["inspect", "--format"],
+            ["image", "inspect"],
+        ]
+    else:
+        assert command_calls == []
     assert backup_calls == []
     assert not manager.journal_dir.exists()
+    assert not any(args[1:2] == ["tag"] or args[1:2] == ["compose"] for args in command_calls)
 
 
 @pytest.mark.parametrize(

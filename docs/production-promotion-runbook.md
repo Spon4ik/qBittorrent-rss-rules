@@ -43,7 +43,7 @@ The stable checkout directory must be created and prepared manually before promo
    .\.venv\Scripts\python.exe scripts\promote_production.py --tag v1.4.28 --approval-run-id 12345678901
    ```
 
-   Replace the example tag and run ID with the values from the approved run. The command downloads the data-only manifest to a temporary directory, revalidates the current main workflow and approval, acquires an exclusive host lock, and runs read-only preflight checks before creating a GitHub `production` Deployment record.
+   Replace the example tag and run ID with the values from the approved run. The command downloads the data-only manifest to a temporary directory, revalidates the current main workflow and approval, acquires an exclusive host lock, and runs read-only preflight checks before creating a GitHub `production` Deployment record. Preflight must inspect the running container's immutable image ID and verify Docker can resolve that same ID for rollback retention; an absent or mismatched image stops promotion before the Deployment record, SQLite backup, or Docker mutation.
 5. After the record enters `in_progress`, the command creates an online SQLite backup, runs `PRAGMA integrity_check`, restores it to private scratch storage, and hashes the backup. It then retains the existing image by immutable ID, invokes `Finalize-Backend.cmd --no-pause` from the stable checkout, and requires exact `/health.app_version` and `runtime_state.bat --require-runtime-current` success before marking the GitHub Deployment successful.
 
 The local journal and backup are stored under `%USERPROFILE%\docker-config\qbrss-private`; that directory's ACL is restricted to the current user, Local System, and local Administrators. No private path or database content is sent to GitHub. The journal records source SHA, image IDs, backup digest and private path, finalizer result, health version, and status transitions.
@@ -51,6 +51,7 @@ The local journal and backup are stored under `%USERPROFILE%\docker-config\qbrss
 ## Failure and recovery
 
 - Any preflight failure stops before creating a GitHub production Deployment, backup, image tag, finalizer invocation, or container change.
+- If Docker cannot inspect the exact immutable image ID reported by the running production container, do not substitute the mutable `local` tag, a different rollback tag, a rebuild, or a committed/exported container. Restore the exact image from a trusted archive if one exists. Otherwise, keep promotion stopped until the owner explicitly approves a documented alternative rollback guarantee and its tooling is reviewed.
 - Backup or scratch-restore failure stops before image retention and rebuild. The incomplete backup is removed.
 - A failed finalizer or health check marks the GitHub Deployment failed and leaves the prior image retained as `qbittorrent-rss-rule-manager:rollback-<UTC timestamp>`. The tool does not automatically change the running image or restore the database.
 - If a rollback is needed, first inspect the failure and verify the previous image is compatible with the current database schema. The operator may retag the recorded immutable image ID and recreate only the service:

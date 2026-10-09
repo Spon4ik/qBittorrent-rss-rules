@@ -35,7 +35,7 @@ jobs:
             --env QBT_WEBUI_PORT=18089 \
             --volume "$config_dir:/config" \
             --volume "$downloads_dir:/downloads" \
-            qbittorrentofficial/qbittorrent-nox@sha256:9ebb534fe30bab98622cb84a8c3acecfd88319b2d540f52ecdec7b9f866374d7
+            ghcr.io/qbittorrent/docker-qbittorrent-nox@sha256:9ebb534fe30bab98622cb84a8c3acecfd88319b2d540f52ecdec7b9f866374d7
 
           password=""
           status=""

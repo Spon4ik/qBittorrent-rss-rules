@@ -98,6 +98,12 @@
   pull-rate-limit failure. The runbook records v1.4.33 as live and requires a
   new release and exact-main approval for future promotion. No service restart
   or GitHub Deployment status change was made during this correction.
+- Follow-up handoff PR #121 also hit the same Docker Hub pull limit. The
+  integration workflow now uses the official qBittorrent GHCR mirror for the
+  same pinned manifest digest `sha256:9ebb534fe30bab98622cb84a8c3acecfd88319b2d540f52ecdec7b9f866374d7`;
+  upstream documents this mirror, and a read-only registry inspect resolved
+  that exact digest. PR checks will verify the job with the mirror; no registry
+  credentials or skipped checks are used.
 - Production Stremio audit currently finds 290 managed rules, 273 with
   `RuleSearchSnapshot`, and 17 without. The three newest managed rules were
   created at 17:07–18:23 UTC before the 20:28 UTC v1.4.33 promotion; each has

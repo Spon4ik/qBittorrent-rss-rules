@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
+- No entries yet.
+
+## [1.4.33] - 2026-10-09
+
+- Synchronize the backend and desktop version for the reviewed production-promotion tooling release; application behavior is unchanged.
 - Reject production promotion during read-only preflight when Docker cannot resolve the exact running rollback image.
 - Add an owner-approved, provenance-checked v1.4.31 source-rebuilt rollback fallback when the exact prior Docker image is unavailable.
 

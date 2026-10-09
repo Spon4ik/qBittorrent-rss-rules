@@ -184,6 +184,40 @@ Write-DockerLifecycleAuditRecord -AuditPath {audit_path} -RunId 'run-123' -Attem
     assert all("command" not in record and "environment" not in record for record in records)
 
 
+def test_lifecycle_snapshot_quotes_compose_label_in_docker_format() -> None:
+    powershell = _powershell()
+    module_path = _ps_literal(str(MODULE))
+    command = f"""
+$ErrorActionPreference = 'Stop'
+Import-Module {module_path} -Force
+$script:CapturedFormat = $null
+function Invoke-MockedDocker {{
+    param([string[]]$DockerArguments, [string]$OutputMode)
+    if ($DockerArguments[0] -eq 'compose') {{
+        return [pscustomobject]@{{ ExitCode = 0; StdOut = @('a' * 64) }}
+    }}
+    if ($DockerArguments[0] -eq 'inspect') {{
+        $script:CapturedFormat = $DockerArguments[2]
+        return [pscustomobject]@{{ ExitCode = 0; StdOut = @((('a' * 64) + '|sha256:' + ('1' * 64) + '|running|healthy|qb-rss-rules')) }}
+    }}
+    throw 'Unexpected mocked Docker command.'
+}}
+$dockerInvoker = {{ param($DockerArguments, $OutputMode) Invoke-MockedDocker -DockerArguments $DockerArguments -OutputMode $OutputMode }}
+$snapshot = Get-DockerLifecycleTargetSnapshot -ComposeArguments @('compose') -Service 'qb-rss-rules' -DockerInvoker $dockerInvoker
+if (-not $snapshot.QuerySucceeded -or $snapshot.Service -ne 'qb-rss-rules' -or $snapshot.State -ne 'running') {{ throw 'Docker inspection did not produce a valid lifecycle snapshot.' }}
+if ($script:CapturedFormat -notmatch '\\{{index \\.Config\\.Labels \"com\\.docker\\.compose\\.service\"\\}}') {{ throw ('Compose service label key was not correctly quoted in Docker format: ' + $script:CapturedFormat) }}
+"""
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-NonInteractive", "-Command", command],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_successful_compose_exit_without_running_target_is_not_proven() -> None:
     powershell = _powershell()
     module_path = _ps_literal(str(MODULE))

@@ -4,7 +4,7 @@ G5b keeps production changes on the operator-controlled Windows host. GitHub Act
 
 ## Current eligibility
 
-The current production runtime is v1.4.24. The first eligible promotion must use a published, validated release newer than v1.4.24. A release tag is not itself permission to deploy: its approval run must pass the protected `production-approval` Environment, and the local command rechecks the live tag, main ancestry, checks, approval, checkout, Compose configuration, health, and version.
+The current production runtime is v1.4.33 (verified by `/health` and the runtime-current gate after Deployment `6970344746`; its GitHub Deployment status remains failed because post-start inspection errored). The next eligible promotion must use a published, validated release newer than v1.4.33 and a fresh approval for its exact current-main SHA. Approval run `37985076045` authorized v1.4.33 only and cannot authorize another promotion. A release tag is not itself permission to deploy: its approval run must pass the protected `production-approval` Environment, and the local command rechecks the live tag, main ancestry, checks, approval, checkout, Compose configuration, health, and version.
 
 The approval Environment must have exactly one required reviewer, `Spon4ik`, self-review allowed, administrator bypass disabled, and deployment restricted to protected branches. The approval workflow fails before queuing that Environment job if any of those settings are absent or differ. Approval is the repository owner's recorded decision, not independent review. The resulting artifact records `approved_by`, release identity, exact-SHA CI/API runs, and the workflow run. An approval artifact does not report a production deployment.
 
@@ -65,6 +65,8 @@ The stable checkout directory must be created and prepared manually before promo
 5. After the record enters `in_progress`, the command creates an online SQLite backup, runs `PRAGMA integrity_check`, restores it to private scratch storage, and hashes the backup. It then retains the existing image by immutable ID, invokes `Finalize-Backend.cmd --no-pause` from the stable checkout, and requires exact `/health.app_version` and `runtime_state.bat --require-runtime-current` success before marking the GitHub Deployment successful.
 
 The local journal and backup are stored under `%USERPROFILE%\docker-config\qbrss-private`; that directory's ACL is restricted to the current user, Local System, and local Administrators. No private path or database content is sent to GitHub. The journal records source SHA, image IDs, backup digest and private path, finalizer result, health version, and status transitions.
+
+The updater's lifecycle inspection passes the Compose service label key to Docker's Go template. In PowerShell, build the key's double-quote delimiters explicitly (for example with `[string][char]34`) so the exact format argument contains `{{index .Config.Labels "com.docker.compose.service"}}`. The lifecycle regression test checks this argument; a malformed template can fail after Compose has already recreated the service and must leave the Deployment recorded as failed.
 
 ## Failure and recovery
 

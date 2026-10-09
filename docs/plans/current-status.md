@@ -44,8 +44,14 @@
   validated as v1.4.31 with 368 scratch rules and integrity `ok`. The builder
   creates no production service changes. Focused promotion tests (32), Ruff,
   mypy, and `scripts\\check.bat` pass (694 passed, 0 failed, 0 errors, 1 skipped).
-  Changes are on local branch `codex/source-rebuilt-rollback-fallback`; PR and
-  protected CI are the next step. App code and version were not changed.
+  PR #118 is merged at `6cb2c035447ab4da7c6ffd0e9311bc378b945c58`; exact-main
+  CI/API runs `37982588960`/`37982588871` passed. v1.4.33 then required an
+  aligned version release because staging binds a new stable tag to the
+  project version. PR #119 merged at `3a506d6d393d7c328ab02ef8c248077dfee79754`;
+  exact-main CI/API runs `37984139435`/`37984139742` passed. Release staging
+  `37984625481` passed, the ZIP digest matched its sidecar, and v1.4.33 is
+  published at that exact source. Fresh approval run `37985076045` passed
+  source/CI validation and is waiting at the human Environment gate.
 - The exact v1.4.31 image could not be recovered from a trusted local archive.
   The owner approved a bounded source-rebuilt fallback. The private builder
   produced image `sha256:4a1b82745743abef0d076b2d4302ecde973f717f4239560d531bbb4a0f402109`
@@ -61,18 +67,39 @@
   manifest, load-and-ID verification, and an owner-approved retention policy
   would preserve the exact image across daemon cleanup; none exists for this
   image today.
-- Production remains healthy on v1.4.31; `/health` reports `status=ok`, the
-  database remains on the existing bind mount, and runtime-state reports stale
-  relative to v1.4.32. Do not run the old promoter again. The #116 PR text
-  accidentally triggered GitHub auto-close parsing despite negated wording;
-  the issue was reopened immediately because its acceptance criteria remain
-  unmet. Next executable step: merge the tooling PR through protected main,
-  publish an aligned release if required by the current release workflow,
-  obtain fresh protected approval for the exact current main/release tuple,
-  and stop at its human Environment approval gate before promotion. The stale
-  v1.4.32 approval is ineligible. After approval, promotion still requires the
-  explicit source-fallback flag, the canonical stable-checkout finalizer, a new
-  verified production backup, runtime freshness, and a successful Deployment.
+- Approval run `37985076045` completed successfully on the exact v1.4.33 main
+  SHA, with approver `Spon4ik`; release and approval identity were verified
+  before promotion. The canonical promoter used the explicitly approved
+  source-rebuilt v1.4.31 fallback, preserved a new SQLite backup (SHA-256
+  `93573d3ea38fd348d721fe151118f065fcc72abadf33cd46b757c257b60758c1`), and
+  retained the rollback tag. GitHub Deployment `6970344746` is recorded as
+  failure and its private journal is unchanged. The finalizer's checks passed
+  (Ruff, mypy, and 694 passed / 0 failed / 0 errors / 1 skipped), Compose
+  rebuilt and restarted the target service, then the updater failed its
+  post-start inspect because its Docker Go template attempted to resolve
+  `com` as a template function. Do not rewrite this historical failed record.
+- Read-only runtime verification after the failure shows the service healthy
+  on v1.4.33, `/health` reports `status=ok`, `runtime_state --require-runtime-current`
+  passes, SQLite integrity is `ok`, and the existing DB bind mount is intact.
+  The failed status is an updater verification defect, not evidence that the
+  container failed to start. Fixing/releasing the promoter tooling requires a
+  fresh protected release/approval before another canonical promotion attempt.
+- Root cause is isolated to `scripts/DockerLifecycleAudit.psm1`: its Docker Go
+  template embedded double quotes inside a PowerShell single-quoted string, so
+  Docker received invalid label-index syntax and parsed `com` as a template
+  function. The template now builds its quote delimiters with `[char]34`; a
+  Windows PowerShell regression checks the actual format argument and parsed
+  lifecycle snapshot. Focused lifecycle tests pass (5), and a read-only inspect
+  against production now returns the running container, image ID, healthy state,
+  and `qb-rss-rules` service label. Full pytest passes (all tests; 1 skipped).
+  The runbook now records v1.4.33 as the live runtime and requires a new release
+  and exact-main approval for future promotion. No service restart or GitHub
+  Deployment status change was made during this correction.
+- Production Stremio audit currently finds 290 managed rules, 273 with
+  `RuleSearchSnapshot`, and 17 without. The three newest managed rules were
+  created at 17:07–18:23 UTC before the 20:28 UTC v1.4.33 promotion; each has
+  no snapshot. No genuine post-release Stremio title event was available, so
+  issue #47 remains open and must not be marked accepted from this inventory.
 
 ## 2026-09-29 v1.4.31 corrective release and production acceptance (#97-#102)
 

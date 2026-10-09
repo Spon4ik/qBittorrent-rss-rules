@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.32] - 2026-10-09
+
+- Queue an initial RSS snapshot fetch when Stremio sync creates a new rule.
+
 ## [1.4.31] - 2026-09-29
 
 - Correct Stremio progress fallback and one-request queue retry behavior; restrict retry controls to series rules and verify dismissible status on both search surfaces.

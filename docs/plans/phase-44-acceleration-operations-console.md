@@ -11,27 +11,76 @@ unfinished Phase 44 work separate from governance commits.
 
 ## Status
 
-In implementation. UI/API behavior is implemented and live-smoke-tested; automatic
-Codex heartbeat pickup remains pending end-to-end proof after the active task yields.
+Implementation is complete through v1.4.31 and protected approval. The current
+series acceptance/handoff correction is in PR #112; the independent promotion
+audit reconciliation is tracked by #113.
 
 ## Series progress and selective queue recovery (2026-09-29)
 
 ### Corrective v1.4.31 continuation (2026-09-29)
 
-The published v1.4.30 release is superseded and must not be promoted. Live
-approval run `36563977371` completed with failure at the protected approval
-step; production remains v1.4.28. Corrective review reopened #99, #100, and
-#101; #97 remains open, #98/#105 remain closed, and #102 now tracks v1.4.31
-plus a fresh owner approval and eventual promotion. The correction requires
-valid watched-bitfield-only completion evidence, remembered-history fallback,
-failed-request retry reset and series-only controls, and real browser coverage
-of standalone plus rule inline-search dismissal. Corrective PR #109 merged as `c2abf87db7172b8444fb3b8b7c159f6e21735c20`; docs-only PR #110 advanced current main to `814f7b5d9f45b3784fe22670be6ff51779d554e8`. Fresh approval run `36586275445` is waiting at the protected owner Environment.
-Production remains v1.4.28. Continue only after owner approval; then promote through the documented stable-checkout flow and verify the ordinary Stremio sync.
+The published v1.4.30 release is superseded and must not be promoted. Its
+approval run `36563977371` failed at the protected approval step. Corrective
+review reopened #99, #100, and #101; #98/#105 remain closed, and #102 tracks
+v1.4.31 promotion and acceptance. PR #109 merged as
+`c2abf87db7172b8444fb3b8b7c159f6e21735c20`; current main is
+`81295202747f224a4aac0e6da2024c8e11e43f0f`. Fresh approval run `36612074541`
+passed all jobs from current main and remains bound to published v1.4.31 at the
+exact PR #109 merge SHA. Docs-only main commits were not deployed.
+
+Production promotion Deployment `6742723277` used the documented stable
+checkout and canonical finalizer. Ruff, mypy, and pytest passed (692 passed, 1
+skipped); the service now runs healthy on image
+`sha256:b668f091553797bdbb797f9ee9dfdb96c2ac92c42e8afb373ab0a769f0167cac`,
+`/health.app_version` is 1.4.31, and stable checkout is clean at the approved
+SHA. Compose still mounts the intended persistent database and read-only host
+paths. The first updater verification failed and left the GitHub Deployment
+and private journal at failure; a subsequent canonical updater run succeeded,
+but the promotion tool does not support audit retry from that failure stage.
+The verified online SQLite backup remains private and intact.
+
+The original #97/#99 regression target is The Boys (`tt1190634`), established
+by PR #103's deterministic tests and #99's episode-9 acceptance case. Running
+Point (`tt14879018`) was chosen later as an inferred substitute because its
+live state resembled the scenario; it is not the reproduced target. The
+current read-only production DB has The Boys at floor S05E09, Stremio-known
+episodes through S05E08, and no persisted Stremio-watched keys. A direct
+read-only Stremio library fetch returned `video_id=tt1190634:5:8`; the watched
+bitfield parsed as valid but yielded no watched episode keys. The configured
+live Jellyfin library has no matching `tt1190634` item, so current Jellyfin
+episode state is unavailable and any cached Jellyfin summary is historical
+only. This does not reproduce the historical season-1 stale-floor case.
+Classify production acceptance as C: historical reproduction is presently
+unprovable, not failed, and no implementation defect is demonstrated. Its
+effective search floor is the persisted S05E09. Do not change provider/DB
+state, run another sync, queue a production torrent, or use Running Point as
+acceptance evidence.
+
+Deployment `6742723277` and its private journal retain their original failed
+status. Its first lifecycle audit recorded one container ID and Compose exit
+0, but Docker inspect failed both before and after Compose, leaving metadata
+empty. A later canonical updater run from the same approved checkout
+successfully audited the running healthy service with the same single-argument
+inspect template. Its argument list was `inspect`, `--format`, the complete
+Go-template string as one element, and the container ID; PowerShell splatting
+through the same Compose argument array succeeded in a fresh read-only live
+snapshot. An isolated mocked lifecycle snapshot using that template also
+passes. Classify the initial failure as unreproduced environment/invocation
+evidence; there is no demonstrated source/template defect, and the earlier
+undefined-`com` diagnosis is withdrawn. Its exact cause is unknown because the
+original updater log was overwritten by the successful later run. A separate
+follow-up should support recovery evidence when a later deterministic
+audit proves runtime after the deployment status has become immutable-failed.
+The series code and queue retry remain covered by merged regression tests.
+Historical production acceptance was assessed as C against the original
+The Boys target, so #97 is closed with that limitation recorded rather than
+left open for an unavailable past provider state. Issues #99-#102 are closed;
+Project #2 tracks the separate, still-open audit recovery in #113.
 
 Issues #97-#102 tracked a reproduced series queue defect and initial fixes. PR
 #103 merged head `9b0c486cac3d05a2ab8f45a21a80a6c2d1bb6501` to protected main
 as `31c5c0fdf01c7b3657489bdd1945a4b7e462253e`. Corrective review found
-acceptance gaps; #99-#101 are reopened and #97 remains In Progress.
+acceptance gaps, which led to the corrective v1.4.31 work described above.
 Stremio completion is now derived from its catalog episode bitfield; a selected
 episode ID or aggregate watch time alone cannot mark an in-progress episode as
 watched. Queueing can optionally retry existing-but-unwatched files for one

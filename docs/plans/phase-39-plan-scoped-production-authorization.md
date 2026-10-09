@@ -126,6 +126,14 @@ not proven by local tests or by an unapproved candidate plan.
   than the compare endpoint's capped commit list. UTC timestamp checks account
   for host local/UTC clock skew. No plan authorization run, ledger record, new
   release, or production Deployment has been created.
-- Next: publish the validated branch and open a draft PR. Then pause for the
-  one-time independent reviewer, Environment, CODEOWNERS, and ruleset setup
-  before merging or issuing the first plan authorization.
+- The validated branch is pushed as
+  `codex/plan-scoped-production-auth` at
+  `139895b7e010b2f1ed8c096297dd975d2a9b8821`; draft PR #125 is open with all
+  required checks passing on that exact head. No workflow, release, or
+  production promotion is active.
+- Live GitHub still has only collaborator `Spon4ik`, ruleset `24023362` requires
+  zero approving reviews and no CODEOWNERS review, and the
+  `production-plan-approval` Environment is not configured. The one-time
+  independent reviewer, Environment, CODEOWNERS, and ruleset setup remains the
+  external boundary before merge or plan authorization. The legacy
+  `production-approval` gate and production configuration remain unchanged.

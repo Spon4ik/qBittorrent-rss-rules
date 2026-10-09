@@ -58,6 +58,15 @@
   `6972627039` and earlier
   failed records remain unchanged. The candidate plan authorizes patch releases
   only and does not allow a source-rebuilt rollback substitution.
+- The implementation is pushed on `codex/plan-scoped-production-auth` at
+  `139895b7e010b2f1ed8c096297dd975d2a9b8821`; draft PR #125 is open and all
+  required CI checks pass on that exact head. No run is currently active.
+  Live GitHub still has only collaborator `Spon4ik`; ruleset `24023362`
+  requires zero approving reviews and no CODEOWNERS review, and
+  `production-plan-approval` is not configured. The one-time independent human
+  reviewer, Environment, CODEOWNERS, and ruleset setup remains required before
+  merge. Keep the draft PR and legacy `production-approval` Environment intact
+  until that boundary is resolved.
 - Windows dialog investigation is not yet attributable. `Get-Command docker.exe`
   resolves `C:\Program Files\Docker\Docker\resources\bin\docker.exe`.
   Repository CLI calls use `& $DockerExe` or `subprocess.run([...docker.exe])`;

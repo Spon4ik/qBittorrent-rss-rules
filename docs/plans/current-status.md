@@ -50,8 +50,8 @@
   project version. PR #119 merged at `3a506d6d393d7c328ab02ef8c248077dfee79754`;
   exact-main CI/API runs `37984139435`/`37984139742` passed. Release staging
   `37984625481` passed, the ZIP digest matched its sidecar, and v1.4.33 is
-  published at that exact source. Fresh approval run `37985076045` passed
-  source/CI validation and is waiting at the human Environment gate.
+  published at that exact source. Approval run `37985076045` completed after
+  the protected human Environment approval and authorized that exact source.
 - The exact v1.4.31 image could not be recovered from a trusted local archive.
   The owner approved a bounded source-rebuilt fallback. The private builder
   produced image `sha256:4a1b82745743abef0d076b2d4302ecde973f717f4239560d531bbb4a0f402109`
@@ -92,14 +92,19 @@
   lifecycle snapshot. Focused lifecycle tests pass (5), and a read-only inspect
   against production now returns the running container, image ID, healthy state,
   and `qb-rss-rules` service label. Full pytest passes (all tests; 1 skipped).
-  The runbook now records v1.4.33 as the live runtime and requires a new release
-  and exact-main approval for future promotion. No service restart or GitHub
-  Deployment status change was made during this correction.
+  PR #120 merged to main at `118c44492cda7b7aef1baa71e1f8f6bc020d3968`.
+  Exact-main CI run `37989423540` passed; API integration run `37989423383`
+  passed after one failed-only retry of an initial Docker Hub unauthenticated
+  pull-rate-limit failure. The runbook records v1.4.33 as live and requires a
+  new release and exact-main approval for future promotion. No service restart
+  or GitHub Deployment status change was made during this correction.
 - Production Stremio audit currently finds 290 managed rules, 273 with
   `RuleSearchSnapshot`, and 17 without. The three newest managed rules were
   created at 17:07–18:23 UTC before the 20:28 UTC v1.4.33 promotion; each has
-  no snapshot. No genuine post-release Stremio title event was available, so
-  issue #47 remains open and must not be marked accepted from this inventory.
+  no snapshot. A fresh read-only Stremio account query found 588 library items,
+  326 active items, and no `tt39062868` ID or IMDb match; the production DB has
+  no matching rule. No genuine post-release Stremio title event was available,
+  so issue #47 remains open and must not be marked accepted from this inventory.
 
 ## 2026-09-29 v1.4.31 corrective release and production acceptance (#97-#102)
 

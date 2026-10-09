@@ -543,6 +543,61 @@ def test_sqlite_backup_failure_does_not_leave_a_partial_backup(tmp_path: Path) -
     assert not backup.exists()
 
 
+def test_source_rebuilt_fallback_manifest_requires_authorized_source_and_build_evidence(
+    tmp_path: Path,
+) -> None:
+    manifest = {
+        "schema_version": 1,
+        "source_tag": "v1.4.31",
+        "source_sha": "c2abf87db7172b8444fb3b8b7c159f6e21735c20",
+        "image_id": "sha256:" + "b" * 64,
+        "compose_sha256": "c" * 64,
+        "dockerfile_sha256": "d" * 64,
+        "scratch_database_integrity": "ok",
+        "scratch_database_rule_count": 368,
+        "container_health_check": "passed",
+        "validated_app_version": "1.4.31",
+    }
+    path = tmp_path / "fallback.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    evidence = promotion_cli.validate_source_rebuilt_fallback(
+        path,
+        expected_compose_sha256="c" * 64,
+        expected_dockerfile_sha256="d" * 64,
+        expected_image_id="sha256:" + "b" * 64,
+    )
+
+    assert evidence["source_sha"] == "c2abf87db7172b8444fb3b8b7c159f6e21735c20"
+    assert evidence["scratch_database_rule_count"] == 368
+    with pytest.raises(ValueError, match="Compose/build inputs"):
+        promotion_cli.validate_source_rebuilt_fallback(
+            path,
+            expected_compose_sha256="e" * 64,
+            expected_dockerfile_sha256="d" * 64,
+            expected_image_id="sha256:" + "b" * 64,
+        )
+    manifest["source_sha"] = "e" * 40
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="authorized v1.4.31 source"):
+        promotion_cli.validate_source_rebuilt_fallback(
+            path,
+            expected_compose_sha256="c" * 64,
+            expected_dockerfile_sha256="d" * 64,
+            expected_image_id="sha256:" + "b" * 64,
+        )
+    manifest["source_sha"] = "c2abf87db7172b8444fb3b8b7c159f6e21735c20"
+    manifest["container_health_check"] = "missing"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="health and version"):
+        promotion_cli.validate_source_rebuilt_fallback(
+            path,
+            expected_compose_sha256="c" * 64,
+            expected_dockerfile_sha256="d" * 64,
+            expected_image_id="sha256:" + "b" * 64,
+        )
+
+
 def test_failed_preflight_stops_before_deployment_backup_or_docker_mutation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -605,7 +660,7 @@ def test_initial_journal_failure_marks_created_deployment_failed_before_mutation
     monkeypatch.setattr(promotion_cli, "WINDOWS_HOST", True)
     monkeypatch.setattr(promotion_cli, "secure_private_root", lambda _path: None)
     monkeypatch.setattr(promotion_cli, "exclusive_file_lock", lambda _path: nullcontext())
-    monkeypatch.setattr(manager, "preflight", lambda _tag, _run_id: evidence)
+    monkeypatch.setattr(manager, "preflight", lambda _tag, _run_id, **_kwargs: evidence)
     monkeypatch.setattr(manager, "_create_deployment", lambda _evidence: 99)
 
     def write_status(_deployment_id: int, *, state: str, **_kwargs: str) -> None:
@@ -664,7 +719,7 @@ def test_failure_status_is_attempted_when_failure_journal_update_also_fails(
     monkeypatch.setattr(promotion_cli, "WINDOWS_HOST", True)
     monkeypatch.setattr(promotion_cli, "secure_private_root", lambda _path: None)
     monkeypatch.setattr(promotion_cli, "exclusive_file_lock", lambda _path: nullcontext())
-    monkeypatch.setattr(manager, "preflight", lambda _tag, _run_id: evidence)
+    monkeypatch.setattr(manager, "preflight", lambda _tag, _run_id, **_kwargs: evidence)
     monkeypatch.setattr(manager, "_create_deployment", lambda _evidence: 99)
 
     def write_journal(_record: dict[str, object]) -> Path:
@@ -840,7 +895,7 @@ def test_failed_promotion_records_failure_without_database_or_image_rollback(
     monkeypatch.setattr(
         manager,
         "preflight",
-        lambda _tag, _run_id: {
+        lambda _tag, _run_id, **_kwargs: {
             "tag": "v1.4.25",
             "commit_sha": SHA,
             "approval_run_url": "https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/12",
@@ -951,7 +1006,7 @@ def test_success_status_failure_retries_audit_without_repeating_promotion(
     monkeypatch.setattr(
         manager,
         "preflight",
-        lambda _tag, _run_id: {
+        lambda _tag, _run_id, **_kwargs: {
             "tag": "v1.4.25",
             "commit_sha": SHA,
             "approval_run_url": "https://github.com/Spon4ik/qBittorrent-rss-rules/actions/runs/12",

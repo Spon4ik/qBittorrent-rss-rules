@@ -30,6 +30,24 @@ The approval Environment must have exactly one required reviewer, `Spon4ik`, sel
 4. After contract capture, set `%USERPROFILE%\docker-config\docker-compose.yml` service `qb-rss-rules` `build.context` to `%USERPROFILE%\deployments\qBittorrent-rss-rules` if it does not already match. Keep the same Compose file, `.env`, image name, service name, `/app/data` database bind mount, and read-only `/host/C/Users` and `/host/C/ProgramData` mounts. The local command stops if the resulting resolved Compose configuration differs from the captured contract in any other way.
 5. Configure the GitHub `production-approval` Environment with the protections above. Do not add secrets to it. A missing or weaker Environment causes the approval workflow and local promotion command to stop.
 
+### Owner-approved v1.4.31 source fallback
+
+The deployed v1.4.31 immutable image was not recoverable from Docker or trusted archives. The owner approved a source-rebuilt fallback from protected source SHA `c2abf87db7172b8444fb3b8b7c159f6e21735c20`. This fallback proves source/version lineage and scratch database compatibility; it does **not** prove binary identity with the unavailable image.
+
+After the stable checkout and Compose contract are ready, build and verify the private fallback using the preserved private deployment backup as a read-only source. The builder makes a separate scratch DB copy, verifies the v1.4.31 container health and DB integrity/rule count, and writes private provenance under `%USERPROFILE%\docker-config\qbrss-private\rollback`:
+
+```powershell
+python scripts\build_rollback_fallback.py `
+  --compose-file "$env:USERPROFILE\docker-config\docker-compose.yml" `
+  --env-file "$env:USERPROFILE\docker-config\.env" `
+  --scratch-source "$env:USERPROFILE\docker-config\qbrss-private\backups\<verified-v1.4.32-backup>.sqlite3" `
+  --private-root "$env:USERPROFILE\docker-config\qbrss-private" `
+  --repository-root "<developer-repository-root>" `
+  --docker "C:\Program Files\Docker\Docker\resources\bin\docker.exe"
+```
+
+Promotion still requires the exact prior image by default. Only with the explicit `--allow-source-rebuilt-fallback` flag will preflight accept `v1.4.31-source-fallback-verified.json`; it rechecks the protected source SHA, resolved Compose contract HMAC, Dockerfile digest, inspectable immutable fallback image ID, v1.4.31 health, and scratch DB evidence. The private journal records that the rollback is source-rebuilt and not byte-identical. This option does not bypass the protected approval gate or any backup/finalizer/health checks.
+
 The stable checkout directory must be created and prepared manually before promotion. The promotion command never moves the database or initializes/replaces that checkout.
 
 ## Request and perform a promotion

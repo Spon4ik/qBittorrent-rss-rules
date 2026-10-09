@@ -1,6 +1,6 @@
 # Current Status
 
-## 2026-10-09 Stremio production acceptance and rollback-image blocker (#47)
+## 2026-10-09 Stremio production acceptance and rollback-image recovery (#47)
 
 - PR #114 merged to protected main as `e9961a245cda3861e97fde05d92c40e4b8b3b5bd`.
   Patch v1.4.32 is published from that exact SHA. Exact-source CI/API, release
@@ -35,14 +35,28 @@
   then passed after the change; promotion tests (31), Ruff, and mypy pass.
   PR #116 passed all protected checks (run `37972319419`) and merged. This is a
   repository-tooling fix; the immutable v1.4.32 stable tag does not contain it.
-- The exact v1.4.31 image cannot currently be recovered from a trusted local
-  archive. A bounded alternative is to build a recovery image from the exact
-  protected v1.4.31 source SHA and verified Compose/build inputs, validate its
-  version/source and schema compatibility against a private scratch DB copy,
-  and use its new image ID as a fallback. This guarantees source/version
-  lineage, not binary identity with the missing deployed image. It requires
-  explicit owner approval to replace the exact-image rollback guarantee and
-  must be implemented as reviewed promotion tooling before use. For future
+- A new opt-in source-fallback path and private builder are now implemented
+  locally. Default promotion still requires the exact prior image. Explicit
+  fallback preflight verifies the exact protected source SHA, private Compose
+  HMAC, Dockerfile hash, inspectable image ID, scratch DB health/integrity and
+  record count. The private fallback artifact is
+  `sha256:4a1b82745743abef0d076b2d4302ecde973f717f4239560d531bbb4a0f402109`,
+  validated as v1.4.31 with 368 scratch rules and integrity `ok`. The builder
+  creates no production service changes. Focused promotion tests (32), Ruff,
+  mypy, and `scripts\\check.bat` pass (694 passed, 0 failed, 0 errors, 1 skipped).
+  Changes are on local branch `codex/source-rebuilt-rollback-fallback`; PR and
+  protected CI are the next step. App code and version were not changed.
+- The exact v1.4.31 image could not be recovered from a trusted local archive.
+  The owner approved a bounded source-rebuilt fallback. The private builder
+  produced image `sha256:4a1b82745743abef0d076b2d4302ecde973f717f4239560d531bbb4a0f402109`
+  from protected v1.4.31 source SHA `c2abf87db7172b8444fb3b8b7c159f6e21735c20`
+  using the captured Compose contract and Dockerfile. A disposable container
+  reported v1.4.31 health against a private scratch copy of the preserved
+  deployment backup; SQLite integrity passed and all 368 rules remained
+  readable. Private evidence is under `qbrss-private/rollback`. This proves
+  source/version lineage and scratch DB compatibility, not binary identity
+  with the missing deployed image. The new promotion path is explicit, opt-in,
+  and requires this evidence; exact-image retention remains the default. For future
   promotions, a private `docker save` archive with SHA-256, source/image
   manifest, load-and-ID verification, and an owner-approved retention policy
   would preserve the exact image across daemon cleanup; none exists for this
@@ -52,15 +66,13 @@
   relative to v1.4.32. Do not run the old promoter again. The #116 PR text
   accidentally triggered GitHub auto-close parsing despite negated wording;
   the issue was reopened immediately because its acceptance criteria remain
-  unmet. Next executable step: obtain explicit owner approval for the
-  source-rebuilt fallback guarantee. If approved, build and validate a fallback
-  from protected v1.4.31 source and exact Compose/build inputs against a private
-  scratch DB copy; this proves source/version lineage, not byte identity. The
-  corrected promoter must then ship in a new reviewed tag: release staging
-  requires tag version == `pyproject.toml` and refuses existing tags, so a
-  tooling-bearing follow-up would need a new aligned patch release (v1.4.33 if
-  no later release exists). Obtain fresh protected approval for that current
-  release, then stop at its human Environment approval gate before promotion.
+  unmet. Next executable step: merge the tooling PR through protected main,
+  publish an aligned release if required by the current release workflow,
+  obtain fresh protected approval for the exact current main/release tuple,
+  and stop at its human Environment approval gate before promotion. The stale
+  v1.4.32 approval is ineligible. After approval, promotion still requires the
+  explicit source-fallback flag, the canonical stable-checkout finalizer, a new
+  verified production backup, runtime freshness, and a successful Deployment.
 
 ## 2026-09-29 v1.4.31 corrective release and production acceptance (#97-#102)
 

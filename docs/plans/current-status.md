@@ -20,8 +20,11 @@
   `C:\Users\nucc\deployments\qBittorrent-rss-rules` while this branch is at
   `E:\GitHub\qBittorrent rss rules`. Shared Compose was not changed and Docker
   deployment was not attempted. The v1.4.32 desktop build and branch/PR
-  persistence remain before delivery; production release remains gated on a
-  matching approved checkout/runtime flow.
+  Build passed with 0 warnings/errors. The validated code is pushed to
+  `codex/stremio-initial-snapshot-fetch` at
+  `67b8e1733779fa767ee3b8f080520c527d989b9d`; PR #114 is open and its required
+  GitHub checks are pending. Issue #47 remains open. Production release remains
+  gated on protected PR checks and a matching approved checkout/runtime flow.
 
 ## 2026-09-29 v1.4.31 corrective release and production acceptance (#97-#102)
 

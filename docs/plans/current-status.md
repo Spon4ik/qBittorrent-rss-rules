@@ -2,32 +2,38 @@
 
 ## 2026-10-09 Stremio-created rules miss initial snapshot fetch (#47)
 
-- Reopened issue #47's investigation details with the newly confirmed behavior:
-  Stremio sync can create the RSS rule without queuing its initial snapshot.
-  The issue remains open for the fix and subsequent delivery.
-- Shared Stremio sync execution now queues the initial snapshot fetch for each
-  newly created Stremio-managed rule. This covers both manual
-  `/api/settings/sync-stremio` and background library auto-sync; existing rules
-  are not force-refetched.
-- Regression: `tests/test_routes.py::test_sync_stremio_settings_creates_rules_for_library_titles`
-  asserts the newly created rule ID is queued through the shared execution path.
-  The complete deterministic gate passes (Ruff, mypy across 49 files, 692
-  tests passed, 1 skipped), and `git diff --check` passes.
-- This is deployable backend code prepared as patch release v1.4.32. The
-  changelog, `pyproject.toml`, FastAPI health version, WinUI compatibility
-  constant, and health regression assert are synchronized. Full deterministic
-  validation passed (Ruff, mypy across 49 files, and 692 tests with 1 skipped).
-  The required finalizer reached the Docker updater, which safely stopped
-  before rebuilding because shared Compose points to
-  `C:\Users\nucc\deployments\qBittorrent-rss-rules` while this branch is at
-  `E:\GitHub\qBittorrent rss rules`. Shared Compose was not changed and Docker
-  deployment was not attempted; runtime remains v1.4.31. The v1.4.32 desktop
-  build passed with 0 warnings/errors. PR #114 is open on
-  `codex/stremio-initial-snapshot-fetch`; its earlier version-policy failure
-  was corrected and rechecked successfully. PR checks for the shared-layer
-  implementation are pending. Issue #47 remains open. Production release
-  remains gated on protected PR checks and a matching approved checkout/runtime
-  flow.
+- PR #114 merged to protected main as `e9961a245cda3861e97fde05d92c40e4b8b3b5bd`.
+  Patch v1.4.32 is published from that exact SHA. PR checks and exact-main CI
+  and qBittorrent API checks passed; release staging and production approval
+  also passed (`37967789084`, `37968298070`).
+- Shared Stremio sync execution queues an initial snapshot fetch for each new
+  rule in both manual and background sync. Existing rules are not force-fetched.
+  The regression asserts queueing. An isolated end-to-end probe created a
+  synthetic Stremio rule, exercised the real queue worker and fetch batch with
+  an empty mocked Jackett response, succeeded 1/1, and verified a persisted
+  `RuleSearchSnapshot`. No genuine new production rule was available, so
+  production acceptance of this path is not demonstrated.
+- Read-only production inspection found 585 Stremio library items with no
+  `tt39062868` item/IMDb ID, and 368 database rules with no matching rule. No
+  provider or application state was changed. The original missing-title report
+  remains unresolved because the title is absent from the current Stremio
+  library; this is separate from the snapshot-trigger fix.
+- Production promotion was attempted under successful protected approval. It
+  stopped at image retention before running the finalizer or replacing the
+  container: Docker no longer has the immutable image ID recorded for the
+  running v1.4.31 container. The failure is recorded in GitHub Deployment
+  `6967448936` and its private operator journal. The canonical tool created a
+  protected SQLite backup before stopping; both backup and live database pass
+  `PRAGMA integrity_check` and contain 368 rules. No standalone Docker updater
+  or database restore was run.
+- Runtime remains v1.4.31: `/health` reports `status=ok`, the sole
+  `qb-rss-rules` container is running and healthy, and runtime-state correctly
+  reports stale relative to v1.4.32. Shared Compose still points to the clean
+  stable checkout with the existing `/app/data` bind and read-only host mounts.
+- Issue #47 was updated with these findings and remains open. Do not close it
+  until the title is present in the intended Stremio library and production
+  acceptance is demonstrated. Promotion is blocked until the prior immutable
+  Docker image can be safely retained under the documented promotion flow.
 
 ## 2026-09-29 v1.4.31 corrective release and production acceptance (#97-#102)
 

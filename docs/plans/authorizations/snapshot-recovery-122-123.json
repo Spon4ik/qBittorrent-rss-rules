@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "plan_id": "snapshot-recovery-122-123",
+  "issues": [
+    47,
+    122,
+    123
+  ],
+  "baseline_sha": "a3db92166717df33e70f68fbc163bac7c957a137",
+  "scope": "Complete and verify the production initial-snapshot behavior for a genuine newly synced Stremio title plus durable initial/stale rule snapshot recovery, including corrective changes needed to validate its protected production delivery. The separate tt39062868 discovery criterion remains subject to its documented account/library prerequisite.",
+  "acceptance_criteria": [
+    "After a genuine supported Stremio library addition naturally creates an eligible RSS rule, passive production verification proves its initial snapshot is fetched and persisted.",
+    "Eligible rules created by Stremio synchronization retain durable snapshot-fetch intent and recover it after restart or enqueue failure.",
+    "Due enabled rules with missing snapshots are fetched and persisted while disabled or completion-blocked rules remain excluded.",
+    "The published release has exact-source required CI and qBittorrent web-seed API checks.",
+    "The canonical production promotion verifies the stable checkout, prior image rollback, SQLite backup and integrity, Compose contract, exact runtime version, and successful GitHub Deployment audit.",
+    "Historical failed Deployment records remain unchanged."
+  ],
+  "allowed_paths": [
+    ".github/CODEOWNERS",
+    ".github/workflows/production-plan-authorization.yml",
+    "app/db.py",
+    "app/main.py",
+    "app/models.py",
+    "app/routes/api.py",
+    "app/services/rule_fetch_ops.py",
+    "app/services/rule_fetch_queue.py",
+    "app/services/stremio_sync_ops.py",
+    "docs/plans/**",
+    "docs/production-promotion-runbook.md",
+    "scripts/DockerNativeProcess.psm1",
+    "scripts/production_plan_authorization.py",
+    "scripts/promote_production.py",
+    "scripts/update_docker.ps1",
+    "tests/**",
+    "CHANGELOG.md",
+    "pyproject.toml",
+    "QbRssRulesDesktop/Views/MainPage.xaml.cs"
+  ],
+  "permitted_operations": [
+    "scoped-issue-fixes",
+    "deterministic-regression-tests",
+    "passive-stremio-snapshot-acceptance",
+    "publish-patch-release",
+    "production-promotion",
+    "verified-private-sqlite-backup",
+    "immutable-rollback-retention",
+    "single-service-rebuild-restart",
+    "read-only-runtime-verification",
+    "append-completion-record"
+  ],
+  "authorized_exceptions": [],
+  "prohibited_operations": [
+    "restore-production-database",
+    "change-production-compose-contract",
+    "change-production-credentials-or-secrets",
+    "source-rebuilt-rollback-image",
+    "manufacture-provider-item-or-manually-fetch-production-rule",
+    "rewrite-or-delete-historical-deployment",
+    "deploy-from-developer-checkout",
+    "bypass-release-backup-rollback-health-or-audit-check",
+    "mutate-protected-main-directly-or-weaken-checks"
+  ],
+  "release_constraints": [
+    "protected-main",
+    "exact-release-provenance",
+    "exact-required-checks"
+  ],
+  "release_version_policy": "patch-only",
+  "expires_at": "2026-11-30T23:59:59Z",
+  "completion_condition": "Production snapshot recovery is verified against persisted runtime state and a canonical production Deployment is successful. Keep issue 47 open for its separate tt39062868 discovery criterion until the documented account/library prerequisite and independent verification are satisfied; otherwise the plan expires or is explicitly revoked."
+}

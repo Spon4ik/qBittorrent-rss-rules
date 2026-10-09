@@ -4,9 +4,89 @@ G5b keeps production changes on the operator-controlled Windows host. GitHub Act
 
 ## Current eligibility
 
-The current production runtime is v1.4.33 (verified by `/health` and the runtime-current gate after Deployment `6970344746`; its GitHub Deployment status remains failed because post-start inspection errored). The next eligible promotion must use a published, validated release newer than v1.4.33 and a fresh approval for its exact current-main SHA. Approval run `37985076045` authorized v1.4.33 only and cannot authorize another promotion. A release tag is not itself permission to deploy: its approval run must pass the protected `production-approval` Environment, and the local command rechecks the live tag, main ancestry, checks, approval, checkout, Compose configuration, health, and version.
+Production currently serves healthy v1.4.34 from source SHA
+`a09807f9b06fa8a55c80de12fe8b53a20e659922`. Deployment `6972627039` must
+remain recorded as failed: Compose restarted the service and read-only runtime
+checks later proved health, but the canonical promotion's audit proof failed
+when PowerShell treated native stderr progress as an error. Its private backup
+and all historical failed Deployment records must remain unchanged. No v1.4.35
+plan-scoped release has been authorized or promoted yet.
+
+The legacy per-release path remains available and unchanged. Its Environment
+approval authorizes one exact release only. The plan-scoped path below may be
+used only after its independent review and Environment requirements are
+configured, the implementation is merged, and a plan authorization record has
+been created successfully.
 
 The approval Environment must have exactly one required reviewer, `Spon4ik`, self-review allowed, administrator bypass disabled, and deployment restricted to protected branches. The approval workflow fails before queuing that Environment job if any of those settings are absent or differ. Approval is the repository owner's recorded decision, not independent review. The resulting artifact records `approved_by`, release identity, exact-SHA CI/API runs, and the workflow run. An approval artifact does not report a production deployment.
+
+## Plan-scoped authorization (one approval per plan)
+
+Plan files live in `docs/plans/authorizations/<plan-id>.json`. Their strict
+schema fixes the related issues, baseline SHA, acceptance criteria, exact file
+allowlist, permitted operations, explicit exceptions, prohibited operations,
+release constraints, expiry, and completion condition. The canonical JSON
+digest is displayed with the entire plan before GitHub queues its reviewer.
+
+The issuer is `.github/workflows/production-plan-authorization.yml`, dispatched
+from protected `main` with a plan ID and one action: `authorize`, `revoke`, or
+`complete`. After approval, it creates a GitHub Deployment in the separate
+`production-plan-authorization` environment with the plan and digest, action,
+source SHA, run identity, and reviewer identity. GitHub's approval API is
+rechecked by the Windows promoter; a plan file or conversational request alone
+is never authorization. Revoke and completion add separately approved records;
+they do not rewrite earlier records.
+
+### One-time trust setup required before merging this implementation
+
+The current `gh` credential and implementation identity are both `Spon4ik`.
+It would not be safe for that same identity to satisfy the new plan approval.
+Configure `production-plan-approval` with exactly one trusted human reviewer
+whose account is outside Codex's credentials and is not `Spon4ik`; enable
+`prevent_self_review`, disable administrator bypass, and restrict deployment to
+protected branches. The workflow verifies those exact settings and rejects an
+approval by the dispatch actor. The designated reviewer is a plan approver,
+not a per-release approver.
+
+Also update active ruleset `24023362` to require one approving pull-request
+review and code-owner review, and add `.github/CODEOWNERS` assigning the
+authorization workflow, validator, promoter, and CODEOWNERS file to that
+independent trusted reviewer. The current ruleset requires zero reviews and no
+code-owner review, so adding a CODEOWNERS file alone would not protect the
+authorization boundary. Do not change or remove the existing
+`production-approval` Environment.
+
+After those controls are active and the reviewed implementation is merged,
+dispatch the authorization workflow once for the plan. Each subsequent release
+uses the same plan ID; the local promoter resolves the same GitHub record on
+every session and checks its current status, approval, expiry, revocation, and
+digest. Every release still needs exact-source `required` and
+`real-qbittorrent-webseed-api` success, a published release, protected-main
+ancestry, and a complete baseline-to-release comparison. Every compared commit
+must map to a merged main PR that links a plan issue; every file must match the
+allowlist. PRs merged after authorization must also contain the exact line
+`Plan: <plan-id>`. A bounded patch-only plan will reject a minor/major release.
+
+Use the plan path from the stable release checkout:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\promote_production.py `
+  --tag v1.4.35 `
+  --plan-id snapshot-recovery-122-123
+```
+
+The current candidate plan includes issue #47's initial-snapshot criterion
+after a genuine new Stremio library item naturally creates an eligible rule.
+It does not authorize manufacturing a provider item or forcing a production
+fetch. The separate `tt39062868` discovery criterion remains open until the
+configured Stremio account/library prerequisite is satisfied and verified.
+
+The ordinary promotion still verifies the stable detached checkout, immutable
+rollback image, private SQLite backup and integrity, Compose HMAC/mounts,
+single-service finalizer, `/health`, runtime-current state, and production
+Deployment audit. A plan permission cannot override any failed technical gate.
+Source-rebuilt rollback, database restoration, or other exceptions stop unless
+the exact operation is explicitly listed in `authorized_exceptions`.
 
 ## One-time Windows setup
 

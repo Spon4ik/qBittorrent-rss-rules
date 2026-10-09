@@ -27,6 +27,17 @@ from scripts.production_approval import (
     validate_approval_environment,
     validate_release,
 )
+from scripts.production_plan_authorization import (
+    AUTHORIZATION_ENVIRONMENT,
+    SHA_PATTERN,
+    active_authorization,
+    canonical_plan_digest,
+    validate_release_scope,
+    validate_release_version_scope,
+)
+from scripts.production_plan_authorization import (
+    _parse_timestamp as _parse_utc_timestamp,
+)
 from scripts.production_promotion import (
     compose_config_digest,
     create_compose_contract,
@@ -125,15 +136,22 @@ def validate_source_rebuilt_fallback(
     ):
         raise ValueError("Rollback fallback must use the authorized v1.4.31 source")
     if not hmac.compare_digest(str(evidence.get("compose_sha256", "")), expected_compose_sha256):
-        raise ValueError("Fallback Compose/build inputs do not match the resolved production contract")
+        raise ValueError(
+            "Fallback Compose/build inputs do not match the resolved production contract"
+        )
     if evidence.get("dockerfile_sha256") != expected_dockerfile_sha256:
         raise ValueError("Fallback Dockerfile does not match the authorized source")
     if evidence.get("image_id") != expected_image_id or not expected_image_id.startswith("sha256:"):
         raise ValueError("Fallback image identity does not match Docker's inspectable immutable ID")
     if evidence.get("scratch_database_integrity") != "ok":
         raise ValueError("Fallback scratch database integrity was not verified")
-    if evidence.get("container_health_check") != "passed" or evidence.get("validated_app_version") != "1.4.31":
-        raise ValueError("Fallback image health and version were not verified against the scratch database")
+    if (
+        evidence.get("container_health_check") != "passed"
+        or evidence.get("validated_app_version") != "1.4.31"
+    ):
+        raise ValueError(
+            "Fallback image health and version were not verified against the scratch database"
+        )
     if (
         not isinstance(evidence.get("scratch_database_rule_count"), int)
         or evidence["scratch_database_rule_count"] <= 0
@@ -167,7 +185,9 @@ def _terminate_process_tree(pid: int) -> None:
         )
 
 
-def _run_finalizer(command: list[str], cwd: Path, log: Any, timeout: int = 3600) -> subprocess.CompletedProcess[str]:
+def _run_finalizer(
+    command: list[str], cwd: Path, log: Any, timeout: int = 3600
+) -> subprocess.CompletedProcess[str]:
     """Run the production finalizer and stop its full process tree on timeout."""
     process = subprocess.Popen(
         command,
@@ -190,7 +210,9 @@ def _run_finalizer(command: list[str], cwd: Path, log: Any, timeout: int = 3600)
             raise FinalizerCleanupUncertainError(
                 f"Finalizer process {process.pid} remained alive after process-tree termination"
             ) from wait_exc
-        raise RuntimeError(f"Backend finalizer timed out after {timeout} seconds; process tree terminated") from exc
+        raise RuntimeError(
+            f"Backend finalizer timed out after {timeout} seconds; process tree terminated"
+        ) from exc
     return subprocess.CompletedProcess(command, returncode, stdout="", stderr="")
 
 
@@ -310,7 +332,9 @@ class PromotionManager:
 
     def capture_compose_contract(self) -> None:
         if not WINDOWS_HOST:
-            raise RuntimeError("Compose contract capture is supported only on the production Windows host")
+            raise RuntimeError(
+                "Compose contract capture is supported only on the production Windows host"
+            )
         secure_private_root(self.paths.private_root)
         if self.contract_file.exists() or self.contract_key_file.exists():
             raise RuntimeError("A private Compose contract already exists; refusing to replace it")
@@ -335,8 +359,13 @@ class PromotionManager:
             None,
         )
         database_source = database_mount.get("source") if isinstance(database_mount, dict) else None
-        if not isinstance(database_source, str) or not (Path(database_source) / "qb_rules.db").is_file():
-            raise RuntimeError("Current production SQLite database is missing from the /app/data mount")
+        if (
+            not isinstance(database_source, str)
+            or not (Path(database_source) / "qb_rules.db").is_file()
+        ):
+            raise RuntimeError(
+                "Current production SQLite database is missing from the /app/data mount"
+            )
 
         key = secrets.token_bytes(32)
         try:
@@ -364,15 +393,17 @@ class PromotionManager:
             self.contract_key_file.unlink(missing_ok=True)
             self.contract_file.with_suffix(".json.tmp").unlink(missing_ok=True)
             raise
-        print("Captured the private Compose contract; no database, Compose, or container was changed.")
+        print(
+            "Captured the private Compose contract; no database, Compose, or container was changed."
+        )
 
-    def _validate_approval(self, tag: str, run_id: int) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    def _validate_approval(
+        self, tag: str, run_id: int
+    ) -> tuple[dict[str, Any], str, dict[str, Any]]:
         if not tag.startswith("v"):
             raise ValueError("Promotion requires a vMAJOR.MINOR.PATCH release tag")
         parse_release_version(tag)
-        environment = self._api(
-            f"repos/{self.repository}/environments/{APPROVAL_ENVIRONMENT}"
-        )
+        environment = self._api(f"repos/{self.repository}/environments/{APPROVAL_ENVIRONMENT}")
         if not isinstance(environment, dict) or not validate_approval_environment(environment):
             raise ValueError("Production approval Environment is missing or not protected")
 
@@ -416,9 +447,7 @@ class PromotionManager:
                     f"repos/{self.repository}/actions/runs/{later['id']}/jobs?per_page=100"
                 )
                 later_jobs = (
-                    later_jobs_data.get("jobs", [])
-                    if isinstance(later_jobs_data, dict)
-                    else []
+                    later_jobs_data.get("jobs", []) if isinstance(later_jobs_data, dict) else []
                 )
                 if has_successful_job(later_jobs, APPROVAL_JOB_NAME):
                     raise ValueError("A newer production release approval supersedes this run")
@@ -457,6 +486,159 @@ class PromotionManager:
         if not isinstance(manifest, dict):
             raise ValueError("Approval manifest must be a JSON object")
         return manifest, str(current_main_sha), run
+
+    def _api_pages(self, path: str, *, object_key: str | None = None) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for page in range(1, 101):
+            separator = "&" if "?" in path else "?"
+            response = self._api(f"{path}{separator}per_page=100&page={page}")
+            batch = (
+                response.get(object_key, [])
+                if object_key and isinstance(response, dict)
+                else response
+            )
+            if not isinstance(batch, list) or any(not isinstance(item, dict) for item in batch):
+                raise ValueError(
+                    "GitHub returned an invalid paginated production authorization response"
+                )
+            items.extend(batch)
+            if len(batch) < 100:
+                return items
+        raise ValueError(
+            "GitHub production authorization history exceeded its pagination safety limit"
+        )
+
+    def _validate_plan_authorization(self, plan_id: str) -> dict[str, Any]:
+        deployments = self._api_pages(
+            f"repos/{self.repository}/deployments?environment={AUTHORIZATION_ENVIRONMENT}"
+        )
+        authorization = active_authorization(
+            deployments,
+            plan_id=plan_id,
+            repository=self.repository,
+            run_lookup=lambda run_id: self._api(f"repos/{self.repository}/actions/runs/{run_id}"),
+            approvals_lookup=lambda run_id: self._api(
+                f"repos/{self.repository}/actions/runs/{run_id}/approvals"
+            ),
+            environment_lookup=lambda: self._api(
+                f"repos/{self.repository}/environments/production-plan-approval"
+            ),
+            jobs_lookup=lambda run_id: self._api(
+                f"repos/{self.repository}/actions/runs/{run_id}/jobs?per_page=100"
+            ).get("jobs", []),
+            statuses_lookup=lambda deployment_id: self._api_pages(
+                f"repos/{self.repository}/deployments/{deployment_id}/statuses"
+            ),
+        )
+        matching = [
+            deployment
+            for deployment in deployments
+            if isinstance(deployment.get("payload"), dict)
+            and deployment["payload"].get("action") == "authorize"
+            and isinstance(deployment["payload"].get("plan"), dict)
+            and deployment["payload"]["plan"].get("plan_id") == plan_id
+        ]
+        if len(matching) != 1 or not isinstance(matching[0].get("id"), int):
+            raise ValueError("Plan authorization Deployment identity is unavailable")
+        return {**authorization, "deployment_id": matching[0]["id"]}
+
+    def _validate_plan_release_scope(
+        self,
+        authorization: dict[str, Any],
+        release_sha: str,
+    ) -> None:
+        plan = authorization.get("plan")
+        authorization_sha = authorization.get("source_sha")
+        if not isinstance(plan, dict) or not isinstance(authorization_sha, str):
+            raise ValueError("Active plan authorization source evidence is invalid")
+        auth_comparison = self._api(
+            f"repos/{self.repository}/compare/{authorization_sha}...{release_sha}"
+        )
+        if not isinstance(auth_comparison, dict) or auth_comparison.get("status") not in {
+            "ahead",
+            "identical",
+        }:
+            raise ValueError(
+                "Release does not contain the trusted plan authorization implementation"
+            )
+
+        baseline = str(plan.get("baseline_sha", ""))
+        commit_shas: list[str] = []
+        for page in range(1, 101):
+            commits_page = self._api(
+                f"repos/{self.repository}/commits?sha={release_sha}&per_page=100&page={page}"
+            )
+            if not isinstance(commits_page, list) or any(
+                not isinstance(commit, dict)
+                or not isinstance(commit.get("sha"), str)
+                or not SHA_PATTERN.fullmatch(commit["sha"])
+                for commit in commits_page
+            ):
+                raise ValueError("GitHub returned an incomplete plan-to-release commit list")
+            reached_baseline = False
+            for commit in commits_page:
+                if commit["sha"] == baseline:
+                    reached_baseline = True
+                    break
+                commit_shas.append(commit["sha"])
+            if reached_baseline:
+                break
+            if len(commits_page) < 100:
+                raise ValueError("Release does not descend from the approved plan baseline")
+        else:
+            raise ValueError("Plan-to-release commit history exceeded its pagination safety limit")
+        if not commit_shas:
+            raise ValueError("Release contains no commits after the plan baseline")
+
+        pull_requests: dict[int, dict[str, Any]] = {}
+        associated_commits: dict[int, set[str]] = {}
+        for commit_sha in commit_shas:
+            associated = self._api_pages(f"repos/{self.repository}/commits/{commit_sha}/pulls")
+            if not associated:
+                raise ValueError("A plan-to-release commit has no associated pull request")
+            for pull in associated:
+                number = pull.get("number")
+                if not isinstance(number, int):
+                    raise ValueError("GitHub returned an invalid associated pull request")
+                pull_requests[number] = pull
+                associated_commits.setdefault(number, set()).add(commit_sha)
+
+        normalized_pulls: list[dict[str, Any]] = []
+        for number, associated_pull in sorted(pull_requests.items()):
+            pull = self._api(f"repos/{self.repository}/pulls/{number}")
+            if not isinstance(pull, dict):
+                raise ValueError("GitHub returned an invalid plan-scoped pull request")
+            file_records = self._api_pages(f"repos/{self.repository}/pulls/{number}/files")
+            files = [record.get("filename") for record in file_records]
+            changed_files = pull.get("changed_files")
+            if (
+                not isinstance(changed_files, int)
+                or changed_files != len(files)
+                or any(not isinstance(filename, str) for filename in files)
+            ):
+                raise ValueError("Pull request changed-file list is incomplete")
+            normalized_pulls.append(
+                {
+                    "number": number,
+                    "state": pull.get("state"),
+                    "merged_at": pull.get("merged_at"),
+                    "base": pull.get("base"),
+                    "title": pull.get("title", associated_pull.get("title", "")),
+                    "body": pull.get("body", ""),
+                    "commit_shas": sorted(associated_commits[number]),
+                    "files": files,
+                }
+            )
+
+        authorization_time = _parse_utc_timestamp(
+            authorization.get("recorded_at"), "plan authorization timestamp"
+        )
+        validate_release_scope(
+            plan,
+            commit_shas,
+            normalized_pulls,
+            authorization_time=authorization_time.astimezone(UTC),
+        )
 
     def _checkout_preflight(self, tag: str, expected_sha: str) -> None:
         root = self.paths.checkout
@@ -505,29 +687,88 @@ class PromotionManager:
     def preflight(
         self,
         tag: str,
-        approval_run_id: int,
+        approval_run_id: int | None = None,
         *,
+        plan_id: str | None = None,
         allow_source_rebuilt_fallback: bool = False,
     ) -> dict[str, Any]:
-        manifest, current_main_sha, approval_run = self._validate_approval(tag, approval_run_id)
+        if (approval_run_id is None) == (plan_id is None):
+            raise ValueError("Promotion requires exactly one of --approval-run-id or --plan-id")
+        authorization: dict[str, Any] | None = None
+        authorization_run_id: int | None = None
+        if plan_id is not None:
+            authorization = self._validate_plan_authorization(plan_id)
+            plan_document = authorization.get("plan")
+            if not isinstance(plan_document, dict):
+                raise ValueError("Active plan authorization has no canonical plan document")
+            if authorization.get("plan_sha256") != canonical_plan_digest(plan_document):
+                raise ValueError(
+                    "Active plan authorization digest does not match the approved plan"
+                )
+            if "production-promotion" not in plan_document.get("permitted_operations", []):
+                raise ValueError("The approved plan does not permit production promotion")
+            if allow_source_rebuilt_fallback and "source-rebuilt-rollback" not in plan_document.get(
+                "authorized_exceptions", []
+            ):
+                raise ValueError(
+                    "The approved plan does not authorize a source-rebuilt rollback image"
+                )
+            plan_path = (
+                self.paths.checkout / "docs" / "plans" / "authorizations" / f"{plan_id}.json"
+            )
+            try:
+                release_plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ValueError(
+                    "Release checkout does not contain the approved plan document"
+                ) from exc
+            if canonical_plan_digest(release_plan) != authorization.get("plan_sha256"):
+                raise ValueError(
+                    "Release checkout plan document differs from the owner-approved plan"
+                )
+            branch = self._api(f"repos/{self.repository}/branches/main")
+            current_main_sha = (
+                branch.get("commit", {}).get("sha") if isinstance(branch, dict) else None
+            )
+            raw_authorization_run_id = authorization.get("workflow_run_id")
+            if not isinstance(raw_authorization_run_id, int):
+                raise ValueError("Plan authorization workflow run ID is invalid")
+            authorization_run_id = raw_authorization_run_id
+            approval_run = self._api(f"repos/{self.repository}/actions/runs/{authorization_run_id}")
+            if not isinstance(approval_run, dict) or not isinstance(current_main_sha, str):
+                raise ValueError(
+                    "Plan authorization workflow or current main identity is unavailable"
+                )
+        else:
+            if approval_run_id is None:
+                raise ValueError("Release approval run ID is required for the legacy path")
+            manifest, current_main_sha, approval_run = self._validate_approval(tag, approval_run_id)
+
         commit_sha, release_url, ci_run, api_run = validate_release(tag, self.repository)
-        if commit_sha != manifest.get("commit_sha"):
-            raise ValueError("Approval manifest source SHA no longer matches the published release tag")
-        validate_approval_manifest(
-            manifest,
-            repository=self.repository,
-            tag=tag,
-            commit_sha=commit_sha,
-            approval_run_id=approval_run_id,
-            approver=APPROVER_LOGIN,
-        )
-        if (
-            manifest.get("release_url") != release_url
-            or manifest.get("ci_run_id") != ci_run.get("databaseId")
-            or manifest.get("api_run_id") != api_run.get("databaseId")
-            or manifest.get("approval_run_url") != approval_run.get("html_url")
-        ):
-            raise ValueError("Approval manifest release or validation evidence has changed")
+        if authorization is None:
+            if approval_run_id is None:
+                raise ValueError("Release approval run ID is required for the legacy path")
+            if commit_sha != manifest.get("commit_sha"):
+                raise ValueError(
+                    "Approval manifest source SHA no longer matches the published release tag"
+                )
+            validate_approval_manifest(
+                manifest,
+                repository=self.repository,
+                tag=tag,
+                commit_sha=commit_sha,
+                approval_run_id=approval_run_id,
+                approver=APPROVER_LOGIN,
+            )
+            if (
+                manifest.get("release_url") != release_url
+                or manifest.get("ci_run_id") != ci_run.get("databaseId")
+                or manifest.get("api_run_id") != api_run.get("databaseId")
+                or manifest.get("approval_run_url") != approval_run.get("html_url")
+            ):
+                raise ValueError("Approval manifest release or validation evidence has changed")
+        else:
+            self._validate_plan_release_scope(authorization, commit_sha)
 
         if _project_version(self.paths.checkout) != tag[1:]:
             raise ValueError("Release tag and stable checkout project version do not match")
@@ -562,6 +803,8 @@ class PromotionManager:
         running_version = health["app_version"]
         target_version = _project_version(self.paths.checkout)
         validate_version_upgrade(target_version, running_version)
+        if authorization is not None:
+            validate_release_version_scope(target_version, running_version, authorization["plan"])
         if health.get("database_ready") is False:
             raise ValueError("Production health reports that the database is not ready")
 
@@ -591,7 +834,9 @@ class PromotionManager:
                     f"Previous production image {image_id} is not inspectable for rollback retention; "
                     "recover the exact image or use the explicitly approved source-fallback procedure"
                 ) from exc
-            fallback_manifest = self.paths.private_root / "rollback" / "v1.4.31-source-fallback-verified.json"
+            fallback_manifest = (
+                self.paths.private_root / "rollback" / "v1.4.31-source-fallback-verified.json"
+            )
             compose_digest = compose_config_digest(
                 compose_config,
                 service=SERVICE,
@@ -643,8 +888,20 @@ class PromotionManager:
             "running_version": running_version,
             "current_main_sha": current_main_sha,
             "release_url": release_url,
-            "approval_run_id": approval_run_id,
+            "approval_run_id": approval_run_id if authorization is None else None,
             "approval_run_url": approval_run.get("html_url"),
+            "authorization_mode": "plan" if authorization is not None else "release",
+            "plan_id": plan_id,
+            "plan_authorization_run_id": authorization_run_id,
+            "plan_authorization_reviewer": (
+                authorization.get("approved_by") if authorization is not None else None
+            ),
+            "plan_authorization_deployment_id": (
+                authorization.get("deployment_id") if authorization is not None else None
+            ),
+            "plan_authorization_digest": (
+                authorization.get("plan_sha256") if authorization is not None else None
+            ),
             "ci_run_id": ci_run["databaseId"],
             "ci_run_url": ci_run["url"],
             "api_run_id": api_run["databaseId"],
@@ -674,6 +931,14 @@ class PromotionManager:
                     "approval_run_id": evidence["approval_run_id"],
                     "ci_run_id": evidence["ci_run_id"],
                     "api_run_id": evidence["api_run_id"],
+                    "authorization_mode": evidence["authorization_mode"],
+                    "plan_id": evidence["plan_id"],
+                    "plan_authorization_run_id": evidence["plan_authorization_run_id"],
+                    "plan_authorization_reviewer": evidence["plan_authorization_reviewer"],
+                    "plan_authorization_deployment_id": evidence[
+                        "plan_authorization_deployment_id"
+                    ],
+                    "plan_authorization_digest": evidence["plan_authorization_digest"],
                 },
             },
         )
@@ -714,8 +979,9 @@ class PromotionManager:
     def promote(
         self,
         tag: str,
-        approval_run_id: int,
+        approval_run_id: int | None = None,
         *,
+        plan_id: str | None = None,
         allow_source_rebuilt_fallback: bool = False,
     ) -> None:
         if not WINDOWS_HOST:
@@ -725,6 +991,7 @@ class PromotionManager:
             evidence = self.preflight(
                 tag,
                 approval_run_id,
+                plan_id=plan_id,
                 allow_source_rebuilt_fallback=allow_source_rebuilt_fallback,
             )
             deployment_id = self._create_deployment(evidence)
@@ -751,7 +1018,9 @@ class PromotionManager:
                         log_url=evidence["approval_run_url"],
                     )
                 except Exception:
-                    print("GitHub failure status is pending; the private deployment journal could not be created.")
+                    print(
+                        "GitHub failure status is pending; the private deployment journal could not be created."
+                    )
                 raise RuntimeError(
                     "Could not persist the private deployment journal; production mutation did not start."
                 ) from exc
@@ -777,15 +1046,12 @@ class PromotionManager:
 
                 rollback_source = evidence.get("previous_image_fallback")
                 rollback_image_id = (
-                    str(rollback_source["image_id"]) if isinstance(rollback_source, dict)
+                    str(rollback_source["image_id"])
+                    if isinstance(rollback_source, dict)
                     else evidence["previous_image_id"]
                 )
-                rollback_tag = (
-                    f"qbittorrent-rss-rule-manager:rollback-{timestamp.replace('T', '-').replace('Z', '')}"
-                )
-                _run(
-                    [str(self.paths.docker_exe), "image", "tag", rollback_image_id, rollback_tag]
-                )
+                rollback_tag = f"qbittorrent-rss-rule-manager:rollback-{timestamp.replace('T', '-').replace('Z', '')}"
+                _run([str(self.paths.docker_exe), "image", "tag", rollback_image_id, rollback_tag])
                 retained_image_id = _run(
                     [
                         str(self.paths.docker_exe),
@@ -797,7 +1063,9 @@ class PromotionManager:
                     ]
                 ).stdout.strip()
                 if retained_image_id != rollback_image_id:
-                    raise RuntimeError("Previous production rollback image was not retained by immutable ID")
+                    raise RuntimeError(
+                        "Previous production rollback image was not retained by immutable ID"
+                    )
                 record["previous_image_rollback_tag"] = rollback_tag
                 record["stage"] = "finalizer-running"
                 self._write_journal(record)
@@ -818,11 +1086,18 @@ class PromotionManager:
 
                 health = _read_health()
                 if health["app_version"] != evidence["target_version"]:
-                    raise RuntimeError("Production health version does not equal the approved release")
-                runtime_log = self.paths.private_root / "logs" / f"{tag}-{deployment_id}-runtime.log"
+                    raise RuntimeError(
+                        "Production health version does not equal the approved release"
+                    )
+                runtime_log = (
+                    self.paths.private_root / "logs" / f"{tag}-{deployment_id}-runtime.log"
+                )
                 with runtime_log.open("w", encoding="utf-8", newline="\n") as log:
                     runtime_result = subprocess.run(
-                        [str(self.paths.checkout / "scripts" / "runtime_state.bat"), "--require-runtime-current"],
+                        [
+                            str(self.paths.checkout / "scripts" / "runtime_state.bat"),
+                            "--require-runtime-current",
+                        ],
                         cwd=self.paths.checkout,
                         stdout=log,
                         stderr=subprocess.STDOUT,
@@ -837,7 +1112,9 @@ class PromotionManager:
                     [str(self.paths.docker_exe), "inspect", "--format", "{{.Image}}", CONTAINER]
                 ).stdout.strip()
                 if not deployed_image.startswith("sha256:"):
-                    raise RuntimeError("Deployed production container has no immutable image identity")
+                    raise RuntimeError(
+                        "Deployed production container has no immutable image identity"
+                    )
                 record.update(
                     {
                         "stage": "health-verified",
@@ -865,7 +1142,9 @@ class PromotionManager:
                 try:
                     self._write_journal(record)
                 except Exception:
-                    print("Private failure journal update failed; GitHub failure status will still be attempted.")
+                    print(
+                        "Private failure journal update failed; GitHub failure status will still be attempted."
+                    )
                 try:
                     self._set_deployment_status(
                         deployment_id,
@@ -874,7 +1153,9 @@ class PromotionManager:
                         log_url=evidence["approval_run_url"],
                     )
                 except Exception:
-                    print("GitHub failure status is pending; operator-local journal records the failure.")
+                    print(
+                        "GitHub failure status is pending; operator-local journal records the failure."
+                    )
                 raise
 
             try:
@@ -913,7 +1194,9 @@ class PromotionManager:
             try:
                 resolved_path.relative_to(allowed_dir)
             except ValueError as exc:
-                raise ValueError("Audit retry record must be inside private deployment storage") from exc
+                raise ValueError(
+                    "Audit retry record must be inside private deployment storage"
+                ) from exc
             record = json.loads(resolved_path.read_text(encoding="utf-8"))
             if not isinstance(record, dict) or not isinstance(record.get("deployment_id"), int):
                 raise ValueError("Private deployment record is invalid")
@@ -924,7 +1207,9 @@ class PromotionManager:
                 ["git", "-C", str(self.paths.checkout), "branch", "--show-current"]
             ).stdout.strip()
             clean = not bool(
-                _run(["git", "-C", str(self.paths.checkout), "status", "--porcelain"]).stdout.strip()
+                _run(
+                    ["git", "-C", str(self.paths.checkout), "status", "--porcelain"]
+                ).stdout.strip()
             )
             validate_checkout_state(
                 checkout_root=str(self.paths.checkout),
@@ -947,9 +1232,7 @@ class PromotionManager:
                 [str(self.paths.docker_exe), "inspect", "--format", "{{.Image}}", CONTAINER]
             ).stdout.strip()
             deployment_id = record["deployment_id"]
-            deployment = self._api(
-                f"repos/{self.repository}/deployments/{deployment_id}"
-            )
+            deployment = self._api(f"repos/{self.repository}/deployments/{deployment_id}")
             if not isinstance(deployment, dict):
                 raise ValueError("GitHub production Deployment record is unavailable")
             validate_audit_retry_evidence(
@@ -965,14 +1248,14 @@ class PromotionManager:
                 record["stage"] = "deployment-recorded"
                 record["completed_at"] = datetime.now(UTC).isoformat()
                 self._write_journal(record)
-                print("GitHub production status was already successful; local journal is synchronized.")
+                print(
+                    "GitHub production status was already successful; local journal is synchronized."
+                )
                 return
             self._set_deployment_status(
                 deployment_id,
                 state="success",
-                description=(
-                    f"src {record['commit_sha']} image {record['deployed_image_id']}"
-                ),
+                description=(f"src {record['commit_sha']} image {record['deployed_image_id']}"),
                 log_url=str(record["approval_run_url"]),
             )
             record["stage"] = "deployment-recorded"
@@ -986,7 +1269,13 @@ def parse_args() -> argparse.Namespace:
         description="Validate and manually promote an approved release to the local Windows production host."
     )
     parser.add_argument("--tag", help="Published release tag, for example v1.4.25")
-    parser.add_argument("--approval-run-id", type=int, help="Successful protected approval workflow run ID")
+    authorization = parser.add_mutually_exclusive_group()
+    authorization.add_argument(
+        "--approval-run-id", type=int, help="Successful protected release approval workflow run ID"
+    )
+    authorization.add_argument(
+        "--plan-id", help="Active, verified production plan authorization ID"
+    )
     parser.add_argument(
         "--allow-source-rebuilt-fallback",
         action="store_true",
@@ -1021,6 +1310,7 @@ def main() -> int:
                 not args.confirm_current_mounts
                 or args.tag
                 or args.approval_run_id
+                or args.plan_id
                 or args.retry_audit_record
             ):
                 raise ValueError(
@@ -1031,17 +1321,24 @@ def main() -> int:
                 manager.capture_compose_contract()
             return 0
         if args.retry_audit_record:
-            if args.tag or args.approval_run_id or args.confirm_current_mounts:
-                raise ValueError("Audit-only retry cannot be combined with release or capture arguments.")
+            if args.tag or args.approval_run_id or args.plan_id or args.confirm_current_mounts:
+                raise ValueError(
+                    "Audit-only retry cannot be combined with release or capture arguments."
+                )
             manager.retry_audit(args.retry_audit_record)
             return 0
-        if args.confirm_current_mounts or not args.tag or not args.approval_run_id:
+        if (
+            args.confirm_current_mounts
+            or not args.tag
+            or (args.approval_run_id is None and args.plan_id is None)
+        ):
             raise ValueError(
-                "Promotion requires --tag and --approval-run-id; use --confirm-current-mounts only for contract capture."
+                "Promotion requires --tag and exactly one approval mode; use --confirm-current-mounts only for contract capture."
             )
         manager.promote(
             args.tag,
             args.approval_run_id,
+            plan_id=args.plan_id,
             allow_source_rebuilt_fallback=args.allow_source_rebuilt_fallback,
         )
         return 0

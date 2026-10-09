@@ -44,8 +44,14 @@
   validated as v1.4.31 with 368 scratch rules and integrity `ok`. The builder
   creates no production service changes. Focused promotion tests (32), Ruff,
   mypy, and `scripts\\check.bat` pass (694 passed, 0 failed, 0 errors, 1 skipped).
-  Changes are on local branch `codex/source-rebuilt-rollback-fallback`; PR and
-  protected CI are the next step. App code and version were not changed.
+  PR #118 is merged at `6cb2c035447ab4da7c6ffd0e9311bc378b945c58`; exact-main
+  CI/API runs `37982588960`/`37982588871` passed. v1.4.33 then required an
+  aligned version release because staging binds a new stable tag to the
+  project version. PR #119 merged at `3a506d6d393d7c328ab02ef8c248077dfee79754`;
+  exact-main CI/API runs `37984139435`/`37984139742` passed. Release staging
+  `37984625481` passed, the ZIP digest matched its sidecar, and v1.4.33 is
+  published at that exact source. Fresh approval run `37985076045` passed
+  source/CI validation and is waiting at the human Environment gate.
 - The exact v1.4.31 image could not be recovered from a trusted local archive.
   The owner approved a bounded source-rebuilt fallback. The private builder
   produced image `sha256:4a1b82745743abef0d076b2d4302ecde973f717f4239560d531bbb4a0f402109`
@@ -66,13 +72,13 @@
   relative to v1.4.32. Do not run the old promoter again. The #116 PR text
   accidentally triggered GitHub auto-close parsing despite negated wording;
   the issue was reopened immediately because its acceptance criteria remain
-  unmet. Next executable step: merge the tooling PR through protected main,
-  publish an aligned release if required by the current release workflow,
-  obtain fresh protected approval for the exact current main/release tuple,
-  and stop at its human Environment approval gate before promotion. The stale
-  v1.4.32 approval is ineligible. After approval, promotion still requires the
-  explicit source-fallback flag, the canonical stable-checkout finalizer, a new
-  verified production backup, runtime freshness, and a successful Deployment.
+  unmet. Production promotion has not been attempted. The pending approval is
+  run `37985076045`; after it succeeds, use the stable checkout at v1.4.33 and
+  explicitly pass `--allow-source-rebuilt-fallback`. Promotion still requires
+  full preflight, a new verified production backup, the canonical finalizer,
+  runtime freshness, and a successful GitHub Deployment. The stale v1.4.32
+  approval is ineligible. Current production remains healthy on v1.4.31 with
+  the original database and container image unchanged.
 
 ## 2026-09-29 v1.4.31 corrective release and production acceptance (#97-#102)
 

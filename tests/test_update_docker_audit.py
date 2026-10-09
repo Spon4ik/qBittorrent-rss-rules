@@ -18,6 +18,14 @@ def _powershell() -> str:
     return executable
 
 
+def _native_test_executable() -> tuple[str, list[str]]:
+    if shutil.which("cmd.exe"):
+        return "cmd.exe", ["/c"]
+    if shutil.which("sh"):
+        return "sh", ["-c"]
+    pytest.skip("A native shell executable is required for process-boundary coverage")
+
+
 def _ps_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
@@ -103,21 +111,26 @@ def test_native_stderr_progress_is_logged_without_failing_successful_command(
     tmp_path: Path,
 ) -> None:
     powershell = _powershell()
+    native_executable, native_prefix = _native_test_executable()
     module_path = _ps_literal(str(ROOT / "scripts" / "DockerNativeProcess.psm1"))
     log_path = _ps_literal(str(tmp_path / "native-command.log"))
+    executable_literal = _ps_literal(native_executable)
+    prefix = "@(" + ", ".join(_ps_literal(arg) for arg in native_prefix) + ")"
     command = f"""
 $ErrorActionPreference = 'Stop'
 Import-Module {module_path} -Force
-$result = Invoke-DockerNativeProcess -DockerExe (Get-Command cmd.exe).Source -DockerArguments @('/c', 'echo Compose progress 1>&2') -OutputMode 'Log' -LogFile {log_path}
+$nativeExe = (Get-Command {executable_literal} -CommandType Application).Source
+$nativePrefix = {prefix}
+$result = Invoke-DockerNativeProcess -DockerExe $nativeExe -DockerArguments ($nativePrefix + @('echo Compose progress 1>&2')) -OutputMode 'Log' -LogFile {log_path}
 if ($result.ExitCode -ne 0) {{ exit 3 }}
 if (-not (Select-String -LiteralPath {log_path} -Pattern 'Compose progress' -Quiet)) {{ exit 4 }}
-$captured = Invoke-DockerNativeProcess -DockerExe (Get-Command cmd.exe).Source -DockerArguments @('/c', 'echo captured stdout') -OutputMode 'Capture' -LogFile {log_path}
+$captured = Invoke-DockerNativeProcess -DockerExe $nativeExe -DockerArguments ($nativePrefix + @('echo captured stdout')) -OutputMode 'Capture' -LogFile {log_path}
 if ($captured.ExitCode -ne 0) {{ exit 5 }}
 if ($captured.StdOut -notcontains 'captured stdout') {{ exit 6 }}
-$stderr = Invoke-DockerNativeProcess -DockerExe (Get-Command cmd.exe).Source -DockerArguments @('/c', 'echo captured stderr 1>&2') -OutputMode 'Capture' -LogFile {log_path}
+$stderr = Invoke-DockerNativeProcess -DockerExe $nativeExe -DockerArguments ($nativePrefix + @('echo captured stderr 1>&2')) -OutputMode 'Capture' -LogFile {log_path}
 if ($stderr.ExitCode -ne 0) {{ exit 7 }}
 if (-not (Select-String -LiteralPath {log_path} -Pattern 'captured stderr' -Quiet)) {{ exit 8 }}
-$nonzero = Invoke-DockerNativeProcess -DockerExe (Get-Command cmd.exe).Source -DockerArguments @('/c', 'exit 7') -OutputMode 'Capture' -LogFile {log_path}
+$nonzero = Invoke-DockerNativeProcess -DockerExe $nativeExe -DockerArguments ($nativePrefix + @('exit 7')) -OutputMode 'Capture' -LogFile {log_path}
 if ($nonzero.ExitCode -ne 7) {{ exit 9 }}
 """
     result = subprocess.run(

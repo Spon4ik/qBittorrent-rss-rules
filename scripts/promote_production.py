@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -26,6 +28,7 @@ from scripts.production_approval import (
     validate_release,
 )
 from scripts.production_promotion import (
+    compose_config_digest,
     create_compose_contract,
     exclusive_file_lock,
     parse_release_version,
@@ -47,6 +50,8 @@ APPROVAL_WORKFLOW_PATH = ".github/workflows/production-approval.yml"
 APPROVAL_JOB_NAME = "Record production approval"
 APPROVAL_ARTIFACT_NAME = "production-approval-manifest"
 WINDOWS_HOST = os.name == "nt"
+FALLBACK_SOURCE_TAG = "v1.4.31"
+FALLBACK_SOURCE_SHA = "c2abf87db7172b8444fb3b8b7c159f6e21735c20"
 
 
 @dataclass(frozen=True)
@@ -97,6 +102,44 @@ def _run(
     if result.returncode != 0:
         raise RuntimeError(f"{Path(args[0]).name} failed with exit code {result.returncode}")
     return result
+
+
+def validate_source_rebuilt_fallback(
+    manifest_path: Path,
+    *,
+    expected_compose_sha256: str,
+    expected_dockerfile_sha256: str,
+    expected_image_id: str,
+) -> dict[str, Any]:
+    try:
+        evidence = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("Source-rebuilt rollback evidence is missing or invalid") from exc
+    if not isinstance(evidence, dict):
+        raise ValueError("Source-rebuilt rollback evidence must be a JSON object")
+    if evidence.get("schema_version") != 1:
+        raise ValueError("Unsupported source-rebuilt rollback evidence schema")
+    if (
+        evidence.get("source_tag") != FALLBACK_SOURCE_TAG
+        or evidence.get("source_sha") != FALLBACK_SOURCE_SHA
+    ):
+        raise ValueError("Rollback fallback must use the authorized v1.4.31 source")
+    if not hmac.compare_digest(str(evidence.get("compose_sha256", "")), expected_compose_sha256):
+        raise ValueError("Fallback Compose/build inputs do not match the resolved production contract")
+    if evidence.get("dockerfile_sha256") != expected_dockerfile_sha256:
+        raise ValueError("Fallback Dockerfile does not match the authorized source")
+    if evidence.get("image_id") != expected_image_id or not expected_image_id.startswith("sha256:"):
+        raise ValueError("Fallback image identity does not match Docker's inspectable immutable ID")
+    if evidence.get("scratch_database_integrity") != "ok":
+        raise ValueError("Fallback scratch database integrity was not verified")
+    if evidence.get("container_health_check") != "passed" or evidence.get("validated_app_version") != "1.4.31":
+        raise ValueError("Fallback image health and version were not verified against the scratch database")
+    if (
+        not isinstance(evidence.get("scratch_database_rule_count"), int)
+        or evidence["scratch_database_rule_count"] <= 0
+    ):
+        raise ValueError("Fallback scratch database compatibility was not verified")
+    return evidence
 
 
 class FinalizerCleanupUncertainError(RuntimeError):
@@ -459,7 +502,13 @@ class PromotionManager:
         if ancestry.returncode != 0:
             raise ValueError("Approved release SHA is no longer contained in origin/main")
 
-    def preflight(self, tag: str, approval_run_id: int) -> dict[str, Any]:
+    def preflight(
+        self,
+        tag: str,
+        approval_run_id: int,
+        *,
+        allow_source_rebuilt_fallback: bool = False,
+    ) -> dict[str, Any]:
         manifest, current_main_sha, approval_run = self._validate_approval(tag, approval_run_id)
         commit_sha, release_url, ci_run, api_run = validate_release(tag, self.repository)
         if commit_sha != manifest.get("commit_sha"):
@@ -524,6 +573,7 @@ class PromotionManager:
         ).stdout.strip()
         if not image_id.startswith("sha256:"):
             raise ValueError("Current production container has no immutable image identity")
+        fallback_evidence: dict[str, Any] | None = None
         try:
             retained_image_id = _run(
                 [
@@ -536,11 +586,37 @@ class PromotionManager:
                 ]
             ).stdout.strip()
         except RuntimeError as exc:
-            raise ValueError(
-                f"Previous production image {image_id} is not inspectable for rollback retention; "
-                "ensure Docker can resolve this exact immutable image before retrying promotion"
-            ) from exc
-        if retained_image_id != image_id:
+            if not allow_source_rebuilt_fallback:
+                raise ValueError(
+                    f"Previous production image {image_id} is not inspectable for rollback retention; "
+                    "recover the exact image or use the explicitly approved source-fallback procedure"
+                ) from exc
+            fallback_manifest = self.paths.private_root / "rollback" / "v1.4.31-source-fallback-verified.json"
+            compose_digest = compose_config_digest(
+                compose_config,
+                service=SERVICE,
+                key=key,
+            )
+            dockerfile = self.paths.stable_checkout / "Dockerfile"
+            fallback_id = _run(
+                [
+                    str(self.paths.docker_exe),
+                    "image",
+                    "inspect",
+                    "--format",
+                    "{{.Id}}",
+                    "qbrss-v1.4.31-source-fallback:verified",
+                ]
+            ).stdout.strip()
+            fallback_evidence = validate_source_rebuilt_fallback(
+                fallback_manifest,
+                expected_compose_sha256=compose_digest,
+                expected_dockerfile_sha256=hashlib.sha256(dockerfile.read_bytes()).hexdigest(),
+                expected_image_id=fallback_id,
+            )
+            if fallback_evidence.get("source_sha") != FALLBACK_SOURCE_SHA:
+                raise ValueError("Source-rebuilt rollback image provenance is invalid") from exc
+        if fallback_evidence is None and retained_image_id != image_id:
             raise ValueError(
                 f"Previous production image {image_id} resolved to {retained_image_id or 'no image ID'}; "
                 "rollback retention requires the exact immutable image"
@@ -575,6 +651,7 @@ class PromotionManager:
             "api_run_url": api_run["url"],
             "database_path": str(database_path),
             "previous_image_id": image_id,
+            "previous_image_fallback": fallback_evidence,
             "contract_hmac": contract["compose_hmac"],
         }
 
@@ -634,12 +711,22 @@ class PromotionManager:
         os.replace(temporary, path)
         return path
 
-    def promote(self, tag: str, approval_run_id: int) -> None:
+    def promote(
+        self,
+        tag: str,
+        approval_run_id: int,
+        *,
+        allow_source_rebuilt_fallback: bool = False,
+    ) -> None:
         if not WINDOWS_HOST:
             raise RuntimeError("Production promotion is supported only on the Windows host")
         secure_private_root(self.paths.private_root)
         with exclusive_file_lock(self.lock_file):
-            evidence = self.preflight(tag, approval_run_id)
+            evidence = self.preflight(
+                tag,
+                approval_run_id,
+                allow_source_rebuilt_fallback=allow_source_rebuilt_fallback,
+            )
             deployment_id = self._create_deployment(evidence)
             record: dict[str, Any] = {
                 **evidence,
@@ -649,6 +736,7 @@ class PromotionManager:
                 "private_backup_path": "",
                 "backup_sha256": "",
                 "previous_image_rollback_tag": "",
+                "previous_image_fallback": evidence.get("previous_image_fallback"),
                 "deployed_image_id": "",
                 "finalizer_exit_code": None,
             }
@@ -687,11 +775,16 @@ class PromotionManager:
                 record["stage"] = "backup-verified"
                 self._write_journal(record)
 
+                rollback_source = evidence.get("previous_image_fallback")
+                rollback_image_id = (
+                    str(rollback_source["image_id"]) if isinstance(rollback_source, dict)
+                    else evidence["previous_image_id"]
+                )
                 rollback_tag = (
                     f"qbittorrent-rss-rule-manager:rollback-{timestamp.replace('T', '-').replace('Z', '')}"
                 )
                 _run(
-                    [str(self.paths.docker_exe), "image", "tag", evidence["previous_image_id"], rollback_tag]
+                    [str(self.paths.docker_exe), "image", "tag", rollback_image_id, rollback_tag]
                 )
                 retained_image_id = _run(
                     [
@@ -703,8 +796,8 @@ class PromotionManager:
                         rollback_tag,
                     ]
                 ).stdout.strip()
-                if retained_image_id != evidence["previous_image_id"]:
-                    raise RuntimeError("Previous production image was not retained by immutable ID")
+                if retained_image_id != rollback_image_id:
+                    raise RuntimeError("Previous production rollback image was not retained by immutable ID")
                 record["previous_image_rollback_tag"] = rollback_tag
                 record["stage"] = "finalizer-running"
                 self._write_journal(record)
@@ -895,6 +988,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag", help="Published release tag, for example v1.4.25")
     parser.add_argument("--approval-run-id", type=int, help="Successful protected approval workflow run ID")
     parser.add_argument(
+        "--allow-source-rebuilt-fallback",
+        action="store_true",
+        help="Use the owner-approved, privately evidenced v1.4.31 source rebuild if the exact prior image is unavailable.",
+    )
+    parser.add_argument(
         "--capture-compose-contract",
         action="store_true",
         help="Capture the current resolved Compose configuration before changing its build context.",
@@ -941,7 +1039,11 @@ def main() -> int:
             raise ValueError(
                 "Promotion requires --tag and --approval-run-id; use --confirm-current-mounts only for contract capture."
             )
-        manager.promote(args.tag, args.approval_run_id)
+        manager.promote(
+            args.tag,
+            args.approval_run_id,
+            allow_source_rebuilt_fallback=args.allow_source_rebuilt_fallback,
+        )
         return 0
     except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
         print(f"Production promotion stopped: {exc}", file=sys.stderr)

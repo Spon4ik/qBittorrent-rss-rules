@@ -7,6 +7,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 ## [Unreleased]
 
 - Reject production promotion during read-only preflight when Docker cannot resolve the exact running rollback image.
+- Add an owner-approved, provenance-checked v1.4.31 source-rebuilt rollback fallback when the exact prior Docker image is unavailable.
 
 ## [1.4.32] - 2026-10-09
 

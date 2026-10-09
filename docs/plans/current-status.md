@@ -84,6 +84,17 @@
   The failed status is an updater verification defect, not evidence that the
   container failed to start. Fixing/releasing the promoter tooling requires a
   fresh protected release/approval before another canonical promotion attempt.
+- Root cause is isolated to `scripts/DockerLifecycleAudit.psm1`: its Docker Go
+  template embedded double quotes inside a PowerShell single-quoted string, so
+  Docker received invalid label-index syntax and parsed `com` as a template
+  function. The template now builds its quote delimiters with `[char]34`; a
+  Windows PowerShell regression checks the actual format argument and parsed
+  lifecycle snapshot. Focused lifecycle tests pass (5), and a read-only inspect
+  against production now returns the running container, image ID, healthy state,
+  and `qb-rss-rules` service label. Full pytest passes (all tests; 1 skipped).
+  The runbook now records v1.4.33 as the live runtime and requires a new release
+  and exact-main approval for future promotion. No service restart or GitHub
+  Deployment status change was made during this correction.
 - Production Stremio audit currently finds 290 managed rules, 273 with
   `RuleSearchSnapshot`, and 17 without. The three newest managed rules were
   created at 17:07–18:23 UTC before the 20:28 UTC v1.4.33 promotion; each has

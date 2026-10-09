@@ -43,7 +43,8 @@ function Get-DockerLifecycleTargetSnapshot {
         return New-DockerLifecycleSnapshot -QuerySucceeded $true -ContainerCount $containerIds.Count
     }
 
-    $format = '{{.Id}}|{{.Image}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}not_configured{{end}}|{{index .Config.Labels "com.docker.compose.service"}}'
+    $quote = [string][char]34
+    $format = '{{.Id}}|{{.Image}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}not_configured{{end}}|{{index .Config.Labels ' + $quote + 'com.docker.compose.service' + $quote + '}}'
     $inspectArguments = @("inspect", "--format", $format, $containerIds[0])
     $inspectResult = & $DockerInvoker $inspectArguments "Capture"
     if ($null -eq $inspectResult -or $inspectResult.ExitCode -ne 0) {

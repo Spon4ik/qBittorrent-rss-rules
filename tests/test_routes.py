@@ -99,7 +99,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.31"
+    assert payload["app_version"] == "1.4.33"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -6582,6 +6582,11 @@ def test_sync_stremio_settings_creates_rules_for_library_titles(
     tmp_path,
 ) -> None:
     storage_path = create_stremio_local_storage(tmp_path)
+    queued_fetches: list[str] = []
+    monkeypatch.setattr(
+        "app.routes.api.enqueue_rule_fetch",
+        lambda rule_id: queued_fetches.append(rule_id) or True,
+    )
     _install_stremio_api(
         monkeypatch,
         items=[stremio_library_item("tt13016388", "3 Body Problem", item_type="series")],
@@ -6611,6 +6616,7 @@ def test_sync_stremio_settings_creates_rules_for_library_titles(
     assert created_rule is not None
     assert "Stremio sync completed for 1 active title(s)" in response.text
     assert "1 created" in response.text
+    assert queued_fetches == [created_rule.id]
 
 
 def test_sync_stremio_settings_pushes_changed_rules_to_qb_when_configured(

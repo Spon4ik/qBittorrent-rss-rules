@@ -1,5 +1,28 @@
 # Current Status
 
+## 2026-10-09 Stremio-created rules miss initial snapshot fetch (#47)
+
+- Reopened issue #47's investigation details with the newly confirmed behavior:
+  Stremio sync can create the RSS rule without queuing its initial snapshot.
+  The issue remains open for the fix and subsequent delivery.
+- Manual `/api/settings/sync-stremio` now queues the initial snapshot fetch for
+  each newly created Stremio-managed rule, using the same application queue as
+  manual rule creation. Existing rules are not force-refetched.
+- Regression: `tests/test_routes.py::test_sync_stremio_settings_creates_rules_for_library_titles`
+  asserts the newly created rule ID is queued. Focused pytest passes (1 test),
+  Ruff passes for the changed source/test files, and `git diff --check` passes.
+- This is deployable backend code prepared as patch release v1.4.32. The
+  changelog, `pyproject.toml`, FastAPI health version, WinUI compatibility
+  constant, and health regression assert are synchronized. Full deterministic
+  validation passed (Ruff, mypy across 49 files, and 692 tests with 1 skipped).
+  The required finalizer reached the Docker updater, which safely stopped
+  before rebuilding because shared Compose points to
+  `C:\Users\nucc\deployments\qBittorrent-rss-rules` while this branch is at
+  `E:\GitHub\qBittorrent rss rules`. Shared Compose was not changed and Docker
+  deployment was not attempted. The v1.4.32 desktop build and branch/PR
+  persistence remain before delivery; production release remains gated on a
+  matching approved checkout/runtime flow.
+
 ## 2026-09-29 v1.4.31 corrective release and production acceptance (#97-#102)
 
 - Corrective implementation merged through PR #109 at approved release source

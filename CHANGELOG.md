@@ -6,7 +6,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
-- No entries yet.
+- Reject production promotion during read-only preflight when Docker cannot resolve the exact running rollback image.
 
 ## [1.4.32] - 2026-10-09
 

@@ -185,6 +185,14 @@ class Rule(Base):
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_snapshot_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    snapshot_fetch_failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    snapshot_fetch_next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    snapshot_fetch_last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    snapshot_fetch_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_release_filtered_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_release_fetched_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_exact_filtered_count: Mapped[int | None] = mapped_column(Integer, nullable=True)

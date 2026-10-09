@@ -1,5 +1,38 @@
 # Current Status
 
+## 2026-10-10 Durable rule snapshot recovery (#122/#123)
+
+- Coordinated #122 and #123 as one implementation on feature branch
+  `codex/stremio-fetch-reliability`, based on current `main` at
+  `a3db92166717df33e70f68fbc163bac7c957a137`. A committed eligible rule without
+  a `RuleSearchSnapshot` is the durable initial-fetch intent; the shared due
+  selector recovers it on the scheduler's first startup tick and later ticks.
+  Per-rule stale age, enabled/all scope, completion exclusions, bounded batches,
+  UTC normalization, retry backoff and redacted failure status are implemented.
+- Patch version is aligned at v1.4.34 across backend, desktop, health assertion
+  and changelog. Focused regressions cover missing/exact-boundary/fresh/stale
+  selection, disabled and completion-blocked scope, enqueue rejection, shutdown
+  recovery, persisted retries and migration of existing SQLite schemas.
+- Validation: `scripts\check.bat` passed Ruff, mypy (49 files) and pytest
+  (702 passed, 0 failed, 0 errors, 1 skipped). `scripts\run_dev.bat desktop-build`
+  passed with 0 warnings and 0 errors.
+- Production runtime remains v1.4.33 while this checkout is v1.4.34; runtime
+  freshness therefore reports `stale_version`. No Docker CLI, rebuild, restart,
+  database mutation, or production promotion was attempted. Preserve historical
+  failed Deployment `6970344746`. Next: protected PR/CI and canonical release
+  staging; stop at the production-approval gate.
+- Windows dialog investigation is not yet attributable. `Get-Command docker.exe`
+  resolves `C:\Program Files\Docker\Docker\resources\bin\docker.exe`.
+  Repository CLI calls use `& $DockerExe` or `subprocess.run([...docker.exe])`;
+  the updater separately starts the absolute `Docker Desktop.exe` path if the
+  engine is unavailable. No `docker:` URI or bare `start docker` call site was
+  found. This diagnostic session did not invoke Docker. Recent PowerShell
+  history has no triggering command, Security 4688 process auditing is
+  unavailable, and a temporary WMI process-start observer was denied access.
+  No app association or permission settings were changed. The trigger remains
+  unproven; capture the live process tree and command line if the chooser appears
+  again.
+
 ## 2026-10-09 Stremio production acceptance and rollback-image recovery (#47)
 
 - PR #114 merged to protected main as `e9961a245cda3861e97fde05d92c40e4b8b3b5bd`.

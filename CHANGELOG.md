@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.34] - 2026-10-10
+
+- Reconcile missing and per-rule stale RSS snapshots on startup and scheduler ticks, with persisted retry status.
+
 ## [1.4.33] - 2026-10-09
 
 - Synchronize the backend and desktop version for the reviewed production-promotion tooling release; application behavior is unchanged.

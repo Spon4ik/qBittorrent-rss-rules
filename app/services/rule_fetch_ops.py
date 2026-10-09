@@ -4,6 +4,7 @@ import json
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from urllib.parse import unquote, urlsplit
@@ -34,6 +35,7 @@ from app.services.jackett import (
     clamp_search_query_text,
     classify_imdb_backed_result_identity,
 )
+from app.services.log_redaction import redact_sensitive_text
 from app.services.operation_status import (
     complete_operation,
     fail_operation,
@@ -78,6 +80,8 @@ DEFAULT_RULE_FETCH_SCHEDULE_SCOPE = "enabled"
 DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 360
 MIN_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 5
 MAX_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES = 10080
+MAX_AUTOMATIC_RULE_FETCHES_PER_TICK = 10
+MAX_RULE_FETCH_RETRY_DELAY_MINUTES = 360
 _RULE_FETCH_RUN_LOCK = threading.Lock()
 INDEXER_KEY_STRIP_RE = re.compile(r"[^a-z0-9]+")
 VIDEO_MEDIA_TYPES = {MediaType.MOVIE.value, MediaType.SERIES.value}
@@ -107,6 +111,7 @@ INCOMPATIBLE_VIDEO_CATEGORY_TERMS = {
     "software",
     "программ",
 }
+
 def normalize_schedule_scope(value: object | None) -> str:
     cleaned = str(value or "").strip().lower()
     if cleaned in RULE_FETCH_SCHEDULE_SCOPES:
@@ -1370,6 +1375,191 @@ def _rule_in_fetch_scope(
     return include_disabled or bool(rule.enabled)
 
 
+@dataclass(frozen=True, slots=True)
+class RuleFetchDueItem:
+    rule_id: str
+    reason: str
+    next_attempt_at: datetime | None = None
+    last_error: str = ""
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def select_due_rule_fetches(
+    session: Session,
+    *,
+    now: datetime | None = None,
+    rule_ids: list[str] | None = None,
+    limit: int | None = MAX_AUTOMATIC_RULE_FETCHES_PER_TICK,
+    include_retry_wait: bool = False,
+) -> list[RuleFetchDueItem]:
+    """Select enabled missing snapshots and configured, individually stale snapshots."""
+    settings = SettingsService.get_or_create(session)
+    current = _as_utc(now or utcnow())
+    schedule_enabled = bool(getattr(settings, "rules_fetch_schedule_enabled", False))
+    interval_minutes = normalize_schedule_interval_minutes(
+        getattr(
+            settings,
+            "rules_fetch_schedule_interval_minutes",
+            DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES,
+        )
+    )
+    scope = normalize_schedule_scope(getattr(settings, "rules_fetch_schedule_scope", None))
+    include_disabled = schedule_enabled and scope == "all"
+
+    statement = select(Rule)
+    normalized_ids = [str(value).strip() for value in (rule_ids or []) if str(value).strip()]
+    if rule_ids is not None:
+        if not normalized_ids:
+            return []
+        statement = statement.where(Rule.id.in_(set(normalized_ids)))
+    rules = session.scalars(statement).all()
+    if not rules:
+        return []
+
+    snapshots = session.scalars(
+        select(RuleSearchSnapshot).where(
+            RuleSearchSnapshot.rule_id.in_([rule.id for rule in rules])
+        )
+    ).all()
+    snapshot_by_rule_id = {snapshot.rule_id: snapshot for snapshot in snapshots}
+    interval = timedelta(minutes=interval_minutes)
+    due: list[tuple[int, datetime, str, RuleFetchDueItem]] = []
+
+    for rule in rules:
+        if not _rule_in_fetch_scope(rule, include_disabled=include_disabled):
+            continue
+        snapshot = snapshot_by_rule_id.get(rule.id)
+        if snapshot is None:
+            priority = 0
+            sort_time = (
+                _as_utc(rule.created_at) if rule.created_at else datetime.min.replace(tzinfo=UTC)
+            )
+            reason = "missing_snapshot"
+        elif schedule_enabled and current >= _as_utc(snapshot.fetched_at) + interval:
+            priority = 1
+            sort_time = _as_utc(snapshot.fetched_at)
+            reason = "stale_snapshot"
+        else:
+            continue
+
+        next_attempt_at = getattr(rule, "snapshot_fetch_next_attempt_at", None)
+        if next_attempt_at is not None and _as_utc(next_attempt_at) > current:
+            if not include_retry_wait:
+                continue
+        due.append(
+            (
+                priority,
+                sort_time,
+                rule.rule_name.casefold(),
+                RuleFetchDueItem(
+                    rule_id=rule.id,
+                    reason=reason,
+                    next_attempt_at=next_attempt_at,
+                    last_error=redact_sensitive_text(
+                        str(getattr(rule, "snapshot_fetch_last_error", None) or "")
+                    ),
+                ),
+            )
+        )
+
+    due.sort(key=lambda item: (item[0], item[1], item[2]))
+    selected = [item[3] for item in due]
+    return selected if limit is None else selected[: max(0, int(limit))]
+
+
+def _record_rule_fetch_results(session: Session, results: list[dict[str, Any]]) -> None:
+    completed_at = utcnow()
+    for result in results:
+        rule_id = str(result.get("rule_id") or "").strip()
+        if not rule_id:
+            continue
+        rule = session.get(Rule, rule_id)
+        if rule is None:
+            continue
+        rule.snapshot_fetch_last_attempt_at = completed_at
+        if result.get("success"):
+            rule.snapshot_fetch_failure_count = 0
+            rule.snapshot_fetch_next_attempt_at = None
+            rule.snapshot_fetch_last_error = None
+        else:
+            failures = max(0, int(rule.snapshot_fetch_failure_count or 0)) + 1
+            delay_minutes = min(2 ** min(failures - 1, 9), MAX_RULE_FETCH_RETRY_DELAY_MINUTES)
+            rule.snapshot_fetch_failure_count = failures
+            rule.snapshot_fetch_next_attempt_at = completed_at + timedelta(minutes=delay_minutes)
+            rule.snapshot_fetch_last_error = redact_sensitive_text(
+                str(result.get("error") or result.get("message") or "Snapshot fetch failed.")
+            )[:2000]
+        session.add(rule)
+    if results:
+        session.commit()
+
+
+def record_rule_fetch_failure(session: Session, rule_id: str, message: str) -> None:
+    _record_rule_fetch_results(
+        session,
+        [
+            {
+                "rule_id": str(rule_id or ""),
+                "success": False,
+                "error": str(message or "Snapshot fetch failed unexpectedly."),
+            }
+        ],
+    )
+
+
+def rule_fetch_recovery_status(session: Session, *, now: datetime | None = None) -> dict[str, Any]:
+    current = _as_utc(now or utcnow())
+    candidates = select_due_rule_fetches(
+        session,
+        now=current,
+        limit=None,
+        include_retry_wait=True,
+    )
+    ready = [
+        item
+        for item in candidates
+        if item.next_attempt_at is None or _as_utc(item.next_attempt_at) <= current
+    ]
+    waiting = [item for item in candidates if item not in ready]
+    failed_rules = session.scalars(
+        select(Rule)
+        .where(Rule.snapshot_fetch_last_error.is_not(None))
+        .order_by(Rule.snapshot_fetch_last_attempt_at.desc())
+    ).all()
+    attempts_by_id = {rule.id: int(rule.snapshot_fetch_failure_count or 0) for rule in failed_rules}
+    return {
+        "due_count": len(ready),
+        "retry_wait_count": len(waiting),
+        "failed_count": len(failed_rules),
+        "due": [{"rule_id": item.rule_id, "reason": item.reason} for item in ready[:10]],
+        "retry_wait": [
+            {
+                "rule_id": item.rule_id,
+                "reason": item.reason,
+                "attempts": attempts_by_id.get(item.rule_id, 0),
+                "next_attempt_at": _iso_datetime(item.next_attempt_at),
+                "error": item.last_error,
+            }
+            for item in waiting[:10]
+        ],
+        "recent_failures": [
+            {
+                "rule_id": rule.id,
+                "attempts": attempts_by_id[rule.id],
+                "last_attempt_at": _iso_datetime(rule.snapshot_fetch_last_attempt_at),
+                "next_attempt_at": _iso_datetime(rule.snapshot_fetch_next_attempt_at),
+                "error": redact_sensitive_text(str(rule.snapshot_fetch_last_error or "")),
+            }
+            for rule in failed_rules[:10]
+        ],
+    }
+
+
 def _execute_rule_fetch_for_rule_id(
     rule_id: str,
     *,
@@ -1425,15 +1615,6 @@ def run_rules_fetch_batch(
     try:
         settings = SettingsService.get_or_create(session)
         jackett = SettingsService.resolve_jackett(settings)
-        if not jackett.app_ready:
-            return {
-                "status": "error",
-                "message": "Jackett app search is not configured in Settings.",
-                "attempted": 0,
-                "succeeded": 0,
-                "failed": 0,
-                "results": [],
-            }
 
         if run_all:
             statement = select(Rule)
@@ -1441,7 +1622,9 @@ def run_rules_fetch_batch(
                 statement = statement.where(Rule.enabled.is_(True))
             rules = session.scalars(statement.order_by(Rule.rule_name.asc())).all()
             rules = [
-                rule for rule in rules if _rule_in_fetch_scope(rule, include_disabled=include_disabled)
+                rule
+                for rule in rules
+                if _rule_in_fetch_scope(rule, include_disabled=include_disabled)
             ]
         else:
             normalized_rule_ids: list[str] = []
@@ -1484,6 +1667,28 @@ def run_rules_fetch_batch(
                 "succeeded": 0,
                 "failed": 0,
                 "results": [],
+            }
+
+        if not jackett.app_ready:
+            message = "Jackett app search is not configured in Settings."
+            unconfigured_results = [
+                {
+                    "rule_id": rule.id,
+                    "rule_name": rule.rule_name,
+                    "success": False,
+                    "state": "error",
+                    "error": message,
+                }
+                for rule in rules
+            ]
+            _record_rule_fetch_results(session, unconfigured_results)
+            return {
+                "status": "error",
+                "message": message,
+                "attempted": len(rules),
+                "succeeded": 0,
+                "failed": len(rules),
+                "results": unconfigured_results,
             }
 
         rules = _prioritize_fetch_rules(session, list(rules))
@@ -1569,6 +1774,8 @@ def run_rules_fetch_batch(
                 ]
                 succeeded = sum(1 for result in results if result.get("success"))
                 failed = len(results) - succeeded
+
+        _record_rule_fetch_results(session, results)
 
         if failed == 0:
             message = f"Completed Jackett fetch for {succeeded}/{attempted} rule(s)."
@@ -1661,11 +1868,8 @@ def run_scheduled_fetch_now(session: Session) -> dict[str, Any]:
 
 def run_due_scheduled_fetch(session: Session) -> dict[str, Any] | None:
     settings = SettingsService.get_or_create(session)
-    if not bool(getattr(settings, "rules_fetch_schedule_enabled", False)):
-        return None
-
     now = utcnow()
-    next_run_at = getattr(settings, "rules_fetch_schedule_next_run_at", None)
+    schedule_enabled = bool(getattr(settings, "rules_fetch_schedule_enabled", False))
     interval_minutes = normalize_schedule_interval_minutes(
         getattr(
             settings,
@@ -1673,16 +1877,34 @@ def run_due_scheduled_fetch(session: Session) -> dict[str, Any] | None:
             DEFAULT_RULE_FETCH_SCHEDULE_INTERVAL_MINUTES,
         )
     )
-    if next_run_at is None:
-        settings.rules_fetch_schedule_next_run_at = schedule_next_run_at(
-            from_time=now,
-            interval_minutes=interval_minutes,
-        )
-        session.add(settings)
-        session.commit()
+    due = select_due_rule_fetches(session, now=now)
+    if not due:
         return None
 
-    if next_run_at.astimezone(UTC) > now.astimezone(UTC):
-        return None
-
-    return run_scheduled_fetch_now(session)
+    batch = run_rules_fetch_batch(
+        session,
+        run_all=False,
+        rule_ids=[item.rule_id for item in due],
+        include_disabled=(
+            schedule_enabled
+            and normalize_schedule_scope(
+                getattr(settings, "rules_fetch_schedule_scope", DEFAULT_RULE_FETCH_SCHEDULE_SCOPE)
+            )
+            == "all"
+        ),
+    )
+    if schedule_enabled and any(item.reason == "stale_snapshot" for item in due):
+        if batch.get("status") != "busy":
+            completed_at = utcnow()
+            settings.rules_fetch_schedule_last_run_at = completed_at
+            settings.rules_fetch_schedule_next_run_at = schedule_next_run_at(
+                from_time=completed_at,
+                interval_minutes=interval_minutes,
+            )
+            settings.rules_fetch_schedule_last_status = str(batch.get("status") or "idle")
+            settings.rules_fetch_schedule_last_message = str(batch.get("message") or "")
+            session.add(settings)
+            session.commit()
+    batch["due"] = [{"rule_id": item.rule_id, "reason": item.reason} for item in due]
+    batch["schedule"] = schedule_payload(settings)
+    return batch

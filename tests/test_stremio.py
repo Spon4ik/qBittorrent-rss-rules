@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.models import AppSettings, MediaType, QualityProfile, Rule
 from app.services import operation_status
+from app.services.rule_fetch_ops import select_due_rule_fetches
 from app.services.series_catalog import SeriesSeasonEpisodeInventory
 from app.services.stremio import StremioService, StremioSessionDoesNotExistError
 from app.services.stremio_sync_ops import execute_stremio_sync
@@ -684,6 +685,7 @@ def test_stremio_sync_creates_missing_managed_rule(
     assert created_rule.add_paused is True
     assert created_rule.feed_urls == ["http://feed.example/default"]
     assert created_rule.assigned_category.startswith("Series/3 Body Problem")
+    assert [item.rule_id for item in select_due_rule_fetches(db_session)] == [created_rule.id]
 
 
 def test_stremio_sync_corrects_incomplete_current_episode_to_bitfield_progress(

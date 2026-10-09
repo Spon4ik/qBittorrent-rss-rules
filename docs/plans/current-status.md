@@ -2,25 +2,71 @@
 
 ## 2026-10-10 Durable rule snapshot recovery (#122/#123)
 
-- Coordinated #122 and #123 as one implementation on feature branch
-  `codex/stremio-fetch-reliability`, based on current `main` at
-  `a3db92166717df33e70f68fbc163bac7c957a137`. A committed eligible rule without
-  a `RuleSearchSnapshot` is the durable initial-fetch intent; the shared due
-  selector recovers it on the scheduler's first startup tick and later ticks.
+- Coordinated #122 and #123 as one implementation on `main` at
+  `a09807f9b06fa8a55c80de12fe8b53a20e659922` through PR #124. A committed
+  eligible rule without a `RuleSearchSnapshot` is durable initial-fetch intent;
+  the shared due selector recovers it at scheduler startup and later ticks.
   Per-rule stale age, enabled/all scope, completion exclusions, bounded batches,
-  UTC normalization, retry backoff and redacted failure status are implemented.
-- Patch version is aligned at v1.4.34 across backend, desktop, health assertion
-  and changelog. Focused regressions cover missing/exact-boundary/fresh/stale
-  selection, disabled and completion-blocked scope, enqueue rejection, shutdown
-  recovery, persisted retries and migration of existing SQLite schemas.
-- Validation: `scripts\check.bat` passed Ruff, mypy (49 files) and pytest
-  (702 passed, 0 failed, 0 errors, 1 skipped). `scripts\run_dev.bat desktop-build`
-  passed with 0 warnings and 0 errors.
-- Production runtime remains v1.4.33 while this checkout is v1.4.34; runtime
-  freshness therefore reports `stale_version`. No Docker CLI, rebuild, restart,
-  database mutation, or production promotion was attempted. Preserve historical
-  failed Deployment `6970344746`. Next: protected PR/CI and canonical release
-  staging; stop at the production-approval gate.
+  UTC normalization, retry backoff, and redacted failure status are implemented.
+- v1.4.34 is published from that exact SHA. PR checks passed on the PR head;
+  exact-main CI `37998309625`, API integration `37998309540`, and release staging
+  `37998713492` passed. Approval run `37999106115` completed successfully with
+  approver `Spon4ik` and binds this exact tag/SHA.
+- Canonical promotion created Deployment `6972627039`, verified a private
+  SQLite backup (SHA-256
+  `3b102c65c70255c2ebb69ac2cde2ea2f02a1bf579f067896d655aadbfc34d430`), and
+  ran the finalizer. Ruff, mypy (49 files), and pytest (702 passed, 1 skipped)
+  passed. Compose rebuilt/restarted only `qb-rss-rules`; `/health` now reports
+  healthy v1.4.34 and container inspection confirms the correct service, image,
+  and intact `/app/data` bind mount. Preserve Deployment `6972627039` as failed:
+  the updater's native-command output pipeline treated Compose progress output
+  as a PowerShell error before lifecycle proof. Do not rewrite its status.
+- Read-only comparison of the pre-promotion backup and current database proves
+  persisted startup fetch execution: Stremio-managed rules changed from 290
+  total / 273 snapshots / 17 missing to 290 / 276 / 14. Three snapshots were
+  newly persisted at 22:59:54 UTC after the container started at 22:58:53 UTC.
+  The remaining 14 missing are disabled or completion-blocked; current counts
+  show zero enabled missing eligible rules, zero overdue eligible rules, zero
+  persisted failures, and zero retry-wait rules. Effective schedule is enabled,
+  1440 minutes, scope `enabled`; scheduler last status is `ok`. The operations
+  status endpoint timed out during this check; persisted database evidence is
+  authoritative for completion. Issue #47 remains open.
+- The legacy production gate remains unchanged. Phase 39 now has a candidate
+  plan `snapshot-recovery-122-123` for issue #47's initial-snapshot criterion
+  plus #122/#123, a protected-main authorization workflow, a
+  durable Deployment ledger, reviewer/expiry/revoke/complete validation, and
+  promoter-side release ancestry, exact-check, issue/PR/file-scope enforcement.
+  It keeps the existing per-release path and Environment intact. Focused
+  plan-authorization, production-promotion, and updater tests pass (55 total).
+  Full `scripts\check.bat` passed Ruff, mypy (49 files), and pytest (720 passed,
+  0 failed, 1 skipped). Commit enumeration uses GitHub's paginated commits API;
+  timestamp checks account for this host's UTC/local clock skew.
+  Phase plan: [phase 39](phase-39-plan-scoped-production-authorization.md).
+- The existing `gh` identity is `Spon4ik`, the same identity used to implement
+  the change. The new `production-plan-approval` Environment therefore rejects
+  self-approval and requires exactly one independently configured reviewer;
+  GitHub review history is verified against that reviewer and the dispatch
+  actor. The active ruleset `24023362` still requires zero PR reviews and no
+  CODEOWNERS review, and `Spon4ik` is the only collaborator. Before merge, the
+  owner must add/designate an independent reviewer, configure the protected
+  Environment, assign that reviewer in `.github/CODEOWNERS`, and enable one
+  approving review plus code-owner review in the ruleset. Do not weaken or
+  remove the existing per-release Environment.
+- No plan-authorization workflow run, ledger record, published v1.4.35 release,
+  or new production Deployment has been created. v1.4.35 is prepared locally
+  as a maintenance release to carry the promoter/updater fix. Deployment
+  `6972627039` and earlier
+  failed records remain unchanged. The candidate plan authorizes patch releases
+  only and does not allow a source-rebuilt rollback substitution.
+- The implementation is pushed on `codex/plan-scoped-production-auth` at
+  `139895b7e010b2f1ed8c096297dd975d2a9b8821`; draft PR #125 is open and all
+  required CI checks pass on that exact head. No run is currently active.
+  Live GitHub still has only collaborator `Spon4ik`; ruleset `24023362`
+  requires zero approving reviews and no CODEOWNERS review, and
+  `production-plan-approval` is not configured. The one-time independent human
+  reviewer, Environment, CODEOWNERS, and ruleset setup remains required before
+  merge. Keep the draft PR and legacy `production-approval` Environment intact
+  until that boundary is resolved.
 - Windows dialog investigation is not yet attributable. `Get-Command docker.exe`
   resolves `C:\Program Files\Docker\Docker\resources\bin\docker.exe`.
   Repository CLI calls use `& $DockerExe` or `subprocess.run([...docker.exe])`;

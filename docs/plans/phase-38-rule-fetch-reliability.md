@@ -44,14 +44,29 @@ This phase resolves the overlapping production defects in issues #122 and #123.
 
 ## Status
 
-- Status: implementation and local validation complete; protected delivery pending.
+- Status: implementation and protected delivery complete; production runtime
+  behavior is verified, but the GitHub Deployment audit is failed and must remain
+  unchanged while the verifier correction is delivered.
 - Implemented: persisted per-rule failure/backoff fields, a shared per-rule due
   selector, startup/scheduler recovery, bounded selection, and redacted recovery
   status in the operations endpoint.
-- Validation: focused regressions pass; `scripts\check.bat` passes with 702
-  passed, 0 failed, 0 errors, 1 skipped; WinUI desktop build passes with no
-  warnings or errors. Runtime stays v1.4.33; no Docker or production mutation
-  was attempted.
-- Release: v1.4.34 touchpoints and changelog are prepared locally. Next: open the
-  protected PR, satisfy exact-head checks, stage the release, and stop at the
-  human production-approval boundary.
+- Validation: focused regressions pass; `scripts\check.bat` passed with 702
+  passed, 0 failed, 0 errors, 1 skipped; WinUI desktop build passed with no
+  warnings or errors. PR #124 merged as
+  `a09807f9b06fa8a55c80de12fe8b53a20e659922`; exact-main CI/API passed as
+  `37998309625` / `37998309540`.
+- Release: v1.4.34 was staged and published from the exact merge SHA. Protected
+  approval `37999106115` passed. The canonical promoter verified the SQLite
+  backup and deployed the release. Read-only backup/live DB comparison proves
+  three missing eligible snapshots were persisted after startup; remaining
+  snapshotless Stremio rules are disabled or completion-blocked.
+- Deployment audit: GitHub Deployment `6972627039` is failed because the
+  updater's PowerShell native-command pipeline stopped on Compose progress
+  output even though Docker Compose exited 0 and the service is healthy. Preserve
+  this historical failure. Correct the updater through a regression and a
+  protected corrective release; the app/runtime itself reports healthy v1.4.34.
+- Follow-up: phase 39 adds plan-scoped production authorization alongside the
+  legacy gate and fixes the native Docker output boundary with a Windows
+  regression. Focused updater and promotion tests pass. The fix has not yet been
+  merged or deployed, so do not retry or change this historical record. See
+  [phase 39](phase-39-plan-scoped-production-authorization.md).

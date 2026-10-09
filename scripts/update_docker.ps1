@@ -8,7 +8,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$DockerExe = "C:\Program Files\Docker\Docker\resources\bin\docker.exe"
+$dockerCommand = Get-Command docker.exe -CommandType Application -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+$DockerExe = if ($null -ne $dockerCommand) {
+    $dockerCommand.Source
+}
+else {
+    "C:\Program Files\Docker\Docker\resources\bin\docker.exe"
+}
 $DockerDesktopExe = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $ComposeEnvFile = Join-Path (Split-Path -Parent $ComposeFile) ".env"
@@ -16,7 +23,9 @@ $LogDir = Join-Path $RepoRoot "logs\docker"
 $LogFile = Join-Path $LogDir "update-docker-last.log"
 $LifecycleAuditFile = Join-Path $LogDir "container-lifecycle.jsonl"
 $LifecycleAuditModule = Join-Path $PSScriptRoot "DockerLifecycleAudit.psm1"
+$DockerNativeProcessModule = Join-Path $PSScriptRoot "DockerNativeProcess.psm1"
 Import-Module $LifecycleAuditModule -Force
+Import-Module $DockerNativeProcessModule -Force
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 Set-Content -LiteralPath $LogFile -Encoding UTF8 -Value @(
@@ -51,50 +60,11 @@ function Invoke-DockerNative {
         [ValidateSet("Log", "Capture", "Discard")][string]$OutputMode = "Log"
     )
 
-    # Docker/Compose writes ordinary progress messages to stderr. With the script-wide
-    # ErrorActionPreference=Stop, PowerShell can turn those messages into terminating
-    # NativeCommandError records before LASTEXITCODE is inspected. At this boundary,
-    # native stdout/stderr are data; the process exit code is authoritative.
-    $previousErrorActionPreference = $ErrorActionPreference
-    $nativePreferenceVariable = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
-    $hadNativePreference = $null -ne $nativePreferenceVariable
-    $previousNativePreference = if ($hadNativePreference) { $nativePreferenceVariable.Value } else { $null }
-    $stdout = @()
-    $exitCode = 1
-
-    try {
-        $ErrorActionPreference = "Continue"
-        if ($hadNativePreference) {
-            Set-Variable -Name PSNativeCommandUseErrorActionPreference -Value $false
-        }
-
-        switch ($OutputMode) {
-            "Capture" {
-                $stdout = @(& $DockerExe @DockerArguments 2>> $LogFile)
-            }
-            "Discard" {
-                & $DockerExe @DockerArguments 1> $null 2> $null
-            }
-            default {
-                # Merge stderr into stdout before a single UTF-8 writer handles the stream.
-                # This avoids both NativeCommandError false failures and Windows sharing
-                # violations from independently opening one log file for streams 1 and 2.
-                & $DockerExe @DockerArguments 2>&1 | Out-File -LiteralPath $LogFile -Append -Encoding utf8
-            }
-        }
-        $exitCode = $LASTEXITCODE
-    }
-    finally {
-        if ($hadNativePreference) {
-            Set-Variable -Name PSNativeCommandUseErrorActionPreference -Value $previousNativePreference
-        }
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-
-    return [pscustomobject]@{
-        ExitCode = [int]$exitCode
-        StdOut = $stdout
-    }
+    return Invoke-DockerNativeProcess `
+        -DockerExe $DockerExe `
+        -DockerArguments $DockerArguments `
+        -OutputMode $OutputMode `
+        -LogFile $LogFile
 }
 
 function Test-DockerEngine {

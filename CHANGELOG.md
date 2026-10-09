@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.35] - 2026-10-10
+
+- Add a durable plan-scoped production authorization path with independent reviewer provenance, scope enforcement, and append-only completion or revocation records.
+- Run Docker CLI calls through a native PowerShell process boundary so Compose stderr progress does not fail an otherwise successful promotion.
+
 ## [1.4.34] - 2026-10-10
 
 - Reconcile missing and per-rule stale RSS snapshots on startup and scheduler ticks, with persisted retry status.

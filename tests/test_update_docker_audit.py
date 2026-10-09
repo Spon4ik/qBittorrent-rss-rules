@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -97,6 +98,48 @@ def test_updater_records_intent_before_and_result_after_compose_up() -> None:
     proof_failure = script.index("target service '$Service' could not be proven present and running")
     health_wait = script.index('Write-Host "Waiting for backend health..."')
     assert outcome < proof_gate < proof_failure < health_wait
+
+
+def test_native_stderr_progress_is_logged_without_failing_successful_command(
+    tmp_path: Path,
+) -> None:
+    powershell = _powershell()
+    module_path = _ps_literal(str(ROOT / "scripts" / "DockerNativeProcess.psm1"))
+    log_path = _ps_literal(str(tmp_path / "native-command.log"))
+    executable_literal = _ps_literal(sys.executable)
+    command = f"""
+$ErrorActionPreference = 'Stop'
+Import-Module {module_path} -Force
+$nativeExe = {executable_literal}
+$result = Invoke-DockerNativeProcess -DockerExe $nativeExe -DockerArguments @('-c', 'import sys; print("Compose progress", file=sys.stderr)') -OutputMode 'Log' -LogFile {log_path}
+if ($result.ExitCode -ne 0) {{ exit 3 }}
+if (-not (Select-String -LiteralPath {log_path} -Pattern 'Compose progress' -Quiet)) {{ exit 4 }}
+$captured = Invoke-DockerNativeProcess -DockerExe $nativeExe -DockerArguments @('-c', 'print("captured stdout")') -OutputMode 'Capture' -LogFile {log_path}
+if ($captured.ExitCode -ne 0) {{ exit 5 }}
+if ($captured.StdOut -notcontains 'captured stdout') {{ exit 6 }}
+$stderr = Invoke-DockerNativeProcess -DockerExe $nativeExe -DockerArguments @('-c', 'import sys; print("captured stderr", file=sys.stderr)') -OutputMode 'Capture' -LogFile {log_path}
+if ($stderr.ExitCode -ne 0) {{ exit 7 }}
+if (-not (Select-String -LiteralPath {log_path} -Pattern 'captured stderr' -Quiet)) {{ exit 8 }}
+$nonzero = Invoke-DockerNativeProcess -DockerExe $nativeExe -DockerArguments @('-c', 'raise SystemExit(7)') -OutputMode 'Capture' -LogFile {log_path}
+if ($nonzero.ExitCode -ne 7) {{ exit 9 }}
+"""
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-NonInteractive", "-Command", command],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_updater_uses_resolved_native_docker_process_boundary() -> None:
+    script = (ROOT / "scripts" / "update_docker.ps1").read_text(encoding="utf-8")
+    assert "Get-Command docker.exe -CommandType Application" in script
+    assert "DockerNativeProcess.psm1" in script
+    assert "Invoke-DockerNativeProcess" in script
+    assert "Out-File -LiteralPath $LogFile" not in script
 
 
 def test_lifecycle_audit_captures_container_identity_and_correlates_retries(

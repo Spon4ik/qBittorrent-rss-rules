@@ -12,6 +12,7 @@ from app.services.operation_status import (
     start_operation,
     update_operation,
 )
+from app.services.rule_fetch_queue import enqueue_rule_fetch
 from app.services.settings_service import SettingsService
 from app.services.stremio import StremioRuleSyncOutcome, StremioRuleSyncSummary, StremioService
 from app.services.sync import SyncService, SyncServiceError
@@ -127,6 +128,9 @@ def execute_stremio_sync(
             settings,
             allow_metadata_requests=allow_metadata_requests,
         ).sync_rules(session)
+        for outcome in summary.outcomes:
+            if outcome.status == "created" and outcome.rule_id:
+                enqueue_rule_fetch(outcome.rule_id)
         qb_sync_success_count = 0
         qb_sync_error_messages: list[str] = []
         qb_sync_skipped = False

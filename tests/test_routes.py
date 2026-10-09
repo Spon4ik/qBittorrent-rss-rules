@@ -6584,7 +6584,7 @@ def test_sync_stremio_settings_creates_rules_for_library_titles(
     storage_path = create_stremio_local_storage(tmp_path)
     queued_fetches: list[str] = []
     monkeypatch.setattr(
-        "app.routes.api.enqueue_rule_fetch",
+        "app.services.stremio_sync_ops.enqueue_rule_fetch",
         lambda rule_id: queued_fetches.append(rule_id) or True,
     )
     _install_stremio_api(

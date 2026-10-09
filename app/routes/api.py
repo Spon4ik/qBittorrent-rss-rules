@@ -3034,12 +3034,6 @@ async def sync_stremio_library_rules(
             errors=[str(exc)],
         )
 
-    # New Stremio-managed rules need the initial RSS snapshot queued just like
-    # rules created through the rule form. Existing rules are not refetched.
-    for outcome in execution.summary.outcomes:
-        if outcome.status == "created" and outcome.rule_id:
-            enqueue_rule_fetch(outcome.rule_id)
-
     return _render_provider_settings_page(
         request,
         provider="stremio",

@@ -5,12 +5,14 @@
 - Reopened issue #47's investigation details with the newly confirmed behavior:
   Stremio sync can create the RSS rule without queuing its initial snapshot.
   The issue remains open for the fix and subsequent delivery.
-- Manual `/api/settings/sync-stremio` now queues the initial snapshot fetch for
-  each newly created Stremio-managed rule, using the same application queue as
-  manual rule creation. Existing rules are not force-refetched.
+- Shared Stremio sync execution now queues the initial snapshot fetch for each
+  newly created Stremio-managed rule. This covers both manual
+  `/api/settings/sync-stremio` and background library auto-sync; existing rules
+  are not force-refetched.
 - Regression: `tests/test_routes.py::test_sync_stremio_settings_creates_rules_for_library_titles`
-  asserts the newly created rule ID is queued. Focused pytest passes (1 test),
-  Ruff passes for the changed source/test files, and `git diff --check` passes.
+  asserts the newly created rule ID is queued through the shared execution path.
+  The complete deterministic gate passes (Ruff, mypy across 49 files, 692
+  tests passed, 1 skipped), and `git diff --check` passes.
 - This is deployable backend code prepared as patch release v1.4.32. The
   changelog, `pyproject.toml`, FastAPI health version, WinUI compatibility
   constant, and health regression assert are synchronized. Full deterministic
@@ -19,12 +21,13 @@
   before rebuilding because shared Compose points to
   `C:\Users\nucc\deployments\qBittorrent-rss-rules` while this branch is at
   `E:\GitHub\qBittorrent rss rules`. Shared Compose was not changed and Docker
-  deployment was not attempted. The v1.4.32 desktop build and branch/PR
-  Build passed with 0 warnings/errors. The validated code is pushed to
-  `codex/stremio-initial-snapshot-fetch` at
-  `67b8e1733779fa767ee3b8f080520c527d989b9d`; PR #114 is open and its required
-  GitHub checks are pending. Issue #47 remains open. Production release remains
-  gated on protected PR checks and a matching approved checkout/runtime flow.
+  deployment was not attempted; runtime remains v1.4.31. The v1.4.32 desktop
+  build passed with 0 warnings/errors. PR #114 is open on
+  `codex/stremio-initial-snapshot-fetch`; its earlier version-policy failure
+  was corrected and rechecked successfully. PR checks for the shared-layer
+  implementation are pending. Issue #47 remains open. Production release
+  remains gated on protected PR checks and a matching approved checkout/runtime
+  flow.
 
 ## 2026-09-29 v1.4.31 corrective release and production acceptance (#97-#102)
 

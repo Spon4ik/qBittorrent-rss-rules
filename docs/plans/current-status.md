@@ -1,5 +1,34 @@
 # Current Status
 
+## 2026-11-20 Issue #126 - stopped queue defaults
+
+- GitHub issue #126 tracks default-stopped rule-result queue behavior and the
+  one-time active override. Work is isolated on `codex/issue-126-stopped-queue`
+  from the current protected `main` head.
+- Queue API defaults and both `/search` and inline-rule queue controls now
+  start stopped; an explicit active request remains per-result and does not
+  mutate the saved rule. Regressions cover the API persistence boundary and the
+  inline UI when the saved RSS rule is active.
+- Main protection is active under ruleset `24023362`: PR required, strict
+  required checks `real-qbittorrent-webseed-api` and `required`, linear history,
+  no force pushes or deletion, squash merge only. Direct branch-protection API
+  access is denied to the connected integration; ruleset state was read via
+  GitHub's native fetch tool.
+- Release prep bumped the main-based app version from `1.4.34` to `1.4.35`.
+  Ruff and mypy passed; full project checks passed (`702 passed`, `1 skipped`);
+  `git diff --check` passed. PR #127 is linked to #126; its initial protected
+  checks passed. The required qBittorrent integration suite is being extended
+  to queue synthetic torrent metadata through the actual app API and read back
+  stopped/active state from real qBittorrent, with saved-rule state unchanged.
+  Native repository auto-merge and merged head-branch deletion were enabled
+  on 2026-11-20; neither changes the protected checks or production approval
+  gate. Next: verify the new exact-head CI run and protected squash merge.
+- PR #112's two documentation files were compared against protected main
+  `a09807f9`: the phase plan is identical and current-status contains all of
+  the PR's content plus 145 later lines. PR #114 incorporated its evidence;
+  #112 is superseded, not a candidate for a conflicting merge. Keep draft
+  #125 blocked on its independent reviewer and production trust setup.
+
 ## 2026-10-10 Durable rule snapshot recovery (#122/#123)
 
 - Coordinated #122 and #123 as one implementation on feature branch

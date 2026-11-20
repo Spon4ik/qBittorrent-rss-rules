@@ -1510,7 +1510,9 @@ def search_page(request: Request, session: Session = Depends(get_db_session)) ->
             queue_defaults["retry_existing_unwatched_available"] = (
                 source_rule.media_type == MediaType.SERIES
             )
-            queue_defaults["add_paused"] = bool(source_rule.add_paused)
+            # Search-result queue actions default to stopped regardless of the
+            # saved RSS rule's auto-add preference.
+            queue_defaults["add_paused"] = True
             payload_from_rule: JackettSearchRequest | None = None
             try:
                 payload_from_rule, ignored_full_regex = build_search_request_from_rule(source_rule)
@@ -2298,7 +2300,7 @@ def edit_rule(
             "inline_search_notices": inline_search_notices,
             "inline_queue_defaults": {
                 "rule_id": rule.id,
-                "add_paused": bool(rule.add_paused),
+                "add_paused": True,
                 "sequential_download": bool(getattr(settings, "default_sequential_download", True)),
                 "first_last_piece_prio": bool(
                     getattr(settings, "default_first_last_piece_prio", True)

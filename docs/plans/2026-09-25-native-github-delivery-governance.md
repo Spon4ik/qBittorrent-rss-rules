@@ -234,7 +234,11 @@ Linux, matching the Windows operator environment and Linux container target.
   Start with zero mandatory approving reviews for a sole maintainer; enable an
   independent review/CODEOWNER requirement when an eligible reviewer exists.
   Workflow/deployment/data-migration changes still receive explicit maintainer review.
-- Use native auto-merge after checks are stable. Defer merge queue; if adopted later,
+- Native auto-merge and automatic deletion of merged head branches were enabled
+  on 2026-11-20. Explicitly arm auto-merge per eligible PR after focused validation
+  and review; already-green eligible PRs may use protected squash merge. Verify
+  exact-main CI and head-branch cleanup. Drafts and unresolved security or human
+  approval gates are not eligible. Defer merge queue; if adopted later,
   add and prove `merge_group` CI before requiring it. Never manufacture statuses,
   directly merge around a red gate, or weaken tests to produce green.
 

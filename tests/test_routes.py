@@ -99,7 +99,7 @@ def test_health_endpoint(app_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["app_version"] == "1.4.34"
+    assert payload["app_version"] == "1.4.35"
     assert payload["desktop_backend_contract"] == DESKTOP_BACKEND_CONTRACT
     assert "hover_debug_telemetry" in payload["capabilities"]
     assert "search_hidden_result_diagnostics" in payload["capabilities"]
@@ -3117,6 +3117,7 @@ def test_edit_rule_page_can_render_inline_search_results(
         media_type=MediaType.SERIES,
         quality_profile=QualityProfile.PLAIN,
         feed_urls=["http://feed.example/inline"],
+        add_paused=False,
     )
     db_session.add(rule)
     db_session.commit()
@@ -3152,6 +3153,7 @@ def test_edit_rule_page_can_render_inline_search_results(
     assert "Shrinking S01E01" in response.text
     assert "Queue via Rule" in response.text
     assert "Queue paused" in response.text
+    assert 'data-result-queue-option="paused" checked' in response.text
     assert "Queue options" in response.text
     assert "Advanced queue options" not in response.text
     assert 'data-search-table-wrap="combined"' in response.text
@@ -4274,7 +4276,9 @@ def test_queue_search_result_api_requires_configured_qb(app_client) -> None:
     assert response.json()["error"] == "qBittorrent connection is not configured."
 
 
-def test_queue_search_result_api_uses_rule_defaults(app_client, db_session, monkeypatch) -> None:
+def test_queue_search_result_api_defaults_stopped_and_keeps_active_override_one_time(
+    app_client, db_session, monkeypatch
+) -> None:
     settings = AppSettings(
         id="default",
         qb_base_url="http://localhost:8080",
@@ -4337,17 +4341,32 @@ def test_queue_search_result_api_uses_rule_defaults(app_client, db_session, monk
     assert payload["status"] == "queued"
     assert payload["category"] == "Series/Shrinking [imdbid-tt15153834]"
     assert payload["save_path"] == "/data/shrinking"
-    assert payload["add_paused"] is False
+    assert payload["add_paused"] is True
     assert payload["sequential_download"] is True
     assert payload["first_last_piece_prio"] is True
     assert captured == {
         "link": "https://example.com/shrinking.torrent",
         "category": "Series/Shrinking [imdbid-tt15153834]",
         "save_path": "/data/shrinking",
-        "paused": False,
+        "paused": True,
         "sequential_download": True,
         "first_last_piece_prio": True,
     }
+
+    active_override = app_client.post(
+        "/api/search/queue",
+        json={
+            "link": "https://example.com/one-time-active.torrent",
+            "rule_id": rule.id,
+            "add_paused": False,
+        },
+    )
+
+    assert active_override.status_code == 200
+    assert active_override.json()["add_paused"] is False
+    assert captured["paused"] is False
+    db_session.refresh(rule)
+    assert rule.add_paused is False
 
 
 def test_retry_existing_unwatched_is_rejected_without_series_rule(app_client, db_session) -> None:

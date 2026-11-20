@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No entries yet.
 
+## [1.4.35] - 2026-11-20
+
+- Default search-result queue actions to stopped; keep an explicit active choice scoped to that one result.
+
 ## [1.4.34] - 2026-10-10
 
 - Reconcile missing and per-rule stale RSS snapshots on startup and scheduler ticks, with persisted retry status.

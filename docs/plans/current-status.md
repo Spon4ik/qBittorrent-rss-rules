@@ -1,5 +1,24 @@
 # Current Status
 
+## 2026-11-20 Issue #126 - stopped queue defaults
+
+- GitHub issue #126 tracks default-stopped rule-result queue behavior and the
+  one-time active override. Work is isolated on `codex/issue-126-stopped-queue`
+  from the current protected `main` head.
+- Queue API defaults and both `/search` and inline-rule queue controls now
+  start stopped; an explicit active request remains per-result and does not
+  mutate the saved rule. Regressions cover the API persistence boundary and the
+  inline UI when the saved RSS rule is active.
+- Main protection is active under ruleset `24023362`: PR required, strict
+  required checks `real-qbittorrent-webseed-api` and `required`, linear history,
+  no force pushes or deletion, squash merge only. Direct branch-protection API
+  access is denied to the connected integration; ruleset state was read via
+  GitHub's native fetch tool.
+- Release prep bumped the main-based app version from `1.4.34` to `1.4.35`.
+  Ruff and mypy passed; full project checks passed (`702 passed`, `1 skipped`);
+  `git diff --check` passed. Next: commit and push this issue branch, open a PR
+  linked to #126, and update issue evidence.
+
 ## 2026-10-10 Durable rule snapshot recovery (#122/#123)
 
 - Coordinated #122 and #123 as one implementation on feature branch

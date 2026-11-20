@@ -1070,8 +1070,6 @@ def queue_search_result(
         builder = RuleBuilder(settings)
         category = builder.render_category(rule)
         save_path = builder.render_save_path(rule)
-        if add_paused is None:
-            add_paused = rule.add_paused
     if payload.retry_existing_unwatched and (
         rule is None or rule.media_type != MediaType.SERIES
     ):
@@ -1080,8 +1078,8 @@ def queue_search_result(
             status_code=400,
         )
     if add_paused is None:
-        # Queueing without a rule is always paused unless this individual
-        # request explicitly opts out. Saved rule exceptions are handled above.
+        # Search-result queue actions default to stopped. An explicit request
+        # may opt into starting this one torrent without changing its rule.
         add_paused = True
 
     if payload.source_kind.value == "real_debrid_download":

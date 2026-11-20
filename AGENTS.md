@@ -91,6 +91,7 @@ The WinUI shell (`QbRssRulesDesktop`) embeds `RequiredDesktopBackendAppVersion` 
 
 - Treat GitHub as the durable source for work that may continue in another chat, session, or device. Keep each active task on a feature branch and push each coherent, validated checkpoint before switching tasks or ending a session.
 - Keep the branch and its draft or review pull request current as work progresses. Update the pull request description or `docs/plans/current-status.md` with the exact commit, validation evidence, and next step so another session can resume from GitHub.
+- After focused validation and review are complete, explicitly enable GitHub's native squash auto-merge for an eligible, non-draft PR targeting protected `main`; if already mergeable, squash-merge only after verifying all required exact-head checks and merge requirements. Verify the PR actually merged, the exact `main` checks passed, and GitHub removed the merged head branch. Do not arm auto-merge for a PR awaiting an independent review, security approval, or other unresolved acceptance criterion. Never bypass or weaken protection, close the issue prematurely, or treat a green but unmerged PR as completed.
 - Never push work directly to protected `main`. Before closeout, verify the local branch is clean and its commit matches the GitHub branch head. If a push is blocked, record the concrete cause and exact recoverable local state; do not imply the work is remotely available.
 
 ## Session Closeout

@@ -16,8 +16,18 @@
   GitHub's native fetch tool.
 - Release prep bumped the main-based app version from `1.4.34` to `1.4.35`.
   Ruff and mypy passed; full project checks passed (`702 passed`, `1 skipped`);
-  `git diff --check` passed. Next: commit and push this issue branch, open a PR
-  linked to #126, and update issue evidence.
+  `git diff --check` passed. PR #127 is linked to #126; its initial protected
+  checks passed. The required qBittorrent integration suite is being extended
+  to queue synthetic torrent metadata through the actual app API and read back
+  stopped/active state from real qBittorrent, with saved-rule state unchanged.
+  Native repository auto-merge and merged head-branch deletion were enabled
+  on 2026-11-20; neither changes the protected checks or production approval
+  gate. Next: verify the new exact-head CI run and protected squash merge.
+- PR #112's two documentation files were compared against protected main
+  `a09807f9`: the phase plan is identical and current-status contains all of
+  the PR's content plus 145 later lines. PR #114 incorporated its evidence;
+  #112 is superseded, not a candidate for a conflicting merge. Keep draft
+  #125 blocked on its independent reviewer and production trust setup.
 
 ## 2026-10-10 Durable rule snapshot recovery (#122/#123)
 

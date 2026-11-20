@@ -11,9 +11,10 @@ unfinished Phase 44 work separate from governance commits.
 
 ## Status
 
-Implementation is complete through v1.4.31 and protected approval. The current
-series acceptance/handoff correction is in PR #112; the independent promotion
-audit reconciliation is tracked by #113.
+Implementation is complete through v1.4.31 and protected approval. The series
+acceptance/handoff correction from PR #112 is already included in protected
+main through PR #114; #112 is superseded. The independent promotion audit
+reconciliation is tracked by #113.
 
 ## Series progress and selective queue recovery (2026-09-29)
 
